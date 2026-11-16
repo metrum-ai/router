@@ -37,7 +37,7 @@ def remove_temp_tree(path: Path) -> None:
         except FileNotFoundError:
             return
         except OSError as exc:
-            if exc.errno not in {errno.EBUSY, errno.EACCES, errno.ENOTEMPTY, errno.ENOENT}:
+            if exc.errno not in {errno.EBUSY, errno.ENOTEMPTY, errno.ENOENT}:
                 raise
             if time.monotonic() >= deadline:
                 raise

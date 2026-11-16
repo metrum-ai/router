@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[2]
 API_COMPAT = ROOT / "tests" / "api_compat"
 sys.path.insert(0, str(API_COMPAT))
 
-from harness import CALLER, CALLER_DIGEST  # noqa: E402
+from harness import CALLER, CALLER_DIGEST, CALLER_ID  # noqa: E402
 from harness.scripted_upstream import FakeUpstream, start_fake_upstream  # noqa: E402
 
 CONFIG = """server:
@@ -43,7 +43,8 @@ models:
   messages: {{strategy: static, targets: [{{provider: messages, model: synthetic-messages, tool_support: {{anthropic_messages: [client_tools]}}, request_shape_support: {{supported_inbound_dialects: [anthropic], validation_status: passed}}}}]}}
 callers:
   - id: ts-sdk-suite
-    token_sha256: "{digest}"
+    token_hash: "{digest}"
+    token_id: "{token_id}"
     allow: [chat, responses, messages]
     rate: {{rpm: 2400, tpm: 100000000, concurrent: 160}}
     quota: {{day: {{requests: 100000, tokens: 400000000}}, month: {{tokens: 8000000000}}}}
@@ -88,7 +89,7 @@ def main() -> int:
             cwd=ROOT, env=build_env, check=True,
         )
         config = CONFIG.format(
-            port=port, upstream=upstream_url, digest=CALLER_DIGEST,
+            port=port, upstream=upstream_url, digest=CALLER_DIGEST, token_id=CALLER_ID,
             log_path=work / "router.jsonl", state_path=work / "state.json",
         )
         (work / "config.yaml").write_text(config, encoding="utf-8")

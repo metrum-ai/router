@@ -132,6 +132,12 @@ ceiling on each admission, so raising or removing a ceiling restores admission
 without waiting for the next UTC window. `routerctl admin-resource` provides
 HTTP access to the versioned resource endpoints.
 
+Before enabling asynchronous operations, backups, or restores, apply the
+non-serving usage and router-config migrations through schema 16 using the
+two-scope Job in [DATA_MIGRATIONS.md](DATA_MIGRATIONS.md). The restore API
+requires the separate `admin:restore:write` grant. It updates the configuration
+and usage databases sequentially; it is not an atomic cross-database operation.
+
 **Break-glass access (v4.8.0).** There is no unauthenticated admin route. Prepare one sealed admin
 key with `admin`-level grants, held offline by the on-call owner, and use it only to restore normal
 credentials; rotate it immediately afterwards. The offline emergency-credential activation flow is
@@ -177,7 +183,13 @@ configuration database first and follow the v5.0.0 section of the `docs-site/doc
 
 ## 6. API and CLI parity
 
-`metrum-ai-routerctl` online commands use `/admin/v1` in v5.0.0. Use this table for the API paths used by automation.
+`metrum-ai-routerctl` online commands use `/admin/v1` in v5.0.0. Config import, export, activate,
+and rollback use the Admin API by default; add `--offline` only when the router is stopped and the
+operator intentionally accesses the control-plane database. Other online operations use the Admin
+API directly. The default endpoint is `http://127.0.0.1:8081`; set `--router-url` or `ROUTER_URL`
+when the listener is elsewhere. Plain HTTP is accepted only on loopback; remote endpoints require
+HTTPS. Admin credentials come from `ROUTER_ADMIN_KEY`, `ROUTER_ADMIN_KEY_FILE`, or
+`--admin-key-file`.
 
 | Operation | Versioned API | Router CLI | Notes |
 | --- | --- | --- | --- |
@@ -189,10 +201,10 @@ configuration database first and follow the v5.0.0 section of the `docs-site/doc
 | Roll back a group | `POST …/rollback` | `groups rollback <group>` | |
 | Group history | `GET …/history` | `groups history <group>` | |
 | Shadow run | `POST/DELETE …/shadow`, `POST …/shadow/promote` | `groups shadow start|promote|stop` | |
-| Config sets | `GET/POST /admin/v1/config/sets…` | `config import`, `config activate` (offline DB) | Online set operations are API only |
+| Config sets | `GET/POST /admin/v1/config/sets…`, `POST …/activate`, `POST /admin/v1/config/rollback` | `config import|export|activate|rollback` | Online by default; `--offline` explicitly selects DB access |
 | Caller directory | `GET/POST /admin/v1/callers…` | `callers generate`, `callers hash` (offline) | Online issue/rotate/revoke are API only |
 | Admin keys | admin-key API (follow-up release) | `adminkeys generate` (offline) | Raw key is never returned by an API |
-| Reports and exports | `/admin/v1/reports/...` | `reports` (read-only) | Browser UI stays on the serving port |
+| Reports and exports | `/admin/v1/reports/...` | `reports cfo [--format json|csv|markdown] [--since …] [--reports-prefix /admin/v1/reports]` | Old `/admin/reports` prefix is rejected; browser UI stays on the serving port |
 | Metrics | `GET /admin/v1/metrics`, `GET /metrics` on the admin port | — | |
 | Health | `GET /healthz`, `GET /readyz` on the admin port | — | State only: `{"ok":true}` |
 

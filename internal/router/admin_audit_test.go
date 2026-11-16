@@ -232,6 +232,61 @@ func TestAdminReplayWritesOneEvent(t *testing.T) {
 	}
 }
 
+func TestAdminBulkTargetsCommitOnceAndRollbackOnInvalidMember(t *testing.T) {
+	harness := newAdminAuditHarness(t)
+	beforeRevision, err := currentRevisionForScope(harness.db, "prod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	beforeEvents := len(harness.changeEvents(t))
+	body := map[string]any{"changes": []any{
+		map[string]any{"action": "add", "target": map[string]any{"provider": "alpha", "model_ref": "a-two"}},
+		map[string]any{"action": "remove", "target": map[string]any{"provider": "alpha", "model_ref": "a-one"}},
+	}}
+	response := harness.do(t, http.MethodPost, "/admin/v1/config/groups/agent-default/targets:bulk", body, map[string]string{
+		"If-Match": harness.currentETag(t), "Idempotency-Key": "bulk-targets-success",
+	})
+	if response.Code != http.StatusOK {
+		t.Fatalf("bulk write status=%d body=%s", response.Code, response.Body.String())
+	}
+	afterRevision, err := currentRevisionForScope(harness.db, "prod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if afterRevision != beforeRevision+1 {
+		t.Fatalf("bulk write advanced revision from %d to %d, want exactly one revision", beforeRevision, afterRevision)
+	}
+	if got := len(harness.changeEvents(t)) - beforeEvents; got != 1 {
+		t.Fatalf("bulk write created %d audit rows, want 1", got)
+	}
+
+	committedYAML, err := LoadActiveCanonicalYAML(harness.db, "prod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	failed := harness.do(t, http.MethodPost, "/admin/v1/config/groups/agent-default/targets:bulk", map[string]any{"changes": []any{
+		map[string]any{"action": "add", "target": map[string]any{"provider": "alpha", "model_ref": "a-three"}},
+		map[string]any{"action": "remove", "target": map[string]any{"provider": "alpha", "model_ref": "missing"}},
+	}}, map[string]string{"If-Match": harness.currentETag(t), "Idempotency-Key": "bulk-targets-rollback"})
+	if failed.Code != http.StatusNotFound {
+		t.Fatalf("invalid later bulk member status=%d body=%s, want 404", failed.Code, failed.Body.String())
+	}
+	afterFailureYAML, err := LoadActiveCanonicalYAML(harness.db, "prod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(afterFailureYAML) != string(committedYAML) {
+		t.Fatal("failed bulk member changed the active configuration")
+	}
+	finalRevision, err := currentRevisionForScope(harness.db, "prod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if finalRevision != afterRevision || len(harness.changeEvents(t)) != beforeEvents+1 {
+		t.Fatalf("failed batch changed revision/audit state: revision %d, events %d", finalRevision, len(harness.changeEvents(t)))
+	}
+}
+
 // TestAdminAuditFailureFailsWrite proves an injected audit-store failure leaves no
 // unaudited write: the change is refused and nothing about the configuration moves.
 func TestAdminAuditFailureFailsWrite(t *testing.T) {
@@ -516,7 +571,7 @@ func TestAdminAuthenticationEvents(t *testing.T) {
 		"containment.webhook":        func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
 	})
 	for _, key := range []string{"config.diff", "config.sets.import", "config.sets.activate", "config.sets.rollback",
-		"config.group.targets.replace", "config.group.targets.add", "config.group.targets.remove",
+		"config.group.targets.replace", "config.group.targets.add", "config.group.targets.bulk", "config.group.targets.remove",
 		"config.group.targets.validate", "config.group.rollback", "config.group.shadow.start",
 		"config.group.shadow.promote", "config.group.shadow.stop", "callers.issue", "callers.rotate", "callers.revoke",
 		"containment.webhook",
@@ -645,10 +700,12 @@ func TestAdminDenialsAreAuditedAndFailClosed(t *testing.T) {
 }
 
 // TestAdminEveryMutationHasOneAuditRow is the registry-driven coverage test: every mutating
-// operation is driven through its REAL handler with a valid fixture, must commit with a 2xx,
-// and must leave exactly one complete audit row; the usage-database operations go through
-// their real HTTP handlers as well. Each class also has a forced-audit-failure rollback case,
-// and all three credential lifecycle operations are exercised.
+// control-plane operation is driven through its REAL handler with a valid fixture, must commit
+// with a 2xx, and must leave exactly one complete audit row; the usage-database operations go
+// through their real HTTP handlers as well. The security posture report has a dedicated
+// security-access audit assertion because it writes the usage store rather than config state.
+// Each class also has a forced-audit-failure rollback case, and all three credential lifecycle
+// operations are exercised.
 func TestAdminEveryMutationHasOneAuditRow(t *testing.T) {
 	registry, err := AdminV1DefaultRegistry()
 	if err != nil {
@@ -662,9 +719,25 @@ func TestAdminEveryMutationHasOneAuditRow(t *testing.T) {
 		if op.Method == "GET" || op.ID == "exportTrainingData" {
 			continue
 		}
+		if op.ID == "startControlPlaneBackup" {
+			mutations++
+			// The operation pair is exercised through the production Service handler
+			// set; each completion must write one durable actor/digest/result audit row.
+			runControlPlaneBackupRestoreThroughAdminAPI(t)
+			continue
+		}
+		if op.ID == "startControlPlaneRestore" {
+			mutations++
+			// The paired end-to-end scenario above runs the restore route and checks
+			// its audit row and reloaded serving configuration.
+			continue
+		}
 		if op.ID == "containCallerWebhook" {
 			// The webhook credential path has dedicated HMAC and replay tests; this
 			// generic registry loop uses only the ordinary admin authenticator.
+			continue
+		}
+		if op.ID == "saveAdminSecurityPostureReport" {
 			continue
 		}
 		mutations++
@@ -919,6 +992,13 @@ func prepareAdminAuditFixture(t *testing.T, harness *adminAuditHarness, op Opera
 		if recorder.Code != http.StatusOK {
 			t.Fatalf("preparing removeConfigGroupTarget: %d (%s)", recorder.Code, recorder.Body.String())
 		}
+	case "bulkConfigGroupTargets":
+		recorder := write(http.MethodPost, "/admin/v1/config/groups/agent-default/targets", map[string]any{
+			"target": map[string]any{"provider": "beta", "model_ref": "b-one"},
+		}, "pre-bulk-target")
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("preparing bulkConfigGroupTargets: %d (%s)", recorder.Code, recorder.Body.String())
+		}
 	case "rollbackConfigGroup":
 		recorder := write(http.MethodPut, "/admin/v1/config/groups/agent-default/targets",
 			map[string]any{"targets": []any{map[string]any{"provider": "alpha", "model_ref": "a-two"}, map[string]any{"provider": "beta", "model_ref": "b-one"}}}, "pre-rollback")
@@ -993,6 +1073,11 @@ func adminAuditFixture(t *testing.T, harness *adminAuditHarness, op Operation) (
 		body = map[string]any{"caller_id": "alice", "action": "suspend", "reason": "security_test"}
 	case "replaceConfigGroupTargets", "validateConfigGroupTargets":
 		body = map[string]any{"targets": []any{map[string]any{"provider": "alpha", "model_ref": "a-two"}}, "dry_run": op.ID == "validateConfigGroupTargets"}
+	case "bulkConfigGroupTargets":
+		body = map[string]any{"changes": []any{
+			map[string]any{"action": "remove", "target": map[string]any{"provider": "beta", "model_ref": "b-one"}},
+			map[string]any{"action": "add", "target": map[string]any{"provider": "alpha", "model_ref": "a-two"}},
+		}}
 	case "addConfigGroupTarget":
 		body = map[string]any{"target": map[string]any{"provider": "alpha", "model_ref": "a-two"}}
 	case "importConfigSet":

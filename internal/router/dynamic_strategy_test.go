@@ -11,13 +11,77 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
 
 func TestCPUSmallWorkEligibilityAndEscalationHTTP(t *testing.T) {
-	cpuMode := "ok"
+	configPath := filepath.Join("..", "..", "deploy", "reference", "hierarchy", "config", "dc.yaml")
+	rawConfig, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range envReferenceNames(rawConfig) {
+		t.Setenv(name, "fixture-provider-value")
+	}
+	t.Setenv("CPU_MODEL", "cpu-small")
+	t.Setenv("FRONTIER_MODEL", "frontier")
+	t.Setenv("CPU_ATTEMPT_TIMEOUT_MS", "75") // short deterministic timeout for the fixture
+	t.Setenv("ROUTER_ID_TRANSFORM_KEY", strings.Repeat("ab", 64))
+	t.Setenv("ROUTER_ID_TRANSFORM_KEY_ID", "fixture")
+	t.Setenv("DC_USAGE_DRIVER", "sqlite")
+	t.Setenv("DC_USAGE_PATH", filepath.Join(t.TempDir(), "usage.sqlite"))
+	t.Setenv("DC_USAGE_DSN", "")
+	t.Setenv("DC_CALLER_RPM", "1200")
+	t.Setenv("DC_CALLER_TPM", "1000000")
+	t.Setenv("DC_CALLER_CONCURRENT", "64")
+	tokenHash, err := HashCallerToken("fixture-token", strings.NewReader(strings.Repeat("s", 32)), callerTokenHashMinIterations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DC_CALLER_TOKEN_HASH", tokenHash)
+	t.Setenv("DC_CALLER_TOKEN_ID", "fixture-caller")
+	t.Setenv("DC_CALLER_ID", "fixture-caller")
+	t.Setenv("DC_OWNER_USER", "ops")
+	t.Setenv("DC_PROJECT", "fixture")
+	t.Setenv("DC_ENVIRONMENT", "test")
+	t.Setenv("DC_ROUTER_TOKEN", "fixture-token")
+	t.Setenv("EDGE_ROUTER_URL", "http://127.0.0.1:2/v1")
+	t.Setenv("DC_STATE_PATH", filepath.Join(t.TempDir(), "state.json"))
+	t.Setenv("DC_LOG_PATH", filepath.Join(t.TempDir(), "router.log"))
+	t.Setenv("MAX_ROUTER_HOPS", "4")
+	t.Setenv("DC_UPSTREAM_TIMEOUT_MS", "10000")
+	t.Setenv("FRONTIER_BASE_URL", "http://127.0.0.1:1/v1")
+	t.Setenv("FRONTIER_API_KEY", "fixture")
+	t.Setenv("FRONTIER_INPUT_PRICE_USD_PER_MTOK", "0")
+	t.Setenv("FRONTIER_OUTPUT_PRICE_USD_PER_MTOK", "0")
+	t.Setenv("FRONTIER_PRICING_SOURCE", "fixture")
+	t.Setenv("FRONTIER_PRICING_UPDATED_AT", "2026-11-16")
+	t.Setenv("CPU_BASE_URL", "http://127.0.0.1:1/v1")
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	group, ok := cfg.Models["agent-small"]
+	if !ok {
+		t.Fatal("reference config has no agent-small group")
+	}
+	if group.RoutingPolicy.DynamicScore.Thresholds.MaxTTFBMS == nil || *group.RoutingPolicy.DynamicScore.Thresholds.MaxTTFBMS != 1000 {
+		t.Fatalf("reference latency budget=%+v, want max_ttfb_ms=1000", group.RoutingPolicy.DynamicScore.Thresholds)
+	}
+	for i := range group.Targets {
+		group.Targets[i].Provider = "mock"
+	}
+
+	var cpuMode atomic.Int32
+	const (
+		cpuOK int32 = iota
+		cpuDown
+		cpuTimeout
+	)
 	seen := make(chan string, 20)
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -26,12 +90,12 @@ func TestCPUSmallWorkEligibilityAndEscalationHTTP(t *testing.T) {
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		seen <- body.Model
 		if body.Model == "cpu-small" {
-			switch cpuMode {
-			case "fail":
+			switch cpuMode.Load() {
+			case cpuDown:
 				http.Error(w, "cpu unavailable", http.StatusBadGateway)
 				return
-			case "timeout":
-				time.Sleep(50 * time.Millisecond)
+			case cpuTimeout:
+				time.Sleep(250 * time.Millisecond)
 			}
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -40,14 +104,11 @@ func TestCPUSmallWorkEligibilityAndEscalationHTTP(t *testing.T) {
 	defer upstream.Close()
 	svc := newTestService(t, upstream.URL, "provider-key")
 	defer svc.Close()
-	svc.cfg.Models["default"] = ModelGroup{
-		Strategy:      "dynamic_score",
-		RoutingPolicy: RoutingPolicyConfig{DynamicScore: DynamicScoreConfig{MinObservations: 20}},
-		Targets: []Target{
-			{Provider: "mock", Model: "cpu-small", Weight: 10, TimeoutMS: 10, RequestShapeSupport: RequestShapeSupport{MaxEstimatedInputTokens: 800, MaxRequestedOutputTokens: 128, ValidationStatus: "passed"}},
-			{Provider: "mock", Model: "frontier", Weight: 1},
-		},
+	for name, provider := range svc.cfg.Provider {
+		provider.BaseURL = upstream.URL
+		svc.cfg.Provider[name] = provider
 	}
+	svc.cfg.Models["default"] = group
 	router := httptest.NewServer(svc.Handler())
 	defer router.Close()
 	call := func(maxTokens int) (int, string) {
@@ -75,7 +136,6 @@ func TestCPUSmallWorkEligibilityAndEscalationHTTP(t *testing.T) {
 			t.Fatalf("upstream was not called; want %q", want)
 		}
 	}
-
 	if status, body := call(16); status != http.StatusOK || !strings.Contains(body, `"content":"cpu-small"`) {
 		t.Fatalf("compact request status=%d body=%s, want CPU response", status, body)
 	}
@@ -84,17 +144,16 @@ func TestCPUSmallWorkEligibilityAndEscalationHTTP(t *testing.T) {
 		t.Fatalf("over-budget request status=%d body=%s, want frontier response", status, body)
 	}
 	assertLatest("frontier")
-
-	cpuMode = "fail"
+	cpuMode.Store(cpuDown)
 	if status, body := call(16); status != http.StatusOK || !strings.Contains(body, `"content":"frontier"`) {
-		t.Fatalf("CPU failure fallback status=%d body=%s", status, body)
+		t.Fatalf("CPU-down fallback status=%d body=%s", status, body)
 	}
 	assertLatest("cpu-small")
 	assertLatest("frontier")
-
-	cpuMode = "timeout"
+	svc.observations = newDynamicObservationStore() // isolate the timeout case from failure-threshold adaptation
+	cpuMode.Store(cpuTimeout)
 	if status, body := call(16); status != http.StatusOK || !strings.Contains(body, `"content":"frontier"`) {
-		t.Fatalf("CPU timeout fallback status=%d body=%s", status, body)
+		t.Fatalf("CPU-timeout fallback status=%d body=%s", status, body)
 	}
 	assertLatest("cpu-small")
 	assertLatest("frontier")

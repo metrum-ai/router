@@ -1,0 +1,20 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+
+title: Router Containment Account Change
+id: 5267d9c6-64bd-47a2-a72b-140e451c16a3
+status: stable
+logsource:
+  product: metrum-ai-router
+  service: security-events
+detection:
+  selection_suspend:
+    class_uid: 3001
+    activity_id: 5
+    message: caller_suspended allowed
+  selection_resume:
+    class_uid: 3001
+    activity_id: 2
+    message: caller_released allowed
+  condition: selection_suspend or selection_resume
+level: high

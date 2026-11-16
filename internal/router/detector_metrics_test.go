@@ -51,3 +51,21 @@ func TestMetricsExportsDetectorDropCounter(t *testing.T) {
 		t.Fatalf("detector drop counter missing from metrics:\n%s", response.Body.String())
 	}
 }
+
+func TestMetricsExportsInvalidDetectorEventDropCounter(t *testing.T) {
+	service := &Service{metrics: newMetricsStore()}
+	config := []DetectorConfig{{ID: "invalid-event", URL: "http://127.0.0.1:9000/v1/detect", AllowHosts: []string{"127.0.0.1"}, AllowHTTP: true, Mode: "report", TimeoutMS: 500, OnError: "fallback", SampleRate: 1}}
+	if err := service.replaceDetectorConfig(config); err != nil {
+		t.Fatal(err)
+	}
+	defer service.detectorDispatcher.Close()
+	service.submitDetectorEvent(detector.Event{SchemaVersion: detector.SchemaVersion, Kind: "model_denied", DeniedGroup: "org/model"}, nil, false)
+	if service.detectorInvalidDropped.Load() != 1 {
+		t.Fatalf("invalid event drop count=%d, want 1", service.detectorInvalidDropped.Load())
+	}
+	response := httptest.NewRecorder()
+	service.writeMetricsPayload(response, httptest.NewRequest(http.MethodGet, "/metrics", nil), nil)
+	if !strings.Contains(response.Body.String(), "metrum_ai_router_detector_invalid_dropped_total 1") {
+		t.Fatalf("invalid detector event drop metric missing:\n%s", response.Body.String())
+	}
+}

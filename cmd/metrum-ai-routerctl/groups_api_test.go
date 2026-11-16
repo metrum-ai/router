@@ -4,11 +4,14 @@
 package main
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/metrum-ai/router/internal/smartrouterctl"
 )
@@ -29,7 +32,7 @@ func TestAdminAPIClientErrorMapping(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, code, err := client.Do("GET", "/admin/config/groups", nil, nil)
+	_, code, err := client.Do("GET", "/admin/v1/config/groups", nil, nil)
 	if err == nil || code != 403 {
 		t.Fatalf("expected typed 403, got code=%d err=%v", code, err)
 	}
@@ -39,6 +42,23 @@ func TestAdminAPIClientErrorMapping(t *testing.T) {
 	}
 	if strings.Contains(apiErr.Raw, "rtr_admin_test_only_key_material") || strings.Contains(apiErr.Error(), "rtr_admin_test_only_key_material") {
 		t.Fatal("admin token leaked in error")
+	}
+}
+
+func TestAdminAPIClientTimeout(t *testing.T) {
+	t.Setenv("ROUTER_ADMIN_KEY", "rtr_admin_test_only_key_material")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(50 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	client, err := smartrouterctl.NewAdminAPIClient(server.URL, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.HTTP.Timeout = time.Millisecond
+	if _, _, err := client.Do(http.MethodGet, "/admin/v1/config/groups", nil, nil); err == nil || !strings.Contains(err.Error(), "deadline exceeded") {
+		t.Fatalf("timed out API call error = %v, want deadline exceeded", err)
 	}
 }
 

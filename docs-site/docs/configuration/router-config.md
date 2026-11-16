@@ -13,6 +13,44 @@ Model group names are deployment-defined. Names such as `default`, `fast`, `smal
 
 For admin authentication, admin authorization, and PII filtering, see the canonical Security And Governance pages: [Admin Authentication](./admin-authentication), [Admin Authorization](./admin-authorization), and [PII Filtering](./pii-filtering).
 
+## Request trace correlation
+
+Router chains accept W3C `traceparent` only from a trusted immediate parent.
+Configure the parent network under `server.trace.trusted_parent_cidrs`, or set
+`trust_traceparent: true` on a caller whose token authenticates a child router.
+Both inbound trust options default to off. A malformed, duplicate, or untrusted
+header starts a new trace. Each router creates its own span and request ID, then
+propagates `traceparent` and `X-Request-Id` to upstream providers by default.
+Set `providers.<name>.propagate_trace: false` to disable both outbound headers
+for that provider. Usage rows link per-hop request IDs through scalar trace,
+span, and parent-span IDs; raw headers, caller tokens, and prompts are not
+stored. Inbound `tracestate` is deliberately dropped and never forwarded.
+
+```yaml
+server:
+  trace:
+    trusted_parent_cidrs:
+      - 10.20.0.0/16
+callers:
+  - token_env: CHILD_ROUTER_TOKEN
+    trust_traceparent: true
+```
+
+Disable outbound correlation headers only for a provider that must not receive
+them:
+
+```yaml
+providers:
+  external_provider:
+    propagate_trace: false
+```
+
+Use CIDRs only for networks whose routers you operate. Trusting a proxy or
+ingress CIDR trusts every client whose traffic arrives through that network;
+configure the CIDR for the immediate trusted router only. The caller option is
+bound to the authenticated caller entry. Either option trusts an inbound trace
+ID and should be limited to router-to-router paths.
+
 ## File Layout
 
 The top-level config shape is:
@@ -96,6 +134,8 @@ Enable it only after validating a client adapter that posts a Responses-shaped b
 ## Streaming translator
 
 `server.streaming.max_sse_line_bytes` bounds each upstream SSE line before copying it into the event buffer. It defaults to 8388608 (8 MiB); zero selects that default. Explicit values must be between 65536 (64 KiB) and 33554432 (32 MiB), inclusive. The total response ceiling in `server.upstream.max_response_bytes` still applies independently.
+
+`server.streaming.max_inflight_line_bytes` caps allocated SSE line-buffer capacity across concurrent streams in one router process. It defaults to 67108864 (64 MiB); zero selects that default. Explicit values must be between 65536 (64 KiB) and 1073741824 (1 GiB), inclusive. When a line cannot reserve more capacity, the stream fails with `upstream_stream_buffer_limit`; pre-commit failures can fall back. Prometheus exposes current reserved bytes, the configured limit and rejected reservations as `metrum_ai_router_sse_line_buffer_bytes`, `metrum_ai_router_sse_line_buffer_limit_bytes` and `metrum_ai_router_sse_line_buffer_rejections_total`.
 
 `server.streaming.translator` accepts `incremental` (default) or `synthesized`.
 Incremental mode uses native same-dialect Chat, Responses, and Anthropic streams.

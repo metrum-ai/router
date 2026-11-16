@@ -10,10 +10,12 @@ package router
 // active.
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -109,10 +111,13 @@ func TestContainmentWebhookMountAdminV1ReloadsAndRefusesCaller(t *testing.T) {
 const serveAuthToken = "rtr_serve_e2e_harness_token"
 
 // serveAuthCanonicalYAML returns the canonical YAML used by the e2e tests.
-// The caller block carries the SHA-256 of serveAuthToken so the relational
-// projection and the runtime authenticate map share one source of truth.
+// The caller block carries a salted verifier for serveAuthToken so the
+// relational projection and runtime authenticate map share one source of truth.
 func serveAuthCanonicalYAML() string {
-	sum := sha256.Sum256([]byte(serveAuthToken))
+	tokenHash, err := HashCallerToken(serveAuthToken, bytes.NewReader(make([]byte, callerTokenHashSaltBytes)), callerTokenHashMinIterations)
+	if err != nil {
+		panic(err)
+	}
 	return `server:
   identifiers:
     mode: passthrough
@@ -133,7 +138,7 @@ callers:
     project: search
     environment: dev
     status: active
-    token_sha256: "` + hex.EncodeToString(sum[:]) + `"
+    token_hash: "` + tokenHash + `"
     token_id: rtr_serve_e2e_harness
     allow:
       - default
@@ -253,6 +258,137 @@ func TestServeE2EImportActivateServeAuth(t *testing.T) {
 		t.Fatal("unknown token must not authenticate")
 	} else if tokenID != "invalid-token" {
 		t.Fatalf("unknown token id = %q, want invalid-token", tokenID)
+	}
+}
+
+func TestServeE2EMCPGatewayLoadedFromCanonicalConfig(t *testing.T) {
+	t.Setenv("MOCK_API_KEY", "test-only-serve-e2e-provider-key")
+	t.Setenv("ROUTER_MCP_SERVER_AUTH", "test-only-mcp-upstream-key")
+	var upstreamErrors []string
+	upstreamRequests := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusAccepted)
+			return
+		}
+		upstreamRequests++
+		if r.Header.Get("Authorization") != "Bearer test-only-mcp-upstream-key" {
+			upstreamErrors = append(upstreamErrors, "static credential missing")
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		var request struct {
+			ID     any    `json:"id"`
+			Method string `json:"method"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			upstreamErrors = append(upstreamErrors, "invalid JSON-RPC request")
+			http.Error(w, "invalid request", http.StatusBadRequest)
+			return
+		}
+		switch request.Method {
+		case "initialize":
+			w.Header().Set("Mcp-Session-Id", "mcp-db-session")
+			writeJSON(w, http.StatusOK, map[string]any{"jsonrpc": "2.0", "id": request.ID, "result": map[string]any{"protocolVersion": "2025-11-25", "capabilities": map[string]any{}, "serverInfo": map[string]string{"name": "fixture", "version": "1"}}})
+		case "notifications/initialized":
+			w.WriteHeader(http.StatusAccepted)
+		case "tools/list":
+			if r.Header.Get("Mcp-Session-Id") != "mcp-db-session" {
+				upstreamErrors = append(upstreamErrors, "MCP session missing")
+				http.Error(w, "session missing", http.StatusBadRequest)
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"jsonrpc": "2.0", "id": request.ID, "result": map[string]any{"tools": []any{map[string]any{"name": "echo", "inputSchema": map[string]any{"type": "object"}}}}})
+		default:
+			upstreamErrors = append(upstreamErrors, "unexpected MCP method")
+			http.Error(w, "unexpected method", http.StatusBadRequest)
+		}
+	}))
+	defer upstream.Close()
+
+	dbPath := serveAuthE2EDB(t)
+	runner, closeDB, err := ConfigControlPlaneMigrationRunner(UsageDBConfig{Driver: "sqlite", Path: dbPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = closeDB() })
+	applyConfigControlPlaneMigrationsForTest(t, runner)
+	canonical := strings.Replace(serveAuthCanonicalYAML(), "callers:\n", "mcp:\n  enabled: true\n  servers:\n    - name: local\n      url: \""+upstream.URL+"\"\n      allow_hosts: [127.0.0.1]\n      credential_env: ROUTER_MCP_SERVER_AUTH\n  policies:\n    - caller: alice\n      tools: [local/echo]\n      deny_by_default: true\ncallers:\n", 1)
+	configSetID, err := ImportCanonicalYAML(runner.db, "staging", "mcp", []byte(canonical), "test-actor")
+	if err != nil {
+		t.Fatalf("ImportCanonicalYAML: %v", err)
+	}
+	if err := ActivateConfigSet(runner.db, "staging", configSetID, "test-actor"); err != nil {
+		t.Fatalf("ActivateConfigSet: %v", err)
+	}
+	bootstrapPath := filepath.Join(t.TempDir(), "bootstrap.yaml")
+	if err := os.WriteFile(bootstrapPath, []byte(serveAuthBootstrapYAML(t, dbPath, "staging")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfigForServe(bootstrapPath)
+	if err != nil {
+		t.Fatalf("LoadConfigForServe: %v", err)
+	}
+	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(t.TempDir(), "usage.sqlite"))
+	cfg.StatePath = filepath.Join(t.TempDir(), "router-state.json")
+	svc, err := newServiceWithVerifiedFixture(cfg)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	t.Cleanup(func() { svc.Close() })
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+	req.Header.Set("Authorization", "Bearer "+serveAuthToken)
+	w := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "local/echo") {
+		t.Fatalf("database-loaded MCP tools/list status=%d body=%s", w.Code, w.Body.String())
+	}
+	if len(upstreamErrors) != 0 {
+		t.Fatalf("upstream errors: %v", upstreamErrors)
+	}
+	beforeDisable := upstreamRequests
+	mcpStart := strings.Index(canonical, "mcp:\n")
+	if mcpStart < 0 {
+		t.Fatal("test canonical config missing MCP block")
+	}
+	callersStart := strings.Index(canonical[mcpStart:], "callers:\n")
+	if callersStart < 0 {
+		t.Fatal("test canonical config missing callers block")
+	}
+	disabledCanonical := canonical[:mcpStart] + canonical[mcpStart+callersStart:]
+	disabledSet, err := ImportCanonicalYAML(runner.db, "staging", "mcp-disabled", []byte(disabledCanonical), "test-actor")
+	if err != nil {
+		t.Fatalf("import disabled config: %v", err)
+	}
+	if err := ActivateConfigSet(runner.db, "staging", disabledSet, "test-actor"); err != nil {
+		t.Fatalf("activate disabled config: %v", err)
+	}
+	if err := svc.reloadActiveConfigFromDB(); err != nil {
+		t.Fatalf("reload disabled MCP config: %v", err)
+	}
+	disabledRequest := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`))
+	disabledRequest.Header.Set("Authorization", "Bearer "+serveAuthToken)
+	disabledResponse := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(disabledResponse, disabledRequest)
+	if disabledResponse.Code != http.StatusNotFound || upstreamRequests != beforeDisable {
+		t.Fatalf("disabled MCP route status=%d upstream calls=%d want 404 and no forward", disabledResponse.Code, upstreamRequests-beforeDisable)
+	}
+	reenabledSet, err := ImportCanonicalYAML(runner.db, "staging", "mcp-reenabled", []byte(canonical), "test-actor")
+	if err != nil {
+		t.Fatalf("import re-enabled config: %v", err)
+	}
+	if err := ActivateConfigSet(runner.db, "staging", reenabledSet, "test-actor"); err != nil {
+		t.Fatalf("activate re-enabled config: %v", err)
+	}
+	if err := svc.reloadActiveConfigFromDB(); err != nil {
+		t.Fatalf("reload re-enabled MCP config: %v", err)
+	}
+	reenabledRequest := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":3,"method":"tools/list"}`))
+	reenabledRequest.Header.Set("Authorization", "Bearer "+serveAuthToken)
+	reenabledResponse := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(reenabledResponse, reenabledRequest)
+	if reenabledResponse.Code != http.StatusOK || upstreamRequests <= beforeDisable {
+		t.Fatalf("re-enabled MCP route status=%d upstream calls=%d", reenabledResponse.Code, upstreamRequests-beforeDisable)
 	}
 }
 

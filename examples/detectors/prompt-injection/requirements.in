@@ -1,0 +1,13 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+# Direct, patched dependencies for the Python 3.12 CPU lock.
+--index-url https://pypi.org/simple
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.10.0+cpu
+transformers==5.18.0
+sentencepiece==0.2.1
+# Patched transitive packages flagged by the current source SBOM.
+httpx2==2.12.0
+httpcore2==2.12.0
+setuptools==84.2.1
+idna==3.20

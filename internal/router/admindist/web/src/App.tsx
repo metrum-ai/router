@@ -36,12 +36,20 @@ type PageHistory = {
   pageIndex: number | null;
 };
 
+type SecurityPostureSummary = {
+  schema: string;
+  generated_at: string;
+  outcome: "pass" | "warn" | "fail";
+  findings: { check: string; status: "pass" | "warn" | "fail"; severity: string }[];
+};
+
 export default function App() {
   const [activeTab, setActiveTab] = useState(activeTabFromUrl);
   const [filters, setFilters] = useState<ReportFilters>(filtersFromUrl);
   const [draftFilters, setDraftFilters] = useState<ReportFilters>(filtersFromUrl);
   const [report, setReport] = useState<{ tab: string; report: ReportResponse }>();
   const [version, setVersion] = useState<VersionResponse>();
+  const [securityPosture, setSecurityPosture] = useState<SecurityPostureSummary>();
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -76,6 +84,14 @@ export default function App() {
       .then(setVersion)
       .catch(() => setVersion(undefined));
   }, []);
+
+  useEffect(() => {
+    if (activeTab !== "security-events") return;
+    void fetch("api/security/posture/latest", { credentials: "same-origin" })
+      .then(async (response) => response.ok ? response.json() as Promise<SecurityPostureSummary> : undefined)
+      .then(setSecurityPosture)
+      .catch(() => setSecurityPosture(undefined));
+  }, [activeTab]);
 
   useEffect(() => {
     const url = new URL(window.location.href);
@@ -193,6 +209,22 @@ export default function App() {
       <div className="grid min-w-0 gap-5 lg:grid-cols-[17rem_minmax(0,1fr)]">
         <Sidebar tabs={tabSpecs} activeTab={activeTab} onTabChange={changeTab} className="sticky top-5 hidden max-h-[calc(100vh-2.5rem)] overflow-y-auto lg:block" />
         <div className="min-w-0">
+          {activeTab === "security-events" && securityPosture && (
+            <section aria-label="Latest security posture self-test" className="mb-5 rounded-lg border border-white/10 bg-black/70 p-4">
+              <div className="flex flex-wrap items-baseline justify-between gap-2">
+                <h2 className="font-display text-xl text-white">Latest posture self-test</h2>
+                <span className="font-mono text-xs uppercase text-white/65">{securityPosture.outcome} · {securityPosture.generated_at}</span>
+              </div>
+              <ul className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                {securityPosture.findings.map((finding) => (
+                  <li key={finding.check} className="flex justify-between gap-3 rounded border border-white/10 px-3 py-2 text-sm">
+                    <span className="text-white/80">{finding.check}</span>
+                    <span className="font-mono uppercase text-white/60">{finding.status}</span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
           <ReportPanel
             tab={tab}
             report={reportForTab(activeTab, report)}

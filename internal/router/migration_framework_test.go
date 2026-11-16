@@ -1130,7 +1130,7 @@ func TestUsageHistoricalValidationRequiresMultipleCheckpointsBeforeDeploymentJob
 	}
 	for i := 0; i < 101; i++ {
 		row := usageRecord{RequestID: fmt.Sprintf("historical-row-%03d", i), TS: "2026-08-05T00:00:00Z"}
-		if err := store.db.Omit("TargetRegion", "CachedInputTokens", "CachedInputPricePerMillionUSD", "CostListUSD", "CostBilledUSD", "UsageSource", "CacheWriteInputTokens", "CacheWritePricePerMillionUSD", "RequestKind", "Endpoint").Create(&row).Error; err != nil {
+		if err := store.db.Omit("TargetRegion", "CachedInputTokens", "CachedInputPricePerMillionUSD", "CostListUSD", "CostBilledUSD", "UsageSource", "CacheWriteInputTokens", "CacheWritePricePerMillionUSD", "RequestKind", "Endpoint", "TraceID", "SpanID", "ParentSpanID").Create(&row).Error; err != nil {
 			_ = store.Close()
 			t.Fatalf("create synthetic historical usage row %d: %v", i, err)
 		}
@@ -1376,7 +1376,7 @@ func TestUsageStoreAutoSafeRejectsExistingSQLiteUsageRowsBeforeValidation(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.db.Omit("CostListUSD", "CostBilledUSD", "UsageSource", "RequestKind", "Endpoint").Create(&usageRecord{RequestID: "existing-row", TS: "2026-08-05T00:00:00Z"}).Error; err != nil {
+	if err := store.db.Omit("CostListUSD", "CostBilledUSD", "UsageSource", "RequestKind", "Endpoint", "TraceID", "SpanID", "ParentSpanID").Create(&usageRecord{RequestID: "existing-row", TS: "2026-08-05T00:00:00Z"}).Error; err != nil {
 		_ = store.Close()
 		t.Fatal(err)
 	}
@@ -1833,5 +1833,22 @@ func TestUsageHistoricalValidationMigrationRequiresRestoreForPriorBinary(t *test
 	restoredStatus, err := restoredRunner.Verify()
 	if err != nil || !restoredStatus.Compatible || restoredStatus.State != "current" || restoredStatus.SchemaVersion != 2 || restoredStatus.DataVersion != 0 {
 		t.Fatalf("restored Stage 2 snapshot must support the prior binary: status=%+v err=%v", restoredStatus, err)
+	}
+}
+
+func TestMigrationRunnerStatusReadOnlyDoesNotBootstrapLedger(t *testing.T) {
+	db, err := openUsageDB(UsageDBConfig{Driver: "sqlite", Path: filepath.Join(t.TempDir(), "readonly-status.sqlite")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner, err := newUsageMigrationRunner(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runner.StatusReadOnly(); err == nil {
+		t.Fatal("read-only status should fail when no ledger exists")
+	}
+	if db.Migrator().HasTable("schema_migration_ledger") {
+		t.Fatal("read-only status created the migration ledger")
 	}
 }

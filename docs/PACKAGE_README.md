@@ -13,6 +13,7 @@ Binary packages include:
 - `bin/metrum-ai-router-usage-report`
 - `bin/metrum-ai-router-migrate`
 - `bin/metrum-ai-routerctl`
+- `bin/engine-advisories.json` in release-built packages; `routerctl doctor --security` reads this bounded advisory snapshot by default when present.
 - `config/config.example.yaml`
 - `config/env.example.json`
 - `caddy/Caddyfile`

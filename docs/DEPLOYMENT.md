@@ -21,6 +21,7 @@ bin/metrum-ai-router-token-gen
 bin/metrum-ai-router-usage-report
 bin/metrum-ai-router-migrate
 bin/metrum-ai-routerctl
+bin/engine-advisories.json (release-built archives)
 config/config.example.yaml
 config/env.example.json
 docs/PACKAGE_README.md
@@ -297,7 +298,7 @@ Generate a caller token and append the generated caller block to `config.yaml`:
   --allow <allowed-model-group>[,<allowed-model-group>...]
 ```
 
-Save the printed `token` value for the client. Add or verify the referenced `users`, `projects`, and `project_memberships` entries before restart; every key must reference an active owner user, project, and membership. The router config stores only `token_hash` (salted PBKDF2-HMAC-SHA3-512, `pbkdf2-sha3-512:i=<iterations>:<salt>:<key>`) and `token_id`. Existing `token_sha256` entries keep working with a startup deprecation warning; convert them with `metrum-ai-routerctl callers hash --token-file <file>` or rotate them. Each account id, caller `id`, `token_hash` or `token_sha256`, and non-empty `token_id` must be unique after normalization; legacy `token_sha256` values are checked case-insensitively. User, project, and membership statuses support `active`, `disabled`, `suspended`, `removed`, and `archived`; caller key statuses also support `expired` and `rotated`.
+Save the printed `token` value for the client. Add or verify the referenced `users`, `projects`, and `project_memberships` entries before restart; every key must reference an active owner user, project, and membership. The router config stores only `token_hash` (salted PBKDF2-HMAC-SHA3-512, `pbkdf2-sha3-512:i=<iterations>:<salt>:<key>`) and `token_id`. Before upgrading v4.8, use the **v5** `metrum-ai-routerctl callers migrate-legacy` command on each file config; the v4.8 CLI does not include it. Migrate every active legacy caller before verifying any migrated token. The migration preserves caller status and unknown token entropy; `security.key_hygiene.enforce` continues to reject migrated keys until they are rotated. Disabled or revoked legacy callers are refused unless `--remove-disabled` is supplied; that option removes the entire entry without issuing a token. A migrated file remains readable by v4.8 for rollback. For file mode, prepare a copy while v4.8 serves its unchanged file, replace the file, then restart v4.8 to verify the migrated config. For database mode, stop every router replica before exporting with `--offline`; migrate the working copy, import and activate with `--offline` while all replicas remain stopped, then start v4.8 and verify the database config before upgrading. Each account id, caller `id`, `token_hash`, and non-empty `token_id` must be unique after normalization. User, project, and membership statuses support `active`, `disabled`, `suspended`, `removed`, and `archived`; caller key statuses also support `expired` and `rotated`.
 
 Use `--allow` to restrict each generated key to specific internal model groups. Model group names are deployment-defined; any names shown in examples are reference deployment names only. `/v1/models` only lists model groups allowed for the presented token, and disallowed requests return `403 model-not-allowed` before any upstream provider call.
 

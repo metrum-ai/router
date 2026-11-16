@@ -180,22 +180,38 @@ caller, so its usage rows are attributable to the edge hop.
 
 The datacenter reference adds an explicit `agent-small` model group. It uses
 the pinned official vLLM CPU image and `Qwen/Qwen2.5-0.5B-Instruct`. The CPU
-target has a two-second attempt timeout and is eligible only up to 800 estimated
-input tokens and 128 requested output tokens. The frontier target remains the
-fallback for out-of-budget requests and pre-response CPU errors. The edge
+target has a 15-second timeout for the full unary attempt and is eligible only
+up to 800 estimated input tokens and 128 requested output tokens. The dynamic
+latency budget is `thresholds.max_ttfb_ms: 1000`. The frontier target remains
+the fallback for out-of-budget requests and pre-response CPU errors or
+timeouts. The edge
 exposes the group to callers that have `agent-small` in their allow list. In a
 real deployment, vLLM loads the public model when the CPU service starts;
 reserve one CPU for the serving framework and tune `VLLM_CPU_KVCACHE_SPACE` for
 the host.
 
-The local hierarchy verification script exercises a compact request and an
-over-budget request through both router handlers. The CPU service itself is
-only started by the Compose reference and therefore requires an operator host
-with a container runtime. The benchmark figures below are a prior latency
-measurement; they do not establish semantic quality or saturated agent
-capacity. Do not treat them as a production capacity guarantee.
-See [CPU tier sizing evidence](./SIZING.md) for the observed load ratio and
-the missing physical-core, quality, and traffic-share measurements.
+The local hierarchy verification script exercises a compact request, an
+over-budget request, CPU failure and CPU timeout through both router handlers.
+The CPU service itself is started by the Compose reference and requires an
+operator host with a container runtime.
+
+The 2026-11-16 case study ran 60 synthetic invoice/receipt classifications
+through the same `agent-small` group, using native vLLM
+`Qwen/Qwen2.5-0.5B-Instruct` on an 8-physical-core Intel Xeon Platinum 8488C
+host and direct Anthropic `claude-haiku-5-5` for escalation. CPU served 48/60
+requests (80%); overall accuracy was 63.33% (CPU 54.17%, frontier 100%). End to
+end latency p50/p95 was 68/666 ms and client-observed TTFB p50/p95 was 69/682
+ms. CPU latency p50/p95 was 68/95 ms; frontier latency was 619/1762 ms. The
+small CPU model's measured quality is low for this task; this is routing and
+sizing evidence, not a recommendation to serve these classifications from that
+model. Sanitized per-request outputs are in
+[`evidence/case-study-2026-11-16.json`](./evidence/case-study-2026-11-16.json).
+Reproduce with `uv run --with pyyaml python deploy/reference/hierarchy/case-study.py
+--router bin/metrum-ai-router --routerctl bin/metrum-ai-routerctl --samples 60
+--output /tmp/case-study.json`, with the CPU endpoint reachable through an SSM
+local port forward and `ANTHROPIC_API_KEY` set in the environment. The harness
+uses only synthetic prompts and stores no prompt text or credentials. The
+measured concurrency sizing table is in [CPU tier sizing evidence](./CPU-SIZING.md).
 
 The reference config has been run with real inference backends, both on
 dedicated nodes (one process per tier on its own node, plus the verification

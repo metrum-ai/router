@@ -35,6 +35,15 @@ class CodexChainTest(unittest.TestCase):
             self.assertFalse(target.exists())
             self.assertEqual(calls, 2)
 
+    def test_remove_temp_tree_does_not_retry_permission_error(self):
+        with tempfile.TemporaryDirectory() as temp:
+            target = Path(temp) / "codex-home"
+            target.mkdir()
+            with patch.object(runner.shutil, "rmtree", side_effect=OSError(errno.EACCES, "permission denied")) as remove:
+                with self.assertRaises(OSError):
+                    runner.remove_temp_tree(target)
+            remove.assert_called_once_with(target)
+
     def test_cell_requires_exit_and_exact_marker(self):
         process = MagicMock(returncode=0)
         process.poll.return_value = 0

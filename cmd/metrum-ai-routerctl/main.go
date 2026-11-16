@@ -9,10 +9,14 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -22,6 +26,7 @@ import (
 	"time"
 
 	"github.com/metrum-ai/router/internal/buildinfo"
+	"github.com/metrum-ai/router/internal/releaseverify"
 	"github.com/metrum-ai/router/internal/router"
 	"github.com/metrum-ai/router/internal/smartrouterctl"
 	"gorm.io/gorm"
@@ -33,11 +38,13 @@ func main() {
 		return
 	}
 	if len(os.Args) < 2 {
-		die("usage: metrum-ai-routerctl <version|config|callers|contain|release|adminkeys|policies|groups|providers|models|admin-resource|status|usage|reports|blueprint|emergency> [flags]")
+		die("usage: metrum-ai-routerctl <version|config|callers|contain|release|adminkeys|policies|groups|providers|models|admin-resource|control-plane|status|usage|reports|blueprint|emergency> [flags]")
 	}
 	switch os.Args[1] {
 	case "version":
 		fmt.Println(buildinfo.Text())
+	case "verify":
+		verifyReleaseCommand(os.Args[2:])
 	case "config":
 		configCommand(os.Args[2:])
 	case "callers":
@@ -58,6 +65,8 @@ func main() {
 		modelsCommand(os.Args[2:])
 	case "admin-resource":
 		adminResourceCommand(os.Args[2:])
+	case "control-plane":
+		controlPlaneCommand(os.Args[2:])
 	case "status":
 		statusCommand(os.Args[2:])
 	case "usage":
@@ -68,9 +77,156 @@ func main() {
 		blueprintCommand(os.Args[2:])
 	case "emergency":
 		emergencyCommand(os.Args[2:])
+	case "doctor":
+		if code := securityDoctorCommand(os.Args[2:], os.Stdout, os.Stderr); code != 0 {
+			os.Exit(code)
+		}
 	default:
 		die("unsupported command %q", os.Args[1])
 	}
+}
+
+func controlPlaneCommand(args []string) {
+	if len(args) == 0 || (args[0] != "backup" && args[0] != "restore") {
+		die("usage: metrum-ai-routerctl control-plane <backup|restore> [flags]")
+	}
+	mode := args[0]
+	fs, api := addAdminAPIFlags("control-plane " + mode)
+	file := ""
+	if mode == "backup" {
+		fs.StringVar(&file, "out", "", "new mode-0600 file for the control-plane backup")
+	} else {
+		fs.StringVar(&file, "in", "", "control-plane backup bundle file")
+	}
+	timeout := fs.Duration("timeout", 3*time.Minute, "maximum wait for the asynchronous operation")
+	fs.Parse(args[1:])
+	if fs.NArg() != 0 || strings.TrimSpace(file) == "" {
+		die("control-plane %s requires --%s FILE", mode, map[string]string{"backup": "out", "restore": "in"}[mode])
+	}
+	client := mustAdminAPIClient(api)
+	var payload any
+	if mode == "restore" {
+		info, err := os.Stat(file)
+		if err != nil || info.IsDir() || info.Size() > 32<<20 {
+			die("backup input must be a readable file no larger than 32 MiB")
+		}
+		raw, err := os.ReadFile(file)
+		if err != nil {
+			die("read backup input: %v", err)
+		}
+		if len(raw) > 32<<20 {
+			die("backup input must be a readable file no larger than 32 MiB")
+		}
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.UseNumber()
+		if err := decoder.Decode(&payload); err != nil {
+			die("backup input is not valid JSON")
+		}
+	}
+	path := "/admin/v1/control-plane/backups"
+	if mode == "restore" {
+		path = "/admin/v1/control-plane/restores"
+	}
+	body, status, err := client.Do(http.MethodPost, path, payload, api.mutationHeaders())
+	if err != nil {
+		dieAdmin(err)
+	}
+	if status != http.StatusAccepted {
+		die("control-plane operation start returned HTTP %d: %s", status, string(body))
+	}
+	var accepted struct {
+		Operation struct {
+			ID string `json:"id"`
+		} `json:"operation"`
+		OperationURL string `json:"operation_url"`
+	}
+	if err := json.Unmarshal(body, &accepted); err != nil || accepted.Operation.ID == "" || accepted.OperationURL == "" {
+		die("control-plane operation response is invalid")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+	defer cancel()
+	for {
+		select {
+		case <-ctx.Done():
+			die("control-plane operation %s did not finish before timeout", accepted.Operation.ID)
+		default:
+		}
+		body, status, err = client.Do(http.MethodGet, accepted.OperationURL, nil, nil)
+		if err != nil {
+			dieAdmin(err)
+		}
+		if status != http.StatusOK {
+			die("control-plane operation read returned HTTP %d: %s", status, string(body))
+		}
+		var state struct {
+			Status    string `json:"status"`
+			ErrorCode string `json:"error_code"`
+		}
+		if err := json.Unmarshal(body, &state); err != nil {
+			die("control-plane operation status is invalid")
+		}
+		if state.Status == "failed" {
+			die("control-plane operation failed: %s", state.ErrorCode)
+		}
+		if state.Status == "succeeded" {
+			break
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+	if mode == "backup" {
+		body, status, err = client.Do(http.MethodGet, "/admin/v1/control-plane/backups/"+accepted.Operation.ID, nil, nil)
+		if err != nil {
+			dieAdmin(err)
+		}
+		if status != http.StatusOK {
+			die("control-plane backup download returned HTTP %d: %s", status, string(body))
+		}
+		var downloaded struct {
+			Bundle json.RawMessage `json:"bundle"`
+		}
+		if err := json.Unmarshal(body, &downloaded); err != nil || len(downloaded.Bundle) == 0 {
+			die("control-plane backup response is invalid")
+		}
+		if err := verifyControlPlaneBackupDigest(downloaded.Bundle); err != nil {
+			die("control-plane backup integrity check failed")
+		}
+		fileHandle, err := os.OpenFile(file, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		if err != nil {
+			die("create backup output securely: %v", err)
+		}
+		if _, err := fileHandle.Write(downloaded.Bundle); err != nil {
+			_ = fileHandle.Close()
+			die("write backup output: %v", err)
+		}
+		if err := fileHandle.Close(); err != nil {
+			die("close backup output: %v", err)
+		}
+	} else {
+		fmt.Printf("control-plane restore completed (operation %s)\n", accepted.Operation.ID)
+	}
+}
+
+func verifyControlPlaneBackupDigest(raw []byte) error {
+	var bundle map[string]any
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if err := decoder.Decode(&bundle); err != nil {
+		return err
+	}
+	digest, ok := bundle["sha256"].(string)
+	if !ok || len(digest) != sha256.Size*2 {
+		return errors.New("backup digest is missing")
+	}
+	bundle["sha256"] = ""
+	canonical, err := json.Marshal(bundle)
+	if err != nil {
+		return err
+	}
+	actual := sha256.Sum256(canonical)
+	if hex.EncodeToString(actual[:]) != digest {
+		return errors.New("backup digest mismatch")
+	}
+	return nil
 }
 
 // adminResourceCommand exposes the versioned resource API to operators without
@@ -232,7 +388,7 @@ func configCommand(args []string) {
 			if strings.TrimSpace(*to) != "" {
 				query.Set("to", strings.TrimSpace(*to))
 			}
-			body, _, err := client.Do(http.MethodGet, "/admin/config/diff?"+query.Encode(), nil, nil)
+			body, _, err := client.Do(http.MethodGet, "/admin/v1/config/diff?"+query.Encode(), nil, nil)
 			if err != nil {
 				dieAdmin(err)
 			}
@@ -245,19 +401,23 @@ func configCommand(args []string) {
 		fs := flag.NewFlagSet("config import", flag.ExitOnError)
 		yamlPath := fs.String("yaml", "", "canonical YAML path to import")
 		name := fs.String("name", "", "config set name")
+		offline := fs.Bool("offline", false, "access the config database directly (router must be stopped)")
 		opts := addConfigDBFlags(fs)
 		useAPI, api := addAPIFlag(fs)
 		fs.Parse(args[1:])
 		if strings.TrimSpace(*yamlPath) == "" || strings.TrimSpace(*name) == "" {
 			die("config import requires --yaml and --name")
 		}
+		if *offline && *useAPI {
+			die("config import cannot combine --offline and --api")
+		}
 		raw, err := os.ReadFile(*yamlPath)
 		if err != nil {
 			die("%v", err)
 		}
-		if *useAPI {
+		if !*offline {
 			client := mustAdminAPIClient(api)
-			body, _, err := client.Do(http.MethodPost, "/admin/config/sets",
+			body, _, err := client.Do(http.MethodPost, "/admin/v1/config/sets",
 				map[string]any{"name": *name, "yaml": string(raw)}, api.mutationHeaders())
 			if err != nil {
 				dieAdmin(err)
@@ -279,16 +439,20 @@ func configCommand(args []string) {
 		fs := flag.NewFlagSet("config export", flag.ExitOnError)
 		setID := fs.String("set-id", "", "config set id (empty = active)")
 		outPath := fs.String("out", "", "output path (default: stdout)")
+		offline := fs.Bool("offline", false, "access the config database directly (router must be stopped)")
 		opts := addConfigDBFlags(fs)
 		useAPI, api := addAPIFlag(fs)
 		fs.Parse(args[1:])
-		if *useAPI {
+		if *offline && *useAPI {
+			die("config export cannot combine --offline and --api")
+		}
+		if !*offline {
 			id := strings.TrimSpace(*setID)
 			if id == "" {
 				id = "active"
 			}
 			client := mustAdminAPIClient(api)
-			body, _, err := client.Do(http.MethodGet, "/admin/config/sets/"+id, nil, nil)
+			body, _, err := client.Do(http.MethodGet, "/admin/v1/config/sets/"+id, nil, nil)
 			if err != nil {
 				dieAdmin(err)
 			}
@@ -325,15 +489,19 @@ func configCommand(args []string) {
 	case "activate":
 		fs := flag.NewFlagSet("config activate", flag.ExitOnError)
 		setID := fs.String("set-id", "", "config set id to activate")
+		offline := fs.Bool("offline", false, "access the config database directly (router must be stopped)")
 		opts := addConfigDBFlags(fs)
 		useAPI, api := addAPIFlag(fs)
 		fs.Parse(args[1:])
 		if strings.TrimSpace(*setID) == "" {
 			die("config activate requires --set-id")
 		}
-		if *useAPI {
+		if *offline && *useAPI {
+			die("config activate cannot combine --offline and --api")
+		}
+		if !*offline {
 			client := mustAdminAPIClient(api)
-			body, _, err := client.Do(http.MethodPost, "/admin/config/sets/"+strings.TrimSpace(*setID)+"/activate",
+			body, _, err := client.Do(http.MethodPost, "/admin/v1/config/sets/"+strings.TrimSpace(*setID)+"/activate",
 				map[string]any{}, api.mutationHeaders())
 			if err != nil {
 				dieAdmin(err)
@@ -353,15 +521,19 @@ func configCommand(args []string) {
 	case "rollback":
 		fs := flag.NewFlagSet("config rollback", flag.ExitOnError)
 		setID := fs.String("set-id", "", "prior config set id to reactivate")
+		offline := fs.Bool("offline", false, "access the config database directly (router must be stopped)")
 		opts := addConfigDBFlags(fs)
 		useAPI, api := addAPIFlag(fs)
 		fs.Parse(args[1:])
 		if strings.TrimSpace(*setID) == "" {
 			die("config rollback requires --set-id")
 		}
-		if *useAPI {
+		if *offline && *useAPI {
+			die("config rollback cannot combine --offline and --api")
+		}
+		if !*offline {
 			client := mustAdminAPIClient(api)
-			body, _, err := client.Do(http.MethodPost, "/admin/config/rollback",
+			body, _, err := client.Do(http.MethodPost, "/admin/v1/config/rollback",
 				map[string]any{"set_id": strings.TrimSpace(*setID)}, api.mutationHeaders())
 			if err != nil {
 				dieAdmin(err)
@@ -388,7 +560,7 @@ func configCommand(args []string) {
 // --admin-key-file; the router URL from --router-url or ROUTER_URL.
 func groupsCommand(args []string) {
 	if len(args) == 0 {
-		die("usage: metrum-ai-routerctl groups <list|show|set-targets|add-target|remove-target|rollback|history|shadow> [flags]")
+		die("usage: metrum-ai-routerctl groups <list|show|import-eval|set-targets|add-target|remove-target|bulk-targets|rollback|history|shadow> [flags]")
 	}
 	if args[0] == "shadow" {
 		groupsShadowCommand(args[1:])
@@ -399,7 +571,7 @@ func groupsCommand(args []string) {
 		fs, api := addAdminAPIFlags("groups list")
 		fs.Parse(args[1:])
 		client := mustAdminAPIClient(api)
-		body, _, err := client.Do(http.MethodGet, "/admin/config/groups", nil, nil)
+		body, _, err := client.Do(http.MethodGet, "/admin/v1/config/groups", nil, nil)
 		if err != nil {
 			dieAdmin(err)
 		}
@@ -409,7 +581,7 @@ func groupsCommand(args []string) {
 		fs.Parse(args[1:])
 		name := groupNameArg(fs)
 		client := mustAdminAPIClient(api)
-		body, _, err := client.Do(http.MethodGet, "/admin/config/groups/"+name, nil, nil)
+		body, _, err := client.Do(http.MethodGet, "/admin/v1/config/groups/"+name, nil, nil)
 		if err != nil {
 			dieAdmin(err)
 		}
@@ -419,11 +591,13 @@ func groupsCommand(args []string) {
 		fs.Parse(args[1:])
 		name := groupNameArg(fs)
 		client := mustAdminAPIClient(api)
-		body, _, err := client.Do(http.MethodGet, "/admin/config/groups/"+name+"/history", nil, nil)
+		body, _, err := client.Do(http.MethodGet, "/admin/v1/config/groups/"+name+"/history", nil, nil)
 		if err != nil {
 			dieAdmin(err)
 		}
 		writeRawJSON(body)
+	case "import-eval":
+		virtualImportCommand(args[1:])
 	case "set-targets":
 		fs, api := addAdminAPIFlags("groups set-targets")
 		targets := stringListFlag(fs, "target", "provider/model_ref target (repeatable, ordered)")
@@ -441,7 +615,7 @@ func groupsCommand(args []string) {
 				spec["validation"] = map[string]any{"status": v, "workload": "routerctl-cli", "validated_at": time.Now().UTC().Format("2006-01-02")}
 			}
 		}
-		body, _, err := client.Do(http.MethodPut, "/admin/config/groups/"+name+"/targets", map[string]any{
+		body, _, err := client.Do(http.MethodPut, "/admin/v1/config/groups/"+name+"/targets", map[string]any{
 			"targets": specs, "strategy": *strategy, "reason": *reason, "dry_run": *dryRun, "force": *force,
 		}, api.mutationHeaders())
 		if err != nil {
@@ -465,7 +639,30 @@ func groupsCommand(args []string) {
 		if *position >= 0 {
 			payload["position"] = *position
 		}
-		body, _, err := client.Do(http.MethodPost, "/admin/config/groups/"+name+"/targets", payload, api.mutationHeaders())
+		body, _, err := client.Do(http.MethodPost, "/admin/v1/config/groups/"+name+"/targets", payload, api.mutationHeaders())
+		if err != nil {
+			dieAdmin(err)
+		}
+		writeRawJSON(body)
+	case "bulk-targets":
+		fs, api := addAdminAPIFlags("groups bulk-targets")
+		changes := stringListFlag(fs, "change", "add=provider/model_ref or remove=provider/model_ref (repeatable, max 100)")
+		reason := fs.String("reason", "", "audit reason")
+		fs.Parse(args[1:])
+		name := groupNameArg(fs)
+		if len(*changes) == 0 || len(*changes) > 100 {
+			die("groups bulk-targets requires between 1 and 100 --change values")
+		}
+		payload := make([]map[string]any, 0, len(*changes))
+		for _, raw := range *changes {
+			action, targetRaw, ok := strings.Cut(raw, "=")
+			if !ok || (action != "add" && action != "remove") {
+				die("invalid --change %q: expected add=provider/model_ref or remove=provider/model_ref", raw)
+			}
+			provider, ref := mustParseTargetFlag(targetRaw)
+			payload = append(payload, map[string]any{"action": action, "target": map[string]any{"provider": provider, "model_ref": ref}})
+		}
+		body, _, err := mustAdminAPIClient(api).Do(http.MethodPost, "/admin/v1/config/groups/"+name+"/targets:bulk", map[string]any{"changes": payload, "reason": *reason}, api.mutationHeaders())
 		if err != nil {
 			dieAdmin(err)
 		}
@@ -478,7 +675,7 @@ func groupsCommand(args []string) {
 		name := groupNameArg(fs)
 		client := mustAdminAPIClient(api)
 		provider, ref := mustParseTargetFlag(*target)
-		body, _, err := client.Do(http.MethodDelete, "/admin/config/groups/"+name+"/targets/"+provider+"/"+ref,
+		body, _, err := client.Do(http.MethodDelete, "/admin/v1/config/groups/"+name+"/targets/"+provider+"/"+ref,
 			map[string]any{"reason": *reason}, api.mutationHeaders())
 		if err != nil {
 			dieAdmin(err)
@@ -491,7 +688,7 @@ func groupsCommand(args []string) {
 		fs.Parse(args[1:])
 		name := groupNameArg(fs)
 		client := mustAdminAPIClient(api)
-		body, _, err := client.Do(http.MethodPost, "/admin/config/groups/"+name+"/rollback",
+		body, _, err := client.Do(http.MethodPost, "/admin/v1/config/groups/"+name+"/rollback",
 			map[string]any{"set_id": *setID, "reason": *reason}, api.mutationHeaders())
 		if err != nil {
 			dieAdmin(err)
@@ -520,7 +717,7 @@ func groupsShadowCommand(args []string) {
 		name := groupNameArg(fs)
 		client := mustAdminAPIClient(api)
 		provider, ref := mustParseTargetFlag(*target)
-		body, _, err := client.Do(http.MethodPost, "/admin/config/groups/"+name+"/shadow", map[string]any{
+		body, _, err := client.Do(http.MethodPost, "/admin/v1/config/groups/"+name+"/shadow", map[string]any{
 			"provider": provider, "model_ref": ref, "sample_rate": *sampleRate,
 			"max_requests": *maxRequests, "duration_seconds": *duration, "cost_cap_usd": *costCap, "reason": *reason,
 		}, api.mutationHeaders())
@@ -538,12 +735,12 @@ func groupsShadowCommand(args []string) {
 		var err error
 		switch sub {
 		case "status":
-			body, _, err = client.Do(http.MethodGet, "/admin/config/groups/"+name+"/shadow", nil, nil)
+			body, _, err = client.Do(http.MethodGet, "/admin/v1/config/groups/"+name+"/shadow", nil, nil)
 		case "promote":
-			body, _, err = client.Do(http.MethodPost, "/admin/config/groups/"+name+"/shadow/promote",
+			body, _, err = client.Do(http.MethodPost, "/admin/v1/config/groups/"+name+"/shadow/promote",
 				map[string]any{"reason": *reason}, api.mutationHeaders())
 		case "stop":
-			body, _, err = client.Do(http.MethodDelete, "/admin/config/groups/"+name+"/shadow",
+			body, _, err = client.Do(http.MethodDelete, "/admin/v1/config/groups/"+name+"/shadow",
 				map[string]any{"reason": *reason}, api.mutationHeaders())
 		}
 		if err != nil {
@@ -647,7 +844,7 @@ func writeRawJSON(body []byte) {
 func dieAdmin(err error) {
 	var apiErr *smartrouterctl.AdminAPIError
 	if errors.As(err, &apiErr) {
-		fmt.Fprintln(os.Stderr, apiErr.Raw)
+		fmt.Fprintln(os.Stderr, apiErr.Error())
 		os.Exit(1)
 	}
 	die("%v", err)
@@ -656,7 +853,7 @@ func dieAdmin(err error) {
 // addAPIFlag adds --api plus the Admin API connection flags to a config
 // subcommand, switching it from direct database access to HTTP (#395).
 func addAPIFlag(fs *flag.FlagSet) (*bool, *adminAPIFlags) {
-	useAPI := fs.Bool("api", false, "go through the Admin API over HTTP instead of opening the config database")
+	useAPI := fs.Bool("api", false, "run this online operation through the Admin API over HTTP")
 	api := &adminAPIFlags{
 		routerURL:      fs.String("router-url", "", "router base URL (or ROUTER_URL)"),
 		adminKeyFile:   fs.String("admin-key-file", "", "mode-0600 file holding the admin key (or ROUTER_ADMIN_KEY)"),
@@ -690,7 +887,7 @@ func openConfigDB(opts smartrouterctl.ConfigDBOptions) (*gorm.DB, func() error, 
 
 func callersCommand(args []string) {
 	if len(args) == 0 {
-		die("usage: metrum-ai-routerctl callers <list|generate|revoke|rotate|hash|verify> [flags]")
+		die("usage: metrum-ai-routerctl callers <list|generate|revoke|rotate|migrate-legacy|hash|verify> [flags]")
 	}
 	switch args[0] {
 	case "list":
@@ -718,7 +915,7 @@ func callersCommand(args []string) {
 		configPath := fs.String("config", "", "optional config to merge hashed caller into")
 		writeCfg := fs.Bool("write", false, "merge hashed caller into --config")
 		replaceCfg := fs.Bool("replace", false, "with --write, replace an existing caller that has the same id")
-		hashFormat, hashIterations := addTokenHashFlags(fs)
+		hashIterations := addTokenHashFlags(fs)
 		fs.Parse(args[1:])
 		if strings.TrimSpace(*tokenOut) == "" {
 			die("token-out is required")
@@ -737,7 +934,7 @@ func callersCommand(args []string) {
 		}
 		generated, err := router.GenerateCallerToken(router.TokenGenerateOptions{
 			OwnerUser: *owner, Project: *project, Environment: *environment, KeySlug: *key, Allow: splitCSV(*allow),
-			HashFormat: *hashFormat, HashIterations: *hashIterations,
+			HashIterations: *hashIterations,
 		})
 		if err != nil {
 			die("generate caller token: %v", err)
@@ -784,7 +981,7 @@ func callersCommand(args []string) {
 			"schema": "metrum.ai/smartrouter-caller-grant/v1", "caller_id": generated.Caller.ID,
 			"token_id": generated.TokenID, "allowed_model_groups": generated.Caller.Allow,
 			"token_file": filepath.Base(*tokenOut), "activation": activation,
-			"token_hash_format": tokenHashFormat(generated),
+			"token_hash_format": tokenHashFormat(),
 		}
 		if backup != "" {
 			out["config_backup"] = filepath.Base(backup)
@@ -815,12 +1012,16 @@ func callersCommand(args []string) {
 		path := fs.String("config", "", "router configuration path")
 		id := fs.String("id", "", "caller id")
 		tokenOut := fs.String("token-out", "", "new mode-0600 token file")
-		hashFormat, hashIterations := addTokenHashFlags(fs)
+		reactivate := fs.Bool("reactivate", false, "explicitly enable the caller and clear its revocation marker after rotation")
+		hashIterations := addTokenHashFlags(fs)
 		fs.Parse(args[1:])
 		if strings.TrimSpace(*tokenOut) == "" {
 			die("token-out is required")
 		}
-		cfg := loadConfigRaw(*path)
+		cfg, err := smartrouterctl.LoadConfigRawForCallerMigration(*path)
+		if err != nil {
+			die("load config: %v", err)
+		}
 		var existing *router.CallerConfig
 		for i := range cfg.Callers {
 			if cfg.Callers[i].ID == *id {
@@ -834,7 +1035,7 @@ func callersCommand(args []string) {
 		generated, err := router.GenerateCallerToken(router.TokenGenerateOptions{
 			OwnerUser: existing.OwnerUser, Project: existing.Project, Environment: existing.Environment,
 			KeySlug: "rot" + time.Now().UTC().Format("150405"), Allow: append([]string(nil), existing.Allow...),
-			HashFormat: *hashFormat, HashIterations: *hashIterations,
+			HashIterations: *hashIterations,
 		})
 		if err != nil {
 			die("generate caller token: %v", err)
@@ -842,13 +1043,13 @@ func callersCommand(args []string) {
 		if err := writeNewPrivateFile(*tokenOut, []byte(generated.Token+"\n")); err != nil {
 			die("write token: %v", err)
 		}
-		if generated.TokenHash != "" {
-			err = smartrouterctl.RotateCallerTokenHash(cfg, *id, generated.TokenHash, generated.TokenID)
-		} else {
-			err = smartrouterctl.RotateCallerHash(cfg, *id, generated.TokenSHA256, generated.TokenID)
-		}
-		if err != nil {
+		if err := smartrouterctl.RotateCallerTokenHash(cfg, *id, generated.TokenHash, generated.TokenID); err != nil {
 			die("%v", err)
+		}
+		if *reactivate {
+			if err := smartrouterctl.ReactivateCaller(cfg, *id); err != nil {
+				die("%v", err)
+			}
 		}
 		backup, err := smartrouterctl.WriteConfigAtomic(*path, cfg)
 		if err != nil {
@@ -857,11 +1058,81 @@ func callersCommand(args []string) {
 		writeJSON(map[string]any{
 			"schema": "metrum.ai/smartrouter-caller-rotate/v1", "caller_id": *id, "token_id": generated.TokenID,
 			"token_file": filepath.Base(*tokenOut), "config_backup": filepath.Base(backup),
-			"activation": "local-config-written-restart-required", "token_hash_format": tokenHashFormat(generated),
+			"activation": "local-config-written-restart-required", "token_hash_format": tokenHashFormat(),
 		})
+	case "migrate-legacy":
+		fs := flag.NewFlagSet("callers migrate-legacy", flag.ExitOnError)
+		path := fs.String("config", "", "router configuration path")
+		id := fs.String("id", "", "caller id")
+		tokenFile := fs.String("token-file", "", "private file containing the existing raw token, or - to read stdin")
+		removeDisabled := fs.Bool("remove-disabled", false, "remove an entire disabled or revoked legacy caller for v4.8 compatibility")
+		iterations := addTokenHashFlags(fs)
+		fs.Parse(args[1:])
+		cfg, err := smartrouterctl.LoadConfigRawForCallerMigration(*path)
+		if err != nil {
+			die("load config: %v", err)
+		}
+		var existing *router.CallerConfig
+		for i := range cfg.Callers {
+			if cfg.Callers[i].ID == *id {
+				existing = &cfg.Callers[i]
+				break
+			}
+		}
+		if existing == nil {
+			die("caller %q not found", *id)
+		}
+		if strings.TrimSpace(existing.TokenSHA256) == "" {
+			die("caller %q has no legacy verifier to migrate", *id)
+		}
+		disabledOrRevoked := strings.EqualFold(strings.TrimSpace(existing.Status), "disabled") || existing.RevokedTokenHash != ""
+		if *removeDisabled && !disabledOrRevoked {
+			die("caller %q is active; --remove-disabled applies only to disabled or revoked callers", *id)
+		}
+		if disabledOrRevoked {
+			if !*removeDisabled {
+				die("caller %q is disabled or revoked; use --remove-disabled to delete its entry and preserve v4.8 compatibility", *id)
+			}
+			if err := smartrouterctl.RemoveDisabledLegacyCaller(cfg, *id); err != nil {
+				die("remove caller: %v", err)
+			}
+			backup, err := smartrouterctl.WriteConfigAtomic(*path, cfg)
+			if err != nil {
+				die("write config: %v", err)
+			}
+			writeJSON(map[string]any{"schema": "metrum.ai/smartrouter-caller-migrate-legacy/v1", "caller_id": *id, "status": "removed-disabled-or-revoked", "config_backup": filepath.Base(backup), "activation": "local-config-written-restart-required"})
+			return
+		}
+		if strings.TrimSpace(*tokenFile) == "" {
+			die("--token-file is required for active callers (use - to read stdin)")
+		}
+		token := readTokenFileOrStdin(*tokenFile)
+		matches, err := matchesLegacyCallerSHA256(token, existing.TokenSHA256)
+		if err != nil || !matches {
+			die("supplied token does not match caller %q legacy verifier", *id)
+		}
+		tokenID, ok := router.CallerTokenIDFromToken(token)
+		if !ok {
+			die("existing token cannot be migrated in place because it lacks the <token_id>_<secret> shape; use callers rotate")
+		}
+		tokenHash, err := router.HashCallerToken(token, nil, *iterations)
+		if err != nil {
+			die("hash caller token: %v", err)
+		}
+		migrated, err := smartrouterctl.MigrateLegacyCallerTokenHash(cfg, *id, tokenHash, tokenID)
+		if err != nil {
+			die("%v", err)
+		}
+		if !migrated {
+			die("caller %q became disabled or revoked during migration", *id)
+		}
+		backup, err := smartrouterctl.WriteConfigAtomic(*path, cfg)
+		if err != nil {
+			die("write config: %v", err)
+		}
+		writeJSON(map[string]any{"schema": "metrum.ai/smartrouter-caller-migrate-legacy/v1", "caller_id": *id, "token_id": tokenID, "config_backup": filepath.Base(backup), "activation": "local-config-written-restart-required", "token_hash_format": tokenHashFormat()})
 	case "hash":
-		// Converts an existing token (for example one whose config entry still
-		// uses deprecated token_sha256) to token_hash without rotating it. The
+		// Converts an existing token to token_hash without rotating it. The
 		// router finds token_hash callers by the "<token_id>_" prefix, so only
 		// tokens with that shape can be converted; anything else would lock
 		// the caller out.
@@ -872,7 +1143,7 @@ func callersCommand(args []string) {
 		token := readTokenFile(*tokenFile)
 		tokenID, ok := router.CallerTokenIDFromToken(token)
 		if !ok {
-			fmt.Fprintln(os.Stderr, "token does not have the <token_id>_<secret> shape (rtr_metrum_<user>_<project>_<env>_<key>_<secret>) that token_hash lookup requires; rotate it with `metrum-ai-routerctl callers rotate`, or keep token_sha256 until rotation (#281)")
+			fmt.Fprintln(os.Stderr, "token does not have the <token_id>_<secret> shape (rtr_metrum_<user>_<project>_<env>_<key>_<secret>) that token_hash lookup requires; rotate it with `metrum-ai-routerctl callers rotate`")
 			os.Exit(1)
 		}
 		tokenHash, err := router.HashCallerToken(token, nil, *iterations)
@@ -880,7 +1151,7 @@ func callersCommand(args []string) {
 			die("hash caller token: %v", err)
 		}
 		writeJSON(map[string]any{"schema": "metrum.ai/smartrouter-caller-token-hash/v1", "token_hash": tokenHash, "token_id": tokenID,
-			"note": "set both token_hash and token_id on the caller and remove token_sha256"})
+			"note": "set token_hash and token_id on the caller"})
 	case "verify":
 		fs := flag.NewFlagSet("callers verify", flag.ExitOnError)
 		tokenFile := fs.String("token-file", "", "file containing the raw caller token")
@@ -1341,16 +1612,11 @@ func redactURLCredentials(raw string) string {
 	return parsed.String()
 }
 
-func addTokenHashFlags(fs *flag.FlagSet) (*string, *int) {
-	format := fs.String("hash-format", router.TokenHashFormatPBKDF2SHA3, "stored token verifier: "+router.TokenHashFormatPBKDF2SHA3+" (token_hash) or "+router.TokenHashFormatLegacySHA256+" (deprecated token_sha256)")
-	iterations := fs.Int("hash-iterations", router.CallerTokenHashDefaultIterations, "PBKDF2-SHA3-512 iterations for token_hash")
-	return format, iterations
+func addTokenHashFlags(fs *flag.FlagSet) *int {
+	return fs.Int("hash-iterations", router.CallerTokenHashDefaultIterations, "PBKDF2-SHA3-512 iterations for token_hash")
 }
-func tokenHashFormat(generated router.GeneratedToken) string {
-	if generated.TokenHash != "" {
-		return router.TokenHashFormatPBKDF2SHA3
-	}
-	return router.TokenHashFormatLegacySHA256
+func tokenHashFormat() string {
+	return router.TokenHashFormatPBKDF2SHA3
 }
 func readTokenFile(path string) string {
 	if strings.TrimSpace(path) == "" {
@@ -1366,6 +1632,37 @@ func readTokenFile(path string) string {
 	}
 	return token
 }
+
+func readTokenFileOrStdin(path string) string {
+	if strings.TrimSpace(path) == "-" {
+		raw, err := io.ReadAll(io.LimitReader(os.Stdin, 4097))
+		if err != nil {
+			die("read token from stdin: %v", err)
+		}
+		if len(raw) > 4096 {
+			die("token input exceeds 4096 bytes")
+		}
+		token := strings.TrimSpace(string(raw))
+		if token == "" {
+			die("token input is empty")
+		}
+		return token
+	}
+	return readTokenFile(path)
+}
+
+func matchesLegacyCallerSHA256(token, encoded string) (bool, error) {
+	want, err := hex.DecodeString(strings.TrimSpace(encoded))
+	if err != nil || len(want) != sha256.Size {
+		return false, nil
+	}
+	// codeql[go/weak-sensitive-data-hashing] This legacy digest is computed only to compare a supplied v4 token to its stored verifier during migration; the router immediately replaces it with salted PBKDF2 and never stores this digest.
+	h := sha256.New()
+	if _, err := io.WriteString(h, token); err != nil {
+		return false, err
+	}
+	return subtle.ConstantTimeCompare(h.Sum(nil), want) == 1, nil
+}
 func writeJSON(value any) {
 	body, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
@@ -1374,3 +1671,25 @@ func writeJSON(value any) {
 	fmt.Println(string(body))
 }
 func die(format string, args ...any) { fmt.Fprintf(os.Stderr, format+"\n", args...); os.Exit(2) }
+
+func verifyReleaseCommand(args []string) {
+	fs := flag.NewFlagSet("verify", flag.ExitOnError)
+	release := fs.String("release", "", "release tag to verify, for example v5.0.0")
+	binary := fs.String("binary", "", "router executable to compare (default: sibling or PATH metrum-ai-router)")
+	_ = fs.Parse(args)
+	if fs.NArg() != 0 {
+		die("usage: metrum-ai-routerctl verify --release <tag> [--binary <path>]")
+	}
+	if strings.TrimSpace(*release) == "" {
+		die("verify requires --release <tag>")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	defer cancel()
+	result, err := releaseverify.Verify(ctx, releaseverify.Options{Release: strings.TrimSpace(*release), Binary: *binary})
+	if err != nil {
+		die("release verification failed: %v", err)
+	}
+	if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {
+		die("write verification result: %v", err)
+	}
+}

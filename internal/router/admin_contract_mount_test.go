@@ -262,6 +262,12 @@ func addReportPlaceholderHandlers(registry *AdminV1Registry, handlers map[string
 		out[key] = handler
 	}
 	for _, op := range registry.Operations() {
+		if _, ok := out[op.HandlerKey]; !ok && strings.HasPrefix(op.HandlerKey, "admin.") {
+			opID := op.ID
+			out[op.HandlerKey] = func(w http.ResponseWriter, r *http.Request) {
+				writeJSON(w, http.StatusOK, map[string]any{"operation": opID})
+			}
+		}
 		if op.Adapter != "reports" {
 			continue
 		}
@@ -312,6 +318,7 @@ func TestAdminV1RouteConformance(t *testing.T) {
 		probe = strings.ReplaceAll(probe, "{group}", "g1")
 		probe = strings.ReplaceAll(probe, "{set_id}", "set-1")
 		probe = strings.ReplaceAll(probe, "{request_id}", "req-1")
+		probe = strings.ReplaceAll(probe, "{operation_id}", "operation-1")
 		probe = strings.ReplaceAll(probe, "{id}", "caller-1")
 		probe = strings.ReplaceAll(probe, "{provider}", "provider-1")
 		probe = strings.ReplaceAll(probe, "{project}", "project-1")
@@ -343,6 +350,7 @@ func TestAdminV1SingleDecisionPoint(t *testing.T) {
 		target = strings.ReplaceAll(target, "{group}", "g1")
 		target = strings.ReplaceAll(target, "{set_id}", "set-1")
 		target = strings.ReplaceAll(target, "{request_id}", "req-1")
+		target = strings.ReplaceAll(target, "{operation_id}", "operation-1")
 		target = strings.ReplaceAll(target, "{id}", "caller-1")
 		target = strings.ReplaceAll(target, "{provider}", "provider-1")
 		target = strings.ReplaceAll(target, "{project}", "project-1")
@@ -926,7 +934,7 @@ func (h *adminV1Harness) buildDeps(t *testing.T, extra map[string]http.HandlerFu
 		return principal, AdminGlobalDomain, true
 	}
 	authorize := func(ctx context.Context, principal Principal, domain, object, action string) error {
-		return h.authorize.Authorize(ctx, principal, domain, object, action)
+		return h.authorizeRequest(ctx, principal, domain, object, action)
 	}
 	all := addReportPlaceholderHandlers(h.registry, map[string]http.HandlerFunc{
 		"training.export":         func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
@@ -981,7 +989,7 @@ func (h *adminV1Harness) depsForMount(handlers map[string]http.HandlerFunc) Admi
 		Registry:     h.registry,
 		Authenticate: h.authenticate,
 		Authorize: func(ctx context.Context, principal Principal, domain, object, action string) error {
-			return h.authorize.Authorize(ctx, principal, domain, object, action)
+			return h.authorizeRequest(ctx, principal, domain, object, action)
 		},
 		Handlers:            handlers,
 		ResolveDomain:       func(Principal) string { return AdminGlobalDomain },
@@ -1024,8 +1032,8 @@ func TestAdminV1ReportsAdapterReusesLegacyBranch(t *testing.T) {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	}
 	reports := AdminV1ReportsHandlers(registry, reportsHandler)
-	if len(reports) != 30 {
-		t.Fatalf("bound %d reports operations, want 30", len(reports))
+	if len(reports) != 34 {
+		t.Fatalf("bound %d reports operations, want 34", len(reports))
 	}
 	extra := map[string]http.HandlerFunc{}
 	for key, handler := range reports {
@@ -1086,6 +1094,10 @@ func TestAdminV1ServiceHandlerComposition(t *testing.T) {
 		CallerAdminDeps{},
 		noop,
 		map[string]http.HandlerFunc{
+			"admin.operations.get":    noop,
+			"admin.backup.start":      noop,
+			"admin.backup.download":   noop,
+			"admin.backup.restore":    noop,
 			"training.export":         noop,
 			"training.outcomes.label": noop,
 			"metrics.scrape":          noop,
@@ -1390,7 +1402,12 @@ func TestAdminV1ReportsDecideThroughAuthorize(t *testing.T) {
 			extra[key] = handler
 		}
 		harness.mountWithExtra(t, extra)
-		recorder := harness.do(t, http.MethodGet, target, nil, nil)
+		method := op.Method
+		var body any
+		if method == http.MethodPost {
+			body = map[string]any{"schema": securityPostureReportSchema, "generated_at": "2026-11-16T06:00:00Z", "outcome": "pass", "findings": []any{map[string]any{"check": "admin-listener", "status": "pass", "severity": "info"}}}
+		}
+		recorder := harness.do(t, method, target, body, nil)
 		if recorder.Code == http.StatusUnauthorized {
 			t.Fatalf("operation %s returned 401: reports must not run the legacy credential check (%s)", op.ID, recorder.Body.String())
 		}
@@ -1412,7 +1429,7 @@ func TestAdminV1ReportsDecideThroughAuthorize(t *testing.T) {
 			if !actions[call.Action] {
 				t.Fatalf("operation %s decided action %q, which is not one of its declared actions", op.ID, call.Action)
 			}
-			if strings.HasSuffix(op.Path, "/export.csv") || strings.HasSuffix(op.Path, "/export.md") {
+			if strings.HasSuffix(op.Path, "/export.csv") || strings.HasSuffix(op.Path, "/export.json") || strings.HasSuffix(op.Path, "/export.md") {
 				if call.Action != authzActionExport {
 					t.Fatalf("export operation %s decided action %q, want export", op.ID, call.Action)
 				}
@@ -1422,8 +1439,8 @@ func TestAdminV1ReportsDecideThroughAuthorize(t *testing.T) {
 			}
 		}
 	}
-	if reportOps != 30 {
-		t.Fatalf("exercised %d reports operations, want 30", reportOps)
+	if reportOps != 34 {
+		t.Fatalf("exercised %d reports operations, want 34", reportOps)
 	}
 }
 

@@ -87,6 +87,23 @@ wait_ready() {
   return 1
 }
 
+restart_local_routers() {
+  local count=${#PIDS[@]} start=$(( ${#PIDS[@]} - 2 ))
+  for pid in "${PIDS[@]:start:2}"; do
+    kill "$pid" >/dev/null 2>&1 || true
+    wait "$pid" >/dev/null 2>&1 || true
+  done
+  PIDS=("${PIDS[@]:0:start}")
+  ( cd "$WORK/state" && exec "$WORK/bin/metrum-ai-router" -config "$HERE/config/dc.yaml" \
+      -listen "$DC_LISTEN" > dc.log 2>&1 ) &
+  PIDS+=("$!")
+  wait_ready "$DC_URL" "datacenter tier after restart"
+  ( cd "$WORK/state" && exec "$WORK/bin/metrum-ai-router" -config "$HERE/config/edge.yaml" \
+      -listen "$EDGE_LISTEN" > edge.log 2>&1 ) &
+  PIDS+=("$!")
+  wait_ready "$EDGE_URL" "edge tier after restart"
+}
+
 start_local() {
   WORK="$(mktemp -d)"
   mkdir -p "$WORK/bin" "$WORK/state"
@@ -102,7 +119,7 @@ start_local() {
   for slug in app edge-to-dc dc-to-edge; do
     "$WORK/bin/metrum-ai-routerctl" callers generate \
       --owner-user ops --project edge-prod --env prod --key "$slug" \
-      --allow edge-default --allow agent-small --allow edge-loop-demo --allow dc-frontier --allow agent-small --allow loop-demo \
+      --allow edge-default --allow agent-small --allow edge-loop-demo --allow dc-frontier --allow loop-demo \
       --token-out "$WORK/$slug.token" >/dev/null
     chmod 600 "$WORK/$slug.token"
     "$WORK/bin/metrum-ai-routerctl" callers hash --token-file "$WORK/$slug.token" > "$WORK/$slug.hash.json"
@@ -136,7 +153,8 @@ start_local() {
   export DC_ROUTER_URL="http://127.0.0.1:18081/v1"
   export EDGE_ROUTER_URL="http://127.0.0.1:18080/v1"
   export FRONTIER_BASE_URL="http://127.0.0.1:19100/v1"
-  export CPU_BASE_URL="http://127.0.0.1:19100/v1" CPU_MODEL="Qwen/Qwen2.5-0.5B-Instruct"
+  export CPU_BASE_URL="http://127.0.0.1:19101/v1" CPU_MODEL="cpu-echo-demo" CPU_ATTEMPT_TIMEOUT_MS=200
+  export CPU_FIXTURE_URL="http://127.0.0.1:19101"
   export FRONTIER_API_KEY=demo-no-key FRONTIER_MODEL=frontier-demo
   export FRONTIER_INPUT_PRICE_USD_PER_MTOK=0 FRONTIER_OUTPUT_PRICE_USD_PER_MTOK=0
   export FRONTIER_PRICING_SOURCE=deployment-cost-allocation FRONTIER_PRICING_UPDATED_AT=2026-11-02
@@ -150,6 +168,8 @@ start_local() {
     || { fail "usage migration gate"; tail -n 5 "$WORK/state/migrate-edge.log" "$WORK/state/migrate-dc.log"; }
 
   python3 demo-frontier/echo.py --port 19100 > "$WORK/state/frontier.log" 2>&1 &
+  PIDS+=($!)
+  python3 demo-frontier/echo.py --port 19101 > "$WORK/state/cpu.log" 2>&1 &
   PIDS+=($!)
 
   # The reference configs listen on 0.0.0.0:8080 inside their containers; for a
@@ -252,10 +272,44 @@ small_work="$(curl -sS --max-time 30 -K "$AUTH" -H 'Content-Type: application/js
   -d '{"model":"agent-small","max_tokens":16,"messages":[{"role":"user","content":"classify: invoice or receipt"}]}' \
   -w '\n%{http_code}' "$EDGE_URL/v1/chat/completions")"
 check "a compact request reaches the small-work route" "[[ '$(printf '%s' "$small_work" | tail -n1)' == 200 ]]"
+cpu_row=""
+for _ in $(seq 1 20); do
+  cpu_row="$(eval "$DC_USAGE_QUERY \"SELECT target_model FROM request_usage WHERE resolved_group = 'agent-small' ORDER BY ts DESC LIMIT 1\"" 2>/dev/null || true)"
+  [[ -n "$cpu_row" ]] && break
+  sleep 0.1
+done
+check "the compact request used the configured CPU model" "[[ '$cpu_row' == "$CPU_MODEL" ]]"
+if [[ "$MODE" == local ]]; then
+  cpu_echo="$(curl -sS --max-time 10 "$CPU_FIXTURE_URL/__echo")"
+  cpu_model_seen="$(json_field 'd["last_model"]' <<<"$cpu_echo")"
+  check "the CPU echo itself received the CPU model id" "[[ '$cpu_model_seen' == 'cpu-echo-demo' ]]"
+fi
 large_work="$(curl -sS --max-time 30 -K "$AUTH" -H 'Content-Type: application/json' \
   -d '{"model":"agent-small","max_tokens":256,"messages":[{"role":"user","content":"classify this request"}]}' \
   -w '\n%{http_code}' "$EDGE_URL/v1/chat/completions")"
 check "an output cap above the CPU budget escalates to the frontier" "[[ '$(printf '%s' "$large_work" | tail -n1)' == 200 ]]"
+if [[ "$MODE" == local ]]; then
+  curl -sS --max-time 10 -X POST -H 'Content-Type: application/json' -d '{"mode":"down"}' "$CPU_FIXTURE_URL/__configure" >/dev/null
+  cpu_count_before="$(json_field 'd["count"]' <<<"$(curl -sS --max-time 10 "$CPU_FIXTURE_URL/__echo")")"
+  cpu_down="$(curl -sS --max-time 30 -K "$AUTH" -H 'Content-Type: application/json' -d '{"model":"agent-small","max_tokens":16,"messages":[{"role":"user","content":"classify invoice"}]}' -w '\n%{http_code}' "$EDGE_URL/v1/chat/completions")"
+  check "CPU-down request falls back to the frontier" "[[ '$(printf '%s' "$cpu_down" | tail -n1)' == 200 ]]"
+  cpu_count_after="$(json_field 'd["count"]' <<<"$(curl -sS --max-time 10 "$CPU_FIXTURE_URL/__echo")")"
+  frontier_after_down="$(curl -sS --max-time 10 "$FRONTIER_URL/__echo")"
+  frontier_model_after_down="$(json_field 'd["last_model"]' <<<"$frontier_after_down")"
+  check "CPU-down attempt hit the CPU target then the frontier target" "[[ '$cpu_count_after' -eq $((cpu_count_before+1)) && '$frontier_model_after_down' == 'frontier-demo' ]]"
+  restart_local_routers
+  curl -sS --max-time 10 -X POST -H 'Content-Type: application/json' -d '{"mode":"timeout"}' "$CPU_FIXTURE_URL/__configure" >/dev/null
+  cpu_count_before="$cpu_count_after"
+  cpu_timeout="$(curl -sS --max-time 30 -K "$AUTH" -H 'Content-Type: application/json' -d '{"model":"agent-small","max_tokens":16,"messages":[{"role":"user","content":"classify receipt"}]}' -w '\n%{http_code}' "$EDGE_URL/v1/chat/completions")"
+  check "CPU-timeout request falls back to the frontier" "[[ '$(printf '%s' "$cpu_timeout" | tail -n1)' == 200 ]]"
+  cpu_count_after="$(json_field 'd["count"]' <<<"$(curl -sS --max-time 10 "$CPU_FIXTURE_URL/__echo")")"
+  frontier_after_timeout="$(curl -sS --max-time 10 "$FRONTIER_URL/__echo")"
+  frontier_model_after_timeout="$(json_field 'd["last_model"]' <<<"$frontier_after_timeout")"
+  check "CPU-timeout attempt hit the CPU target then the frontier target" "[[ '$cpu_count_after' -eq $((cpu_count_before+1)) && '$frontier_model_after_timeout' == 'frontier-demo' ]]"
+  curl -sS --max-time 10 -X POST -H 'Content-Type: application/json' -d '{"mode":"ok"}' "$CPU_FIXTURE_URL/__configure" >/dev/null
+else
+  note "CPU-down and CPU-timeout injection is covered by the loaded-reference-config Go test; the live Compose CPU service is not modified"
+fi
 frontier_id="$(json_field 'd["last_headers"].get("x-request-id","")' <<<"$echo_e")"
 note "edge request id: ${edge_request_id:-<none>}; frontier saw x-request-id: ${frontier_id:-<none>} (cross-hop correlation is not automatic)"
 

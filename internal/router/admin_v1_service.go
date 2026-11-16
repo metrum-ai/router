@@ -24,7 +24,9 @@ package router
 // the credential-event table.
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -158,8 +160,43 @@ func (s *Service) adminV1HandlerSet(registry *AdminV1Registry) map[string]http.H
 		"metrics.scrape":          s.handleAdminPlaneMetrics,
 		"content.captures.delete": s.handleContentCaptureDelete,
 		"content.captures.purge":  s.handleContentCapturePurgeExpired,
+		"admin.operations.get":    adminOperationResourceHandler(s.configControlPlane, s.adminNow),
+		"admin.backup.download":   adminBackupResultHandler(s.configControlPlane),
+		"admin.backup.start": startAdminOperationHandler(s.configControlPlane, s.adminNow, "control-plane-backup", func(ctx context.Context, _ []byte, meta AdminAuditMeta) (any, error) {
+			bundle, err := createControlPlaneBackup(ctx, s.configControlPlane, s.usageDBHandle(), s.adminNow())
+			audit := s.adminOperationAudit(meta, bundle.SHA256)
+			outcome, reason := "committed", ""
+			if err != nil {
+				outcome, reason = "failed", "backup_failed"
+			}
+			if auditErr := recordOperationAudit(s.usageDBHandle(), audit, outcome, reason); auditErr != nil {
+				return nil, errors.New("backup audit could not be recorded")
+			}
+			return bundle, err
+		}),
+		"admin.backup.restore": startAdminOperationHandler(s.configControlPlane, s.adminNow, "control-plane-restore", func(ctx context.Context, raw []byte, meta AdminAuditMeta) (any, error) {
+			var bundle controlPlaneBackupBundle
+			if err := json.Unmarshal(raw, &bundle); err != nil {
+				audit := s.adminOperationAudit(meta, adminAuditHash(raw))
+				if auditErr := recordOperationAudit(s.usageDBHandle(), audit, "failed", "invalid_backup"); auditErr != nil {
+					return nil, errors.New("restore audit could not be recorded")
+				}
+				return nil, errors.New("invalid backup bundle")
+			}
+			audit := s.adminOperationAudit(meta, bundle.SHA256)
+			if err := restoreControlPlaneBackupWithAudit(ctx, s.configControlPlane, s.usageDBHandle(), bundle, audit); err != nil {
+				return nil, err
+			}
+			if err := s.reloadActiveConfigFromDB(); err != nil {
+				if auditErr := recordOperationAudit(s.usageDBHandle(), audit, "failed", "reload_failed"); auditErr != nil {
+					return nil, errors.New("restored configuration reload and audit both failed")
+				}
+				return nil, errors.New("restored configuration could not be loaded")
+			}
+			return map[string]any{"restored": true}, nil
+		}),
 	}
-	return AdminV1ServiceHandlers(
+	handlers := AdminV1ServiceHandlers(
 		registry,
 		AdminV1ConfigAdminDeps(ConfigAdminDeps{
 			DB:                      s.configControlPlane,
@@ -192,6 +229,94 @@ func (s *Service) adminV1HandlerSet(registry *AdminV1Registry) map[string]http.H
 		s.handleAdminReports,
 		extra,
 	)
+	for _, key := range []string{"callers.containment", "containment.webhook"} {
+		if handler := handlers[key]; handler != nil {
+			handlers[key] = s.securityContainmentEventHandler(handler)
+		}
+	}
+	return handlers
+}
+
+func (s *Service) adminOperationAudit(meta AdminAuditMeta, digest string) *AdminAuditRecord {
+	if s == nil || s.usageDBHandle() == nil {
+		return nil
+	}
+	return &AdminAuditRecord{
+		At: time.Now().UTC(), RuntimeScope: strings.TrimSpace(s.cfg.Server.ConfigSource.RuntimeScope),
+		PrincipalSubject: meta.Subject, PrincipalKind: meta.Kind, CredentialID: meta.CredentialID,
+		Issuer: meta.Issuer, Domain: meta.Domain, Object: meta.Object, Action: meta.Action,
+		OperationID: meta.OperationID, RequestID: meta.RequestID,
+		BeforeHash: auditBundleDigest(digest), Detail: "bundle-digest=" + auditBundleDigest(digest),
+	}
+}
+
+// A hyphen keeps the bundle digest readable in audit storage while avoiding
+// the generic sanitizer's rule for redacting unlabelled 64-character hashes.
+func auditBundleDigest(digest string) string {
+	if len(digest) != 64 {
+		return digest
+	}
+	return digest[:32] + "-" + digest[32:]
+}
+
+func (s *Service) securityContainmentEventHandler(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		capture := &securityResponseCapture{header: make(http.Header)}
+		next(capture, r)
+		for key, values := range capture.header {
+			for _, value := range values {
+				w.Header().Add(key, value)
+			}
+		}
+		status := capture.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+		responseBody := capture.body.Bytes()
+		w.WriteHeader(status)
+		_, _ = w.Write(responseBody)
+		if status < 200 || status >= 300 {
+			return
+		}
+		var result struct {
+			Status   string `json:"status"`
+			CallerID string `json:"caller_id"`
+		}
+		if json.Unmarshal(responseBody, &result) != nil {
+			return
+		}
+		eventType := "caller_containment"
+		if result.Status == accountStatusSuspended {
+			eventType = "caller_suspended"
+		} else if result.Status == accountStatusActive {
+			eventType = "caller_released"
+		}
+		principal, _ := PrincipalFrom(r.Context())
+		s.recordSecurityAccessEvent(securityAccessEvent{
+			TS: time.Now().UTC(), EventType: eventType, Surface: "admin_api", HTTPMethod: r.Method,
+			PathTemplate: "/admin/v1/containment", StatusCode: status, Outcome: "allowed",
+			CallerID: result.CallerID, AdminSubject: principal.Subject,
+		})
+	}
+}
+
+type securityResponseCapture struct {
+	header http.Header
+	status int
+	body   bytes.Buffer
+}
+
+func (c *securityResponseCapture) Header() http.Header { return c.header }
+func (c *securityResponseCapture) WriteHeader(status int) {
+	if c.status == 0 {
+		c.status = status
+	}
+}
+func (c *securityResponseCapture) Write(body []byte) (int, error) {
+	if c.status == 0 {
+		c.status = http.StatusOK
+	}
+	return c.body.Write(body)
 }
 
 // adminV1Authorize answers a handler's secondary check through the single
@@ -237,6 +362,18 @@ func (s *Service) adminDenialSink() AdminDenialSink {
 			ClientIPHash:   adminAuditFieldValue(record.ClientIPHash),
 		}).Error; err != nil {
 			return fmt.Errorf("record admin denial: %w", err)
+		}
+		if s.securityEventStream != nil {
+			event := securityAccessEvent{
+				TS: record.At, RequestID: record.RequestID, EventType: "admin_authz_failed", Surface: "admin_api",
+				HTTPMethod: record.Method, PathTemplate: record.Path, StatusCode: record.Status,
+				Outcome: securityOutcome(record.Status), ReasonCode: record.ReasonCode,
+				CallerID: record.PrincipalSubject, AdminSubject: record.PrincipalSubject,
+				IPAddress: record.SourceIP,
+			}
+			if isSecurityStreamEvent(event.EventType) {
+				s.securityEventStream.record(event)
+			}
 		}
 		return nil
 	})

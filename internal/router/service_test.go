@@ -172,8 +172,8 @@ func TestAuthRejectsUnknownTokenBeforeUpstream(t *testing.T) {
 	}
 }
 
-// tokenHashTestToken and tokenHashTestTokenID exercise the token_hash
-// (PBKDF2-HMAC-SHA3-512) caller path alongside the legacy testToken caller.
+// tokenHashTestToken and tokenHashTestTokenID exercise the salted
+// (PBKDF2-HMAC-SHA3-512) caller path with a second caller.
 const (
 	tokenHashTestTokenID = "rtr_metrum_bob_insights_test_k1"
 	tokenHashTestToken   = tokenHashTestTokenID + "_c2VjcmV0LXNlY3JldC1zZWNyZXQtc2VjcmV0LXNlY3I"
@@ -188,18 +188,12 @@ func addTokenHashTestCaller(t testing.TB, cfg *Config) {
 	bob := cfg.Callers[0]
 	bob.ID = "bob"
 	bob.User = "bob"
-	bob.TokenSHA256 = ""
 	bob.TokenHash = tokenHash
 	bob.TokenID = tokenHashTestTokenID
 	cfg.Callers = append(cfg.Callers, bob)
 }
 
-func TestAuthenticateTokenHashAndLegacyCallers(t *testing.T) {
-	var logs bytes.Buffer
-	previousLogOutput := log.Writer()
-	log.SetOutput(&logs)
-	defer log.SetOutput(previousLogOutput)
-
+func TestAuthenticateTokenHashCallers(t *testing.T) {
 	dir := t.TempDir()
 	cfg := testConfig(t, "http://127.0.0.1:9", "provider-key", dir)
 	addTokenHashTestCaller(t, cfg)
@@ -211,26 +205,16 @@ func TestAuthenticateTokenHashAndLegacyCallers(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer svc.Close()
-	log.SetOutput(previousLogOutput)
-
-	logText := logs.String()
-	if !strings.Contains(logText, "caller alice uses deprecated token_sha256") {
-		t.Fatalf("legacy caller deprecation warning missing: %s", logText)
-	}
-	if strings.Contains(logText, "caller bob uses deprecated") {
-		t.Fatalf("token_hash caller must not warn: %s", logText)
-	}
-	for _, secret := range []string{testToken, tokenHashTestToken, cfg.Callers[0].TokenSHA256, cfg.Callers[1].TokenHash} {
-		if strings.Contains(logText, secret) {
-			t.Fatal("deprecation warning must name the caller id only")
-		}
-	}
 
 	t.Run("token_hash success via bearer and x-api-key", func(t *testing.T) {
-		for _, creds := range [][2]string{{"Bearer " + tokenHashTestToken, ""}, {"", tokenHashTestToken}} {
-			caller, tokenID, err := svc.authenticate(creds[0], creds[1])
-			if err != nil || caller == nil || caller.cfg.ID != "bob" || tokenID != tokenHashTestTokenID {
-				t.Fatalf("authenticate token_hash caller: caller=%v tokenID=%q err=%v", caller, tokenID, err)
+		for _, test := range []struct {
+			token, callerID, tokenID string
+		}{{testToken, "alice", "rtr_alice_test"}, {tokenHashTestToken, "bob", tokenHashTestTokenID}} {
+			for _, creds := range [][2]string{{"Bearer " + test.token, ""}, {"", test.token}} {
+				caller, tokenID, err := svc.authenticate(creds[0], creds[1])
+				if err != nil || caller == nil || caller.cfg.ID != test.callerID || tokenID != test.tokenID {
+					t.Fatalf("authenticate token_hash caller: caller=%v tokenID=%q err=%v", caller, tokenID, err)
+				}
 			}
 		}
 	})
@@ -245,12 +229,6 @@ func TestAuthenticateTokenHashAndLegacyCallers(t *testing.T) {
 			if caller, tokenID, err := svc.authenticate("Bearer "+token, ""); err == nil || caller != nil || tokenID != "invalid-token" {
 				t.Fatalf("wrong token accepted: tokenID=%q err=%v", tokenID, err)
 			}
-		}
-	})
-	t.Run("legacy token_sha256 still works", func(t *testing.T) {
-		caller, tokenID, err := svc.authenticate("Bearer "+testToken, "")
-		if err != nil || caller == nil || caller.cfg.ID != "alice" || tokenID != "rtr_alice_test" {
-			t.Fatalf("legacy caller: caller=%v tokenID=%q err=%v", caller, tokenID, err)
 		}
 	})
 	t.Run("verified digest cache", func(t *testing.T) {
@@ -306,7 +284,7 @@ func TestAuthenticateTokenHashAndLegacyCallers(t *testing.T) {
 // regression to variable-time comparison of secret-derived values.
 func TestCallerAuthComparisonsStayConstantTime(t *testing.T) {
 	want := map[string][]string{
-		"caller_auth.go":       {"hmac.Equal(cached[:], d[:])", "subtle.ConstantTimeCompare([]byte(configured), []byte(sumHex))"},
+		"caller_auth.go":       {"hmac.Equal(cached[:], d[:])"},
 		"caller_token_hash.go": {"subtle.ConstantTimeCompare(derived, v.key)"},
 	}
 	for file, needles := range want {
@@ -358,7 +336,7 @@ func benchmarkAuthenticate(b *testing.B, header string) {
 	}
 }
 
-func BenchmarkAuthenticateLegacyTokenSHA256(b *testing.B) {
+func BenchmarkAuthenticateTokenHashDefaultCaller(b *testing.B) {
 	benchmarkAuthenticate(b, "Bearer "+testToken)
 }
 
@@ -3776,6 +3754,10 @@ func TestAdminSecurityReportsPersistSafeAccessEvents(t *testing.T) {
 		RequestedModel:  "+requested_formula",
 		ResolvedGroup:   "-resolved_formula",
 	})
+	emitSecurityForTest(t, svc, securityAccessEvent{TS: time.Now().UTC().Add(-23 * time.Hour), RequestID: "req_older_incident", EventType: "api_auth_failed", Surface: "v1_chat_completions", StatusCode: http.StatusUnauthorized, Outcome: "unauthorized", ReasonCode: "older-incident"})
+	for i := 0; i < 8; i++ {
+		emitSecurityForTest(t, svc, securityAccessEvent{TS: time.Now().UTC().Add(-time.Duration(i+1) * time.Second), RequestID: fmt.Sprintf("req_recent_incident_%02d", i), EventType: "api_auth_failed", Surface: "v1_chat_completions", StatusCode: http.StatusUnauthorized, Outcome: "unauthorized", ReasonCode: "recent-incident"})
+	}
 
 	invalid := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"default","messages":[{"role":"user","content":"hi"}]}`))
 	invalid.RemoteAddr = "192.0.2.10:1234"
@@ -3811,6 +3793,13 @@ func TestAdminSecurityReportsPersistSafeAccessEvents(t *testing.T) {
 	}
 
 	flushUsageForTest(t, svc)
+	olderBundleReq := httptest.NewRequest(http.MethodGet, "/admin/reports/security/export.csv?format=json&request_id=req_older_incident&since=24h&limit=1", nil)
+	olderBundleReq.SetBasicAuth("admin", "yell-yell-yum")
+	olderBundleRR := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(olderBundleRR, olderBundleReq)
+	if olderBundleRR.Code != http.StatusOK || !strings.Contains(olderBundleRR.Body.String(), "req_older_incident") {
+		t.Fatalf("older incident export status=%d body=%s", olderBundleRR.Code, olderBundleRR.Body.String())
+	}
 	report := httptest.NewRequest(http.MethodGet, "/admin/reports/api/security/events?since=24h&limit=50", nil)
 	report.SetBasicAuth("admin", "yell-yell-yum")
 	reportRR := httptest.NewRecorder()
@@ -3860,12 +3849,52 @@ func TestAdminSecurityReportsPersistSafeAccessEvents(t *testing.T) {
 	if readerCSVRR.Code != http.StatusForbidden || !strings.Contains(readerCSVRR.Body.String(), "reports-forbidden") {
 		t.Fatalf("reader csv status=%d body=%s", readerCSVRR.Code, readerCSVRR.Body.String())
 	}
+	readerBundle := httptest.NewRequest(http.MethodGet, "/admin/reports/security/export.json?since=24h&request_id=req_old_security", nil)
+	readerBundle.SetBasicAuth("reader", "yell-yell-yum")
+	readerBundleRR := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(readerBundleRR, readerBundle)
+	if readerBundleRR.Code != http.StatusForbidden || !strings.Contains(readerBundleRR.Body.String(), "reports-forbidden") {
+		t.Fatalf("reader JSON bundle status=%d body=%s", readerBundleRR.Code, readerBundleRR.Body.String())
+	}
 	csvReq := httptest.NewRequest(http.MethodGet, "/admin/reports/security/export.csv?since=24h", nil)
 	csvReq.SetBasicAuth("admin", "yell-yell-yum")
 	csvRR := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(csvRR, csvReq)
 	if csvRR.Code != http.StatusOK || !strings.Contains(csvRR.Body.String(), "input_tokens,output_tokens,total_tokens") {
 		t.Fatalf("csv status=%d body=%s", csvRR.Code, csvRR.Body.String())
+	}
+	incidentID := ""
+	for _, raw := range rows {
+		if value, ok := raw.(map[string]any)["requestId"].(string); ok && value != "" {
+			incidentID = value
+			break
+		}
+	}
+	if incidentID == "" {
+		t.Fatal("security report has no request ID for incident export")
+	}
+	for _, format := range []string{"json", "markdown"} {
+		extension := "md"
+		if format == "json" {
+			extension = "json"
+		}
+		bundleReq := httptest.NewRequest(http.MethodGet, "/admin/reports/security/export."+extension+"?since=24h&request_id="+url.QueryEscape(incidentID), nil)
+		bundleReq.SetBasicAuth("admin", "yell-yell-yum")
+		bundleRR := httptest.NewRecorder()
+		svc.Handler().ServeHTTP(bundleRR, bundleReq)
+		if bundleRR.Code != http.StatusOK {
+			t.Fatalf("%s incident bundle status=%d body=%s", format, bundleRR.Code, bundleRR.Body.String())
+		}
+		if strings.Contains(bundleRR.Body.String(), "tokenId") || strings.Contains(bundleRR.Body.String(), "invalid-secret-token") || strings.Contains(bundleRR.Body.String(), "messages") {
+			t.Fatalf("%s incident bundle contains a token or prompt field: %s", format, bundleRR.Body.String())
+		}
+	}
+	missingIDReq := httptest.NewRequest(http.MethodGet, "/admin/reports/security/export.json?since=24h", nil)
+	missingIDReq.SetBasicAuth("admin", "yell-yell-yum")
+	missingIDRR := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(missingIDRR, missingIDReq)
+	if missingIDRR.Code != http.StatusBadRequest {
+		t.Fatalf("incident bundle without request ID status=%d body=%s", missingIDRR.Code, missingIDRR.Body.String())
 	}
 	csvRows, err := csv.NewReader(strings.NewReader(csvRR.Body.String())).ReadAll()
 	if err != nil {
@@ -4071,7 +4100,7 @@ func TestCodexModelsEndpointAuthenticatesFiltersAndMapsSafeCatalog(t *testing.T)
 			t.Fatalf("non-Responses Codex model %q was advertised: %#v", slug, nonReasoning)
 		}
 	}
-	for _, forbidden := range []string{"provider-key", testToken, cfg.Callers[0].TokenSHA256, cfg.Provider["mock"].BaseURL, "mock", "private-upstream-model", "private-model", "private-group", "weight", "dialect", "targets"} {
+	for _, forbidden := range []string{"provider-key", testToken, cfg.Callers[0].TokenHash, cfg.Provider["mock"].BaseURL, "mock", "private-upstream-model", "private-model", "private-group", "weight", "dialect", "targets"} {
 		if strings.Contains(rr.Body.String(), forbidden) {
 			t.Fatalf("Codex catalog leaked %q: %s", forbidden, rr.Body.String())
 		}
@@ -4401,6 +4430,9 @@ func TestVersionAndHealthEndpointsExposeBuildInfo(t *testing.T) {
 				if body[key] == "" || body[key] == nil {
 					t.Fatalf("%s missing %s: %#v", path, key, body)
 				}
+			}
+			if digest, ok := body["binary_sha256"].(string); !ok || len(digest) != 64 {
+				t.Fatalf("%s binary_sha256=%#v, want a 64-character digest", path, body["binary_sha256"])
 			}
 		} else if body["ok"] != true {
 			t.Fatalf("%s ok field=%#v body=%#v", path, body["ok"], body)
@@ -6739,7 +6771,7 @@ func TestCacheIsolatesCallersGC1(t *testing.T) {
 	defer upstream.Close()
 
 	const bobToken = "rtr_bob_cache_iso"
-	bobSum := sha256.Sum256([]byte(bobToken))
+	bobTokenID, bobTokenHash := mustCallerTokenIDAndHashForTest(t, bobToken)
 	cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
 	cfg.Server.Cache.Enabled = true
 	cfg.Callers = append(cfg.Callers, CallerConfig{
@@ -6747,8 +6779,8 @@ func TestCacheIsolatesCallersGC1(t *testing.T) {
 		User:        "bob",
 		Project:     "other-project",
 		Environment: "test",
-		TokenSHA256: hex.EncodeToString(bobSum[:]),
-		TokenID:     "rtr_bob_test",
+		TokenHash:   bobTokenHash,
+		TokenID:     bobTokenID,
 		Allow:       []string{"default"},
 		Rate:        RateConfig{RPM: 100, TPM: 100000, Concurrent: 4},
 		Quota:       QuotaConfig{Day: BudgetConfig{Requests: 100, Tokens: 100000}, Month: BudgetConfig{Tokens: 1000000}, SoftPct: 80},
@@ -6905,6 +6937,8 @@ func TestDailyQuotaAdmissionReservesRequestedMaxTokens(t *testing.T) {
 	cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
 	cfg.Callers[0].Quota.Day.Tokens = 20
 	cfg.Callers[0].Quota.Month.Tokens = 1000000
+	eventsPath := filepath.Join(t.TempDir(), "security.jsonl")
+	cfg.Server.Security.Events = SecurityEventStreamConfig{Enabled: true, Version: "1.4.0", Output: "file", Path: eventsPath}
 	svc, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -6923,6 +6957,14 @@ func TestDailyQuotaAdmissionReservesRequestedMaxTokens(t *testing.T) {
 	}
 	if calls.Load() != 0 {
 		t.Fatalf("upstream calls=%d, want 0", calls.Load())
+	}
+	svc.securityEventStream.close()
+	events, err := os.ReadFile(eventsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(events), "caller_quota_exhausted") || !strings.Contains(string(events), `"class_uid":2004`) || !strings.Contains(string(events), `"severity_id":3`) || strings.Contains(string(events), "provider_spend_breaker_trip") {
+		t.Fatalf("quota event missing or mislabeled: %s", events)
 	}
 }
 
@@ -7368,18 +7410,21 @@ func TestQuotaSignedStateSurvivesCallerConfigChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rotatedTokenHash := sha256.Sum256([]byte("rotated-alice-token"))
-	bobTokenHash := sha256.Sum256([]byte("bob-token"))
+	rotatedTokenID := strings.Join([]string{"rtr", "metrum", "alice", "metrum-insights", "test", "k2"}, "_")
+	rotatedToken := rotatedTokenID + "_" + strings.Repeat("x", 12)
+	rotatedTokenID, rotatedTokenHash := mustCallerTokenIDAndHashForTest(t, rotatedToken)
+	bobToken := "rtr_metrum_bob_other_test_k1_secret"
+	bobTokenID, bobTokenHash := mustCallerTokenIDAndHashForTest(t, bobToken)
 	cfg2 := testConfig(t, "http://127.0.0.1:1", "provider-key", dir)
 	alice := cfg2.Callers[0]
-	alice.TokenSHA256 = hex.EncodeToString(rotatedTokenHash[:])
-	alice.TokenID = "rtr_alice_rotated"
+	alice.TokenHash = rotatedTokenHash
+	alice.TokenID = rotatedTokenID
 	bob := alice
 	bob.ID = "bob"
 	bob.User = "bob"
 	bob.OwnerUser = "bob"
-	bob.TokenSHA256 = hex.EncodeToString(bobTokenHash[:])
-	bob.TokenID = "rtr_bob_test"
+	bob.TokenHash = bobTokenHash
+	bob.TokenID = bobTokenID
 	cfg2.Callers = []CallerConfig{bob, alice}
 
 	qs2, err := newQuotaStore(path, cfg2)
@@ -7503,17 +7548,17 @@ func TestMetricsEndpointRequiresMetricsAdminAndExportsGlobalLabels(t *testing.T)
 	dir := t.TempDir()
 	cfg := testConfig(t, upstream.URL, "provider-key", dir)
 	bobToken := "rtr_bob_test_token"
-	bobSum := sha256.Sum256([]byte(bobToken))
+	bobTokenID, bobTokenHash := mustCallerTokenIDAndHashForTest(t, bobToken)
 	adminToken := "rtr_metrics_admin_test_token"
-	adminSum := sha256.Sum256([]byte(adminToken))
+	adminTokenID, adminTokenHash := mustCallerTokenIDAndHashForTest(t, adminToken)
 	cfg.Callers = append(cfg.Callers,
 		CallerConfig{
 			ID:          "bob",
 			User:        "bob",
 			Project:     "openfang-daily-reports",
 			Environment: "test",
-			TokenSHA256: hex.EncodeToString(bobSum[:]),
-			TokenID:     "rtr_bob_test",
+			TokenHash:   bobTokenHash,
+			TokenID:     bobTokenID,
 			Allow:       []string{"default"},
 			Rate:        RateConfig{RPM: 100, TPM: 100000, Concurrent: 4},
 		},
@@ -7522,8 +7567,8 @@ func TestMetricsEndpointRequiresMetricsAdminAndExportsGlobalLabels(t *testing.T)
 			User:         "ops",
 			Project:      "observability",
 			Environment:  "test",
-			TokenSHA256:  hex.EncodeToString(adminSum[:]),
-			TokenID:      "rtr_metrics_admin_test",
+			TokenHash:    adminTokenHash,
+			TokenID:      adminTokenID,
 			Allow:        []string{"default"},
 			MetricsAdmin: true,
 			Rate:         RateConfig{RPM: 100, TPM: 100000, Concurrent: 4},
@@ -7609,15 +7654,15 @@ func TestMetricsEndpointRequiresMetricsAdminAndExportsGlobalLabels(t *testing.T)
 func TestRejectedModelMetricsUseBoundedLabel(t *testing.T) {
 	dir := t.TempDir()
 	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", dir)
-	adminToken := "rtr_metrics_admin_cardinality"
-	adminSum := sha256.Sum256([]byte(adminToken))
+	adminToken := "rtr_metrics_admin_cardinality_token"
+	adminTokenID, adminTokenHash := mustCallerTokenIDAndHashForTest(t, adminToken)
 	cfg.Callers = append(cfg.Callers, CallerConfig{
 		ID:           "metrics-admin",
 		User:         "ops",
 		Project:      "observability",
 		Environment:  "test",
-		TokenSHA256:  hex.EncodeToString(adminSum[:]),
-		TokenID:      "rtr_metrics_admin_cardinality",
+		TokenHash:    adminTokenHash,
+		TokenID:      adminTokenID,
 		Allow:        []string{"default"},
 		MetricsAdmin: true,
 		Rate:         RateConfig{RPM: 1000, TPM: 100000, Concurrent: 4},
@@ -8121,7 +8166,7 @@ func TestExternalRoutingPolicyStrategy(t *testing.T) {
 		t.Fatalf("policy caller metadata missing: %#v", caller)
 	}
 	rawPayload, _ := json.Marshal(policyPayload)
-	if strings.Contains(string(rawPayload), testToken) || strings.Contains(string(rawPayload), "provider-key") || strings.Contains(string(rawPayload), cfg.Callers[0].TokenSHA256) {
+	if strings.Contains(string(rawPayload), testToken) || strings.Contains(string(rawPayload), "provider-key") || strings.Contains(string(rawPayload), cfg.Callers[0].TokenHash) {
 		t.Fatalf("policy payload leaked secret material: %s", rawPayload)
 	}
 	for _, forbidden := range []string{"large prompt"} {
@@ -9148,6 +9193,8 @@ func TestPIIFilterReplacementLimitBlocksBeforeUpstream(t *testing.T) {
 			filter := testPIIFilterConfig(mode)
 			filter.MaxReplacementsPerRequest = 1
 			cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
+			eventsPath := filepath.Join(t.TempDir(), "security.jsonl")
+			cfg.Server.Security.Events = SecurityEventStreamConfig{Enabled: true, Version: "1.4.0", Output: "file", Path: eventsPath}
 			cfg.Models["default"] = ModelGroup{
 				Strategy:  "static",
 				PIIFilter: filter,
@@ -9168,6 +9215,14 @@ func TestPIIFilterReplacementLimitBlocksBeforeUpstream(t *testing.T) {
 			}
 			if calls.Load() != 0 {
 				t.Fatalf("upstream calls=%d, want 0", calls.Load())
+			}
+			svc.securityEventStream.close()
+			events, err := os.ReadFile(eventsPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(events), "dlp_hit") || !strings.Contains(string(events), `"class_uid":2004`) || strings.Contains(string(events), "jane.doe@example.com") || strings.Contains(string(events), "jane.alt@example.com") {
+				t.Fatalf("DLP event missing or disclosed raw input: %s", events)
 			}
 		})
 	}
@@ -9702,13 +9757,12 @@ func TestExternalPolicyTargetsIncludeProviderMetadataWithoutRawKeys(t *testing.T
 }
 
 func TestExternalPolicyCallerMetadataExcludesSecrets(t *testing.T) {
-	sum := sha256.Sum256([]byte(testToken))
 	caller := &callerRuntime{cfg: CallerConfig{
 		ID:          "alice",
 		OwnerUser:   "Alice",
 		Project:     "Metrum Insights",
 		Environment: "Prod",
-		TokenSHA256: hex.EncodeToString(sum[:]),
+		TokenHash:   mustCallerTokenHashForTest(t, testToken),
 		TokenID:     "rtr_metrum_alice_metrum-insights_prod_key1",
 		Allow:       []string{"default"},
 	}, keyStatus: "active", membershipRole: "developer"}
@@ -9721,7 +9775,7 @@ func TestExternalPolicyCallerMetadataExcludesSecrets(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(raw), testToken) || strings.Contains(string(raw), caller.cfg.TokenSHA256) {
+	if strings.Contains(string(raw), testToken) || strings.Contains(string(raw), caller.cfg.TokenHash) {
 		t.Fatalf("caller secret leaked into external policy context: %s", raw)
 	}
 }
@@ -12496,6 +12550,8 @@ func TestImageURLPrivateDestinationsBlockedBeforeUpstream(t *testing.T) {
 
 			cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
 			cfg.Models["default"] = ModelGroup{Strategy: "static", Targets: []Target{{Provider: "mock", Model: "vision-model", InputModalities: []string{"text", "image"}}}}
+			eventsPath := filepath.Join(t.TempDir(), "security.jsonl")
+			cfg.Server.Security.Events = SecurityEventStreamConfig{Enabled: true, Version: "1.4.0", Output: "file", Path: eventsPath}
 			svc, err := New(cfg)
 			if err != nil {
 				t.Fatal(err)
@@ -12512,6 +12568,14 @@ func TestImageURLPrivateDestinationsBlockedBeforeUpstream(t *testing.T) {
 			}
 			if calls.Load() != 0 {
 				t.Fatalf("upstream calls=%d, want 0", calls.Load())
+			}
+			svc.securityEventStream.close()
+			events, err := os.ReadFile(eventsPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(events), "firewall_block") || !strings.Contains(string(events), `"class_uid":2004`) {
+				t.Fatalf("egress denial missing its OCSF event: %s", events)
 			}
 		})
 	}
@@ -13929,7 +13993,7 @@ func TestContentCaptureStoresRedactedRequestResponseAndAllowedHeaders(t *testing
 	joinedCiphertext := rows[0].ContentText + "\n" + rows[1].ContentText
 	joined := testContentCapturePlaintext(t, rows[0].ContentText, rows[0].EncryptionNonce, rows[0].EncryptionLocalKeyID) +
 		"\n" + testContentCapturePlaintext(t, rows[1].ContentText, rows[1].EncryptionNonce, rows[1].EncryptionLocalKeyID)
-	for _, forbidden := range []string{testToken, cfg.Callers[0].TokenSHA256, "alice@example.com", "bob@example.com", "sk-test-secret", "rtr_should_not_store_secret", "do-not-store"} {
+	for _, forbidden := range []string{testToken, cfg.Callers[0].TokenHash, "alice@example.com", "bob@example.com", "sk-test-secret", "rtr_should_not_store_secret", "do-not-store"} {
 		if strings.Contains(joinedCiphertext, forbidden) || strings.Contains(joined, forbidden) {
 			t.Fatalf("captured content leaked %q", forbidden)
 		}
@@ -14029,7 +14093,6 @@ func TestContentCaptureAdminDeleteRequiresContentAdminAndAudits(t *testing.T) {
 	}))
 	defer upstream.Close()
 	adminToken := "rtr_content_admin_test_token"
-	adminHash := sha256.Sum256([]byte(adminToken))
 	dir := t.TempDir()
 	cfg := testConfig(t, upstream.URL, "provider-key", dir)
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
@@ -14039,7 +14102,7 @@ func TestContentCaptureAdminDeleteRequiresContentAdminAndAudits(t *testing.T) {
 		User:         "content-admin",
 		Project:      "metrum-insights",
 		Environment:  "test",
-		TokenSHA256:  hex.EncodeToString(adminHash[:]),
+		TokenHash:    mustCallerTokenHashForTest(t, adminToken),
 		TokenID:      "rtr_content_admin_test",
 		Allow:        []string{"default"},
 		ContentAdmin: true,
@@ -14107,9 +14170,9 @@ func TestContentCaptureAdminDeleteRequiresTargetDomainAuthorization(t *testing.T
 	defer upstream.Close()
 
 	adminToken := "rtr_content_admin_cross_domain_test_token"
-	adminHash := sha256.Sum256([]byte(adminToken))
+	adminTokenID, adminTokenHash := mustCallerTokenIDAndHashForTest(t, adminToken)
 	otherToken := "rtr_other_capture_owner_test_token"
-	otherHash := sha256.Sum256([]byte(otherToken))
+	otherTokenID, otherTokenHash := mustCallerTokenIDAndHashForTest(t, otherToken)
 	dir := t.TempDir()
 	cfg := testConfig(t, upstream.URL, "provider-key", dir)
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
@@ -14120,8 +14183,8 @@ func TestContentCaptureAdminDeleteRequiresTargetDomainAuthorization(t *testing.T
 			User:         "content-admin",
 			Project:      "platform",
 			Environment:  "test",
-			TokenSHA256:  hex.EncodeToString(adminHash[:]),
-			TokenID:      "rtr_content_admin_cross_domain_test",
+			TokenHash:    adminTokenHash,
+			TokenID:      adminTokenID,
 			Allow:        []string{"default"},
 			ContentAdmin: true,
 			Rate:         RateConfig{RPM: 100, TPM: 100000, Concurrent: 4},
@@ -14133,8 +14196,8 @@ func TestContentCaptureAdminDeleteRequiresTargetDomainAuthorization(t *testing.T
 			User:        "other-capture-owner",
 			Project:     "other",
 			Environment: "test",
-			TokenSHA256: hex.EncodeToString(otherHash[:]),
-			TokenID:     "rtr_other_capture_owner_test",
+			TokenHash:   otherTokenHash,
+			TokenID:     otherTokenID,
 			Allow:       []string{"default"},
 			Rate:        RateConfig{RPM: 100, TPM: 100000, Concurrent: 4},
 			Quota:       QuotaConfig{Day: BudgetConfig{Requests: 100, Tokens: 100000}, Month: BudgetConfig{Tokens: 1000000}, SoftPct: 80},
@@ -14186,9 +14249,9 @@ func TestContentCaptureAdminDeleteAllowsTargetDomainOnlyGrant(t *testing.T) {
 	defer upstream.Close()
 
 	centralToken := "rtr_central_content_admin_test_token"
-	centralHash := sha256.Sum256([]byte(centralToken))
+	centralTokenID, centralTokenHash := mustCallerTokenIDAndHashForTest(t, centralToken)
 	ownerToken := "rtr_target_domain_owner_test_token"
-	ownerHash := sha256.Sum256([]byte(ownerToken))
+	ownerTokenID, ownerTokenHash := mustCallerTokenIDAndHashForTest(t, ownerToken)
 	dir := t.TempDir()
 	cfg := testConfig(t, upstream.URL, "provider-key", dir)
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
@@ -14206,8 +14269,8 @@ func TestContentCaptureAdminDeleteAllowsTargetDomainOnlyGrant(t *testing.T) {
 			User:        "central-content-admin",
 			Project:     "platform",
 			Environment: "ops",
-			TokenSHA256: hex.EncodeToString(centralHash[:]),
-			TokenID:     "rtr_central_content_admin_test",
+			TokenHash:   centralTokenHash,
+			TokenID:     centralTokenID,
 			Allow:       []string{"default"},
 			Rate:        RateConfig{RPM: 100, TPM: 100000, Concurrent: 4},
 			Quota:       QuotaConfig{Day: BudgetConfig{Requests: 100, Tokens: 100000}, Month: BudgetConfig{Tokens: 1000000}, SoftPct: 80},
@@ -14218,8 +14281,8 @@ func TestContentCaptureAdminDeleteAllowsTargetDomainOnlyGrant(t *testing.T) {
 			User:        "target-domain-owner",
 			Project:     "other",
 			Environment: "test",
-			TokenSHA256: hex.EncodeToString(ownerHash[:]),
-			TokenID:     "rtr_target_domain_owner_test",
+			TokenHash:   ownerTokenHash,
+			TokenID:     ownerTokenID,
 			Allow:       []string{"default"},
 			Rate:        RateConfig{RPM: 100, TPM: 100000, Concurrent: 4},
 			Quota:       QuotaConfig{Day: BudgetConfig{Requests: 100, Tokens: 100000}, Month: BudgetConfig{Tokens: 1000000}, SoftPct: 80},
@@ -14262,11 +14325,11 @@ func TestContentCaptureAdminDeleteUsesCaptureTimeDomain(t *testing.T) {
 	defer upstream.Close()
 
 	oldAdminToken := "rtr_old_domain_content_admin_test_token"
-	oldAdminHash := sha256.Sum256([]byte(oldAdminToken))
+	oldAdminTokenID, oldAdminTokenHash := mustCallerTokenIDAndHashForTest(t, oldAdminToken)
 	newAdminToken := "rtr_new_domain_content_admin_test_token"
-	newAdminHash := sha256.Sum256([]byte(newAdminToken))
+	newAdminTokenID, newAdminTokenHash := mustCallerTokenIDAndHashForTest(t, newAdminToken)
 	ownerToken := "rtr_movable_capture_owner_test_token"
-	ownerHash := sha256.Sum256([]byte(ownerToken))
+	ownerTokenID, ownerTokenHash := mustCallerTokenIDAndHashForTest(t, ownerToken)
 	dir := t.TempDir()
 	cfg := testConfig(t, upstream.URL, "provider-key", dir)
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
@@ -14277,8 +14340,8 @@ func TestContentCaptureAdminDeleteUsesCaptureTimeDomain(t *testing.T) {
 			User:         "old-domain-admin",
 			Project:      "other",
 			Environment:  "test",
-			TokenSHA256:  hex.EncodeToString(oldAdminHash[:]),
-			TokenID:      "rtr_old_domain_content_admin_test",
+			TokenHash:    oldAdminTokenHash,
+			TokenID:      oldAdminTokenID,
 			Allow:        []string{"default"},
 			ContentAdmin: true,
 			Rate:         RateConfig{RPM: 100, TPM: 100000, Concurrent: 4},
@@ -14290,8 +14353,8 @@ func TestContentCaptureAdminDeleteUsesCaptureTimeDomain(t *testing.T) {
 			User:         "new-domain-admin",
 			Project:      "moved",
 			Environment:  "test",
-			TokenSHA256:  hex.EncodeToString(newAdminHash[:]),
-			TokenID:      "rtr_new_domain_content_admin_test",
+			TokenHash:    newAdminTokenHash,
+			TokenID:      newAdminTokenID,
 			Allow:        []string{"default"},
 			ContentAdmin: true,
 			Rate:         RateConfig{RPM: 100, TPM: 100000, Concurrent: 4},
@@ -14303,8 +14366,8 @@ func TestContentCaptureAdminDeleteUsesCaptureTimeDomain(t *testing.T) {
 			User:        "movable-capture-owner",
 			Project:     "other",
 			Environment: "test",
-			TokenSHA256: hex.EncodeToString(ownerHash[:]),
-			TokenID:     "rtr_movable_capture_owner_test",
+			TokenHash:   ownerTokenHash,
+			TokenID:     ownerTokenID,
 			Allow:       []string{"default"},
 			Rate:        RateConfig{RPM: 100, TPM: 100000, Concurrent: 4},
 			Quota:       QuotaConfig{Day: BudgetConfig{Requests: 100, Tokens: 100000}, Month: BudgetConfig{Tokens: 1000000}, SoftPct: 80},
@@ -14369,14 +14432,13 @@ func TestContentCaptureMaintenanceUsesCasbinAuthorization(t *testing.T) {
 		{id: "reports-only", token: reportsToken, project: "platform", environment: "prod"},
 		{id: "content-wrong-domain", token: wrongDomainToken, project: "platform", environment: "test"},
 	} {
-		sum := sha256.Sum256([]byte(caller.token))
 		cfg.Callers = append(cfg.Callers, CallerConfig{
 			ID:          caller.id,
 			User:        caller.id,
 			Project:     caller.project,
 			Environment: caller.environment,
-			TokenSHA256: hex.EncodeToString(sum[:]),
-			TokenID:     caller.id,
+			TokenHash:   mustCallerTokenHashForTest(t, caller.token),
+			TokenID:     strings.TrimSuffix(caller.token, "_token"),
 			Allow:       []string{"default"},
 			Rate:        RateConfig{RPM: 100, TPM: 100000, Concurrent: 4},
 			Quota:       QuotaConfig{Day: BudgetConfig{Requests: 100, Tokens: 100000}, Month: BudgetConfig{Tokens: 1000000}, SoftPct: 80},
@@ -14636,7 +14698,7 @@ func TestDecisionTelemetryRecordsExternalPolicyFailureBeforeDecision(t *testing.
 	if execution.Outcome != "error" || execution.ErrorClass != "external-policy-invalid-target" || execution.SelectedCandidateIndex != -1 || execution.EligibleTargetCount != 1 {
 		t.Fatalf("unexpected policy execution: %#v", execution)
 	}
-	for _, forbidden := range []string{"secret prompt", "provider-key", cfg.Callers[0].TokenSHA256, testToken} {
+	for _, forbidden := range []string{"secret prompt", "provider-key", cfg.Callers[0].TokenHash, testToken} {
 		if strings.Contains(execution.ErrorMessage, forbidden) {
 			t.Fatalf("policy execution leaked %q: %#v", forbidden, execution)
 		}
@@ -15068,7 +15130,10 @@ func traceEventsContain(events []requestTraceEventRecord, name string) bool {
 	return false
 }
 
-const testToken = "rtr_test_token"
+const (
+	testTokenID = "rtr_alice_test"
+	testToken   = testTokenID + "_c2VjcmV0LXRva2VuLWZvci10ZXN0cw"
+)
 
 func newTestService(t *testing.T, upstreamURL, providerKey string) *Service {
 	t.Helper()
@@ -15084,7 +15149,10 @@ func newTestService(t *testing.T, upstreamURL, providerKey string) *Service {
 
 func testConfig(t testing.TB, upstreamURL, providerKey, dir string) *Config {
 	t.Helper()
-	sum := sha256.Sum256([]byte(testToken))
+	tokenHash, err := HashCallerToken(testToken, nil, callerTokenHashMinIterations)
+	if err != nil {
+		t.Fatal(err)
+	}
 	usageDBDisabled := false
 	return &Config{
 		Server: ServerConfig{Identifiers: IdentifierConfig{Mode: "passthrough"},
@@ -15109,8 +15177,8 @@ func testConfig(t testing.TB, upstreamURL, providerKey, dir string) *Config {
 			User:        "alice",
 			Project:     "metrum-insights",
 			Environment: "test",
-			TokenSHA256: hex.EncodeToString(sum[:]),
-			TokenID:     "rtr_alice_test",
+			TokenHash:   tokenHash,
+			TokenID:     testTokenID,
 			Allow:       []string{"default", "other"},
 			Rate:        RateConfig{RPM: 100, TPM: 100000, Concurrent: 4},
 			Quota:       QuotaConfig{Day: BudgetConfig{Requests: 100, Tokens: 100000}, Month: BudgetConfig{Tokens: 1000000}, SoftPct: 80},

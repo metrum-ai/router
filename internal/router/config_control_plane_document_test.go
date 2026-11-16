@@ -4,6 +4,8 @@
 package router
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -61,6 +63,32 @@ func TestConfigControlPlanePhase6CreatesDocumentTables(t *testing.T) {
 	}
 }
 
+func TestRejectRawSecretsAllowsStructuredCallerVerifier(t *testing.T) {
+	// A structured verifier is not a usable credential, even if a random
+	// base64url salt or key happens to contain a provider-key prefix.
+	// These bytes encode with an "sk-" prefix, deliberately overlapping the
+	// provider-key detector while remaining only random verifier salt.
+	saltPrefix, err := callerTokenB64.DecodeString("sk-AAAAAAAAAAAAAAAA")
+	if err != nil {
+		t.Fatal(err)
+	}
+	salt := append(saltPrefix, make([]byte, callerTokenHashSaltBytes-len(saltPrefix))...)
+	verifier, err := HashCallerToken("rtr_metrum_test_project_prod_k1_secret", strings.NewReader(string(salt)), callerTokenHashMinIterations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !configControlPlaneSecretPattern.MatchString(verifier) {
+		t.Fatalf("test verifier %q does not exercise the raw-secret false positive", verifier)
+	}
+	doc := "callers:\n  - token_hash: \"" + verifier + "\"\n"
+	if err := rejectRawSecretsInYAML([]byte(doc)); err != nil {
+		t.Fatalf("valid token_hash rejected as raw secret: %v", err)
+	}
+	if err := rejectRawSecretsInYAML([]byte("callers:\n  - token_hash: sk-abcdefghijklmnop1234567890\n")); err == nil {
+		t.Fatal("raw provider key in token_hash was accepted")
+	}
+}
+
 const testCanonicalYAML = `server:
   identifiers:
     mode: passthrough
@@ -77,7 +105,8 @@ models:
         model: mock-model
 callers:
   - id: alice
-    token_sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    token_hash: "pbkdf2-sha3-512:i=10000:AAAAAAAAAAAAAAAAAAAAAA:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    token_id: rtr_alice_test
     allow:
       - default
 `
@@ -208,7 +237,8 @@ models:
         model: mock-model
 callers:
   - id: alice
-    token_sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    token_hash: "pbkdf2-sha3-512:i=10000:AAAAAAAAAAAAAAAAAAAAAA:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    token_id: rtr_alice_test
     allow:
       - default
 `,
@@ -231,7 +261,8 @@ models:
         model: mock-model
 callers:
   - id: alice
-    token_sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    token_hash: "pbkdf2-sha3-512:i=10000:AAAAAAAAAAAAAAAAAAAAAA:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    token_id: rtr_alice_test
     allow:
       - default
 `,
@@ -254,7 +285,8 @@ models:
         model: mock-model
 callers:
   - id: alice
-    token_sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    token_hash: "pbkdf2-sha3-512:i=10000:AAAAAAAAAAAAAAAAAAAAAA:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    token_id: rtr_alice_test
     allow:
       - default
 `,
@@ -295,7 +327,8 @@ models:
         model: mock-model
 callers:
   - id: alice
-    token_sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    token_hash: "pbkdf2-sha3-512:i=10000:AAAAAAAAAAAAAAAAAAAAAA:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    token_id: rtr_alice_test
     allow:
       - default
 `
@@ -337,6 +370,65 @@ func TestLoadActiveCanonicalYAMLReturnsActiveDocument(t *testing.T) {
 	}
 	if string(loaded) != testCanonicalYAML {
 		t.Fatalf("active document mismatch:\nimported:\n%s\nloaded:\n%s", testCanonicalYAML, string(loaded))
+	}
+}
+
+func TestStartupRejectsLegacyCallerVerifierInStoredCanonicalDocument(t *testing.T) {
+	r, closeDB, err := ConfigControlPlaneMigrationRunner(UsageDBConfig{Driver: "sqlite", Path: filepath.Join(t.TempDir(), "config.sqlite")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = closeDB() }()
+	applyConfigControlPlaneMigrationsThroughPhase6ForTest(t, r)
+	token := "rtr_metrum_alice_test_dev_k1_existing-secret"
+	digest := sha256.Sum256([]byte(token))
+	legacy := strings.Replace(testCanonicalYAML,
+		"token_hash: \"pbkdf2-sha3-512:i=10000:AAAAAAAAAAAAAAAAAAAAAA:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"",
+		"token_sha256: "+hex.EncodeToString(digest[:]), 1)
+	setID, err := ImportCanonicalYAML(r.db, "staging", "seed", []byte(testCanonicalYAML), "test-actor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := sha256.Sum256([]byte(legacy))
+	if err := r.db.Exec(`UPDATE router_config_documents SET canonical_yaml = ?, content_sha256 = ? WHERE config_set_id = ?`, legacy, hex.EncodeToString(hash[:]), setID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := r.db.Exec(`UPDATE router_config_sets SET status = 'active' WHERE id = ?`, setID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := r.db.Exec(`UPDATE router_config_runtime SET active_set_id = ? WHERE runtime_scope = ?`, setID, "staging").Error; err != nil {
+		t.Fatal(err)
+	}
+	_, err = LoadActiveCanonicalConfig(r.db, "staging")
+	if err == nil || !strings.Contains(err.Error(), "callers migrate-legacy") {
+		t.Fatalf("stored legacy verifier startup error = %v, want migration command", err)
+	}
+}
+
+func TestStartupLoadsDisabledCallerAfterLegacyVerifierCleanup(t *testing.T) {
+	r, closeDB, err := ConfigControlPlaneMigrationRunner(UsageDBConfig{Driver: "sqlite", Path: filepath.Join(t.TempDir(), "config.sqlite")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = closeDB() }()
+	applyConfigControlPlaneMigrationsThroughPhase6ForTest(t, r)
+	legacy := strings.Replace(testCanonicalYAML, "    token_hash: \"pbkdf2-sha3-512:i=10000:AAAAAAAAAAAAAAAAAAAAAA:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"\n", "    status: disabled\n", 1)
+	setID, err := ImportCanonicalYAML(r.db, "staging", "disabled-legacy", []byte(legacy), "test-actor")
+	if err != nil {
+		t.Fatalf("import disabled legacy caller: %v", err)
+	}
+	if err := r.db.Exec(`UPDATE router_config_sets SET status = 'active' WHERE id = ?`, setID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := r.db.Exec(`UPDATE router_config_runtime SET active_set_id = ? WHERE runtime_scope = ?`, setID, "staging").Error; err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadActiveCanonicalConfig(r.db, "staging")
+	if err != nil {
+		t.Fatalf("load disabled caller without verifier: %v", err)
+	}
+	if len(loaded.Callers) != 1 || loaded.Callers[0].Status != "disabled" || loaded.Callers[0].TokenHash != "" {
+		t.Fatalf("disabled caller did not stay disabled: %+v", loaded.Callers)
 	}
 }
 
@@ -403,7 +495,8 @@ models:
         model: mock-model
 callers:
   - id: alice
-    token_sha256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    token_hash: "pbkdf2-sha3-512:i=10000:AAAAAAAAAAAAAAAAAAAAAA:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    token_id: rtr_alice_test
     allow:
       - default
 `

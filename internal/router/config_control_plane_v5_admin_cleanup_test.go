@@ -18,7 +18,16 @@ func TestV5AdminConfigCleanupMigrationRemovesRemovedKeys(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = closeDB() }()
-	prior, err := NewMigrationRunner(r.db, configControlPlaneScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 12, MinData: 0, MaxData: 0}, configControlPlaneMigrationDefinitions[:len(configControlPlaneMigrationDefinitions)-3])
+	var beforeCleanup, throughCleanup []MigrationDefinition
+	for _, definition := range configControlPlaneMigrationDefinitions {
+		if definition.ID < v5AdminConfigCleanupMigrationID {
+			beforeCleanup = append(beforeCleanup, definition)
+		}
+		if definition.ID <= v5AdminConfigCleanupMigrationID {
+			throughCleanup = append(throughCleanup, definition)
+		}
+	}
+	prior, err := NewMigrationRunner(r.db, configControlPlaneScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 12, MinData: 0, MaxData: 0}, beforeCleanup)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +44,7 @@ func TestV5AdminConfigCleanupMigrationRemovesRemovedKeys(t *testing.T) {
 	}
 	cleanupCompatibility := configControlPlaneCompatibility
 	cleanupCompatibility.MaxSchema = 13
-	next, err := NewMigrationRunner(r.db, configControlPlaneScope, cleanupCompatibility, configControlPlaneMigrationDefinitions[:len(configControlPlaneMigrationDefinitions)-2])
+	next, err := NewMigrationRunner(r.db, configControlPlaneScope, cleanupCompatibility, throughCleanup)
 	if err != nil {
 		t.Fatal(err)
 	}

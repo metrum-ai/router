@@ -185,6 +185,8 @@ type AdminDenialRecord struct {
 	Method string
 	// ClientIPHash is a salted digest of the source address.
 	ClientIPHash string
+	// SourceIP is retained only for an explicitly enabled security event stream.
+	SourceIP string
 }
 
 // AdminDenialSink records denials durably. The mount fails closed (5xx) when a

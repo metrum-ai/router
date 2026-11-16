@@ -179,7 +179,7 @@ the projected token.
 | `networkPolicy` | enabled | Explicit client, DNS, provider, and database egress policy. |
 
 The following valid runtime configuration is the contract that the chart projects. The
-values in `api_key_env` and `token_sha256` expand from `env.json`. The Secret contains
+values in `api_key_env` and `token_hash` expand from `env.json`. The Secret contains
 the real values. The example is intentionally non-production.
 
 ```yaml
@@ -232,7 +232,7 @@ data:
         project: example
         environment: production
         status: active
-        token_sha256: "${ROUTER_CALLER_EXAMPLE_SHA256}"
+        token_hash: "${ROUTER_CALLER_EXAMPLE_TOKEN_HASH}"
         token_id: rtr_example
         allow:
           - local-chat
@@ -350,7 +350,7 @@ spec:
   project: example
   environment: production
   status: active
-  token_sha256: "${ROUTER_CALLER_EXAMPLE_SHA256}"
+  token_hash: "${ROUTER_CALLER_EXAMPLE_TOKEN_HASH}"
   token_id: rtr_example
   allow:
     - local-chat
@@ -380,7 +380,7 @@ spec:
     on_exhaust: disable
 ```
 
-`token_sha256` is a configuration field. The CRD MUST contain the environment
+`token_hash` is a configuration field. The CRD MUST contain the environment
 expression only. A Secret-backed `env.json` supplies the value. The CRD MUST NOT carry
 a raw router token or a token hash.
 
@@ -465,7 +465,7 @@ CEL validations SHOULD cover current router invariants such as these:
 - `sqlite` uses a non-empty `path`; `postgres` uses a non-empty `dsn` expression.
 - a ModelGroup has a strategy and at least one target.
 - every target has a provider and either `model` or `model_ref`.
-- a caller has an ID, a non-empty `token_sha256` expression, and allowed groups.
+- a caller has an ID, a non-empty `token_hash` expression, and allowed groups.
 - each positive traffic rate has its required burst field.
 - external strategy has `external_policy.url` and `external_policy.allow_hosts`.
 

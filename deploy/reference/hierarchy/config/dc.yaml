@@ -45,6 +45,9 @@ server:
     timeout_ms: ${DC_UPSTREAM_TIMEOUT_MS}
     max_response_bytes: 33554432
 
+admin:
+  enabled: false
+
 state_path: ${DC_STATE_PATH}
 
 providers:
@@ -110,7 +113,7 @@ models:
       - provider: cpu_small
         model_ref: ${CPU_MODEL}
         weight: 10
-        timeout_ms: 2000
+        timeout_ms: ${CPU_ATTEMPT_TIMEOUT_MS}
         tier: cpu
         tags: [cpu, small-model]
         request_shape_support:
@@ -144,6 +147,7 @@ models:
             prefer_tags: [frontier]
             expression: "0.55 * reliability_score + 0.30 * latency_score + 0.15 * cost_score"
         thresholds:
+          max_ttfb_ms: 1000
           max_error_rate: 0.10
           max_timeout_rate: 0.05
           max_p95_latency_ms: 6000

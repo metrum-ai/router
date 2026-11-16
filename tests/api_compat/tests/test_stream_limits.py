@@ -30,6 +30,7 @@ import pytest
 
 from conftest import (
     CALLER,
+    CALLER_ID,
     CALLER_DIGEST,
     PROMPT_CANARY,
     assert_generated_artifacts_redacted,
@@ -205,7 +206,8 @@ models:
   messages: {{strategy: static, targets: [{{provider: messages, model: synthetic-messages, request_shape_support: {{supported_inbound_dialects: [anthropic], validation_status: passed}}}}]}}
 callers:
   - id: synthetic-allowed
-    token_sha256: {CALLER_DIGEST}
+    token_hash: {CALLER_DIGEST}
+    token_id: {CALLER_ID}
     allow: [chat, chat-idle, chat-retry, responses, messages]
 '''
 

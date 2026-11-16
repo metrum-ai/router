@@ -213,6 +213,9 @@
       },
       "GroupTargetSpec": {
         "properties": {
+          "clear_validation": {
+            "type": "boolean"
+          },
           "model": {
             "type": "string"
           },
@@ -245,6 +248,12 @@
       },
       "GroupTargetValidationSpec": {
         "properties": {
+          "capabilities": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/TargetCapabilityVector"
+            },
+            "type": "object"
+          },
           "harness": {
             "type": "string"
           },
@@ -744,6 +753,48 @@
         ],
         "type": "object"
       },
+      "TargetCapabilityVector": {
+        "properties": {
+          "contextTokens": {
+            "type": "integer"
+          },
+          "evalReportSha256": {
+            "type": "string"
+          },
+          "evalRunId": {
+            "type": "string"
+          },
+          "meanCostUsd": {
+            "type": "number"
+          },
+          "measuredAt": {
+            "type": "string"
+          },
+          "p95LatencyMs": {
+            "type": "number"
+          },
+          "qualityScore": {
+            "type": "number"
+          },
+          "taskFamily": {
+            "type": "string"
+          },
+          "toolReliability": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "qualityScore",
+          "contextTokens",
+          "p95LatencyMs",
+          "meanCostUsd",
+          "evalRunId",
+          "evalReportSha256",
+          "taskFamily",
+          "measuredAt"
+        ],
+        "type": "object"
+      },
       "ToolSupport": {
         "properties": {
           "anthropicMessages": {
@@ -882,6 +933,40 @@
         ],
         "type": "object"
       },
+      "adminOperationResult": {
+        "properties": {
+          "created_at": {
+            "type": "string"
+          },
+          "error_code": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "result": {
+            "format": "byte",
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "type": "object"
+      },
       "adminProjectWriteRequest": {
         "properties": {
           "budget": {
@@ -994,9 +1079,6 @@
             "type": "string"
           },
           "token_id": {
-            "type": "string"
-          },
-          "token_sha256": {
             "type": "string"
           }
         },
@@ -1120,6 +1202,38 @@
         ],
         "type": "object"
       },
+      "configAdminBulkTargetChange": {
+        "properties": {
+          "action": {
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/components/schemas/GroupTargetSpec"
+          }
+        },
+        "required": [
+          "action",
+          "target"
+        ],
+        "type": "object"
+      },
+      "configAdminBulkTargetsRequest": {
+        "properties": {
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/configAdminBulkTargetChange"
+            },
+            "type": "array"
+          },
+          "reason": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "changes"
+        ],
+        "type": "object"
+      },
       "configAdminImportRequest": {
         "properties": {
           "name": {
@@ -1194,6 +1308,84 @@
         },
         "required": [
           "targets"
+        ],
+        "type": "object"
+      },
+      "controlPlaneBackupBundle": {
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/controlPlaneBackupDatabase"
+          },
+          "created_at": {
+            "type": "string"
+          },
+          "schema": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/controlPlaneBackupDatabase"
+          }
+        },
+        "required": [
+          "schema",
+          "created_at",
+          "config",
+          "usage",
+          "sha256"
+        ],
+        "type": "object"
+      },
+      "controlPlaneBackupCell": {
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "value": {
+            "format": "byte",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "value"
+        ],
+        "type": "object"
+      },
+      "controlPlaneBackupDatabase": {
+        "properties": {
+          "tables": {
+            "items": {
+              "$ref": "#/components/schemas/controlPlaneBackupTable"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "tables"
+        ],
+        "type": "object"
+      },
+      "controlPlaneBackupTable": {
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "rows": {
+            "items": {
+              "additionalProperties": {
+                "$ref": "#/components/schemas/controlPlaneBackupCell"
+              },
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "name",
+          "rows"
         ],
         "type": "object"
       },
@@ -2076,7 +2268,7 @@
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "description": "Open object. Documented members: group, strategy, targets, contract, set_id, revision.",
+                  "description": "Open object. Documented members: group, strategy, targets, contract, virtual_model, set_id, revision.",
                   "type": "object"
                 }
               }
@@ -3004,6 +3196,105 @@
         "x-admin-object": "admin:config"
       }
     },
+    "/admin/v1/config/groups/{group}/targets:bulk": {
+      "post": {
+        "operationId": "bulkConfigGroupTargets",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "group",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/configAdminBulkTargetsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: group, set_id, previous_set_id, revision, replayed, strategy, diff, targets, propagation.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "412": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Apply up to 100 target additions and removals in one configuration revision",
+        "tags": [
+          "configuration"
+        ],
+        "x-admin-action": "write",
+        "x-admin-concurrency": "revision",
+        "x-admin-domain": "global",
+        "x-admin-idempotency": "handler",
+        "x-admin-object": "admin:config"
+      }
+    },
     "/admin/v1/config/groups/{group}/targets:validate": {
       "post": {
         "description": "A dry run: no configuration set is created, no revision is bumped, no change event is written. Keeps today's config:write guard because the shared write pipeline enforces it.",
@@ -3926,6 +4217,287 @@
         "x-admin-object": "content:capture"
       }
     },
+    "/admin/v1/control-plane/backups": {
+      "post": {
+        "description": "Returns 202 Accepted with a Location header for the operation resource. Download the completed versioned bundle from the separately authorized backup resource.",
+        "operationId": "startControlPlaneBackup",
+        "parameters": [
+          {
+            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: operation, operation_url.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success",
+            "headers": {
+              "Location": {
+                "description": "URL of the asynchronous operation resource.",
+                "required": true,
+                "schema": {
+                  "format": "uri-reference",
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "description": "Suggested delay in seconds before polling the operation.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "412": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Start an asynchronous control-plane backup",
+        "tags": [
+          "admin"
+        ],
+        "x-admin-action": "write",
+        "x-admin-concurrency": "",
+        "x-admin-domain": "global",
+        "x-admin-idempotency": "",
+        "x-admin-object": "admin:backup"
+      }
+    },
+    "/admin/v1/control-plane/backups/{operation_id}": {
+      "get": {
+        "operationId": "getControlPlaneBackup",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operation_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: bundle.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "412": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Download a completed control-plane backup bundle",
+        "tags": [
+          "admin"
+        ],
+        "x-admin-action": "read",
+        "x-admin-concurrency": "",
+        "x-admin-domain": "global",
+        "x-admin-idempotency": "",
+        "x-admin-object": "admin:backup"
+      }
+    },
+    "/admin/v1/control-plane/restores": {
+      "post": {
+        "operationId": "startControlPlaneRestore",
+        "parameters": [
+          {
+            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/controlPlaneBackupBundle"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: operation, operation_url.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success",
+            "headers": {
+              "Location": {
+                "description": "URL of the asynchronous operation resource.",
+                "required": true,
+                "schema": {
+                  "format": "uri-reference",
+                  "type": "string"
+                }
+              },
+              "Retry-After": {
+                "description": "Suggested delay in seconds before polling the operation.",
+                "schema": {
+                  "minimum": 1,
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "412": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Start an asynchronous restore from a control-plane backup bundle",
+        "tags": [
+          "admin"
+        ],
+        "x-admin-action": "write",
+        "x-admin-concurrency": "",
+        "x-admin-domain": "global",
+        "x-admin-idempotency": "",
+        "x-admin-object": "admin:restore"
+      }
+    },
     "/admin/v1/metrics": {
       "get": {
         "description": "The versioned spelling of the admin listener's /metrics. Both use the same renderer and the same metrics/read decision in the whole-plane domain; no caller token is involved.",
@@ -4073,6 +4645,90 @@
         "x-admin-domain": "global",
         "x-admin-idempotency": "",
         "x-admin-object": "admin:catalog"
+      }
+    },
+    "/admin/v1/operations/{operation_id}": {
+      "get": {
+        "operationId": "getAdminOperation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "operation_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/adminOperationResult"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "412": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Read the state and structured result of an asynchronous admin operation",
+        "tags": [
+          "admin"
+        ],
+        "x-admin-action": "read",
+        "x-admin-concurrency": "",
+        "x-admin-domain": "global",
+        "x-admin-idempotency": "",
+        "x-admin-object": "admin:operations"
       }
     },
     "/admin/v1/projects": {
@@ -7164,6 +7820,160 @@
         "x-admin-object": "admin:security_reports"
       }
     },
+    "/admin/v1/reports/security/export.json": {
+      "get": {
+        "operationId": "exportAdminSecurityIncidentJSON",
+        "parameters": [
+          {
+            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: incident, evidence.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "412": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Export a security incident bundle as JSON",
+        "tags": [
+          "reports"
+        ],
+        "x-admin-action": "export",
+        "x-admin-concurrency": "",
+        "x-admin-domain": "handler",
+        "x-admin-idempotency": "",
+        "x-admin-object": "admin:security_reports"
+      }
+    },
+    "/admin/v1/reports/security/export.md": {
+      "get": {
+        "operationId": "exportAdminSecurityIncidentMarkdown",
+        "parameters": [
+          {
+            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/markdown": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "412": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Export a security incident bundle as Markdown",
+        "tags": [
+          "reports"
+        ],
+        "x-admin-action": "export",
+        "x-admin-concurrency": "",
+        "x-admin-domain": "handler",
+        "x-admin-idempotency": "",
+        "x-admin-object": "admin:security_reports"
+      }
+    },
     "/admin/v1/reports/security/overview": {
       "get": {
         "operationId": "getAdminSecurityOverview",
@@ -7233,6 +8043,172 @@
           "reports"
         ],
         "x-admin-action": "read",
+        "x-admin-concurrency": "",
+        "x-admin-domain": "handler",
+        "x-admin-idempotency": "",
+        "x-admin-object": "admin:security_reports"
+      }
+    },
+    "/admin/v1/reports/security/posture/latest": {
+      "get": {
+        "operationId": "getAdminSecurityPostureReport",
+        "parameters": [
+          {
+            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: schema, generated_at, outcome, findings.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "412": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Get the latest security posture self-test summary",
+        "tags": [
+          "reports"
+        ],
+        "x-admin-action": "read",
+        "x-admin-concurrency": "",
+        "x-admin-domain": "handler",
+        "x-admin-idempotency": "",
+        "x-admin-object": "admin:security_reports"
+      },
+      "post": {
+        "operationId": "saveAdminSecurityPostureReport",
+        "parameters": [
+          {
+            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "description": "Open object. Documented members: schema, generated_at, outcome, findings.",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: saved.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "412": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "413": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Save the latest security posture self-test summary",
+        "tags": [
+          "reports"
+        ],
+        "x-admin-action": "write",
         "x-admin-concurrency": "",
         "x-admin-domain": "handler",
         "x-admin-idempotency": "",

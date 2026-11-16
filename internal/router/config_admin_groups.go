@@ -44,6 +44,7 @@ const (
 	configActionGroupTargetsReplace = "group_targets_replace"
 	configActionGroupTargetAdd      = "group_target_add"
 	configActionGroupTargetRemove   = "group_target_remove"
+	configActionGroupTargetsBulk    = "group_targets_bulk"
 	configActionGroupRollback       = "group_rollback"
 	configActionSetImport           = "set_import"
 	configActionSetActivate         = "set_activate"
@@ -74,13 +75,14 @@ func configAdminError(status int, errType, message string) *ConfigAdminError {
 // metadata (the internal TargetValidation JSON tags are camelCase and must
 // not leak into this API).
 type GroupTargetValidationSpec struct {
-	Status       string  `json:"status"`
-	Workload     string  `json:"workload,omitempty"`
-	ValidatedAt  string  `json:"validated_at,omitempty"`
-	QualityScore float64 `json:"quality_score,omitempty"`
-	PassRate     float64 `json:"pass_rate,omitempty"`
-	Harness      string  `json:"harness,omitempty"`
-	Notes        string  `json:"notes,omitempty"`
+	Status       string                            `json:"status"`
+	Workload     string                            `json:"workload,omitempty"`
+	ValidatedAt  string                            `json:"validated_at,omitempty"`
+	QualityScore float64                           `json:"quality_score,omitempty"`
+	PassRate     float64                           `json:"pass_rate,omitempty"`
+	Harness      string                            `json:"harness,omitempty"`
+	Notes        string                            `json:"notes,omitempty"`
+	Capabilities map[string]TargetCapabilityVector `json:"capabilities,omitempty"`
 }
 
 func (s *GroupTargetValidationSpec) toTargetValidation() *TargetValidation {
@@ -90,6 +92,7 @@ func (s *GroupTargetValidationSpec) toTargetValidation() *TargetValidation {
 	return &TargetValidation{
 		Status: s.Status, Workload: s.Workload, ValidatedAt: s.ValidatedAt,
 		QualityScore: s.QualityScore, PassRate: s.PassRate, Harness: s.Harness, Notes: s.Notes,
+		Capabilities: s.Capabilities,
 	}
 }
 
@@ -98,13 +101,14 @@ func (s *GroupTargetValidationSpec) toTargetValidation() *TargetValidation {
 // entry; explicit Model must match a catalog entry's served model. No
 // credential fields exist here by design.
 type GroupTargetSpec struct {
-	Provider   string                     `json:"provider"`
-	Model      string                     `json:"model,omitempty"`
-	ModelRef   string                     `json:"model_ref,omitempty"`
-	Weight     int                        `json:"weight,omitempty"`
-	Region     string                     `json:"region,omitempty"`
-	Tags       []string                   `json:"tags,omitempty"`
-	Validation *GroupTargetValidationSpec `json:"validation,omitempty"`
+	Provider        string                     `json:"provider"`
+	Model           string                     `json:"model,omitempty"`
+	ModelRef        string                     `json:"model_ref,omitempty"`
+	Weight          int                        `json:"weight,omitempty"`
+	Region          string                     `json:"region,omitempty"`
+	Tags            []string                   `json:"tags,omitempty"`
+	Validation      *GroupTargetValidationSpec `json:"validation,omitempty"`
+	ClearValidation bool                       `json:"clear_validation,omitempty"`
 }
 
 func (s GroupTargetSpec) identity() string {
@@ -385,6 +389,7 @@ func groupTargetValidationFromTarget(v *TargetValidation) *GroupTargetValidation
 	return &GroupTargetValidationSpec{
 		Status: v.Status, Workload: v.Workload, ValidatedAt: v.ValidatedAt,
 		QualityScore: v.QualityScore, PassRate: v.PassRate, Harness: v.Harness, Notes: v.Notes,
+		Capabilities: v.Capabilities,
 	}
 }
 
@@ -802,8 +807,35 @@ func prepareGroupWrite(raw []byte, group string, req GroupTargetsWriteRequest, p
 	// and again by Config.Validate below.
 	patchedGroup := existing
 	patchedGroup.Targets = make([]Target, 0, len(after))
+	existingByID := make(map[string]Target, len(existing.Targets))
+	for _, target := range existing.Targets {
+		ref := target.ModelRef
+		if ref == "" {
+			ref = target.Model
+		}
+		existingByID[target.Provider+"/"+ref] = target
+	}
 	for _, spec := range after {
-		target := Target{Provider: spec.Provider, Model: spec.Model, ModelRef: spec.ModelRef, Region: spec.Region, Tags: append([]string(nil), spec.Tags...), Validation: spec.Validation.toTargetValidation()}
+		target, existed := existingByID[spec.identity()]
+		if !existed {
+			target = Target{}
+		}
+		target.Provider = spec.Provider
+		if spec.Model != "" || !existed {
+			target.Model = spec.Model
+		}
+		target.ModelRef = spec.ModelRef
+		if spec.Region != "" || !existed {
+			target.Region = spec.Region
+		}
+		if spec.Tags != nil || !existed {
+			target.Tags = append([]string(nil), spec.Tags...)
+		}
+		if spec.Validation != nil {
+			target.Validation = spec.Validation.toTargetValidation()
+		} else if spec.ClearValidation {
+			target.Validation = nil
+		}
 		if spec.Weight > 0 {
 			target.Weight = spec.Weight
 		}

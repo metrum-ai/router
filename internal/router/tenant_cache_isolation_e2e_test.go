@@ -1,0 +1,151 @@
+// Copyright 2026 Metrum AI
+// SPDX-License-Identifier: Apache-2.0
+
+package router
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+)
+
+func TestTenantCacheIsolationEndToEnd(t *testing.T) {
+	const saltEnv = "ROUTER_TEST_UPSTREAM_SALT_KEY"
+	t.Setenv(saltEnv, strings.Repeat("k", 32))
+	var mu sync.Mutex
+	var salts []string
+	var calls int
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		messages, _ := body["messages"].([]any)
+		prompt := ""
+		if len(messages) > 0 {
+			if m, ok := messages[0].(map[string]any); ok {
+				prompt, _ = m["content"].(string)
+			}
+		}
+		if prompt == "FAIL_SENTINEL" {
+			http.Error(w, "upstream failure", http.StatusServiceUnavailable)
+			return
+		}
+		if prompt == "TIMEOUT_SENTINEL" {
+			<-r.Context().Done()
+			return
+		}
+		salt, _ := body["cache_salt"].(string)
+		mu.Lock()
+		salts = append(salts, salt)
+		calls++
+		n := calls
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"id":"chat_%d","model":"mock-model","choices":[{"index":0,"message":{"role":"assistant","content":"fresh-%d"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":1,"total_tokens":3}}`, n, n)
+	}))
+	defer upstream.Close()
+	cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
+	cfg.Server.Cache.UpstreamSaltKeyEnv = saltEnv
+	provider := cfg.Provider["mock"]
+	provider.UpstreamKind = "vllm"
+	cfg.Provider["mock"] = provider
+	cfg.Callers[0].Project = "tenant-a"
+	other := cfg.Callers[0]
+	other.ID, other.User, other.Project = "bob", "bob", "tenant-a"
+	other.TokenID = "rtr_bob_test"
+	otherToken := "rtr_bob_test_secret"
+	otherTokenHash, err := HashCallerToken(otherToken, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other.TokenHash = otherTokenHash
+	other.TokenSHA256 = ""
+	cfg.Callers = append(cfg.Callers, other)
+	cfg.Users = []UserConfig{{ID: "alice"}, {ID: "bob"}}
+	cfg.Projects = []ProjectConfig{{ID: "tenant-a"}}
+	cfg.ProjectMemberships = []ProjectMembershipConfig{{UserID: "alice", Project: "tenant-a"}, {UserID: "bob", Project: "tenant-a"}}
+	svc, err := newServiceWithVerifiedFixture(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		if svc != nil {
+			svc.Close()
+		}
+	}()
+	call := func(token, prompt string, ctx context.Context) *httptest.ResponseRecorder {
+		body := `{"model":"default","temperature":0,"messages":[{"role":"user","content":"` + prompt + `"}]}`
+		r := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body)).WithContext(ctx)
+		if token != "" {
+			r.Header.Set("Authorization", "Bearer "+token)
+		}
+		w := httptest.NewRecorder()
+		svc.Handler().ServeHTTP(w, r)
+		return w
+	}
+	first := call(testToken, "TENANT_PROMPT_SENTINEL", context.Background())
+	second := call(otherToken, "TENANT_PROMPT_SENTINEL", context.Background())
+	if first.Code != http.StatusOK || second.Code != http.StatusOK || strings.Contains(first.Body.String(), "fresh-2") || !strings.Contains(second.Body.String(), "fresh-2") {
+		t.Fatalf("cross-tenant response cache hit: statuses=%d/%d", first.Code, second.Code)
+	}
+	repeat := call(testToken, "TENANT_PROMPT_SENTINEL", context.Background())
+	if repeat.Code != http.StatusOK || !strings.Contains(repeat.Body.String(), "fresh-1") {
+		t.Fatalf("same-tenant cache miss: status=%d", repeat.Code)
+	}
+	mu.Lock()
+	gotCalls := calls
+	gotSalts := append([]string(nil), salts...)
+	mu.Unlock()
+	if gotCalls != 2 || len(gotSalts) != 2 || gotSalts[0] == "" || gotSalts[0] == gotSalts[1] {
+		t.Fatalf("upstream salts/calls not tenant isolated: calls=%d salts=%d", gotCalls, len(gotSalts))
+	}
+	cacheItems := svc.cache.Stats().Items
+	unauthorized := call("", "TENANT_PROMPT_SENTINEL", context.Background())
+	if unauthorized.Code != http.StatusUnauthorized || svc.cache.Stats().Items != cacheItems {
+		t.Fatal("no-caller request reached response cache")
+	}
+	failure := call(otherToken, "FAIL_SENTINEL", context.Background())
+	if failure.Code < 500 || svc.cache.Stats().Items != cacheItems {
+		t.Fatal("upstream failure created a cache entry")
+	}
+	timeoutCtx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	timeout := call(otherToken, "TIMEOUT_SENTINEL", timeoutCtx)
+	if timeout.Code == http.StatusOK || svc.cache.Stats().Items != cacheItems {
+		t.Fatal("upstream timeout created a cache entry")
+	}
+	logBytes, err := os.ReadFile(cfg.Server.Logging.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	logText := string(logBytes)
+	if strings.Contains(logText, "TENANT_PROMPT_SENTINEL") || strings.Contains(logText, "FAIL_SENTINEL") || strings.Contains(logText, "TIMEOUT_SENTINEL") || strings.Contains(logText, gotSalts[0]) || strings.Contains(logText, gotSalts[1]) {
+		t.Fatal("prompt or cache salt appeared in router logs")
+	}
+	svc.Close()
+	cfg.Projects[0].ShareCacheWithinProject = true
+	cfg.Server.Cache.Enabled = false // Force both callers through to the engine to compare their salts.
+	svc, err = newServiceWithVerifiedFixture(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sharedFirst := call(testToken, "SHARED_PROMPT_A", context.Background())
+	sharedSecond := call(otherToken, "SHARED_PROMPT_B", context.Background())
+	if sharedFirst.Code != http.StatusOK || sharedSecond.Code != http.StatusOK {
+		t.Fatalf("shared-project engine requests failed: statuses=%d/%d", sharedFirst.Code, sharedSecond.Code)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(salts) != 4 || salts[2] == "" || salts[2] != salts[3] {
+		t.Fatalf("share_cache_within_project did not share the vLLM salt: %v", salts)
+	}
+}

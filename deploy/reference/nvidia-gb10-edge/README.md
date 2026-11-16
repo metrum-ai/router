@@ -51,6 +51,8 @@ Cost control on these static groups is the caller `quota` (1 000 requests and
 
 ## Deploy
 
+The checked-in `token_hash` value `REPLACE_WITH_GENERATED_CALLER_TOKEN_HASH` is an intentionally invalid placeholder; generate a real caller token before serving and write the generated caller entry into this configuration.
+
 ```sh
 cd deploy/reference/nvidia-gb10-edge
 mkdir -p state logs config

@@ -21,7 +21,7 @@ import anthropic
 import openai
 import pytest
 
-from conftest import CALLER, CALLER_DIGEST, PROMPT_CANARY, request, spawn_router, stop_router
+from conftest import CALLER, CALLER_ID, CALLER_DIGEST, PROMPT_CANARY, request, spawn_router, stop_router
 from harness.scripted_upstream import FakeUpstream, ScriptedScenario, start_fake_upstream
 
 # Synthetic upstream credential; must never reach the caller or artifacts.
@@ -77,7 +77,8 @@ models:
   messages-bearer: {{strategy: static, targets: [{{provider: messages_bearer, model: synthetic-messages-bearer, request_shape_support: {{supported_inbound_dialects: [anthropic], validation_status: passed}}}}]}}
 callers:
   - id: synthetic-allowed
-    token_sha256: {CALLER_DIGEST}
+    token_hash: {CALLER_DIGEST}
+    token_id: {CALLER_ID}
     allow: [chat, limited, messages, messages-bearer]
 '''
     handle = spawn_router(router, work, config, env={"API_COMPAT_UPSTREAM_KEY": UPSTREAM_KEY})

@@ -39,6 +39,79 @@ func TestLoadEnvJSONSetsMissingValuesOnly(t *testing.T) {
 	}
 }
 
+func TestDirectModelTargetInheritsCapabilitiesOnly(t *testing.T) {
+	price := 0.25
+	catalog := ProviderModel{
+		Model:                    "shared-model",
+		Dialect:                  "openai-chat",
+		RPM:                      900,
+		Tier:                     "catalog-tier",
+		Cost:                     99,
+		InputPricePerMillionUSD:  100,
+		OutputPricePerMillionUSD: 200,
+		ToolSupport:              ToolSupport{OpenAIChat: []string{"function"}},
+		Reasoning:                ReasoningSupport{Supported: true, Mode: reasoningModeOptIn, Control: reasoningControlEffortEnum},
+		InputModalities:          []string{"text"},
+	}
+	cfg := Config{Provider: map[string]ProviderConfig{
+		"openai": {Dialect: "openai-chat", Models: map[string]ProviderModel{"catalog-key": catalog}},
+	}}
+	target := Target{
+		Provider:                 "openai",
+		Model:                    "shared-model",
+		Dialect:                  "openai-chat",
+		RPM:                      17,
+		Tier:                     "explicit-tier",
+		Cost:                     3,
+		InputPricePerMillionUSD:  price,
+		OutputPricePerMillionUSD: 0.5,
+	}
+	got, err := cfg.resolveTarget("test", target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Dialect != target.Dialect || got.RPM != target.RPM || got.Tier != target.Tier || got.Cost != target.Cost ||
+		got.InputPricePerMillionUSD != target.InputPricePerMillionUSD || got.OutputPricePerMillionUSD != target.OutputPricePerMillionUSD {
+		t.Fatalf("direct target inherited non-capability catalog metadata: got %#v, want dialect/pricing/routing from %#v", got, target)
+	}
+	if !got.Reasoning.Supported || got.Reasoning.Control != reasoningControlEffortEnum || !supportsAnyCapability(got.ToolSupport.OpenAIChat, "function") {
+		t.Fatalf("direct target did not inherit catalog capabilities: %#v", got)
+	}
+	if len(got.InputModalities) != 1 || got.InputModalities[0] != "text" {
+		t.Fatalf("input modalities=%v, want inherited text capability", got.InputModalities)
+	}
+}
+
+func TestProviderModelByIDPrefersTargetDialectAndAvoidsAmbiguousFallback(t *testing.T) {
+	models := map[string]ProviderModel{
+		"chat-entry": {
+			Model:     "shared-model",
+			Dialect:   "openai-chat",
+			Reasoning: ReasoningSupport{Supported: true, Mode: reasoningModeOptIn, Control: reasoningControlEffortEnum},
+		},
+		"responses-entry": {
+			Model:       "shared-model",
+			Dialect:     "openai-responses",
+			ToolSupport: ToolSupport{OpenAIResponses: []string{"function"}},
+		},
+	}
+
+	got, ok := providerModelByID(models, "shared-model", "openai-chat", "openai-responses")
+	if !ok || !got.Reasoning.Supported || len(got.ToolSupport.OpenAIResponses) != 0 {
+		t.Fatalf("chat lookup=%#v, %t; wanted only matching openai-chat catalog entry", got, ok)
+	}
+	got, ok = providerModelByID(models, "shared-model", "anthropic", "")
+	if ok || got.Reasoning.Supported || len(got.ToolSupport.OpenAIResponses) != 0 {
+		t.Fatalf("mismatched ambiguous lookup=%#v, %t; want no inherited capabilities", got, ok)
+	}
+
+	unique := map[string]ProviderModel{"only": models["responses-entry"]}
+	got, ok = providerModelByID(unique, "shared-model", "openai-chat", "")
+	if !ok || len(got.ToolSupport.OpenAIResponses) != 1 {
+		t.Fatalf("unique fallback=%#v, %t; want sole catalog entry", got, ok)
+	}
+}
+
 func TestUsageDBMigrationPolicyValidation(t *testing.T) {
 	cfg := minimalConfig(t)
 	cfg.Server.UsageDB.MigrationPolicy = "not-a-policy"
@@ -91,6 +164,32 @@ func TestV4StoredScriptFieldsWithZeroValuesLoad(t *testing.T) {
 	}
 	if loaded.Models["default"].Strategy != "static" {
 		t.Fatalf("strategy = %q", loaded.Models["default"].Strategy)
+	}
+}
+
+func TestLoadConfigRejectsInvalidMCPCredentialEnv(t *testing.T) {
+	cfg := minimalConfig(t)
+	cfg.MCP = MCPGatewayConfig{
+		Enabled: true,
+		RPM:     60,
+		Servers: []MCPServerConfig{{
+			Name:          "local",
+			URL:           "http://127.0.0.1:8080/mcp",
+			AllowHosts:    []string{"127.0.0.1"},
+			AllowHTTP:     true,
+			CredentialEnv: "MCP_LOCAL_TOKEN",
+		}},
+	}
+	raw, err := yaml.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadConfig(path); err == nil || !strings.Contains(err.Error(), "credential_env must use the ROUTER_MCP_ prefix") {
+		t.Fatalf("LoadConfig error = %v, want invalid MCP credential prefix", err)
 	}
 }
 
@@ -703,6 +802,30 @@ func TestKeyHygieneConfigEnforcement(t *testing.T) {
 	}
 }
 
+func TestMigratedLegacyCallerRemainsSubjectToKeyHygieneEnforcement(t *testing.T) {
+	cfg := minimalConfig(t)
+	cfg.Security.KeyHygiene = KeyHygieneConfig{MinEntropyBits: 128, Enforce: true}
+	cfg.Callers[0].Environment = "prod"
+	cfg.Callers[0].TokenFormatVersion = 0
+	cfg.Callers[0].TokenEntropyBits = 0
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "token entropy") {
+		t.Fatalf("unknown entropy from a migrated legacy token passed enforce: %v", err)
+	}
+}
+
+func TestDisabledCallerMayHaveNoVerifierAfterLegacyCleanup(t *testing.T) {
+	cfg := minimalConfig(t)
+	cfg.Callers[0].Status = "disabled"
+	cfg.Callers[0].TokenHash = ""
+	cfg.Callers[0].TokenSHA256 = ""
+	cfg.Callers[0].TokenFormatVersion = 0
+	cfg.Callers[0].TokenEntropyBits = 0
+	cfg.Callers[0].RevokedTokenHash = strings.Repeat("a", 64)
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("disabled caller without a verifier should load: %v", err)
+	}
+}
+
 func TestProviderSpendBreakerConfigValidation(t *testing.T) {
 	for _, tt := range []struct {
 		name string
@@ -1099,10 +1222,14 @@ func TestProviderModelPricingAndToolSupportValidation(t *testing.T) {
 }
 
 func TestValidateRejectsDuplicateCallerIdentifiers(t *testing.T) {
-	const (
-		hashOne = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-		hashTwo = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"
-	)
+	hashOne, err := HashCallerToken("token-one", strings.NewReader(strings.Repeat("a", 32)), callerTokenHashMinIterations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hashTwo, err := HashCallerToken("token-two", strings.NewReader(strings.Repeat("b", 32)), callerTokenHashMinIterations)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for _, tt := range []struct {
 		name          string
 		callers       []CallerConfig
@@ -1112,44 +1239,35 @@ func TestValidateRejectsDuplicateCallerIdentifiers(t *testing.T) {
 		{
 			name: "duplicate token hash different caller ids",
 			callers: []CallerConfig{
-				{ID: "alice", TokenSHA256: hashOne, Allow: []string{"default"}},
-				{ID: "bob", TokenSHA256: hashOne, Allow: []string{"default"}},
+				{ID: "alice", TokenID: "rtr_alice", TokenHash: hashOne, Allow: []string{"default"}},
+				{ID: "bob", TokenID: "rtr_bob", TokenHash: hashOne, Allow: []string{"default"}},
 			},
-			want:          "duplicate caller token_sha256 for callers alice and bob",
+			want:          "duplicate caller token_hash for callers alice and bob",
 			mustNotExpose: hashOne,
 		},
 		{
 			name: "duplicate caller id different hashes",
 			callers: []CallerConfig{
-				{ID: "alice", TokenSHA256: hashOne, Allow: []string{"default"}},
-				{ID: "alice", TokenSHA256: hashTwo, Allow: []string{"default"}},
+				{ID: "alice", TokenID: "rtr_alice", TokenHash: hashOne, Allow: []string{"default"}},
+				{ID: "alice", TokenID: "rtr_bob", TokenHash: hashTwo, Allow: []string{"default"}},
 			},
 			want: "duplicate caller id",
 		},
 		{
 			name: "duplicate public token id",
 			callers: []CallerConfig{
-				{ID: "alice", TokenSHA256: hashOne, TokenID: "rtr_metrum_alice_test_dev_k1", Allow: []string{"default"}},
-				{ID: "bob", TokenSHA256: hashTwo, TokenID: "rtr_metrum_alice_test_dev_k1", Allow: []string{"default"}},
+				{ID: "alice", TokenHash: hashOne, TokenID: "rtr_metrum_alice_test_dev_k1", Allow: []string{"default"}},
+				{ID: "bob", TokenHash: hashTwo, TokenID: "rtr_metrum_alice_test_dev_k1", Allow: []string{"default"}},
 			},
 			want: "duplicate caller token_id for callers alice and bob",
 		},
 		{
-			name: "case insensitive duplicate hash",
-			callers: []CallerConfig{
-				{ID: "alice", TokenSHA256: hashOne, Allow: []string{"default"}},
-				{ID: "bob", TokenSHA256: strings.ToUpper(hashOne), Allow: []string{"default"}},
-			},
-			want:          "duplicate caller token_sha256 for callers alice and bob",
-			mustNotExpose: hashOne,
-		},
-		{
 			name: "duplicate involving metrics admin caller",
 			callers: []CallerConfig{
-				{ID: "metrics-admin", TokenSHA256: hashOne, TokenID: "rtr_metrum_metrics_admin_test_k1", MetricsAdmin: true},
-				{ID: "alice", TokenSHA256: hashOne, TokenID: "rtr_metrum_alice_test_dev_k1", Allow: []string{"default"}},
+				{ID: "metrics-admin", TokenHash: hashOne, TokenID: "rtr_metrum_metrics_admin_test_k1", MetricsAdmin: true},
+				{ID: "alice", TokenHash: hashOne, TokenID: "rtr_metrum_alice_test_dev_k1", Allow: []string{"default"}},
 			},
-			want:          "duplicate caller token_sha256 for callers metrics-admin and alice",
+			want:          "duplicate caller token_hash for callers metrics-admin and alice",
 			mustNotExpose: hashOne,
 		},
 	} {
@@ -1195,7 +1313,6 @@ func TestValidateCallerTokenHashFormat(t *testing.T) {
 		{name: "salt not base64url", callers: []CallerConfig{{ID: "alice", TokenID: "rtr_a", TokenHash: "pbkdf2-sha3-512:i=20000:***:" + key}}, want: "salt must be unpadded base64url"},
 		{name: "salt too short", callers: []CallerConfig{{ID: "alice", TokenID: "rtr_a", TokenHash: "pbkdf2-sha3-512:i=20000:" + shortSalt + ":" + key}}, want: "salt must be"},
 		{name: "key wrong length", callers: []CallerConfig{{ID: "alice", TokenID: "rtr_a", TokenHash: "pbkdf2-sha3-512:i=20000:" + salt + ":" + shortKey}}, want: "key must be 64 bytes"},
-		{name: "both formats", callers: []CallerConfig{{ID: "alice", TokenID: "rtr_a", TokenHash: good, TokenSHA256: legacy}}, want: "sets both token_hash and deprecated token_sha256"},
 		{name: "token id required", callers: []CallerConfig{{ID: "alice", TokenHash: good}}, want: "token_hash requires token_id"},
 		{name: "duplicate token hash", callers: []CallerConfig{{ID: "alice", TokenID: "rtr_a", TokenHash: good}, {ID: "bob", TokenID: "rtr_b", TokenHash: good}}, want: "duplicate caller token_hash for callers alice and bob"},
 		{name: "token id prefix overlap", callers: []CallerConfig{{ID: "alice", TokenID: "rtr_metrum_alice", TokenHash: good}, {ID: "bob", TokenID: "rtr_metrum_alice_k2", TokenHash: other}}, want: "overlap"},
@@ -1223,7 +1340,6 @@ func TestValidateCallerTokenHashFormat(t *testing.T) {
 		cfg.Callers = []CallerConfig{
 			{ID: "alice", TokenID: "rtr_metrum_alice_test_dev_k1", TokenHash: good, Allow: []string{"default"}},
 			{ID: "bob", TokenID: "rtr_metrum_bob_test_dev_k1", TokenHash: other, Allow: []string{"default"}},
-			{ID: "carol", TokenSHA256: legacy, Allow: []string{"default"}},
 		}
 		if err := cfg.Validate(); err != nil {
 			t.Fatalf("Validate() err=%v", err)
@@ -1652,10 +1768,6 @@ models:
           placeholder_prefix: US_SSN
     targets:
       - { provider: mock, model: mock-model, weight: 1 }
-callers:
-  - id: alice
-    token_sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-    allow: [sensitive-workloads]
 `)
 	var cfg Config
 	if err := yaml.Unmarshal(raw, &cfg); err != nil {
@@ -1671,6 +1783,40 @@ callers:
 	}
 	if filter.ApplyTo.System == nil || !*filter.ApplyTo.System || filter.ApplyTo.ImageURLs {
 		t.Fatalf("unexpected apply_to decode: %#v", filter.ApplyTo)
+	}
+}
+
+func TestLoadConfigRejectsRemovedCallerTokenSHA256(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	raw := "callers:\n  - token_sha256: " + strings.Repeat("a", 64) + "\n    id: alice\n"
+	if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := LoadConfig(path)
+	if err == nil || !strings.Contains(err.Error(), "caller alice") || !strings.Contains(err.Error(), "callers migrate-legacy") {
+		t.Fatalf("LoadConfig error = %v, want migration guidance for alice", err)
+	}
+	if strings.Contains(err.Error(), strings.Repeat("a", 64)) {
+		t.Fatalf("LoadConfig leaked removed verifier: %v", err)
+	}
+}
+
+func TestRemovedCallerSHAValidationDecodesAliasesAndIgnoresEmptyLegacyField(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		yaml string
+		want bool
+	}{
+		{name: "empty beside current hash", yaml: "callers:\n  - id: alice\n    token_hash: \"pbkdf2-sha3-512:i=10000:AAAAAAAAAAAAAAAAAAAAAA:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\"\n    token_id: rtr_metrum_a_b_c_d\n    token_sha256: ''\n"},
+		{name: "non-empty direct", yaml: "callers:\n  - id: alice\n    token_sha256: " + strings.Repeat("a", 64) + "\n", want: true},
+		{name: "non-empty merged alias", yaml: "legacy: &legacy\n  token_sha256: " + strings.Repeat("b", 64) + "\ncallers:\n  - id: alice\n    <<: *legacy\n", want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateRemovedCallerTokenSHA256([]byte(tc.yaml))
+			if (err != nil) != tc.want {
+				t.Fatalf("validation error = %v, want error=%v", err, tc.want)
+			}
+		})
 	}
 }
 
@@ -2930,6 +3076,10 @@ func TestIntelligentRoutingConfigRequiresStrategy(t *testing.T) {
 
 func minimalConfig(t *testing.T) *Config {
 	t.Helper()
+	verifier, err := HashCallerToken("rtr_alice_test_secret", strings.NewReader(strings.Repeat("m", 32)), callerTokenHashMinIterations)
+	if err != nil {
+		t.Fatal(err)
+	}
 	return &Config{
 		Server: ServerConfig{Identifiers: IdentifierConfig{Mode: "passthrough"},
 			Cache: CacheConfig{Enabled: true},
@@ -2948,9 +3098,10 @@ func minimalConfig(t *testing.T) *Config {
 			"default": {Strategy: "static", Targets: []Target{{Provider: "mock", Model: "mock-model"}}},
 		},
 		Callers: []CallerConfig{{
-			ID:          "alice",
-			TokenSHA256: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-			Allow:       []string{"default"},
+			ID:        "alice",
+			TokenHash: verifier,
+			TokenID:   "rtr_alice_test",
+			Allow:     []string{"default"},
 		}},
 	}
 }
@@ -3123,21 +3274,19 @@ func TestSecretRedactorScrubsCallerTokenVerifiers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	legacy := strings.Repeat("ab", 32)
 	cfg := minimalConfig(t)
 	cfg.Callers = []CallerConfig{
 		{ID: "alice", TokenID: "rtr_metrum_alice_p_dev_k1", TokenHash: tokenHash},
-		{ID: "bob", TokenSHA256: legacy},
 	}
 	redactor := newSecretRedactor()
 	redactor.addConfig(cfg)
-	err = redactConfigError(fmt.Errorf("callers: %s / %s / %s", tokenHash, legacy, tokenHash[:7]+"..."), redactor)
-	for _, leaked := range []string{tokenHash, legacy, tokenHash[:7] + "..."} {
+	err = redactConfigError(fmt.Errorf("callers: %s / %s", tokenHash, tokenHash[:7]+"..."), redactor)
+	for _, leaked := range []string{tokenHash, tokenHash[:7] + "..."} {
 		if strings.Contains(err.Error(), leaked) {
 			t.Fatalf("redacted error still quotes a caller verifier: %v", err)
 		}
 	}
-	for _, want := range []string{"[redacted: token_hash]", "[redacted: token_sha256]"} {
+	for _, want := range []string{"[redacted: token_hash]"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("redacted error %q missing %q", err, want)
 		}

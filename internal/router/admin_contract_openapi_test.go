@@ -114,6 +114,14 @@ func TestAdminOpenAPISchemaCoverage(t *testing.T) {
 		if got := item["operationId"]; got != op.ID {
 			t.Fatalf("operation %s operationId = %v", op.ID, got)
 		}
+		if op.ID == "startControlPlaneBackup" || op.ID == "startControlPlaneRestore" {
+			responses, _ := item["responses"].(map[string]any)
+			accepted, _ := responses["202"].(map[string]any)
+			headers, _ := accepted["headers"].(map[string]any)
+			if accepted == nil || headers["Location"] == nil {
+				t.Fatalf("operation %s must document 202 and Location", op.ID)
+			}
+		}
 		if item["summary"] == "" || item["summary"] == nil {
 			t.Fatalf("operation %s has no summary", op.ID)
 		}
@@ -279,6 +287,8 @@ func TestAdminV1GuardsMatchToday(t *testing.T) {
 		// reports: object depends on the reports surface, action on the request shape.
 		{"listAdminSecurityEvents", "admin_reports.go handleAdminReports", authzObjectSecurityReports, authzActionRead, nil},
 		{"exportAdminSecurityCSV", "admin_reports.go handleAdminReports", authzObjectSecurityReports, authzActionExport, nil},
+		{"exportAdminSecurityIncidentJSON", "admin_reports.go handleAdminReports", authzObjectSecurityReports, authzActionExport, nil},
+		{"exportAdminSecurityIncidentMarkdown", "admin_reports.go handleAdminReports", authzObjectSecurityReports, authzActionExport, nil},
 		{"getAdminReportRequest", "admin_reports.go handleAdminReports", authzObjectAdminReports, authzActionDrilldown, nil},
 	}
 	for _, want := range cases {

@@ -1,6 +1,7 @@
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+SOURCE_DATE_EPOCH ?= $(shell git show -s --format=%ct HEAD 2>/dev/null || date -u +%s)
 LDFLAGS ?= -X github.com/metrum-ai/router/internal/buildinfo.Version=$(VERSION) -X github.com/metrum-ai/router/internal/buildinfo.Commit=$(COMMIT) -X github.com/metrum-ai/router/internal/buildinfo.BuildDate=$(BUILD_DATE)
 DIST_DIR ?= dist
 PKG_NAME ?= metrum-ai-router
@@ -55,9 +56,9 @@ EVAL_CI_REPORT_TIMESTAMP ?=
 EVAL_SAVE_CI_REPORT ?= false
 export EVAL_MODEL EVAL_BASE_URL EVAL_API EVAL_LIMIT EVAL_CONCURRENCY EVAL_TIMEOUT EVAL_LOG_ROOT EVAL_RUN_ID EVAL_LOG_DIR EVAL_REASONING EVAL_REQUIRE_REASONING_COVERAGE EVAL_REASONING_COVERAGE_FILE EVAL_USAGE_CONFIG_YAML EVAL_USAGE_CONFIG_FILE EVAL_USAGE_CALLER_ID EVAL_USAGE_CLIENT EVAL_USAGE_REPORT_BIN EVAL_USAGE_EXPORT_TIMEOUT EVAL_MODEL_KIND EVAL_SUITE EVAL_BASELINE_JSON EVAL_POLICY EVAL_INSPECT EVAL_CI_REPORT_DIR EVAL_CI_REPORT_TIMESTAMP EVAL_SAVE_CI_REPORT
 
-# Keep the repository's historical validation contract for bare `make` even
-# though the EKS help target appears earlier in this file.
-.DEFAULT_GOAL := test
+# CodeQL's Go autobuild invokes plain `make`; keep that compile-only so static
+# analysis does not execute the repository's full test suite.
+.DEFAULT_GOAL := build-package-binaries
 
 # Tenant discovery/network-policy helpers (not staging delivery).
 DOCKER ?= docker
@@ -95,11 +96,11 @@ EKS_MFA_KEYCHAIN_SERVICE ?=
 EKS_MFA_KEYCHAIN_ACCOUNT ?= smartrouter
 EKS_SESSION_DURATION ?= 3600
 COPYFILE_DISABLE ?= 1
-export VERSION COMMIT BUILD_DATE DIST_DIR PKG_NAME GOOS GOARCH IMAGE_NAME IMAGE_TAG PYTHON AWS_REGION EKS_CLUSTER K8S_NAMESPACE KUSTOMIZE_OVERLAY ENVIRONMENT EKS_AWS_PROFILE EKS_ACCOUNT_ID EKS_REGION EKS_NAMESPACE EKS_LINKERD_NAMESPACE EKS_INGRESS_NAMESPACE EKS_INGRESS_SERVICE_ACCOUNT EKS_INGRESS_DEPLOYMENT EKS_LINKERD_TRUST_DOMAIN EKS_ECR_REPOSITORY EKS_DISCOVERY_OUTPUT EKS_LINKERD_POLICY_OUTPUT EKS_INGRESS_NETWORK_POLICY_OUTPUT EKS_POLICY_AWS_PROFILE EKS_POLICY_KUBECONFIG EKS_POLICY_CONTEXT EKS_POLICY_APPLY_CONFIRM EKS_ADMIN_PROFILE EKS_SOURCE_USER EKS_MFA_SERIAL EKS_MFA_KEYCHAIN_SERVICE EKS_MFA_KEYCHAIN_ACCOUNT EKS_SESSION_DURATION
+export VERSION COMMIT BUILD_DATE SOURCE_DATE_EPOCH DIST_DIR PKG_NAME GOOS GOARCH IMAGE_NAME IMAGE_TAG PYTHON AWS_REGION EKS_CLUSTER K8S_NAMESPACE KUSTOMIZE_OVERLAY ENVIRONMENT EKS_AWS_PROFILE EKS_ACCOUNT_ID EKS_REGION EKS_NAMESPACE EKS_LINKERD_NAMESPACE EKS_INGRESS_NAMESPACE EKS_INGRESS_SERVICE_ACCOUNT EKS_INGRESS_DEPLOYMENT EKS_LINKERD_TRUST_DOMAIN EKS_ECR_REPOSITORY EKS_DISCOVERY_OUTPUT EKS_LINKERD_POLICY_OUTPUT EKS_INGRESS_NETWORK_POLICY_OUTPUT EKS_POLICY_AWS_PROFILE EKS_POLICY_KUBECONFIG EKS_POLICY_CONTEXT EKS_POLICY_APPLY_CONFIRM EKS_ADMIN_PROFILE EKS_SOURCE_USER EKS_MFA_SERIAL EKS_MFA_KEYCHAIN_SERVICE EKS_MFA_KEYCHAIN_ACCOUNT EKS_SESSION_DURATION
 export COPYFILE_DISABLE
 TAR_ENV := COPYFILE_DISABLE=1
 
-BUILD_LDFLAGS = -X github.com/metrum-ai/router/internal/buildinfo.Version=$${VERSION} -X github.com/metrum-ai/router/internal/buildinfo.Commit=$${COMMIT} -X github.com/metrum-ai/router/internal/buildinfo.BuildDate=$${BUILD_DATE}
+BUILD_LDFLAGS = -buildid= -X github.com/metrum-ai/router/internal/buildinfo.Version=$${VERSION} -X github.com/metrum-ai/router/internal/buildinfo.Commit=$${COMMIT} -X github.com/metrum-ai/router/internal/buildinfo.BuildDate=$${BUILD_DATE}
 
 LOCAL_ROUTER_OUT ?= tmp/local-pi
 LOCAL_ROUTER_LISTEN ?= 0.0.0.0:18081
@@ -245,6 +246,7 @@ agent-tool-mock:
 	for client in pi langgraph openai-agents; do tests/agent_compat/.venv/bin/python tests/agent_compat/run_chat_smoke.py "$$client" 1 parallel || exit $$?; done
 	for client in pi langgraph openai-agents; do tests/agent_compat/.venv/bin/python tests/agent_compat/chat_responses_bridge_smoke.py "$$client" || exit $$?; done
 	$(PYTHON) tests/agent_compat/claude_anthropic_smoke.py
+	$(PYTHON) tests/agent_compat/claude_mcp_smoke.py
 	AGENT_COMPAT_CROSS_CHAT=1 $(PYTHON) tests/agent_compat/claude_anthropic_smoke.py
 	$(PYTHON) tests/agent_compat/claude_thinking_cache_smoke.py
 
@@ -366,8 +368,10 @@ test-reference-configs:
 	go build -buildvcs=false -ldflags "$(BUILD_LDFLAGS)" -o "$$tmp/routerctl" ./cmd/metrum-ai-routerctl || exit 1; \
 	for tier in $(REFERENCE_TIERS); do \
 	  echo "validating deploy/reference/$$tier/config.yaml"; \
+	  sed 's/REPLACE_WITH_GENERATED_CALLER_TOKEN_HASH/pbkdf2-sha3-512:i=10000:AAAAAAAAAAAAAAAAAAAAAA:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA/g' \
+	    "deploy/reference/$$tier/config.yaml" > "$$tmp/reference-config.yaml" || exit 1; \
 	  $(REFERENCE_CONFIG_ENV) "$$tmp/routerctl" config validate \
-	    --config "deploy/reference/$$tier/config.yaml" >/dev/null || exit 1; \
+	    --config "$$tmp/reference-config.yaml" >/dev/null || exit 1; \
 	done
 
 .PHONY: test-k8s-nvidia-local-serving test-k8s-amd-instinct-local-serving test-k8s-nvidia-llmd-compat
@@ -465,11 +469,22 @@ ci-python: secret-contract capability-smoke-contracts
 	python3 scripts/outcome_calibrated_policy_test.py
 	$(MAKE) d3-policy-test harbor-adapter-test
 	python3 scripts/validate_release_tag_test.py
+	python3 scripts/test_compare_release_checksums.py
+	python3 scripts/test_check_release_environment.py
+	python3 scripts/test_check_release_payload.py
+	python3 scripts/test_release_ai_review.py
+	python3 scripts/select_previous_release_test.py
+	python3 scripts/test_sign_release_windows_packages.py
+	PYTHONPATH=scripts python3 -m unittest scripts/release_image_oci_layout_test.py -q
+	python3 scripts/check_release_dry_run_test.py
 	python3 scripts/hierarchy_release_gate_test.py
 	uv run --with pyyaml python scripts/release_provenance_test.py
+	PYTHONPATH=scripts python3 -m unittest scripts/release_image_layer_test.py scripts/release_image_binary_test.py -q
 	python3 scripts/ci_topology_test.py
 	uv run --with pyyaml python -m unittest scripts/engine_advisory_gate_test.py -q
 	python3 scripts/harbor_promotion_test.py
+	python3 scripts/harbor_nightly_budget_test.py
+	python3 scripts/harbor_e2e/prepare_catalog_tasks_test.py
 	uv run --with pyyaml python scripts/eval_infra_test.py
 	uv run --with pyyaml python scripts/direct_provider_canary_test.py
 	uv run --with pyyaml python scripts/eval_infra_matrix.py
@@ -510,6 +525,11 @@ test-fast: secret-contract capability-smoke-contracts
 	python3 scripts/validate_release_tag_test.py
 	python3 scripts/hierarchy_release_gate_test.py
 	uv run --with pyyaml python scripts/release_provenance_test.py
+	python3 scripts/test_release_ai_review.py
+	python3 scripts/select_previous_release_test.py
+	python3 scripts/test_sign_release_windows_packages.py
+	PYTHONPATH=scripts python3 -m unittest scripts/release_image_layer_test.py scripts/release_image_binary_test.py scripts/release_image_oci_layout_test.py -q
+	python3 scripts/check_release_dry_run_test.py
 	python3 scripts/ci_topology_test.py
 	python3 scripts/harbor_promotion_test.py
 	uv run --with pyyaml python scripts/eval_infra_test.py
@@ -855,9 +875,13 @@ package-one-no-docs: capability-smoke-unit
 	set -e; \
 	for bin in $(PACKAGE_BINARIES); do \
 		echo "packaging $$bin for $${GOOS}/$${GOARCH}"; \
-		CGO_ENABLED=0 GOOS="$${GOOS}" GOARCH="$${GOARCH}" go build -buildvcs=false -ldflags "$(BUILD_LDFLAGS)" -o "$$pkg_dir/bin/$$bin$$bin_suffix" "./cmd/$$bin"; \
+		CGO_ENABLED=0 GOOS="$${GOOS}" GOARCH="$${GOARCH}" go build -trimpath -buildvcs=false -ldflags "$(BUILD_LDFLAGS)" -o "$$pkg_dir/bin/$$bin$$bin_suffix" "./cmd/$$bin"; \
 	done; \
 	cp config.example.yaml "$$pkg_dir/config/config.example.yaml"; \
+	if [ -n "$${ENGINE_ADVISORY_SNAPSHOT:-}" ]; then \
+		if [ ! -s "$${ENGINE_ADVISORY_SNAPSHOT}" ]; then echo "engine advisory snapshot missing: $${ENGINE_ADVISORY_SNAPSHOT}" >&2; exit 2; fi; \
+		cp "$${ENGINE_ADVISORY_SNAPSHOT}" "$$pkg_dir/bin/engine-advisories.json"; \
+	fi; \
 	cp env.example.json "$$pkg_dir/config/env.example.json"; \
 	cp deploy/Caddyfile "$$pkg_dir/caddy/Caddyfile"; \
 	for legal in LICENSE NOTICE THIRD_PARTY_NOTICES.md MODEL_LICENSES.md; do \
@@ -874,10 +898,14 @@ package-one-no-docs: capability-smoke-unit
 		python3 scripts/sign_windows_exes.py "$$pkg_dir/bin"; \
 		python3 scripts/make_release_zip.py "$$pkg_dir" "$${DIST_DIR}/$$pkg_name.zip"; \
 	else \
-		$(TAR_ENV) tar --owner=0 --group=0 --numeric-owner -C "$${DIST_DIR}/pkg" -czf "$${DIST_DIR}/$$pkg_name.tar.gz" "$$pkg_name"; \
+		$(TAR_ENV) tar --sort=name --mtime="@$${SOURCE_DATE_EPOCH}" --owner=0 --group=0 --numeric-owner -C "$${DIST_DIR}/pkg" -czf "$${DIST_DIR}/$$pkg_name.tar.gz" "$$pkg_name"; \
 	fi; \
 	if [ "$${GOOS}" = windows ]; then archive="$${DIST_DIR}/$$pkg_name.zip"; else archive="$${DIST_DIR}/$$pkg_name.tar.gz"; fi; \
-	python3 scripts/validate_package_contents.py --allowlist "$(PACKAGE_DOC_ALLOWLIST)" "$$archive"
+	if [ -n "$${ENGINE_ADVISORY_SNAPSHOT:-}" ]; then \
+		python3 scripts/validate_package_contents.py --advisories-snapshot --allowlist "$(PACKAGE_DOC_ALLOWLIST)" "$$archive"; \
+	else \
+		python3 scripts/validate_package_contents.py --allowlist "$(PACKAGE_DOC_ALLOWLIST)" "$$archive"; \
+	fi
 package-all: validate-release-clean docs-build admin-build capability-smoke-unit
 	RELEASE_CLEAN_VALIDATED=1 GOOS=linux GOARCH=amd64 $(MAKE) package-one-no-docs
 	RELEASE_CLEAN_VALIDATED=1 GOOS=linux GOARCH=arm64 $(MAKE) package-one-no-docs
@@ -920,7 +948,7 @@ package-docker-one-no-docs: capability-smoke-unit
 	done < "$(PACKAGE_DOC_ALLOWLIST)"
 	find "$${DIST_DIR}/docker/$${PKG_NAME}-$${VERSION}-docker-$${GOOS}-$${GOARCH}" -type d -exec chmod 0755 {} \;
 	find "$${DIST_DIR}/docker/$${PKG_NAME}-$${VERSION}-docker-$${GOOS}-$${GOARCH}" -type f -exec chmod 0644 {} \;
-	$(TAR_ENV) tar --owner=0 --group=0 --numeric-owner -C "$${DIST_DIR}/docker" -czf "$${DIST_DIR}/$${PKG_NAME}-$${VERSION}-docker-$${GOOS}-$${GOARCH}.tar.gz" "$${PKG_NAME}-$${VERSION}-docker-$${GOOS}-$${GOARCH}"
+	$(TAR_ENV) tar --sort=name --mtime="@$${SOURCE_DATE_EPOCH}" --owner=0 --group=0 --numeric-owner -C "$${DIST_DIR}/docker" -czf "$${DIST_DIR}/$${PKG_NAME}-$${VERSION}-docker-$${GOOS}-$${GOARCH}.tar.gz" "$${PKG_NAME}-$${VERSION}-docker-$${GOOS}-$${GOARCH}"
 	python3 scripts/validate_package_contents.py --allowlist "$(PACKAGE_DOC_ALLOWLIST)" "$${DIST_DIR}/$${PKG_NAME}-$${VERSION}-docker-$${GOOS}-$${GOARCH}.tar.gz"
 
 package-docker-all: validate-release-clean docs-build admin-build capability-smoke-unit

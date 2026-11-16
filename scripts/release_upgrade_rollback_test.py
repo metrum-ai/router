@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 import importlib.util
+import hashlib
 import json
 import subprocess
 import tempfile
@@ -19,9 +20,84 @@ SPEC.loader.exec_module(MODULE)
 
 
 class StrictJSONTests(unittest.TestCase):
+    def test_v48_legacy_caller_config_migrates_with_real_commands(self):
+        root = Path(__file__).parents[1]
+        token_id = "rtr_metrum_migration_prod_v48_k1"
+        token = token_id + "_existing-held-token-secret"
+        digest = hashlib.sha256(token.encode()).hexdigest()
+        second_id = "rtr_metrum_migration_prod_v48_k2"
+        second_token = second_id + "_second-held-token-secret"
+        second_digest = hashlib.sha256(second_token.encode()).hexdigest()
+        with tempfile.TemporaryDirectory() as raw_dir:
+            directory = Path(raw_dir)
+            config = directory / "config.yaml"
+            token_file = directory / "caller.token"
+            second_token_file = directory / "second-caller.token"
+            token_file.write_text(token + "\n", encoding="utf-8")
+            token_file.chmod(0o600)
+            second_token_file.write_text(second_token + "\n", encoding="utf-8")
+            second_token_file.chmod(0o600)
+            config.write_text(
+                "server:\n  listen: ':8080'\ncallers:\n"
+                "  - id: production-api\n"
+                f"    token_sha256: {digest}\n"
+                f"    token_id: {token_id}\n"
+                "  - id: production-worker\n"
+                f"    token_sha256: {second_digest}\n"
+                f"    token_id: {second_id}\n",
+                encoding="utf-8",
+            )
+            migrated = subprocess.run(
+                ["go", "run", "./cmd/metrum-ai-routerctl", "callers", "migrate-legacy",
+                 "--config", str(config), "--id", "production-api", "--token-file", str(token_file)],
+                cwd=root, text=True, capture_output=True, timeout=90, check=False,
+            )
+            self.assertEqual(migrated.returncode, 0, migrated.stderr)
+            migrated = subprocess.run(
+                ["go", "run", "./cmd/metrum-ai-routerctl", "callers", "migrate-legacy",
+                 "--config", str(config), "--id", "production-worker", "--token-file", str(second_token_file)],
+                cwd=root, text=True, capture_output=True, timeout=90, check=False,
+            )
+            self.assertEqual(migrated.returncode, 0, migrated.stderr)
+            updated = config.read_text(encoding="utf-8")
+            self.assertNotIn("token_sha256", updated)
+            self.assertIn("token_hash: pbkdf2-sha3-512:i=20000:", updated)
+            verified = subprocess.run(
+                ["go", "run", "./cmd/metrum-ai-routerctl", "callers", "verify",
+                 "--config", str(config), "--id", "production-api", "--token-file", str(token_file)],
+                cwd=root, text=True, capture_output=True, timeout=90, check=False,
+            )
+            self.assertEqual(verified.returncode, 0, verified.stderr)
+            self.assertIn('"match": true', verified.stdout)
+
     def test_workflow_compares_the_full_candidate_commit_sha(self):
         workflow = Path(__file__).parents[1] / ".github/workflows/release-upgrade-check.yml"
         self.assertIn('--candidate-commit "$(git rev-parse HEAD)"', workflow.read_text(encoding="utf-8"))
+
+    def test_upgrade_check_executes_both_scopes_from_the_checked_in_job(self):
+        contract = MODULE.migration_job_example_script()
+        for fragment in (
+            "apply_scope()", "apply_scope usage ROUTER_USAGE_DB_DSN",
+            "apply_scope router-config ROUTER_CONFIG_DB_DSN", "--action=plan",
+            "--action=maintenance", "--action=verify", "--dsn-env=\"$dsn_env\"", "--json",
+        ):
+            self.assertIn(fragment, contract)
+
+    def test_upgrade_check_runs_the_manifest_shell_script_directly(self):
+        completed = subprocess.CompletedProcess(args=[], returncode=0, stdout='{"Compatible":true}\n', stderr="")
+        with tempfile.TemporaryDirectory() as raw:
+            workspace = Path(raw) / "job"
+            with patch.object(MODULE, "run_as", return_value=completed) as run_as:
+                statuses = MODULE.run_migration_job_example(
+                    Path("/bin/true"), Path(raw) / "usage.sqlite", Path(raw) / "config.sqlite",
+                    "router-test", "apply", workspace,
+                )
+        self.assertEqual(statuses, [{"Compatible": True}])
+        command = run_as.call_args.args[1]
+        self.assertEqual(command[-2], "-ec")
+        self.assertIn("apply_scope usage ROUTER_USAGE_DB_DSN", command[-1])
+        self.assertIn("apply_scope router-config ROUTER_CONFIG_DB_DSN", command[-1])
+        self.assertIn(str(workspace / "metrum-ai-router-migrate"), command[-1])
 
     def test_accepts_one_object(self):
         self.assertEqual(MODULE.parse_single_json('{"state":"current"}'), {"state": "current"})

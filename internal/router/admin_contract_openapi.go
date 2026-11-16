@@ -232,9 +232,19 @@ func (g *adminOpenAPIGenerator) operation(op Operation) (map[string]any, error) 
 	}
 
 	if op.Request != nil {
-		schema, err := g.schemaFor(reflect.TypeOf(op.Request))
-		if err != nil {
-			return nil, err
+		var schema any
+		if open, ok := op.Request.(adminOpenObject); ok {
+			description := "Unspecified object"
+			if len(open.Members) > 0 {
+				description = "Open object. Documented members: " + strings.Join(open.Members, ", ") + "."
+			}
+			schema = map[string]any{"type": "object", "additionalProperties": true, "description": description}
+		} else {
+			var err error
+			schema, err = g.schemaFor(reflect.TypeOf(op.Request))
+			if err != nil {
+				return nil, err
+			}
 		}
 		item["requestBody"] = map[string]any{
 			"required": op.Method != "DELETE",
@@ -247,18 +257,29 @@ func (g *adminOpenAPIGenerator) operation(op Operation) (map[string]any, error) 
 	if success == 0 {
 		success = 200
 	}
+	successResponse := map[string]any{"description": "Success"}
 	if op.Response != nil {
 		schema, contentType, err := g.responseSchema(op.Response)
 		if err != nil {
 			return nil, err
 		}
-		responses[fmt.Sprintf("%d", success)] = map[string]any{
-			"description": "Success",
-			"content":     map[string]any{contentType: map[string]any{"schema": schema}},
-		}
-	} else {
-		responses[fmt.Sprintf("%d", success)] = map[string]any{"description": "Success"}
+		successResponse["content"] = map[string]any{contentType: map[string]any{"schema": schema}}
 	}
+	if len(op.SuccessHeaders) > 0 {
+		headers := make(map[string]any, len(op.SuccessHeaders))
+		for _, header := range op.SuccessHeaders {
+			entry := map[string]any{"description": header.Description}
+			if header.Required {
+				entry["required"] = true
+			}
+			if header.Schema != nil {
+				entry["schema"] = header.Schema
+			}
+			headers[header.Name] = entry
+		}
+		successResponse["headers"] = headers
+	}
+	responses[fmt.Sprintf("%d", success)] = successResponse
 	for _, status := range adminOperationErrorStatuses(op) {
 		responses[fmt.Sprintf("%d", status)] = map[string]any{"$ref": "#/components/responses/Problem"}
 	}

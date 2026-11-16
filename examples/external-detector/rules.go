@@ -4,10 +4,8 @@
 package main
 
 import (
+	"container/list"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
-	"sort"
 	"sync"
 	"time"
 
@@ -15,15 +13,24 @@ import (
 )
 
 const (
-	maxRuleKeys          = 10000
-	maxObservations      = 256
-	evidenceLimit        = 8
 	authFailureLimit     = 25
 	tinyRequestLimit     = 20
 	deniedGroupLimit     = 5
 	spendPaceMultiple    = 6
+	maxRuleKeys          = 10000
+	maxObservations      = 256
+	evidenceLimit        = 8
 	spendBaselineMinutes = 15
+	maxActiveWindow      = 15 * time.Minute
+	authKeyState         = "auth_fail_storm/key"
+	authIPState          = "auth_fail_storm/ip"
 )
+
+type thresholds struct {
+	authFailures, tinyRequests, deniedGroups, spendMultiple int
+}
+
+var defaultThresholds = thresholds{authFailures: authFailureLimit, tinyRequests: tinyRequestLimit, deniedGroups: deniedGroupLimit, spendMultiple: spendPaceMultiple}
 
 type observation struct {
 	at          time.Time
@@ -33,20 +40,31 @@ type observation struct {
 }
 
 type ruleState struct {
-	events      []observation
-	spend       map[int64]int64
-	lastSignal  time.Time
-	lastUpdated time.Time
+	events     []observation
+	spend      map[int64]int64
+	lastSignal time.Time
+	element    *list.Element
+}
+
+type ruleStates struct {
+	byKey map[string]*ruleState
+	lru   *list.List
 }
 
 type ruleDetector struct {
-	mu     sync.Mutex
-	states map[string]*ruleState
-	now    func() time.Time
+	mu         sync.Mutex
+	states     map[string]*ruleStates
+	now        func() time.Time
+	thresholds thresholds
+	maxKeys    int
 }
 
 func newRuleDetector() *ruleDetector {
-	return &ruleDetector{states: make(map[string]*ruleState), now: time.Now}
+	return newRuleDetectorWithThresholds(defaultThresholds)
+}
+
+func newRuleDetectorWithThresholds(config thresholds) *ruleDetector {
+	return &ruleDetector{states: make(map[string]*ruleStates), now: time.Now, thresholds: config, maxKeys: maxRuleKeys}
 }
 
 func (d *ruleDetector) Detect(_ context.Context, event detector.Event) ([]detector.Signal, error) {
@@ -61,7 +79,7 @@ func (d *ruleDetector) Detect(_ context.Context, event detector.Event) ([]detect
 			return nil, err
 		}
 		at = parsed.UTC()
-		if at.Before(now.Add(-spendBaselineMinutes*time.Minute)) || at.After(now.Add(time.Minute)) {
+		if at.Before(now.Add(-spendBaselineMinutes*time.Minute)) || at.After(now) {
 			return nil, nil
 		}
 	}
@@ -70,34 +88,33 @@ func (d *ruleDetector) Detect(_ context.Context, event detector.Event) ([]detect
 
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	d.prune(now)
 	switch event.Kind {
 	case "auth_failure":
 		if event.KeyID != "" {
-			if signal := d.record("auth_fail_storm", event.KeyID, obs); signal != nil {
+			if signal := d.recordInScope("auth_fail_storm", authKeyState, event.KeyID, event.KeyID, obs, now); signal != nil {
 				signals = append(signals, *signal)
 			}
 		}
 		if event.SourceIP != "" {
-			if signal := d.record("auth_fail_storm", "ip-"+event.SourceIP, obs); signal != nil {
+			if signal := d.recordInScope("auth_fail_storm", authIPState, "ip-"+event.SourceIP, "", obs, now); signal != nil {
 				signals = append(signals, *signal)
 			}
 		}
 	case "request":
 		if event.TinyRequest && event.KeyID != "" {
-			if signal := d.record("validation_sweep", event.KeyID, obs); signal != nil {
+			if signal := d.record("validation_sweep", event.KeyID, event.KeyID, obs, now); signal != nil {
 				signals = append(signals, *signal)
 			}
 		}
 	case "model_denied":
 		if event.KeyID != "" && event.DeniedGroup != "" {
-			if signal := d.record("model_enumeration", event.KeyID, obs); signal != nil {
+			if signal := d.record("model_enumeration", event.KeyID, event.KeyID, obs, now); signal != nil {
 				signals = append(signals, *signal)
 			}
 		}
 	case "usage":
 		if event.KeyID != "" && event.Tokens > 0 {
-			if signal := d.record("spend_spike", event.KeyID, obs); signal != nil {
+			if signal := d.record("spend_spike", event.KeyID, event.KeyID, obs, now); signal != nil {
 				signals = append(signals, *signal)
 			}
 		}
@@ -105,27 +122,53 @@ func (d *ruleDetector) Detect(_ context.Context, event detector.Event) ([]detect
 	return signals, nil
 }
 
-func (d *ruleDetector) record(rule, key string, event observation) *detector.Signal {
-	stateKey := rule + ":" + key
-	state := d.states[stateKey]
+func (d *ruleDetector) record(rule, key, signalKey string, event observation, now time.Time) *detector.Signal {
+	return d.recordInScope(rule, rule, key, signalKey, event, now)
+}
+
+func (d *ruleDetector) recordInScope(rule, scope, key, signalKey string, event observation, now time.Time) *detector.Signal {
+	groupStates := d.states[scope]
+	if groupStates == nil {
+		groupStates = &ruleStates{byKey: make(map[string]*ruleState), lru: list.New()}
+		d.states[scope] = groupStates
+	}
+	state := groupStates.byKey[key]
 	if state == nil {
-		if len(d.states) >= maxRuleKeys {
-			d.evictOldest()
+		for groupStates.lru.Len() >= d.maxKeys {
+			oldest := groupStates.lru.Back()
+			delete(groupStates.byKey, oldest.Value.(string))
+			groupStates.lru.Remove(oldest)
 		}
 		state = &ruleState{}
-		d.states[stateKey] = state
+		groupStates.byKey[key] = state
+		state.element = groupStates.lru.PushFront(key)
+	} else {
+		groupStates.lru.MoveToFront(state.element)
+	}
+	cutoff := now.Add(-maxActiveWindow)
+	first := 0
+	for first < len(state.events) && state.events[first].at.Before(cutoff) {
+		first++
+	}
+	if first > 0 {
+		state.events = append([]observation(nil), state.events[first:]...)
 	}
 	state.events = append(state.events, event)
 	if len(state.events) > maxObservations {
 		state.events = append([]observation(nil), state.events[len(state.events)-maxObservations:]...)
 	}
-	state.lastUpdated = event.at
 	if rule == "spend_spike" && event.tokens > 0 {
 		if state.spend == nil {
 			state.spend = make(map[int64]int64)
 		}
 		minute := event.at.Truncate(time.Minute).Unix()
 		state.spend[minute] += event.tokens
+		oldestMinute := now.Add(-maxActiveWindow).Truncate(time.Minute).Unix()
+		for recordedMinute := range state.spend {
+			if recordedMinute < oldestMinute {
+				delete(state.spend, recordedMinute)
+			}
+		}
 	}
 
 	threshold := time.Minute
@@ -133,16 +176,18 @@ func (d *ruleDetector) record(rule, key string, event observation) *detector.Sig
 	score := 0.5
 	switch rule {
 	case "auth_fail_storm":
-		minimum = authFailureLimit
+		minimum = d.thresholds.authFailures
+		score = .85
 	case "validation_sweep":
-		minimum = tinyRequestLimit
+		minimum = d.thresholds.tinyRequests
 	case "model_enumeration":
 		threshold = 5 * time.Minute
-		minimum = deniedGroupLimit
+		minimum = d.thresholds.deniedGroups
+		score = .55
 	case "spend_spike":
-		return d.spendSignal(rule, key, state, event)
+		return d.spendSignal(rule, signalKey, state, event)
 	}
-	active := activeObservations(state.events, event.at.Add(-threshold))
+	active := activeObservations(state.events, now.Add(-threshold), now)
 	triggered := false
 	if rule == "model_enumeration" {
 		groups := make(map[string]bool)
@@ -161,7 +206,11 @@ func (d *ruleDetector) record(rule, key string, event observation) *detector.Sig
 		return nil
 	}
 	state.lastSignal = event.at
-	return makeSignal(rule, key, score, active)
+	severity := "high"
+	if rule == "model_enumeration" {
+		severity = "medium"
+	}
+	return makeSignal(rule, signalKey, severity, score, active)
 }
 
 func (d *ruleDetector) spendSignal(rule, key string, state *ruleState, event observation) *detector.Signal {
@@ -186,58 +235,33 @@ func (d *ruleDetector) spendSignal(rule, key string, state *ruleState, event obs
 		return nil
 	}
 	baseline := float64(baselineTotal) / float64(baselineMinutes)
-	if float64(current) < baseline*spendPaceMultiple || event.at.Sub(state.lastSignal) < time.Minute {
+	if float64(current) < baseline*float64(d.thresholds.spendMultiple) || event.at.Sub(state.lastSignal) < time.Minute {
 		return nil
 	}
 	state.lastSignal = event.at
-	return makeSignal(rule, key, minFloat(1, float64(current)/(baseline*spendPaceMultiple*2)), active)
+	return makeSignal(rule, key, "medium", minFloat(1, float64(current)/(baseline*float64(d.thresholds.spendMultiple*2))), active)
 }
 
-func activeObservations(events []observation, since time.Time) []observation {
+func activeObservations(events []observation, since, evaluatedAt time.Time) []observation {
 	active := make([]observation, 0, len(events))
 	for _, event := range events {
-		if !event.at.Before(since) {
+		if !event.at.Before(since) && !event.at.After(evaluatedAt) {
 			active = append(active, event)
 		}
 	}
 	return active
 }
 
-func makeSignal(rule, key string, score float64, events []observation) *detector.Signal {
+func makeSignal(rule, key, severity string, score float64, events []observation) *detector.Signal {
 	ids := make([]string, 0, evidenceLimit)
+	seen := make(map[string]bool, evidenceLimit)
 	for i := len(events) - 1; i >= 0 && len(ids) < evidenceLimit; i-- {
-		if events[i].requestID != "" {
+		if events[i].requestID != "" && !seen[events[i].requestID] {
 			ids = append(ids, events[i].requestID)
+			seen[events[i].requestID] = true
 		}
 	}
-	sum := sha256.Sum256([]byte(rule + ":" + key))
-	return &detector.Signal{SchemaVersion: detector.SchemaVersion, DetectorID: rule, Severity: "high", Score: score, Key: hex.EncodeToString(sum[:16]), EvidenceRequestIDs: ids}
-}
-
-func (d *ruleDetector) prune(now time.Time) {
-	for key, state := range d.states {
-		cutoff := now.Add(-spendBaselineMinutes * time.Minute)
-		state.events = activeObservations(state.events, cutoff)
-		for minute := range state.spend {
-			if minute < cutoff.Truncate(time.Minute).Unix() {
-				delete(state.spend, minute)
-			}
-		}
-		if len(state.events) == 0 && now.Sub(state.lastUpdated) > spendBaselineMinutes*time.Minute {
-			delete(d.states, key)
-		}
-	}
-}
-
-func (d *ruleDetector) evictOldest() {
-	keys := make([]string, 0, len(d.states))
-	for key := range d.states {
-		keys = append(keys, key)
-	}
-	sort.Slice(keys, func(i, j int) bool { return d.states[keys[i]].lastUpdated.Before(d.states[keys[j]].lastUpdated) })
-	if len(keys) > 0 {
-		delete(d.states, keys[0])
-	}
+	return &detector.Signal{SchemaVersion: detector.SchemaVersion, DetectorID: rule, Severity: severity, Score: score, Key: key, EvidenceRequestIDs: ids}
 }
 
 func minFloat(a, b float64) float64 {

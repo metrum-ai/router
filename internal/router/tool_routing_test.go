@@ -5,8 +5,6 @@ package router
 
 import (
 	"bufio"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -19,7 +17,6 @@ import (
 
 func toolRoutingConfig(t *testing.T, upstreamURL, dir string, routing ToolRoutingConfig) *Config {
 	t.Helper()
-	sum := sha256.Sum256([]byte(testToken))
 	return &Config{
 		Server: ServerConfig{
 			Identifiers:       IdentifierConfig{Mode: "passthrough"},
@@ -58,7 +55,7 @@ func toolRoutingConfig(t *testing.T, upstreamURL, dir string, routing ToolRoutin
 			User:        "alice",
 			Project:     "metrum-insights",
 			Environment: "test",
-			TokenSHA256: hex.EncodeToString(sum[:]),
+			TokenHash:   mustCallerTokenHashForTest(t, testToken),
 			TokenID:     "rtr_alice_test",
 			Allow:       []string{"agent-tools", "agent-tools-static"},
 			Rate:        RateConfig{RPM: 100, TPM: 1000000, Concurrent: 4},

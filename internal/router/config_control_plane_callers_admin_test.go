@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -124,8 +125,8 @@ func TestCallerAdminIssueListRotateRevokeLifecycle(t *testing.T) {
 	if issueResp.Token == "" || !strings.HasPrefix(issueResp.Token, issueResp.TokenID+"_") {
 		t.Fatalf("raw token must be returned once with the public token id prefix: %+v", issueResp)
 	}
-	if issueResp.Caller.TokenSHA256 != "" || !callerTokenHashVerifies(t, issueResp.Caller.TokenHash, issueResp.Token) {
-		t.Fatal("issued caller must carry a token_hash that verifies the returned raw token and no legacy token_sha256")
+	if issueResp.Caller.TokenHash == "" || !callerTokenHashVerifies(t, issueResp.Caller.TokenHash, issueResp.Token) {
+		t.Fatal("issued caller must carry a token_hash that verifies the returned raw token")
 	}
 
 	// The relational projection stores the hash and allows, never the raw token.
@@ -133,7 +134,7 @@ func TestCallerAdminIssueListRotateRevokeLifecycle(t *testing.T) {
 	if err := db.Raw(`SELECT token_sha256, token_id FROM router_config_callers WHERE config_set_id = ? AND caller_id = ?`, "set-1", "alice-search-prod").Row().Scan(&storedHash, &storedTokenID); err != nil {
 		t.Fatal(err)
 	}
-	if storedHash != issueResp.Caller.TokenHash || storedTokenID != issueResp.TokenID {
+	if storedHash != issueResp.Caller.TokenHash || storedTokenID != issueResp.TokenID || !callerTokenHashVerifies(t, storedHash, issueResp.Token) {
 		t.Fatal("relational caller row mismatch")
 	}
 	var rawCount int64
@@ -255,13 +256,13 @@ func TestCallerAdminRotateRevokeUnknownCaller(t *testing.T) {
 }
 
 func TestCanonicalCallersPatchMutatesCallersSlice(t *testing.T) {
-	raw := []byte("server:\n  listen: ':8080'\ncallers:\n  - id: alice-search-prod\n    owner_user: alice\n    project: search\n    environment: dev\n    status: active\n    token_sha256: deadbeef\n    token_id: rtr_metrum_alice_search_dev_k20260721\n    allow:\n      - default\n    rate:\n      rpm: 120\n      tpm: 200000\n      concurrent: 8\n")
+	raw := []byte("server:\n  listen: ':8080'\ncallers:\n  - id: alice-search-prod\n    owner_user: alice\n    project: search\n    environment: dev\n    status: active\n    token_hash: \"" + configAdminTestTokenHash() + "\"\n    token_id: rtr_metrum_alice_search_prod_k20260721\n    allow:\n      - default\n    rate:\n      rpm: 120\n      tpm: 200000\n      concurrent: 8\n")
 	out, err := PatchCanonicalCallersYAML(raw, func(callers []CallerConfig) ([]CallerConfig, error) {
 		if len(callers) != 1 || callers[0].ID != "alice-search-prod" || callers[0].Rate.RPM != 120 {
 			t.Fatalf("decoded callers mismatch: %+v", callers)
 		}
 		callers[0].Status = accountStatusDisabled
-		return append(callers, CallerConfig{ID: "bob-ml-prod", OwnerUser: "bob", Project: "ml", Environment: "prod", Status: accountStatusActive, TokenSHA256: "cafe", TokenID: "rtr_metrum_bob_ml_prod_k20260721", Allow: []string{"premium"}}), nil
+		return append(callers, CallerConfig{ID: "bob-ml-prod", OwnerUser: "bob", Project: "ml", Environment: "prod", Status: accountStatusActive, TokenHash: configAdminTestTokenHash(), TokenID: "test-bob-token-id", Allow: []string{"premium"}}), nil
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -347,6 +348,9 @@ func TestCallerAdminMutationsSyncCanonicalDocument(t *testing.T) {
 	if !strings.Contains(docYAML, issueResp.Caller.TokenHash) {
 		t.Fatalf("canonical document missing issued caller token hash: %s", docYAML)
 	}
+	if !strings.Contains(docYAML, "token_issued_at:") || !strings.Contains(docYAML, "2026-07-21T12:00:00Z") {
+		t.Fatalf("canonical document missing issued caller timestamp: %s", docYAML)
+	}
 	if strings.Contains(docYAML, issueResp.Token) {
 		t.Fatal("canonical document must never contain a raw token")
 	}
@@ -365,6 +369,9 @@ func TestCallerAdminMutationsSyncCanonicalDocument(t *testing.T) {
 	}
 	if !canonicalDocumentHasTokenHashFor(t, docYAML, rotateResp.Token) {
 		t.Fatalf("canonical document missing rotated token hash: %s", docYAML)
+	}
+	if !strings.Contains(docYAML, "token_issued_at:") || !strings.Contains(docYAML, "2026-07-21T12:00:00Z") {
+		t.Fatalf("canonical document missing rotated caller timestamp: %s", docYAML)
 	}
 	if strings.Contains(docYAML, rotateResp.Token) {
 		t.Fatal("canonical document must never contain a raw token")
@@ -484,7 +491,7 @@ func TestServiceReloadActiveConfigFromDB(t *testing.T) {
 	t.Setenv("TEST_RELOAD_ADMIN_KEY_HASH", key.TokenHash)
 
 	// Seed a canonical document with one caller.
-	tokenHash := strings.Repeat("a", 64)
+	tokenHash := mustCallerTokenHashForTest(t, "rtr_metrum_alice_search_dev_k20260721_secret")
 	canonicalYAML := `server:
   listen: ':8080'
   default_model_group: default
@@ -507,7 +514,7 @@ callers:
     project: search
     environment: dev
     status: active
-    token_sha256: ` + tokenHash + `
+    token_hash: ` + tokenHash + `
     token_id: rtr_metrum_alice_search_dev_k20260721
     allow:
       - default
@@ -579,8 +586,8 @@ callers:
 	defer svc.Close()
 
 	// The initial service has no callers because the bootstrap YAML had none.
-	if idx := svc.callerAuth.index.Load(); len(idx.legacyBySHA256)+len(idx.byTokenID) != 0 {
-		t.Fatalf("initial caller auth index = %d legacy, %d token_hash, want 0", len(idx.legacyBySHA256), len(idx.byTokenID))
+	if idx := svc.callerAuth.index.Load(); len(idx.byTokenID) != 0 {
+		t.Fatalf("initial caller auth index = %d token_hash, want 0", len(idx.byTokenID))
 	}
 
 	// The machine path publishes a complete immutable generation. Builder
@@ -660,9 +667,27 @@ callers:
 	}
 	failMachinePreparation = false
 
+	// A stream change is published in the canonical config but takes effect
+	// only after process restart; verify reload logs that operational contract.
+	eventsYAML := strings.Replace(canonicalYAML, "  default_model_group: default", "  default_model_group: default\n  security:\n    events:\n      enabled: true\n      version: \"1.4.0\"\n      output: file\n      path: '"+filepath.Join(dir, "events.jsonl")+"'", 1)
+	eventsHash := sha256.Sum256([]byte(eventsYAML))
+	if err := db.Exec(`UPDATE router_config_documents SET canonical_yaml = ?, content_sha256 = ? WHERE config_set_id = ?`, eventsYAML, hex.EncodeToString(eventsHash[:]), "set-1").Error; err != nil {
+		t.Fatal(err)
+	}
+	oldLogWriter := log.Writer()
+	var reloadLogs bytes.Buffer
+	log.SetOutput(&reloadLogs)
+	defer log.SetOutput(oldLogWriter)
 	// Reload from the DB. The canonical document removes the bootstrap key.
 	if err := svc.reloadActiveConfigFromDB(); err != nil {
 		t.Fatalf("reloadActiveConfigFromDB: %v", err)
+	}
+	log.SetOutput(oldLogWriter)
+	if !strings.Contains(reloadLogs.String(), "server.security.events changed; restart required") {
+		t.Fatalf("stream config reload did not explain restart requirement: %s", reloadLogs.String())
+	}
+	if svc.securityEventStream != nil {
+		t.Fatal("reload rebuilt a process-local stream without restart")
 	}
 	machine := svc.machineGeneration.Load()
 	if machine == initialMachine || machine.authorizer != svc.currentAuthorizer() || len(machine.keys.keys) != 0 {
@@ -678,15 +703,15 @@ callers:
 
 	// The service must now have the caller from the canonical document.
 	idx := svc.callerAuth.index.Load()
-	if len(idx.legacyBySHA256) != 1 {
-		t.Fatalf("reloaded legacy callers = %d, want 1", len(idx.legacyBySHA256))
+	if len(idx.byTokenID) != 1 {
+		t.Fatalf("reloaded callers = %d, want 1", len(idx.byTokenID))
 	}
-	rt, ok := idx.legacyBySHA256[tokenHash]
+	rt, ok := idx.byTokenID["rtr_metrum_alice_search_dev_k20260721"]
 	if !ok {
 		t.Fatal("reloaded caller missing from caller auth index")
 	}
-	if rt.cfg.ID != "alice-search-prod" || rt.cfg.Rate.RPM != 120 {
-		t.Fatalf("reloaded caller runtime mismatch: %+v", rt.cfg)
+	if rt.caller.cfg.ID != "alice-search-prod" || rt.caller.cfg.Rate.RPM != 120 {
+		t.Fatalf("reloaded caller runtime mismatch: %+v", rt.caller.cfg)
 	}
 	if svc.configSnapshot.Load() == nil || svc.configSnapshot.Load().Callers[0].ID != "alice-search-prod" {
 		t.Fatal("config snapshot must reflect the reloaded configuration")
@@ -711,7 +736,7 @@ func canonicalDocumentHasTokenHashFor(t *testing.T, docYAML, token string) bool 
 		t.Fatalf("parse canonical document: %v", err)
 	}
 	for _, caller := range doc.Callers {
-		if caller.TokenHash != "" && caller.TokenSHA256 == "" && callerTokenHashVerifies(t, caller.TokenHash, token) {
+		if callerTokenHashVerifies(t, caller.TokenHash, token) {
 			return true
 		}
 	}

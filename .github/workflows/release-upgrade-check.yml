@@ -13,6 +13,7 @@ on:
       - 'internal/router/usage_db.go'
       - 'scripts/local_launch_path_smoke.py'
       - 'scripts/release_upgrade_rollback*'
+      - 'deploy/kubernetes/examples/postgres-migration-plan-job.yaml'
   workflow_dispatch:
 
 permissions:

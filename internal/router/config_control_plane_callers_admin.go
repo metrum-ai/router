@@ -162,6 +162,9 @@ func (h *callerAdminHandler) handleContainment(w http.ResponseWriter, r *http.Re
 			return errCallerAdminNotFound
 		}
 		callerDomain := authzDomainForProjectEnvironment(rows[0].Project, rows[0].Environment)
+		if h.deps.AuthorizeDomain != nil && !h.deps.AuthorizeDomain(r, callerDomain, authzObjectAdminContainment, authzActionContain) {
+			return errCallerAdminForbidden
+		}
 		fullCallerWrite := h.deps.CallerWriteAuthorized != nil && h.deps.CallerWriteAuthorized(r, callerDomain)
 		source = "containment"
 		if fullCallerWrite {
@@ -253,6 +256,10 @@ func (h *callerAdminHandler) handleContainment(w http.ResponseWriter, r *http.Re
 			writeCallerAdminError(w, http.StatusNotFound, "containment-caller-not-found")
 			return
 		}
+		if errors.Is(err, errCallerAdminForbidden) {
+			writeCallerAdminError(w, http.StatusForbidden, "containment-forbidden")
+			return
+		}
 		if errors.Is(err, errCallerAdminConflict) {
 			writeCallerAdminError(w, http.StatusConflict, "containment-state-conflict")
 			return
@@ -315,6 +322,7 @@ type callerAdminHandler struct {
 
 var errCallerAdminConflict = errors.New("caller already exists")
 var errCallerAdminNotFound = errors.New("caller not found")
+var errCallerAdminForbidden = errors.New("caller operation forbidden")
 var errContainmentNonceReplay = errors.New("containment nonce replay")
 var errContainmentNonceStore = errors.New("containment nonce store unavailable")
 
@@ -390,7 +398,6 @@ type callerAdminCallerView struct {
 	Status       string     `json:"status"`
 	TokenID      string     `json:"token_id"`
 	TokenHash    string     `json:"token_hash,omitempty"`
-	TokenSHA256  string     `json:"token_sha256,omitempty"`
 	Allow        []string   `json:"allow"`
 	MetricsAdmin bool       `json:"metrics_admin"`
 	ContentAdmin bool       `json:"content_admin"`
@@ -437,10 +444,14 @@ func (h *callerAdminHandler) handleList(w http.ResponseWriter, r *http.Request) 
 			// A row is listed only in its own stored domain.
 			continue
 		}
-		tokenHash, legacySHA256 := splitStoredCallerTokenVerifier(row.TokenSHA256)
+		tokenHash := strings.TrimSpace(row.TokenVerifier)
+		if !isCallerTokenHashValue(tokenHash) {
+			writeCallerAdminError(w, http.StatusServiceUnavailable, "callers-legacy-verifier-present")
+			return
+		}
 		if adminPlane {
 			// Verification material never leaves the router on the versioned surface.
-			tokenHash, legacySHA256 = "", ""
+			tokenHash = ""
 		}
 		resp.Callers = append(resp.Callers, callerAdminCallerView{
 			ID:           row.CallerID,
@@ -450,7 +461,6 @@ func (h *callerAdminHandler) handleList(w http.ResponseWriter, r *http.Request) 
 			Status:       row.Status,
 			TokenID:      row.TokenID,
 			TokenHash:    tokenHash,
-			TokenSHA256:  legacySHA256,
 			Allow:        allow,
 			MetricsAdmin: row.MetricsAdmin,
 			ContentAdmin: row.ContentAdmin,
@@ -509,18 +519,18 @@ func (h *callerAdminHandler) handleIssue(w http.ResponseWriter, r *http.Request)
 		rate = req.Rate
 	}
 	row := callerRow{
-		CallerID:     caller.ID,
-		OwnerUser:    caller.OwnerUser,
-		Project:      caller.Project,
-		Environment:  caller.Environment,
-		Status:       accountStatusActive,
-		TokenSHA256:  storedCallerTokenVerifier(caller),
-		TokenID:      generated.TokenID,
-		MetricsAdmin: req.MetricsAdmin,
-		ContentAdmin: req.ContentAdmin,
-		RPM:          rate.RPM,
-		TPM:          rate.TPM,
-		Concurrent:   rate.Concurrent,
+		CallerID:      caller.ID,
+		OwnerUser:     caller.OwnerUser,
+		Project:       caller.Project,
+		Environment:   caller.Environment,
+		Status:        accountStatusActive,
+		TokenVerifier: storedCallerTokenVerifier(caller),
+		TokenID:       generated.TokenID,
+		MetricsAdmin:  req.MetricsAdmin,
+		ContentAdmin:  req.ContentAdmin,
+		RPM:           rate.RPM,
+		TPM:           rate.TPM,
+		Concurrent:    rate.Concurrent,
 	}
 	err = h.deps.DB.Transaction(func(tx *gorm.DB) error {
 		if err := ensureConfigControlPlaneRuntimeTables(tx); err != nil {
@@ -535,7 +545,7 @@ func (h *callerAdminHandler) handleIssue(w http.ResponseWriter, r *http.Request)
 		}
 		insertSQL := `INSERT INTO router_config_callers (config_set_id, caller_id, owner_user, project, environment, status, token_sha256, token_id, metrics_admin, content_admin, rpm, tpm, concurrent, token_format_version, token_entropy_bits, revoked_token_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '')`
 		if err := tx.Exec(insertSQL,
-			set.ID, row.CallerID, row.OwnerUser, row.Project, row.Environment, row.Status, row.TokenSHA256, row.TokenID, row.MetricsAdmin, row.ContentAdmin, row.RPM, row.TPM, row.Concurrent, caller.TokenFormatVersion, caller.TokenEntropyBits).Error; err != nil {
+			set.ID, row.CallerID, row.OwnerUser, row.Project, row.Environment, row.Status, row.TokenVerifier, row.TokenID, row.MetricsAdmin, row.ContentAdmin, row.RPM, row.TPM, row.Concurrent, caller.TokenFormatVersion, caller.TokenEntropyBits).Error; err != nil {
 			return err
 		}
 		for _, group := range caller.Allow {
@@ -552,7 +562,6 @@ func (h *callerAdminHandler) handleIssue(w http.ResponseWriter, r *http.Request)
 				Environment:        row.Environment,
 				Status:             row.Status,
 				TokenHash:          caller.TokenHash,
-				TokenSHA256:        caller.TokenSHA256,
 				TokenID:            row.TokenID,
 				TokenFormatVersion: caller.TokenFormatVersion,
 				TokenEntropyBits:   caller.TokenEntropyBits,
@@ -561,6 +570,7 @@ func (h *callerAdminHandler) handleIssue(w http.ResponseWriter, r *http.Request)
 				ContentAdmin:       row.ContentAdmin,
 				Rate:               rate,
 			}
+			newCaller.TokenIssuedAt = caller.TokenIssuedAt
 			return append(callers, newCaller), nil
 		}); err != nil {
 			return err
@@ -600,7 +610,6 @@ func (h *callerAdminHandler) handleIssue(w http.ResponseWriter, r *http.Request)
 			Status:       row.Status,
 			TokenID:      row.TokenID,
 			TokenHash:    caller.TokenHash,
-			TokenSHA256:  caller.TokenSHA256,
 			Allow:        append([]string(nil), caller.Allow...),
 			MetricsAdmin: row.MetricsAdmin,
 			ContentAdmin: row.ContentAdmin,
@@ -667,7 +676,7 @@ func (h *callerAdminHandler) handleRotate(w http.ResponseWriter, r *http.Request
 			for i, c := range callers {
 				if c.ID == callerID {
 					callers[i].TokenHash = generated.TokenHash
-					callers[i].TokenSHA256 = generated.TokenSHA256
+					callers[i].TokenIssuedAt = generated.Caller.TokenIssuedAt
 					callers[i].TokenID = generated.TokenID
 					callers[i].TokenFormatVersion = generated.Caller.TokenFormatVersion
 					callers[i].TokenEntropyBits = generated.Caller.TokenEntropyBits

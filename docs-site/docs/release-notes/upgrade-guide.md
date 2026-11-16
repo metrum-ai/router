@@ -5,9 +5,60 @@ doc_type: reference
 
 # Upgrade Guide
 
+## v5.0.0 request trace correlation
+
+Inbound trace acceptance is opt-in. Existing callers and deployments that do not
+configure a trusted parent receive a new trace for every inbound request. To
+preserve a trace across routers, configure `server.trace.trusted_parent_cidrs`
+for the immediate parent network, or enable `trust_traceparent` only on an
+authenticated child-router caller. Outbound `traceparent` and `X-Request-Id`
+propagation is on by default for every provider. Set
+`providers.<name>.propagate_trace: false` to disable both headers for one
+provider. Inbound `tracestate` is
+deliberately dropped and never forwarded. A trusted proxy or ingress CIDR trusts
+every client behind it, so trust only the immediate router network. Schema 18
+adds scalar trace, span, and
+parent-span columns to the usage table and an index on `trace_id`; existing rows
+remain valid with empty values. The migration is additive and is applied by the
+deployment migration job. See [router configuration](../configuration/router-config#request-trace-correlation)
+for trust boundaries and examples.
+
 ## Security hardening
 
 Review the [Router Hardening Guide](../security-governance/hardening), [Threat Summary](../security-governance/threat-model-v5), and [Compromise Runbook](../security-governance/compromise-runbook) before production rollout. These docs use existing v5.0.0 settings; no config migration is required.
+
+## v5.0.0 Security Console
+
+The admin reports UI adds a Security Console to the Security events report. It ranks caller risk using detector results and caller authentication failures, and shows detector, authentication, and containment access events in the timeline. It links events to request evidence and provides JSON and Markdown incident bundles using the selected time window. Users with the domain-scoped containment permission can suspend a caller from the reports UI; the request requires same-origin CSRF protection and an audit reason. Release remains on the admin control plane and is shown as a `routerctl release` command and `/admin/v1/containment` request only for a caller suspended by containment. No new configuration is required.
+
+The console only displays signals returned by the selected time range and report page. A missing signal does not prove that a caller is safe. Request evidence remains subject to the existing report drilldown permissions.
+
+## v5.0.0 security posture self-test
+
+`metrum-ai-routerctl doctor --security --config config.yaml` reads the existing
+configuration and makes no config changes. Use `--format json` and `--fail-on`
+to gate CI. Plain HTTP `--target` values must be loopback. The check reports caller
+key format, recorded entropy, and key age against a 90-day maximum. Caller entries now accept optional
+`token_issued_at` UTC RFC3339 timestamps; token generation and admin issue or
+rotation write this field automatically. Add original issue times to manually
+managed caller keys. Existing configs remain valid; keys without a timestamp
+warn until updated or rotated, and keys older than 90 days fail.
+
+The `/metrics` endpoint remains on the serving port and requires an active
+caller configured with `metrics_admin: true`. The doctor checks this setting;
+it does not suggest moving metrics to the admin listener. DB-backed config mode
+reports that database-stored caller keys were not inspected. Engine image pins
+are compared with the release's `engine-advisories.json` snapshot; use
+`--advisories <file>` to select one explicitly. Without a snapshot, the
+advisory result is informational `not checked` and makes no network request.
+
+To display a result in admin reports, use `--report-latest --router-url` with
+`--admin-key-file` or the existing admin-key environment variables. The router
+stores only check IDs, outcomes, severities, timestamp, and aggregate status.
+Apply usage migration 2026111602 (usage schema version 17) first. Grant `admin:security_reports` / `write`
+only to the self-test operator; read and export grants do not include write.
+
+
 
 ## Detector service boundary (v5.0.0)
 
@@ -17,6 +68,9 @@ allowlisted hostname and a bounded timeout. The router rejects unlisted
 redirects, URL userinfo, and malformed or oversized responses. Detector events
 carry metadata by default. Text segments are sent only when an operator opts in
 per detector with `include_segments`; prompts and user messages are never sent.
+Configured detectors default to `mode: report`; set `mode: off` explicitly to
+disable one. The example service's rule thresholds are configurable flags with
+documented defaults.
 See [External detectors](/docs/security-governance/detectors).
 
 For v5.0.0, `metrum-ai-router-migrate --json` writes one JSON document to stdout. Database diagnostics are sent to stderr.
@@ -30,9 +84,22 @@ The NVIDIA and AMD reference pins moved to the official `vllm/vllm-openai:v0.33.
 NVIDIA and AMD Kubernetes deployment examples and provisioning intents use the
 digest-pinned official vLLM v0.33.0 images, matching the reference
 configurations. Update copied examples from older releases before deploying them.
+### Tenant cache isolation
+
+Response-cache entries and vLLM prefix-cache salts remain isolated by caller and project by default. Project-level sharing is opt-in with `projects[].share_cache_within_project`; enabling it lets callers in that project share response entries and vLLM prefix-cache entries. Self-hosted vLLM providers receive salts when `providers[].upstream_kind: vllm` and `server.cache.upstream_salt_key_env` are configured; provide the environment key through the deployment secret manager on every router replica. SGLang prefix-cache isolation is not supported in v5.0.0. See [Tenant cache isolation](/docs/security-governance/cache-isolation) for the config example, compatibility behavior and key requirements.
 
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
 
+## Virtual models
+
+The optional `virtual_model` block adds capability thresholds to a model
+group. Existing groups are unchanged. Import matching eval-infrastructure
+reports with `metrum-ai-routerctl groups import-eval`; vectors and provenance
+are applied through the config Admin API's copy-on-write group update. The
+group list/show API now reports each target's measured vector, membership and
+exclusion reason. Missing or ambiguous report data fails without changing the
+active config. Reported context tokens are the maximum observed in the eval
+workload, not a model's theoretical context limit.
 ## CPU-first small-work reference group
 
 The hierarchy reference now includes an optional `agent-small` model group,
@@ -40,8 +107,10 @@ backed by the official vLLM CPU image and `Qwen/Qwen2.5-0.5B-Instruct`. The
 reference caller can request this group explicitly. Its CPU candidate is
 eligible only when estimated input is at most 800 tokens and the requested
 output cap is at most 128 tokens; other requests use the configured frontier
-target. CPU attempts have a two-second timeout and retry the frontier target
-before a response begins. Configure `CPU_BASE_URL`, `CPU_MODEL`, and the vLLM
+target. The full CPU attempt has a 15-second timeout sized for the 128-token
+output cap; `thresholds.max_ttfb_ms: 1000` supplies the dynamic latency budget,
+and CPU errors/timeouts retry the frontier before a response begins. Configure
+`CPU_BASE_URL`, `CPU_MODEL`, and the vLLM
 CPU resource settings in the hierarchy `.env` file. Existing groups and
 existing caller behavior are unchanged.
 
@@ -71,9 +140,15 @@ The denylist write, revision notification, and audit records commit together.
 Rotate the caller token to issue a new verifier and restore access; then update
 clients with the new bearer token. Only rotation restores access; the old
 verifier remains refused.
+## v5.0.0 streaming line-buffer budget
+
+Streaming now caps total in-flight SSE line-buffer capacity per router process with `server.streaming.max_inflight_line_bytes` (default 64 MiB). Set an explicit value from 64 KiB to 1 GiB if needed. Exhaustion fails a stream with `upstream_stream_buffer_limit`; pre-commit requests can use existing fallback. Monitor `metrum_ai_router_sse_line_buffer_bytes`, `metrum_ai_router_sse_line_buffer_limit_bytes` and `metrum_ai_router_sse_line_buffer_rejections_total`.
+
 ## Security dependency update
 
 The v5.0.0 build pins `golang.org/x/crypto` to the upstream fix for GO-2026-5932. The fix removes the unused OpenPGP packages from the module; router configuration and runtime behavior do not change. When the next tagged `x/crypto` release includes this fix, routine dependency maintenance should replace the temporary pseudo-version.
+
+Direct `model` targets inherit provider-catalog capabilities, such as reasoning, tools, modalities and request-shape support, when their model ID matches a catalog entry. Their configured dialect, pricing and routing values remain unchanged. A weighted or failover group can therefore select an OpenAI reasoning model even when the target is written with `model:` instead of `model_ref:`. When mixed eligibility rejections leave the reasoning error parameter unset but removing requested reasoning makes a target eligible, `param` identifies the caller field (`reasoning_effort` for Chat Completions, `reasoning` for Responses, or `thinking` for Anthropic). Anthropic output reasoning requires `control: token_budget` or active default thinking.
 
 ## v5.0.0 provider spend breaker
 
@@ -91,6 +166,27 @@ does not fail over to another provider until the window resets. Use
 also enter security access events when
 `server.admin_reports.security.enabled` is true; structured log events remain
 available otherwise.
+
+## v5.0.0 secret DLP
+
+Model groups can set `pii_filter.secrets_enabled: true` to apply the built-in
+credential detector pack to inbound text, buffered responses, and streamed
+text. `mode: redact_only` replaces matches with placeholders; `mode:
+fail_on_match` blocks matching requests. Existing custom rules and replacement
+limits continue to apply. Configure `apply_to.tool_results` for tool-result
+coverage. Streamed text keeps a 512-byte ordinary rolling tail, holds plausible
+JWTs from their start (up to 4,096 bytes per segment), and tracks every PEM
+BEGIN marker through its end marker, up to 64 KiB. The PEM cap and overlong
+provider-token or credential-assignment candidates fail closed. Unary response
+replacement-limit exhaustion also fails closed. Response redaction requires
+`secrets_enabled` and `apply_to.messages`; custom-only PII configurations keep
+their prior response behavior.
+
+As an interim limit until the #929 bounded tool-call inspection integration
+lands, streams with advertised tools on a group with `secrets_enabled: true`
+fail with HTTP 400 `secret-dlp-stream-inspection-required`. Use non-streaming
+requests or omit tools until that integration is available. This gate does not
+apply to groups without secret DLP enabled.
 
 ## v5.0.0 trusted proxy client IP resolution
 
@@ -123,6 +219,34 @@ before starting v5.0.0. The maintenance migration removes those two v4-only keys
 canonical documents and refreshes their content hashes. File-mode configurations need only have the
 keys removed before restart.
 
+## v5.0.0 routerctl Admin API changes
+
+The online `metrum-ai-routerctl` commands now use the versioned API on the dedicated admin
+listener. The default endpoint is `http://127.0.0.1:8081`; override it with `--router-url` or
+`ROUTER_URL`. Remote endpoints require HTTPS. Credentials remain in `ROUTER_ADMIN_KEY`,
+`ROUTER_ADMIN_KEY_FILE`, or a mode-0600 `--admin-key-file`. Endpoint values must be origins with
+no path (a single trailing slash is tolerated), query, fragment, or embedded credentials; use only
+the scheme, host, and optional port. Non-2xx responses are written to stderr as concise
+`admin API <status> <type>: <message>` diagnostics. Connection and timeout failures use
+`admin API request failed: <cause>` and include a hint to check `admin.enabled`, `admin.listen`,
+and the admin credential setting; response bodies and credentials are not printed.
+
+| Command | v5 behavior and flags |
+| --- | --- |
+| `config diff` | `--api` selects `/admin/v1/config/diff`; it remains optional for local file comparison. |
+| `config import` | Online by default through `POST /admin/v1/config/sets`; `--offline` explicitly selects direct database access. `--yaml` and `--name` remain required. |
+| `config export` | Online by default through `/admin/v1/config/sets/{id}`; `--offline` explicitly selects direct database access. `--set-id` and `--out` remain optional. |
+| `config activate` | Online by default through `/admin/v1/config/sets/{id}/activate`; use `--offline` for direct database access. |
+| `config rollback` | Online by default through `/admin/v1/config/rollback`; use `--offline` for direct database access. |
+| `groups list`, `show`, `set-targets`, `add-target`, `remove-target`, `rollback`, `history`, `shadow start|status|promote|stop` | Use `/admin/v1/config/groups/...`; `--router-url` is optional when the listener is at its default. |
+| `contain`, `release` | Use `/admin/v1/containment`; `--router-url` is optional at the default listener. |
+| `policies list|get|draft|validate|diff|activate|rollback|replace|delete` | Use `/admin/v1/policy-sets`; `--router-url` is optional at the default listener. |
+| `reports cfo` | Uses `/admin/v1/reports`; `--reports-prefix` now defaults to `/admin/v1/reports`. The old `/admin/reports` value is rejected. |
+
+For config import/export/activate/rollback, the historical `--api` flag remains accepted as a
+redundant online-mode selector and cannot be combined with `--offline`. Add `--offline` only for
+deliberate direct database operations while the router is stopped.
+
 ## Pre-Upgrade Checklist
 
 1. Read the release notes for operator impact, database changes, license changes, and caller-visible behavior.
@@ -137,6 +261,81 @@ keys removed before restart.
    or `metrum-genai-smartrouter-*` CLIs.
 
 ## v5.0.0 Configuration Changes
+
+### Caller token verifier removal
+
+v5 rejects a non-empty `callers[].token_sha256`; an empty value written by v4.8
+alongside `token_hash` is ignored. `callers migrate-legacy` is shipped only in
+the v5 `metrum-ai-routerctl`; run that v5 binary against a v4.8 config before
+upgrading the router. Back up the configuration and token files, then migrate
+every active legacy caller:
+
+```sh
+metrum-ai-routerctl callers migrate-legacy --config config.yaml --id <caller-id> --token-file <private-token-file>
+# Or pass the token on stdin without placing it in an argument:
+cat <private-token-file> | metrum-ai-routerctl callers migrate-legacy --config config.yaml --id <caller-id> --token-file -
+```
+
+The command verifies that the supplied token matches the stored SHA-256 value,
+derives the salted verifier, preserves the token, removes `token_sha256`, and
+keeps a configuration backup. The raw token is read from the private file; do
+not pass it as a command-line argument. If the token is unavailable or does not
+have the supported `<token_id>_<secret>` format, use
+`metrum-ai-routerctl callers rotate --config config.yaml --id <caller-id>
+--token-out <private-file>` and distribute the replacement once. Rotation
+preserves caller status and revocation metadata; add `--reactivate` only when
+you intend to restore access. For disabled or revoked legacy callers, use
+`migrate-legacy --remove-disabled`; this deletes the entire caller entry without
+issuing a token. v4.8 rejects a caller with neither verifier even when it is
+disabled, so do not leave a verifier-free caller entry in the file. The removed
+caller must be recreated explicitly if access is needed later. Run:
+
+```sh
+metrum-ai-routerctl callers migrate-legacy --config config.yaml --id <caller-id> --remove-disabled
+```
+
+Migrate every active legacy caller before running `callers verify`; verify each
+token after all migrations are complete.
+`callers hash` only prints hash material; it does not edit a config and is not
+the migration command.
+
+The migrated active caller remains readable by v4.8 because it contains the
+supported salted `token_hash` field and no non-empty legacy verifier. Rotated
+callers also remain readable; revoked callers stay disabled after rotation.
+Disabled or revoked callers removed with `--remove-disabled` are absent from
+the migrated file. Retain the original backup and recreate removed callers only
+through a reviewed, explicit provisioning step.
+
+For database-backed config, export the active document, edit a local copy or
+run the CLI against the exported document to migrate each legacy caller, import
+the updated YAML as a new config set, review its diff, then activate that set.
+Test startup from the stored document before completing rollout. The recommended
+v4.8 DB migration is a maintenance-window procedure: stop every router replica
+before the `--offline` export, import, and activate commands below, keep them
+stopped through activation, then start all replicas on v4.8 and verify startup
+before upgrading. This avoids a mixed fleet reading incompatible config. For
+file-mode deployments, migrate a copy while v4.8 serves its unchanged file;
+replace the file and restart v4.8 to verify it before upgrading.
+
+For a SQLite control-plane database, the command sequence is:
+
+```sh
+metrum-ai-routerctl config export --offline --db <config-db> --scope prod --out config.yaml
+metrum-ai-routerctl callers migrate-legacy --config config.yaml --id <caller-id> --token-file <private-token-file>
+metrum-ai-routerctl config import --offline --db <config-db> --scope prod --name v5-caller-migration --yaml config.yaml
+metrum-ai-routerctl config activate --offline --db <config-db> --scope prod --set-id <imported-set-id>
+```
+
+Repeat migration for every active legacy caller before running verify, import,
+review, and activation. Run these `--offline` commands only while every router
+replica is stopped. Use the v5 binary for each step. For PostgreSQL, add
+`--driver postgres --dsn-env <environment-variable>` to each `--offline`
+database command. Review the
+imported set and diff before activation; retain the exported original and
+database backup for rollback.
+
+The load error names `callers migrate-legacy`; use `callers rotate` when no
+usable raw token is available.
 
 ### TypeScript Routing Policy Removal
 
@@ -270,10 +469,24 @@ database-backed configuration mode and a current `If-Match` revision. Provider
 API-key environment references and headers are write-only and do not appear in
 responses. Shortening retention requires the separate `config:force`
 permission. The existing config revision notifier and poller propagate changes
-to other serving replicas. No database migration is required for these routes.
+to other serving replicas. The provider, project, quota and retention routes do
+not add schema; the operations endpoints described below do.
 Project budget counters are per process and reset on restart; ceilings are
 approximate across replicas. Removing or raising a ceiling, or waiting for its
 UTC budget window to reset, restores admission after a trip.
+
+Admin operation tracking and control-plane backup/restore add the configuration
+database schema version 16 operations table. Before enabling these endpoints,
+run the non-serving migration CLI (host or the packaged Kubernetes Job) and
+verify the configuration database is current. The admin API never applies
+migrations. Backups contain key verifiers and audit records; store files with
+restricted access. `routerctl control-plane backup --out FILE` creates a new
+mode-0600 output file, and `routerctl control-plane restore --in FILE` restores
+only to a clean migrated replica. Grant `admin:backup/read` only to backup
+operators and keep `admin:operations/read` separate; operation status reads do
+not expose the backup bundle. Atomic target batches are available through
+`routerctl groups bulk-targets GROUP --change add=provider/model_ref` and commit
+one configuration revision or none.
 
 ## Compatibility and operations (v4.4.0)
 
@@ -657,8 +870,7 @@ plan the conversion now. No usage-database or control-plane schema migration.
 3. Check with `metrum-ai-routerctl callers verify --token-file <file>
    --config <config.yaml> --id <caller-id>` and restart the router.
 4. `metrum-ai-routerctl callers generate`, `metrum-ai-router-token-gen` and
-   the database-mode caller admin API now issue `token_hash` by default. Use
-   `--hash-format legacy-sha256` only when issuing tokens for older routers.
+   the database-mode caller admin API issue `token_hash` by default.
 
 Redis-backed bridge sessions move to a SHA3-512 key layout
 (`metrum-ai-router:bridge-session-v2:...`). For one session TTL plus one hour
@@ -766,6 +978,10 @@ For a package whose release contract includes a migration, stop or drain the ser
 
 Use `--dsn-env=ROUTER_USAGE_DB_DSN` for PostgreSQL and the documented non-serving container `--entrypoint` for Compose. Do not put a database connection string in commands, tickets, screenshots, or logs.
 
+The admin migration report reads the existing ledger without changing it. Run
+migration plans and upgrades through `metrum-ai-router-migrate` on the host or
+in a non-serving Kubernetes Job; the API cannot execute migrations.
+
 Releases containing usage migration `2026090901` add optional diagnostics
 through the non-null text column
 `request_usage.target_region` with an empty default for historical and
@@ -845,3 +1061,46 @@ administrator or by legacy configuration require all caller write permissions
 Signed webhook callers do not need an ETag or idempotency header. Their nonce
 reservation is durable for at least twice the configured timestamp window and
 expired reservations are pruned hourly.
+
+## Provider usage reconciliation
+
+Daily report-mode reconciliation is disabled by default. To enable it, configure
+`server.provider_usage_reconciliation`, the usage database, and
+`server.admin_reports.security.enabled`. OpenAI and Anthropic require a
+read-only usage API credential environment reference using the
+`ROUTER_PROVIDER_USAGE_` prefix and a provider key ID. Keep the value in the
+deployment secret environment; config stores only the reference.
+Bedrock uses CloudWatch metrics in its configured AWS region and compares at
+account scope; its USD total is estimated from the router model catalog prices.
+The job runs at 06:00 UTC by default, supports bounded restart catch-up with
+`max_catch_up_days`, and waits for provider `data_refreshed_at` watermarks when
+available. Use one Bedrock entry per AWS account and region to avoid counting
+the same CloudWatch metrics more than once.
+See [Provider usage reconciliation](../security-governance/provider-usage-reconciliation.md)
+for configuration and operating details.
+
+## MCP gateway
+
+MCP is disabled by default, so existing v4.8 configurations continue to load
+without changes. To enable it, add an `mcp` block, set each server's explicit
+`allow_hosts`, configure server-side credential environment variables with
+the `ROUTER_MCP_` prefix, and enable the usage database for durable tool
+invocation audit records. MCP has a per-caller request-rate limit and supports
+per-caller and per-tool request and estimated-spend limits. See the
+[MCP gateway guide](../configuration/mcp-gateway.md) for configuration fields
+and policy behavior.
+
+Automatic detector containment is a separate opt-in feature. It is off by
+default. Before setting `server.auto_containment.mode` to `shadow` or
+`enforce`, run `router-migrate` to create the automatic action tables. Start
+in `shadow` mode, set a low `max_actions_per_minute`, and list emergency
+caller IDs under `exempt_callers`. Throttle rules must set
+`unlimited_throttle_limit` to provide a finite base for callers with unlimited
+configured quotas. Enforced suspend rules require database config mode and
+are recorded as containment-made so the containment role or an administrator
+can resume them before their TTL. Actions expire at their configured TTL.
+
+## Security event stream
+
+The OCSF 1.4.0 JSON Lines stream is disabled by default. To enable it, set `server.security.events.enabled`, choose stdout or file output, and optionally configure an HTTPS webhook with `webhook_allow_hosts` and a 32-byte-or-longer secret supplied through the environment. Webhook signatures cover the timestamp, a random nonce, and the exact body; receivers must enforce a timestamp window and reject nonce replay. Detector signals and failures use the configured detector ID and bounded signal metadata; evidence request IDs use the finding UID, capped at 256 characters. Containment events use Account Change Disable/Enable and include the target caller and acting principal. Database-backed changes to this config require a router restart. Firewall-hold (#891) and honeytoken (#884) source integrations follow when those PRs merge; keep #885 open until then. See [Security event stream](../security-governance/security-events) for full verification and queue behavior.
+The prompt-injection detector is an optional external example. It is off unless a detector is configured, and it receives no segment text unless its own `include_segments` list explicitly opts in. Prompts and user messages are never sent in v5.0.0.

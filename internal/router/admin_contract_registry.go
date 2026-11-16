@@ -192,6 +192,8 @@ type Operation struct {
 	RateClass   AdminRateClass
 	// SuccessStatus is the documented success code; 0 means 200.
 	SuccessStatus int
+	// SuccessHeaders documents response headers emitted on a successful response.
+	SuccessHeaders []AdminResponseHeader
 	// OpaqueQuery marks an operation whose query parameters are validated by the
 	// handler itself (the reports surface already returns typed 400s). The
 	// contract layer then skips its unknown-parameter and limit validation.
@@ -216,6 +218,13 @@ type Operation struct {
 	// Adapter is optional: it rewrites the request for handlers that dispatch on
 	// the legacy path (the reports catch-all).
 	Adapter string
+}
+
+type AdminResponseHeader struct {
+	Name        string
+	Description string
+	Required    bool
+	Schema      any
 }
 
 // normalized fills the zero values that mean "not applicable".

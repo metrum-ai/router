@@ -62,6 +62,8 @@ soft warning at 80 %). `spend_ceiling` does not apply to static groups.
 
 ## Deploy
 
+The checked-in `token_hash` value `REPLACE_WITH_GENERATED_CALLER_TOKEN_HASH` is an intentionally invalid placeholder; generate a real caller token before serving and write the generated caller entry into this configuration.
+
 ```sh
 cd deploy/reference/nvidia-datacenter
 mkdir -p state logs config

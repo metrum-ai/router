@@ -131,6 +131,28 @@ then run `router-migrate --scope router-config --action maintenance
 before starting v5.0.0. File-mode deployments remove the keys from their source
 configuration and do not need this database migration.
 
+The v5.0.0 admin operations migration (`2026111606`, schema 16) adds the
+bounded `router_admin_operations` table used by asynchronous backup and restore
+requests. It is online and runs only through the non-serving migration CLI;
+serving startup and API reads do not create it. Before enabling operation or
+backup endpoints, inspect and apply the router-config scope against the
+configuration database:
+
+```sh
+metrum-ai-router-migrate --scope=router-config --driver=sqlite \
+  --db=/app/state/config.sqlite --action=plan --json
+metrum-ai-router-migrate --scope=router-config --driver=sqlite \
+  --db=/app/state/config.sqlite --action=apply --json
+metrum-ai-router-migrate --scope=router-config --driver=sqlite \
+  --db=/app/state/config.sqlite --action=verify --json
+```
+
+For PostgreSQL, use the deployment-owned configuration DSN through
+`--dsn-env`; do not put it in the command line. The operation table retains at
+most 500 rows for seven days and caps retained results at 64 MiB. Backup
+bundles include admin-key verifiers, so grant `admin:backup/read` only to
+operators authorized to handle them.
+
 ## Phase 6: DB-backed serving source of truth
 
 Phase 6 raises the `router_config` compatibility window to `MaxSchema: 6` and
@@ -177,10 +199,10 @@ The DB-backed mode does not change the secrets contract:
   in-memory runtime configuration and never writes or logs the value.
 - Caller tokens are stored only as a verifier plus the public `token_id`.
   New and rotated callers use `token_hash` (salted PBKDF2-HMAC-SHA3-512);
-  legacy callers may still carry deprecated `token_sha256`. Both forms share
-  the existing `router_config_callers.token_sha256` column, distinguished by
-  the self-describing `pbkdf2-sha3-512:` prefix, so no schema migration is
-  needed. Raw caller tokens have no column in any `router_config` table
+  the `router_config_callers.token_sha256` column, which is retained as a
+  storage compatibility detail while holding only salted verifiers. Legacy
+  values are rejected when loading the active configuration. Raw caller
+  tokens have no column in any `router_config` table
   and are never stored in `router_config_documents` or
   `router_config_change_events`.
 

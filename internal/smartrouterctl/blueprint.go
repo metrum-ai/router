@@ -217,10 +217,10 @@ func buildLocalConfig(intent *StackIntent) (*router.Config, error) {
 			Environment: "dev",
 			Status:      "active",
 			// Placeholder hash; replace with callers generate --write before serving.
-			TokenSHA256: strings.Repeat("0", 64),
-			TokenID:     "rtr_metrum_local-operator_local_dev_k1",
-			Allow:       append([]string(nil), intent.CallerAllow...),
-			Rate:        router.RateConfig{RPM: 60, TPM: 100000, Concurrent: 4},
+			TokenHash: "pbkdf2-sha3-512:i=10000:AAAAAAAAAAAAAAAAAAAAAA:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			TokenID:   "rtr_metrum_local-operator_local_dev_k1",
+			Allow:     append([]string(nil), intent.CallerAllow...),
+			Rate:      router.RateConfig{RPM: 60, TPM: 100000, Concurrent: 4},
 		}},
 	}
 	if intent.UsageDriver == "postgres" {

@@ -72,6 +72,9 @@ jobs:
       - name: Router shard
         if: env.CI_RUN_GO == '1'
         run: env -u AWS_BEARER_TOKEN_BEDROCK python3 scripts/ci_router_shards.py --shard-count 6 --shard-index ${{ matrix.shard }}
+      - name: Run automatic-containment PostgreSQL replica test
+        if: matrix.shard == 0 && env.CI_RUN_GO == '1'
+        run: go test ./internal/router -run '^TestAutomaticContainmentPostgresNotifiesBetweenServicesAndPersistsOnRestart$' -count=1 -v
 
   other-go:
     name: Other Go and Windows
@@ -141,6 +144,34 @@ jobs:
             exit 1
           fi
           go test ./pkg/detector -run '^TestExternalContract$' -count=1
+          go test ./examples/external-detector -run '^TestExternalRuleContract$' -count=1
+      - name: Prompt-injection detector unit and contract tests
+        if: env.CI_RUN_GO == '1'
+        env:
+          DETECTOR_URL: http://127.0.0.1:18082/v1/detect
+          DETECTOR_EXPECT_SIGNAL: prompt_injection
+          LISTEN_HOST: 127.0.0.1
+          LISTEN_PORT: '18082'
+          PROMPT_INJECTION_TEST_MODE: '1'
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s examples/detectors/prompt-injection -p 'test_*.py' -v
+          python3 examples/detectors/prompt-injection/server.py >"$RUNNER_TEMP/prompt-detector.log" 2>&1 &
+          detector_pid=$!
+          trap 'kill "$detector_pid" 2>/dev/null || true; wait "$detector_pid" 2>/dev/null || true' EXIT
+          ready=false
+          for _ in $(seq 1 50); do
+            if curl --silent --show-error --max-time 1 --output /dev/null "$DETECTOR_URL"; then
+              ready=true
+              break
+            fi
+            sleep 0.2
+          done
+          if [ "$ready" != true ]; then
+            cat "$RUNNER_TEMP/prompt-detector.log"
+            exit 1
+          fi
+          go test ./pkg/detector -run '^Test(ExternalContract|PromptInjectionExternalContractPositiveSegment)$' -count=1
 
   other:
     name: Compatibility, Python and examples
@@ -200,6 +231,8 @@ jobs:
           python3 -m unittest discover -s examples/typescript-request-shape -p 'test_*.py' -v
           python3 -m unittest discover -s examples/typescript-pii-policy -p 'test_*.py' -v
           python3 -m unittest discover -s examples/fine-tune-qwen3p8-27b/router-loop -p 'test_canary_policy.py' -v
+      - name: v4.8 caller verifier migration test
+        run: python3 -m unittest scripts.release_upgrade_rollback_test -v
 
   # The source SBOM is required on merge groups and manual dispatch, not PRs
   # or main-push cache warming.

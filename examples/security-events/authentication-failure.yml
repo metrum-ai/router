@@ -1,0 +1,15 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+
+title: Router Authentication Failure
+id: 13e4f5a1-ced6-42f6-a563-f204354c217a
+status: stable
+logsource:
+  product: metrum-ai-router
+  service: security-events
+detection:
+  selection:
+    class_uid: 3002
+    status_id: 2
+  condition: selection
+level: medium

@@ -52,7 +52,7 @@ REVISION_RE = re.compile(r"^[0-9a-f]{40}$")
 
 # Placeholder hash accepted only in the checked-in configuration; the README
 # must tell the operator to generate a real token before serving.
-PLACEHOLDER_TOKEN_SHA256 = "0" * 64
+PLACEHOLDER_TOKEN_HASH = "REPLACE_WITH_GENERATED_CALLER_TOKEN_HASH"
 
 
 class Problems:
@@ -101,7 +101,7 @@ def check_readme(tier: Path, problems: Problems) -> None:
     for section in README_SECTIONS:
         if section not in text:
             problems.add(tier.name, f"README.md is missing section {section!r}")
-    if PLACEHOLDER_TOKEN_SHA256 in (tier / "config.yaml").read_text(encoding="utf-8"):
+    if PLACEHOLDER_TOKEN_HASH in (tier / "config.yaml").read_text(encoding="utf-8"):
         if "callers generate" not in text:
             problems.add(tier.name, "README.md must say how to replace the placeholder caller token")
 
@@ -382,7 +382,7 @@ def tier_dirs(root: Path) -> list[Path]:
         for child in root.iterdir()
         if child.is_dir()
         and not child.name.startswith((".", "_"))
-        and child.name not in {"harness", "hierarchy"}
+        and child.name not in {"harness"}
         and ((child / "images.lock").is_file() or (child / "SIZING.md").is_file())
     )
 

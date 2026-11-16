@@ -2,7 +2,9 @@
 # Copyright 2026 Metrum AI
 # SPDX-License-Identifier: Apache-2.0
 """Build pinned testers, launch loopback mocks and compare mock-tier results."""
+import base64
 import hashlib
+import secrets
 import json
 import os
 from pathlib import Path
@@ -56,6 +58,32 @@ def build_tester(kind, commit):
     return tester, mock
 
 
+def disable_admin_plane(config_text):
+    # Compatibility fixtures do not exercise admin APIs; avoid binding the
+    # shared default 127.0.0.1:8081 while CI lanes run in parallel.
+    lines = config_text.splitlines(keepends=True)
+    for index, line in enumerate(lines):
+        if line.rstrip('\r\n') != 'admin:':
+            continue
+        end = index + 1
+        while end < len(lines) and (not lines[end].strip() or lines[end][0].isspace()):
+            end += 1
+        child_indent = min(
+            len(lines[setting]) - len(lines[setting].lstrip())
+            for setting in range(index + 1, end)
+            if lines[setting].strip()
+        ) if any(lines[setting].strip() for setting in range(index + 1, end)) else 2
+        for setting in range(index + 1, end):
+            line = lines[setting]
+            indent = len(line) - len(line.lstrip())
+            if indent == child_indent and line.lstrip().startswith('enabled:'):
+                lines[setting] = ' ' * child_indent + 'enabled: false\n'
+                return ''.join(lines)
+        lines.insert(index + 1, ' ' * child_indent + 'enabled: false\n')
+        return ''.join(lines)
+    return 'admin:\n  enabled: false\n' + config_text
+
+
 def wait_listening(port_number, process):
     for _ in range(200):
         if process.poll() is not None:
@@ -107,9 +135,15 @@ def main():
             for kind in TESTERS:
                 processes.append(subprocess.Popen([str(binaries[kind][1]), '-addr', f'127.0.0.1:{ports[kind]}'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
                 wait_listening(ports[kind], processes[-1])
-            token = 'local-compat-token'
-            digest = hashlib.sha256(token.encode()).hexdigest()
-            config = f'''server:
+            token_id = 'rtr_compat_synthetic'
+            token = token_id + '_secret'
+            salt = secrets.token_bytes(32)
+            key = hashlib.pbkdf2_hmac('sha3_512', token.encode(), salt, 20000, 64)
+            encode = lambda value: base64.urlsafe_b64encode(value).decode().rstrip('=')
+            token_hash = f"pbkdf2-sha3-512:i=20000:{encode(salt)}:{encode(key)}"
+            config = f'''admin:
+  enabled: false
+server:
   listen: "127.0.0.1:{ports['router']}"
   identifiers: {{mode: passthrough}}
   default_model_group: chat
@@ -128,7 +162,8 @@ models:
   messages: {{strategy: static, targets: [{{provider: messages, model: synthetic-messages, structured_output: true, input_modalities: [text, image, document], reasoning: {{supported: true, mode: opt_in, control: token_budget, min_budget_tokens: 1024, max_budget_tokens: 4096, budget_must_be_less_than_max_tokens: true}}, tool_support: {{anthropic_messages: [client_tools]}}, request_shape_support: {{supported_inbound_dialects: [anthropic], validation_status: passed}}}}]}}
 callers:
   - id: synthetic
-    token_sha256: {digest}
+    token_hash: {token_hash}
+    token_id: {token_id}
     allow: [chat, responses, full, messages]
     rate: {{rpm: 2400, tpm: 100000000, concurrent: 160}}
     quota: {{day: {{requests: 100000, tokens: 400000000}}, month: {{tokens: 8000000000}}}}

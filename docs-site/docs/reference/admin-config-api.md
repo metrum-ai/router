@@ -27,11 +27,13 @@ Permissions:
 
 ### `GET /admin/v1/config/groups`
 
-Lists every model group with its strategy, ordered targets (provider, model or `model_ref`, weight, region, validation status), contract summary, and the active `set_id` and runtime `revision`. Works in file mode too.
+Lists every model group with its strategy, ordered targets (provider, model or `model_ref`, weight, region, validation status), contract summary, optional `virtual_model` thresholds, and the active `set_id` and runtime `revision`. Virtual targets include their measured capability vectors, `member` status, and an `exclusion_reason` when they miss a threshold. Works in file mode too.
 
 ### `GET /admin/v1/config/groups/{group}`
 
-One group in full, plus `eligible_catalog_models`: the provider/`model_ref` inventory the group may target.
+One group in full, plus `eligible_catalog_models`: the provider/`model_ref` inventory the group may target. For virtual groups, `virtual_model` contains the active thresholds and each target includes its measured vector, membership and exclusion reason.
+
+Use `metrum-ai-routerctl groups import-eval --group <name> --report <report.json> --matrix <preregistered-matrix.yaml>` to import vectors from a schema-v1 eval-infrastructure report. The CLI sends target updates with the current `If-Match` revision, so concurrent config changes reject the update instead of overwriting it. Vector values are derived from task results and report provenance; the CLI provides no flags for entering measurements manually.
 
 ### `PUT /admin/v1/config/groups/{group}/targets`
 
@@ -167,11 +169,11 @@ Reports `mode`, `driver`, `runtime_scope`, `active_set_id`, the current `revisio
 
 ## File mode
 
-With `server.config_source.mode: file` (the default), all writes return `409 config_source_mode_file` and the read endpoints serve the live configuration. To enable writes, switch to database mode and import the current YAML:
+With `server.config_source.mode: file` (the default), all writes return `409 config_source_mode_file` and the read endpoints serve the live configuration. To enable writes, switch to database mode and import the current YAML. These examples use `--offline` direct database access, so stop the router before running them; for a running router, use the online Admin API instead.
 
 ```bash
-metrum-ai-routerctl config import --yaml config.yaml --name bootstrap --driver sqlite --db /var/lib/router/config.sqlite --scope prod
-metrum-ai-routerctl config activate --set-id <set-id> --driver sqlite --db /var/lib/router/config.sqlite --scope prod
+metrum-ai-routerctl config import --offline --yaml config.yaml --name bootstrap --driver sqlite --db /var/lib/router/config.sqlite --scope prod
+metrum-ai-routerctl config activate --offline --set-id <set-id> --driver sqlite --db /var/lib/router/config.sqlite --scope prod
 ```
 
 ## CLI

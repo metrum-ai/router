@@ -52,6 +52,9 @@ server:
     timeout_ms: 600000
     max_response_bytes: 33554432
 
+admin:
+  enabled: false
+
 state_path: ${EDGE_STATE_PATH}
 
 providers:

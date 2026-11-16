@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -154,6 +155,167 @@ func TestReasoningRequestFiltersTargetsAndTranslates(t *testing.T) {
 	}
 	if upstreamBody["max_completion_tokens"] != float64(32) {
 		t.Fatalf("max_completion_tokens=%#v", upstreamBody["max_completion_tokens"])
+	}
+}
+
+func TestReasoningEffortDirectModelMixedWeightedAndAllIncapable(t *testing.T) {
+	var upstreamCalls int
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body["model"] != "gpt-6-luna" || body["reasoning_effort"] != "low" {
+			t.Fatalf("weighted group selected unsupported target or lost effort: %#v", body)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"id": "reasoning-ok", "choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": "ok"}}}})
+	}))
+	defer upstream.Close()
+
+	t.Run("mixed-weighted", func(t *testing.T) {
+		cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
+		chatSupport := RequestShapeSupport{SupportedInboundDialects: []string{"openai-chat"}, ValidationStatus: "passed"}
+		cfg.Provider["openai"] = ProviderConfig{BaseURL: upstream.URL + "/v1", Dialect: "openai-chat", APIKey: "provider-key", Models: map[string]ProviderModel{
+			"gpt-6-luna": {Model: "gpt-6-luna", Dialect: "openai-chat", RequestShapeSupport: chatSupport, Reasoning: ReasoningSupport{Supported: true, Mode: reasoningModeOptIn, Control: reasoningControlEffortEnum}},
+		}}
+		cfg.Provider["compatible"] = ProviderConfig{BaseURL: upstream.URL + "/v1", Dialect: "openai", APIKey: "provider-key", Models: map[string]ProviderModel{
+			"plain": {Model: "plain-chat", Dialect: "openai-chat", RequestShapeSupport: chatSupport},
+		}}
+		cfg.Models["default"] = ModelGroup{Strategy: "weighted", Targets: []Target{
+			{Provider: "openai", Model: "gpt-6-luna", Dialect: "openai-chat", RequestShapeSupport: chatSupport, Weight: 100},
+			{Provider: "compatible", Model: "plain-chat", Dialect: "openai-chat", RequestShapeSupport: chatSupport, Weight: 100},
+		}}
+		legacy, err := yaml.Marshal(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var loaded Config
+		if err := yaml.Unmarshal(legacy, &loaded); err != nil {
+			t.Fatal(err)
+		}
+		svc, err := New(&loaded)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer svc.Close()
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"default","reasoning_effort":"low","messages":[{"role":"user","content":"hello"}]}`))
+		req.Header.Set("Authorization", "Bearer "+testToken)
+		rr := httptest.NewRecorder()
+		svc.Handler().ServeHTTP(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+		}
+	})
+
+	t.Run("all-incapable", func(t *testing.T) {
+		cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
+		cfg.Models["default"] = ModelGroup{Strategy: "failover", Targets: []Target{
+			{Provider: "mock", Model: "plain-one"}, {Provider: "mock", Model: "plain-two"},
+		}}
+		svc, err := New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer svc.Close()
+		before := upstreamCalls
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"default","reasoning_effort":"low","messages":[{"role":"user","content":"hello"}]}`))
+		req.Header.Set("Authorization", "Bearer "+testToken)
+		rr := httptest.NewRecorder()
+		svc.Handler().ServeHTTP(rr, req)
+		if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `"code":"unsupported_capability"`) || !strings.Contains(rr.Body.String(), `"param":"reasoning"`) {
+			t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+		}
+		if upstreamCalls != before {
+			t.Fatalf("all-incapable group dispatched upstream: calls %d -> %d", before, upstreamCalls)
+		}
+	})
+}
+
+func TestReasoningEffortFailoverRetriesCapableTargetAfterFailureOrTimeout(t *testing.T) {
+	for _, failure := range []string{"status", "timeout"} {
+		t.Run(failure, func(t *testing.T) {
+			var attempted []string
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Fatal(err)
+				}
+				model := stringValue(body["model"])
+				attempted = append(attempted, model)
+				if model == "reasoning-first" {
+					if failure == "timeout" {
+						time.Sleep(50 * time.Millisecond)
+						return
+					}
+					writeJSON(w, http.StatusServiceUnavailable, map[string]any{"error": map[string]any{"message": "busy"}})
+					return
+				}
+				writeJSON(w, http.StatusOK, map[string]any{"id": "ok", "choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": "ok"}}}})
+			}))
+			defer upstream.Close()
+			cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
+			group := ModelGroup{Strategy: "failover", Targets: []Target{
+				{Provider: "mock", Model: "unsupported-plain"},
+				{Provider: "mock", Model: "reasoning-first", Reasoning: ReasoningSupport{Supported: true, Mode: reasoningModeOptIn, Control: reasoningControlEffortEnum}},
+				{Provider: "mock", Model: "reasoning-second", Reasoning: ReasoningSupport{Supported: true, Mode: reasoningModeOptIn, Control: reasoningControlEffortEnum}},
+			}}
+			if failure == "timeout" {
+				group.AttemptTimeoutMS = 10
+			}
+			cfg.Models["default"] = group
+			svc, err := New(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer svc.Close()
+			req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"default","reasoning_effort":"low","messages":[{"role":"user","content":"hello"}]}`))
+			req.Header.Set("Authorization", "Bearer "+testToken)
+			rr := httptest.NewRecorder()
+			svc.Handler().ServeHTTP(rr, req)
+			if rr.Code != http.StatusOK {
+				t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+			}
+			if len(attempted) != 2 || attempted[0] != "reasoning-first" || attempted[1] != "reasoning-second" {
+				t.Fatalf("attempted models=%v", attempted)
+			}
+		})
+	}
+}
+
+func TestReasoningEffortMixedRejectionsNameReasoningField(t *testing.T) {
+	var upstreamCalls int
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		writeJSON(w, http.StatusOK, map[string]any{"id": "unexpected", "choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": "ok"}}}})
+	}))
+	defer upstream.Close()
+	cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
+	noTools := false
+	cfg.Provider["openai"] = ProviderConfig{BaseURL: upstream.URL + "/v1", Dialect: "openai-chat", APIKey: "provider-key"}
+	cfg.Provider["compatible"] = ProviderConfig{BaseURL: upstream.URL + "/v1", Dialect: "openai", APIKey: "provider-key"}
+	cfg.Models["mixed"] = ModelGroup{Strategy: "weighted", Targets: []Target{
+		{Provider: "openai", Model: "reasoning-model", Weight: 1,
+			ToolSupport: ToolSupport{OpenAIChat: []string{"tools", "tool_choice"}},
+			Reasoning:   ReasoningSupport{Supported: true, Mode: reasoningModeOptIn, Control: reasoningControlEffortEnum, WithTools: &noTools}},
+		{Provider: "compatible", Model: "plain-model", Weight: 1,
+			ToolSupport: ToolSupport{OpenAIChat: []string{"tools", "tool_choice"}}},
+	}}
+	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "mixed")
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"mixed","reasoning_effort":"low","tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}],"messages":[{"role":"user","content":"hello"}]}`))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	rr := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusBadRequest || !strings.Contains(rr.Body.String(), `"code":"unsupported_capability"`) || !strings.Contains(rr.Body.String(), `"param":"reasoning_effort"`) {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if upstreamCalls != 0 {
+		t.Fatalf("mixed-rejection request dispatched upstream %d times", upstreamCalls)
 	}
 }
 

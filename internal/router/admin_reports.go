@@ -4,15 +4,20 @@
 package router
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
+	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"embed"
 	"encoding/base64"
 	"encoding/csv"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"math"
 	"net/http"
@@ -27,6 +32,7 @@ import (
 	"github.com/metrum-ai/router/internal/buildinfo"
 
 	"github.com/jackc/pgx/v5/pgconn"
+	"gopkg.in/yaml.v3"
 	"gorm.io/gorm"
 )
 
@@ -82,6 +88,10 @@ type adminScalarReportResponse struct {
 	Requests     []adminReportRequest     `json:"requests,omitempty"`
 	Pagination   adminReportPagination    `json:"pagination"`
 	GeneratedUTC string                   `json:"generatedUtc"`
+}
+
+func (s *Service) registerAdminReportsContainmentRoute() {
+	s.mux.HandleFunc("POST /admin/reports/api/security/containment", s.handleAdminReports)
 }
 
 type adminSecurityReportResponse struct {
@@ -979,24 +989,47 @@ func (s *Service) handleAdminReports(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	action := "read"
-	if strings.HasSuffix(r.URL.Path, "/export.md") || strings.HasSuffix(r.URL.Path, "/export.csv") {
+	if r.Method == http.MethodPost && strings.HasSuffix(relPath, "/api/security/posture/latest") {
+		action = "write"
+	}
+	if strings.HasSuffix(r.URL.Path, "/export.md") || strings.HasSuffix(r.URL.Path, "/export.csv") || strings.HasSuffix(r.URL.Path, "/export.json") {
 		action = "export"
 	}
 	if strings.HasPrefix(relPath, "/api/request/") || relPath == "/api/request-evidence" {
 		action = authzActionDrilldown
 	}
+	containmentWrite := relPath == "/api/security/containment" && r.Method == http.MethodPost
 	object := authzObjectAdminReports
 	if securityReport {
 		object = authzObjectSecurityReports
 	}
-	if status, code, denied := s.reportsAuthorize(r, subject, object, action, false); denied {
+	if containmentWrite {
+		object, action = authzObjectAdminContainment, authzActionContain
+	}
+	if status, code, denied := s.reportsAuthorize(r, subject, object, action, false); denied && !containmentWrite {
 		s.recordAdminSecurityAccess(r, subject, status, code, object, action)
 		writeAdminSurfaceError(w, r, status, code, "reports-forbidden")
 		return
 	}
 	_, _, deniedGlobal := s.reportsAuthorize(r, subject, object, action, true)
 	globalReports := !deniedGlobal
-	s.recordAdminSecurityAccess(r, subject, http.StatusOK, "", object, action)
+	if containmentWrite {
+		recorder := &adminReportStatusWriter{ResponseWriter: w}
+		w = recorder
+		defer func() {
+			status := recorder.status
+			if status == 0 {
+				status = http.StatusOK
+			}
+			reason := ""
+			if status >= http.StatusBadRequest {
+				reason = "containment-write-failed"
+			}
+			s.recordAdminSecurityAccess(r, subject, status, reason, object, action)
+		}()
+	} else {
+		s.recordAdminSecurityAccess(r, subject, http.StatusOK, "", object, action)
+	}
 	s.setAdminReportHeaders(w, strings.HasPrefix(r.URL.Path, prefix+"/static/"))
 	scalarSpec, scalarOK := adminScalarEndpointSpecs(strings.TrimPrefix(r.URL.Path, prefix))
 	switch {
@@ -1049,6 +1082,26 @@ func (s *Service) handleAdminReports(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.handleAdminSecurityEvents(w, r, subject, globalReports)
+	case r.URL.Path == prefix+"/api/security/csrf-token" && r.Method == http.MethodGet:
+		s.handleAdminSecurityCSRFToken(w, r, prefix)
+	case r.URL.Path == prefix+"/api/security/containment-status" && r.Method == http.MethodGet:
+		s.handleAdminReportsContainmentStatus(w, r, subject)
+	case r.URL.Path == prefix+"/api/security/containment" && r.Method == http.MethodPost:
+		if !s.requireAdminReportUsageStore(w) {
+			return
+		}
+		if !s.requireAdminSecurityReports(w) {
+			return
+		}
+		if !s.validAdminReportsCSRF(w, r, prefix) {
+			return
+		}
+		s.handleAdminReportsContainment(w, r, subject)
+	case r.URL.Path == prefix+"/api/security/posture/latest":
+		if !s.requireAdminReportUsageStore(w) || !s.requireAdminSecurityReports(w) {
+			return
+		}
+		s.handleAdminSecurityPostureReport(w, r)
 	case r.URL.Path == prefix+"/api/retention-status":
 		if !s.requireAdminReportUsageStore(w) {
 			return
@@ -1069,6 +1122,24 @@ func (s *Service) handleAdminReports(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.handleAdminSecurityCSV(w, r, subject, globalReports)
+	case r.URL.Path == prefix+"/security/export.json" || r.URL.Path == prefix+"/security/export.md":
+		if !s.requireAdminReportUsageStore(w) {
+			return
+		}
+		if !s.requireAdminSecurityReports(w) {
+			return
+		}
+		query := r.URL.Query()
+		if strings.HasSuffix(r.URL.Path, ".json") {
+			query.Set("format", "json")
+		} else {
+			query.Set("format", "markdown")
+		}
+		clone := r.Clone(r.Context())
+		urlCopy := *r.URL
+		urlCopy.RawQuery = query.Encode()
+		clone.URL = &urlCopy
+		s.handleAdminSecurityCSV(w, clone, subject, globalReports)
 	case r.URL.Path == prefix+"/api/requests":
 		if !s.requireAdminReportUsageStore(w) {
 			return
@@ -1094,8 +1165,134 @@ func (s *Service) handleAdminReports(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+const adminReportsCSRFCookie = "router_reports_csrf"
+
+func (s *Service) handleAdminSecurityCSRFToken(w http.ResponseWriter, r *http.Request, prefix string) {
+	w.Header().Set("Cache-Control", "no-store")
+	var raw [32]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "csrf-token-unavailable"})
+		return
+	}
+	token := hex.EncodeToString(raw[:])
+	http.SetCookie(w, &http.Cookie{Name: adminReportsCSRFCookie, Value: token, Path: prefix, Secure: r.TLS != nil, HttpOnly: true, SameSite: http.SameSiteStrictMode})
+	writeJSON(w, http.StatusOK, map[string]string{"csrf_token": token})
+}
+
+func (s *Service) validAdminReportsCSRF(w http.ResponseWriter, r *http.Request, prefix string) bool {
+	cookie, err := r.Cookie(adminReportsCSRFCookie)
+	token := r.Header.Get("X-CSRF-Token")
+	origin, originErr := url.Parse(r.Header.Get("Origin"))
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	if cookie == nil || err != nil || token == "" || len(token) != len(cookie.Value) || subtle.ConstantTimeCompare([]byte(token), []byte(cookie.Value)) != 1 || originErr != nil || origin == nil || origin.Scheme != scheme || !strings.EqualFold(origin.Host, r.Host) || r.URL.Path != prefix+"/api/security/containment" {
+		writeAdminSurfaceError(w, r, http.StatusForbidden, "csrf-invalid", "csrf-invalid")
+		return false
+	}
+	return true
+}
+
+type adminReportStatusWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *adminReportStatusWriter) WriteHeader(status int) {
+	if w.status != 0 {
+		return
+	}
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *adminReportStatusWriter) Write(body []byte) (int, error) {
+	if w.status == 0 {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(body)
+}
+
+func (s *Service) handleAdminReportsContainment(w http.ResponseWriter, r *http.Request, subject adminAuthSubject) {
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 16<<10))
+	if err != nil {
+		writeCallerAdminError(w, http.StatusBadRequest, "containment-invalid-request")
+		return
+	}
+	var request callerContainmentRequest
+	if err := json.Unmarshal(raw, &request); err != nil || strings.TrimSpace(request.Action) != "suspend" {
+		writeCallerAdminError(w, http.StatusBadRequest, "containment-invalid-request")
+		return
+	}
+	r.Body = io.NopCloser(bytes.NewReader(raw))
+	if s.configControlPlane == nil {
+		writeCallerAdminError(w, http.StatusServiceUnavailable, "containment-config-set-unavailable")
+		return
+	}
+	deps := CallerAdminDeps{
+		DB: s.configControlPlane, RuntimeScope: strings.TrimSpace(s.cfg.Server.ConfigSource.RuntimeScope),
+		Authorize: func(*http.Request, string, string) bool { return true },
+		AuthorizeDomain: func(req *http.Request, domain, object, action string) bool {
+			inDomain := subject
+			inDomain.domain = domain
+			_, _, denied := s.reportsAuthorize(req, inDomain, object, action, false)
+			return !denied
+		},
+		CallerWriteAuthorized: func(*http.Request, string) bool { return false },
+		AfterMutate:           func(*http.Request, string) error { return s.reloadActiveConfigFromDB() },
+	}
+	clone := r.Clone(r.Context())
+	clone.Header = r.Header.Clone()
+	clone.Header.Set("X-Actor", subject.subject)
+	newCallerAdminHandler(deps).handleContainment(w, clone)
+}
+
+func (s *Service) handleAdminReportsContainmentStatus(w http.ResponseWriter, r *http.Request, subject adminAuthSubject) {
+	callerID := strings.TrimSpace(r.URL.Query().Get("caller_id"))
+	if callerID == "" || s.configControlPlane == nil {
+		writeAdminSurfaceError(w, r, http.StatusBadRequest, "invalid-caller-id", "invalid-caller-id")
+		return
+	}
+	set, err := newCallerAdminHandler(CallerAdminDeps{DB: s.configControlPlane, RuntimeScope: strings.TrimSpace(s.cfg.Server.ConfigSource.RuntimeScope)}).activeConfigSet()
+	if err != nil {
+		writeAdminSurfaceError(w, r, http.StatusServiceUnavailable, "containment-config-set-unavailable", "containment-config-set-unavailable")
+		return
+	}
+	var row callerRow
+	if err := s.configControlPlane.Where("config_set_id = ? AND caller_id = ?", set.ID, callerID).First(&row).Error; err != nil {
+		writeAdminSurfaceError(w, r, http.StatusNotFound, "containment-caller-not-found", "containment-caller-not-found")
+		return
+	}
+	callerSubject := subject
+	callerSubject.domain = authzDomainForProjectEnvironment(row.Project, row.Environment)
+	_, _, denied := s.reportsAuthorize(r, callerSubject, authzObjectAdminContainment, authzActionContain, false)
+	if denied {
+		writeAdminSurfaceError(w, r, http.StatusForbidden, "containment-forbidden", "containment-forbidden")
+		return
+	}
+	var document configControlPlaneDocumentRow
+	if err := s.configControlPlane.Where("config_set_id = ?", set.ID).First(&document).Error; err != nil {
+		writeAdminSurfaceError(w, r, http.StatusServiceUnavailable, "containment-config-set-unavailable", "containment-config-set-unavailable")
+		return
+	}
+	var config Config
+	if err := yaml.Unmarshal([]byte(document.CanonicalYAML), &config); err != nil {
+		writeAdminSurfaceError(w, r, http.StatusInternalServerError, "containment-config-invalid", "containment-config-invalid")
+		return
+	}
+	contained := false
+	for _, caller := range config.Callers {
+		if caller.ID == callerID {
+			contained = caller.Status == accountStatusSuspended && caller.ContainmentSource == "containment"
+			break
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"can_contain": true, "contained": contained})
+}
+
 func (s *Service) handleAdminMigrationStatus(w http.ResponseWriter, r *http.Request) {
-	statusFn := s.usage.migrationStatus
+	statusFn := s.usage.migrationStatusReadOnly
 	if s.migrationStatusFn != nil {
 		statusFn = s.migrationStatusFn
 	}
@@ -1824,6 +2021,29 @@ func (s *Service) handleAdminSecurityEvents(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Service) handleAdminSecurityCSV(w http.ResponseWriter, r *http.Request, subject adminAuthSubject, global bool) {
+	format := strings.TrimSpace(r.URL.Query().Get("format"))
+	requestID := strings.TrimSpace(r.URL.Query().Get("request_id"))
+	if format != "" && format != "json" && format != "markdown" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"type": "invalid-export-format", "message": "invalid-export-format"}})
+		return
+	}
+	if format != "" && requestID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"type": "incident-request-id-required", "message": "incident-request-id-required"}})
+		return
+	}
+	if format == "" && requestID != "" {
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"type": "incident-export-format-required", "message": "incident-export-format-required"}})
+		return
+	}
+	if format != "" || requestID != "" {
+		clone := r.Clone(r.Context())
+		urlCopy := *r.URL
+		query := urlCopy.Query()
+		query.Del("format")
+		urlCopy.RawQuery = query.Encode()
+		clone.URL = &urlCopy
+		r = clone
+	}
 	opts, filters, ok := s.parseAdminSecurityFilters(w, r, subject, global)
 	if !ok {
 		return
@@ -1832,6 +2052,38 @@ func (s *Service) handleAdminSecurityCSV(w http.ResponseWriter, r *http.Request,
 	if err != nil {
 		s.writeAdminReportQueryFailed(w, r, "security-export", "handleAdminSecurityCSV", &filters, err)
 		return
+	}
+	if format != "" {
+		var selected *securityAccessEvent
+		if len(events) > 0 {
+			selected = &events[0]
+		}
+		if selected == nil {
+			writeJSON(w, http.StatusNotFound, map[string]any{"error": map[string]any{"type": "security-incident-not-found", "message": "security-incident-not-found"}})
+			return
+		}
+		row := adminSecurityRows([]securityAccessEvent{*selected})[0]
+		evidence, found, err := s.adminRequestEvidenceResponse(row.RequestID, subject, global)
+		if err != nil {
+			s.writeAdminReportQueryFailed(w, r, "security-export-evidence", "handleAdminSecurityCSV", &filters, err)
+			return
+		}
+		bundle := map[string]any{"incident": map[string]any{"timeUtc": row.TimeUTC, "requestId": row.RequestID, "eventType": row.EventType, "outcome": row.Outcome, "reason": row.Reason, "callerId": row.CallerID, "surface": row.Surface, "method": row.Method, "path": row.Path, "status": row.Status}, "evidence": sanitizeIncidentEvidence(evidence)}
+		if !found {
+			bundle["evidence"] = map[string]any{"requestId": row.RequestID, "available": false}
+		}
+		if format == "json" {
+			w.Header().Set("Content-Type", "application/json; charset=utf-8")
+			w.Header().Set("Content-Disposition", `attachment; filename="security-incident.json"`)
+			writeJSON(w, http.StatusOK, bundle)
+			return
+		}
+		if format == "markdown" {
+			w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+			w.Header().Set("Content-Disposition", `attachment; filename="security-incident.md"`)
+			_, _ = fmt.Fprintf(w, "# Security incident\n\n- Time: %s\n- Caller: %s\n- Type: %s\n- Outcome: %s\n- Reason: %s\n- Request ID: %s\n", markdownSafe(row.TimeUTC), markdownSafe(row.CallerID), markdownSafe(row.EventType), markdownSafe(row.Outcome), markdownSafe(row.Reason), markdownSafe(row.RequestID))
+			return
+		}
 	}
 	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 	w.Header().Set("Content-Disposition", `attachment; filename="security-access-events.csv"`)
@@ -1842,6 +2094,41 @@ func (s *Service) handleAdminSecurityCSV(w http.ResponseWriter, r *http.Request,
 		_ = cw.Write(csvSafeRow([]string{row.TimeUTC, row.RequestID, row.EventType, row.Surface, row.Method, row.Path, strconv.Itoa(row.Status), row.Outcome, row.Reason, row.AuthSubject, row.AuthSource, row.CallerID, row.CallerUser, row.Project, row.TokenID, row.AdminSubject, row.Client, row.UserAgentFamily, row.IPAddress, row.IPSource, strconv.FormatBool(row.TrustedProxyApplied), strconv.FormatBool(row.PrivateIP), strconv.FormatBool(row.LoopbackIP), strconv.FormatBool(row.ReservedIP), row.ModelGroup, row.RequestedModel, row.ResolvedGroup, strconv.Itoa(row.InputTokens), strconv.Itoa(row.OutputTokens), strconv.Itoa(row.TotalTokens)}))
 	}
 	cw.Flush()
+}
+
+func sanitizeIncidentEvidence(evidence adminEvidenceBundleResponse) any {
+	// The general request evidence view includes token identifiers. Incident bundles
+	// retain the diagnostic timeline and error evidence but do not export key IDs.
+	evidence.Request.TokenID = ""
+	evidence.EvidenceBundle.RequestSummary.TokenID = ""
+	encoded, err := json.Marshal(evidence)
+	if err != nil {
+		return map[string]any{"available": false}
+	}
+	var result map[string]any
+	if err := json.Unmarshal(encoded, &result); err != nil {
+		return map[string]any{"available": false}
+	}
+	stripIncidentTokenIDs(result)
+	return result
+}
+
+func stripIncidentTokenIDs(value any) {
+	switch current := value.(type) {
+	case map[string]any:
+		delete(current, "tokenId")
+		for _, child := range current {
+			stripIncidentTokenIDs(child)
+		}
+	case []any:
+		for _, child := range current {
+			stripIncidentTokenIDs(child)
+		}
+	}
+}
+
+func markdownSafe(value string) string {
+	return strings.NewReplacer("\\", "\\\\", "`", "\\`", "\n", " ", "\r", " ").Replace(value)
 }
 
 func csvSafeRow(row []string) []string {
@@ -2698,6 +2985,7 @@ func (s *Service) parseAdminSecurityFilters(w http.ResponseWriter, r *http.Reque
 		TokenID:           strings.TrimSpace(q.Get("token_id")),
 		AdminSubject:      strings.TrimSpace(q.Get("admin_subject")),
 		Client:            strings.TrimSpace(q.Get("client")),
+		RequestID:         strings.TrimSpace(q.Get("request_id")),
 	}
 	if !global {
 		applyAdminSecurityDomainScope(&opts, subject.domain)

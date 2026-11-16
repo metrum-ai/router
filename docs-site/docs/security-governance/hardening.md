@@ -23,9 +23,11 @@ Protect the serving listener with `server.tls` when traffic crosses an untrusted
 
 ## Caller and provider keys
 
-Store caller tokens as `callers[].token_hash` with a unique public `token_id`; do not add raw bearer tokens to config. Rotate deprecated `token_sha256` verifiers. Bind each caller to the smallest `allow` list and set at least one rate or quota limit. Use `status` to disable, suspend, expire, or rotate access.
+Store caller tokens as `callers[].token_hash` with a unique public `token_id`; do not add raw bearer tokens to config. Before upgrading a v4.8 deployment, migrate active caller tokens with the v5 routerctl and remove disabled or revoked legacy entries with `callers migrate-legacy --remove-disabled`. Bind each caller to the smallest `allow` list and set at least one rate or quota limit. Use `status` to disable, suspend, expire, or rotate access.
 
 Keep provider keys in the deployment secret store and set `providers.<name>.api_key_env` to the environment variable name. Do not store provider key values in tracked config, logs, reports, or tickets. Scope provider-side keys to the required models and permissions.
+
+Provider-usage reconciliation uses separate read-only analytics credentials. Keep their values in the deployment secret store and reference them only with `ROUTER_PROVIDER_USAGE_*` environment names. Do not reuse inference keys for organization-level usage access. See [Provider usage reconciliation](./provider-usage-reconciliation.md) and the [provider-key compromise runbook](./compromise-runbook.md) for setup and rotation guidance.
 
 ## Spend limits
 

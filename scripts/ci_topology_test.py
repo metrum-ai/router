@@ -118,6 +118,8 @@ def assert_make_tiers() -> None:
     require("harbor-adapter-test" in fast, "test-fast dropped the stdlib Harbor contract")
     require("scripts/router_test_time_guard_test.py" in fast, "test-fast dropped the time-guard regression")
     require("scripts/release_provenance_test.py" in fast, "test-fast dropped the release provenance contract")
+    require("release_image_layer_test.py" in fast and "release_image_binary_test.py" in fast,
+            "test-fast dropped release image reproducibility and byte-identity tests")
     require("api-compat-mock" not in fast, "test-fast regained api-compat-mock")
     require("harbor-local" not in fast, "test-fast regained harbor-local")
     require("capability-smoke-unit" not in fast.splitlines()[0], "test-fast repeats focused Go tests")
@@ -246,6 +248,58 @@ def assert_agent_chain_workflow() -> None:
             "agent chain nightly must retain per-cell results on failure")
 
 
+def assert_eval_infra_nightly_workflow() -> None:
+    text = read(WORKFLOWS / "eval-infra-nightly.yml")
+    triggers = text.split("permissions:", 1)[0]
+    require("schedule:" in triggers and "workflow_dispatch:" in triggers,
+            "evaluation nightly needs scheduled and manual triggers")
+    require(all(f"{event}:" not in triggers for event in ("pull_request", "push", "merge_group")),
+            "paid evaluation nightly must not run on PR, push or merge-group events")
+    require("$1.50 total per workflow run and per UTC night" in text,
+            "evaluation nightly must document its workflow and daily spend ceiling")
+    workflow_jobs = jobs(text)
+    require(set(workflow_jobs) == {"nightly", "harbor"}, "evaluation nightly must split Docker Harbor from non-Docker cells")
+    job = workflow_jobs["nightly"]
+    require("if: github.ref == 'refs/heads/main'" in job,
+            "evaluation nightly must run only from main")
+    require("environment: evaluation" in job,
+            "evaluation nightly must use the protected evaluation environment")
+    require("timeout-minutes: 45" in job and "cancel-in-progress: false" in text,
+            "evaluation nightly must be bounded and cannot cancel a live run")
+    require("contents: read" in text and "actions: read" in text,
+            "evaluation nightly permissions must stay read-only")
+    secret_refs = set(re.findall(r"\$\{\{\s*secrets\.([A-Za-z0-9_]+)\s*\}\}", text))
+    require(secret_refs == {"COMPAT_MATRIX_OPENAI_API_KEY", "COMPAT_MATRIX_CALLER_TOKEN"},
+            "evaluation nightly must expose only the two required environment secrets")
+    require("artifacts/run-report.json" in text and "artifacts/rolling-aggregate.json" in text
+            and "artifacts/history" not in text.split("      - name: Publish sanitized evaluation reports", 1)[1],
+            "evaluation nightly artifacts must contain only the current report and aggregate")
+    require("gh run download" in text and "refusing to bypass the nightly spend ceiling" in text,
+            "same-day cost history must fail closed when reports cannot be retrieved")
+    harbor_job = workflow_jobs["harbor"]
+    require("runs-on: ubuntu-latest" in harbor_job and "docker info" in harbor_job,
+            "Harbor live job must use the Docker-capable hosted runner")
+    require("needs: nightly" in harbor_job and "environment: evaluation" in harbor_job,
+            "Docker Harbor job must run after non-Docker work in the protected environment")
+    require("HARBOR_MAX_RESERVE_USD" in harbor_job and "eval-harbor-${{ github.run_id }}" in harbor_job,
+            "Docker Harbor job must enforce and publish its bounded daily reservation")
+    require("harbor-venv/bin/python" in harbor_job,
+            "Harbor runner must use the interpreter that installs the pinned Harbor package")
+    require("prepare_catalog_tasks.py" in harbor_job and "HARBOR_CATALOG_TASKS" in harbor_job,
+            "Harbor nightly must stage its bespoke live catalog tasks")
+    harbor_runner = read(ROOT / "scripts" / "harbor_e2e" / "run_matrix.py")
+    require(all(task_id in harbor_runner for task_id in
+                ("HARBOR-02", "HARBOR-03", "HARBOR-04", "HARBOR-05", "HARBOR-06")),
+            "Harbor nightly must include all bespoke v5.0.0 P0 task IDs")
+    require("charged_usd" in harbor_runner and "request_usage" in harbor_runner and
+            "missing_usage_rows" in harbor_runner,
+            "Harbor per-cell costs must come from measured usage rows and fail closed when absent")
+    require("HARBOR-02…HARBOR-06" in read(ROOT / "docs" / "EVALUATION_INFRA.md") and
+            "HARBOR-07…HARBOR-18" in read(ROOT / "docs" / "EVALUATION_INFRA.md") and "#999" in
+            read(ROOT / "docs" / "EVALUATION_INFRA.md"),
+            "Harbor documentation must distinguish v5.0 live cells from offline stubs")
+
+
 def assert_hierarchy_release_gate() -> None:
     matrix = read(WORKFLOWS / "hierarchy-matrix.yml")
     require("workflow_call:" in matrix and "workflow_dispatch:" in matrix,
@@ -262,7 +316,8 @@ def assert_hierarchy_release_gate() -> None:
     release = jobs(read(WORKFLOWS / "release.yml"))
     require("uses: ./.github/workflows/hierarchy-matrix.yml" in release.get("hierarchy-matrix", ""),
             "release workflow no longer calls the hierarchy matrix")
-    require("needs: hierarchy-matrix" in release.get("package", ""),
+    require("needs: hierarchy-matrix" in release.get("resolve", "")
+            and "needs: resolve" in release.get("package-binaries", ""),
             "release packaging must depend on the hierarchy matrix")
     compat = read(WORKFLOWS / "release-compat.yml")
     require("agent-chain-mock" not in compat,
@@ -296,9 +351,19 @@ def assert_arc_runners() -> None:
                     "pikachu cache maintenance must stay on its original host")
             continue
         for name, body in jobs(text).items():
+            if path.name == "eval-infra-nightly.yml" and name == "harbor":
+                # Docker is part of the paid Harbor job's declared runtime;
+                # keep that one job on the hosted runner with main-only,
+                # protected-environment boundaries asserted separately.
+                require(re.search(r"(?m)^    runs-on: ubuntu-latest$", body) is not None,
+                        "the paid Harbor Docker job must use the hosted runner")
+                require("environment: evaluation" in body and "if: always() && github.ref == 'refs/heads/main'" in body,
+                        "the hosted Harbor exception must remain main-only and protected")
+                continue
             if ((path.name == "agent-tool-compat.yml" and name == "codex-workspace-sandbox") or
                     (path.name in ("agent-chain-nightly.yml", "hierarchy-matrix.yml") and
-                     name in ("codex-chain-sandbox", "codex-chain"))):
+                     name in ("codex-chain-sandbox", "codex-chain")) or
+                    (path.name == "release-dry-run.yml" and name == "hierarchy-codex-chain")):
                 # Codex needs unprivileged namespaces absent from ARC. These VM
                 # jobs are credential-free and execute only local mock fixtures.
                 require(re.search(r"(?m)^    runs-on: ubuntu-22\.04$", body) is not None,
@@ -324,9 +389,19 @@ def assert_arc_runners() -> None:
             require(pinned or configurable,
                     f"{path.name}/{name} must use {runner} or the {variable} variable")
         if "cache: false" in text:
-            require(path.name == "ci.yml" and "actions/cache/restore@" in text
-                    and "actions/cache/save@" in text,
-                    f"{path.name} must use explicit Actions caches, not warm host caches")
+            if path.name == "release.yml":
+                rebuild = jobs(text).get("reproducible-build", "")
+                require("cache: false" in rebuild and "make package" in rebuild
+                        and "compare_release_checksums.py" in rebuild,
+                        "the clean release rebuild must disable Go cache reuse and compare checksums")
+            elif path.name == "release-dry-run.yml":
+                require("workflow_dispatch:" in text and "ref: main" in text
+                        and "uses: actions/cache/" not in text,
+                        "release dry run must check out main and avoid shared caches")
+            else:
+                require(path.name == "ci.yml" and "actions/cache/restore@" in text
+                        and "actions/cache/save@" in text,
+                        f"{path.name} must use explicit Actions caches, not warm host caches")
         require("/home/" not in text, f"{path.name} must not hardcode a host HOME")
 
 
@@ -493,7 +568,16 @@ def main() -> int:
     assert_retirement_topology()
     assert_provider_workflows()
     assert_agent_chain_workflow()
+    assert_eval_infra_nightly_workflow()
     assert_hierarchy_release_gate()
+    release = read(WORKFLOWS / "release.yml")
+    require("environment: release" in release, "release image publication must be protected by the release environment")
+    require("ROUTER_DOCKER_RUNNER" not in release and "docker-runner-preflight" not in release,
+            "release image publication must not require a Docker runner")
+    require("index append" in release and "mutate \"$base\" --append \"$layer\"" in release and "release_image_layer.py" in release,
+            "release images must be assembled daemonlessly from binary packages")
+    require("packages: write" in release and "cosign sign --yes" in release,
+            "protected release job must push and sign OCI images")
     script = ROOT / "scripts" / "ci_lrp_synthetic.sh"
     syntax = subprocess.run(["bash", "-n", str(script)], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     require(syntax.returncode == 0, f"LRP CI script failed bash -n:\n{syntax.stderr}")

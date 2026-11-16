@@ -34,7 +34,7 @@ const usageTargetRegionDiagnosticsMigrationID = 2026090901
 const usageCachedInputPricingMigrationID = 2026091301
 const usageResponseAffinityMigrationID = 2026110201
 
-var usageMigrationCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 15, MinData: 0, MaxData: 1}
+var usageMigrationCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 18, MinData: 0, MaxData: 1}
 
 // usageMigrationDefinitions is the sole owner of usage application schema.
 // The first migration creates fresh-install tables/indexes through its reviewed
@@ -216,9 +216,10 @@ var usageMigrationDefinitions = []MigrationDefinition{{
 	HandlerKey: "usage.response-affinity.apply.v1@applyResponseAffinityMigration", PostconditionKey: "usage.response-affinity.schema.v1@verifyResponseAffinityMigration",
 	Dependencies: []int{2026103001}, ExecutionMode: "transactional", LockClass: "online", TimeoutClass: "bounded",
 	Apply: applyResponseAffinityMigration, Verify: verifyResponseAffinityMigration,
-}, UsageAdminAuditMigrationDefinition(), UsageAdminDenialColumnsMigrationDefinition(), PolicyRuntimeMigrationDefinition()}
+}, UsageAdminAuditMigrationDefinition(), UsageAdminDenialColumnsMigrationDefinition(), PolicyRuntimeMigrationDefinition(), MCPToolAuditMigrationDefinition(), AutomaticContainmentMigrationDefinition(), TraceCorrelationMigrationDefinition()}
 
 func init() {
+	usageMigrationDefinitions = append(usageMigrationDefinitions, SecurityPostureReportMigrationDefinition())
 	for i := range usageMigrationDefinitions {
 		usageMigrationDefinitions[i] = FinalizeMigrationDefinition(usageMigrationDefinitions[i])
 	}
@@ -613,6 +614,24 @@ func (r *migrationRunner) Status() (MigrationStatus, error) {
 	if err := r.ensureLedger(); err != nil {
 		return MigrationStatus{}, err
 	}
+	return r.statusFromExistingLedger()
+}
+
+// StatusReadOnly reads the existing migration ledger without bootstrapping or
+// upgrading any migration metadata. It is intended for serving API handlers.
+func (r *migrationRunner) StatusReadOnly() (MigrationStatus, error) {
+	if r == nil || r.db == nil || !r.db.Migrator().HasTable("schema_migration_ledger") {
+		return MigrationStatus{}, errors.New("migration ledger unavailable")
+	}
+	for _, column := range []string{"manifest_digest", "scope", "migration_id", "checksum", "state"} {
+		if !r.db.Migrator().HasColumn("schema_migration_ledger", column) {
+			return MigrationStatus{}, errors.New("migration ledger metadata unavailable")
+		}
+	}
+	return r.statusFromExistingLedger()
+}
+
+func (r *migrationRunner) statusFromExistingLedger() (MigrationStatus, error) {
 	status := MigrationStatus{Scope: r.scope, Compatibility: r.compatibility, Compatible: true, State: "current"}
 	var records []migrationLedgerRecord
 	if err := r.db.Where("scope = ?", r.scope).Order("migration_id ASC").Find(&records).Error; err != nil {

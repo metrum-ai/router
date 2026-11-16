@@ -16,7 +16,9 @@ import json
 import pytest
 
 from conftest import (
+    CALLER_ID,
     CALLER_DIGEST,
+    DENIED_CALLER_ID,
     DENIED_CALLER_DIGEST,
     PROMPT_CANARY,
     TOOL_CANARY,
@@ -65,10 +67,12 @@ models:
   chat-no-choice: {{strategy: static, targets: [{{provider: chat, model: synthetic-no-choice, {chat_tools}, request_shape_support: {{unsupported_request_features: [tool_choice]}}}}]}}
 callers:
   - id: synthetic-allowed
-    token_sha256: {CALLER_DIGEST}
+    token_hash: {CALLER_DIGEST}
+    token_id: {CALLER_ID}
     allow: [chat-structured, chat-mct, chat-no-forced, chat-no-choice]
   - id: synthetic-denied
-    token_sha256: {DENIED_CALLER_DIGEST}
+    token_hash: {DENIED_CALLER_DIGEST}
+    token_id: {DENIED_CALLER_ID}
     allow: [chat-structured]
 '''
     handle = spawn_router(router, work, config)

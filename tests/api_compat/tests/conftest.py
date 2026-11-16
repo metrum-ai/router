@@ -14,8 +14,10 @@ import pytest
 
 from harness import (
     CALLER,
+    CALLER_ID,
     CALLER_DIGEST,
     DENIED_CALLER,
+    DENIED_CALLER_ID,
     DENIED_CALLER_DIGEST,
     FORBIDDEN_ARTIFACT_VALUES,
     PROMPT_CANARY,
@@ -25,7 +27,9 @@ from harness.scripted_upstream import FakeUpstream, start_fake_upstream
 
 __all__ = [
     "CALLER",
+    "CALLER_ID",
     "DENIED_CALLER",
+    "DENIED_CALLER_ID",
     "CALLER_DIGEST",
     "DENIED_CALLER_DIGEST",
     "PROMPT_CANARY",
@@ -72,7 +76,9 @@ def _start_router(tmp_path_factory, server_extra=""):
   cache: {{enabled: false}}
   usage_db: {{enabled: false}}
   logging: {{path: "{work / 'router.jsonl'}"}}
-{server_extra}state_path: "{work / 'state.json'}"
+{server_extra}admin:
+  enabled: false
+state_path: "{work / 'state.json'}"
 providers:
   chat: {{base_url: "{upstream_url}/v1", dialect: openai-chat}}
   responses: {{base_url: "{upstream_url}/v1", dialect: openai-responses}}
@@ -85,7 +91,8 @@ models:
   chat-to-responses: {{strategy: static, targets: [{{provider: responses, model: synthetic-bridge-responses, tool_support: {{openai_responses: [function, tool_choice]}}, bridges: {{chat_to_responses: {{enabled: true, text: true, tools: true, tool_choice: true}}}}}}]}}
 callers:
   - id: synthetic-allowed
-    token_sha256: {CALLER_DIGEST}
+    token_hash: {CALLER_DIGEST}
+    token_id: {CALLER_ID}
     allow: [chat, responses, messages, responses-to-chat, chat-to-responses]
     # Infrastructure-only local capacity, not production budget guidance.
     # CHAT-09 intentionally reserves a 10M output cap; allow the whole suite.
@@ -93,7 +100,8 @@ callers:
     quota: &local_quota {{day: {{requests: 100000, tokens: 400000000}}, month: {{tokens: 8000000000}}}}
     key: &local_key {{lifetime_tokens: 40000000000}}
   - id: synthetic-denied
-    token_sha256: {DENIED_CALLER_DIGEST}
+    token_hash: {DENIED_CALLER_DIGEST}
+    token_id: {DENIED_CALLER_ID}
     allow: [chat]
     rate: *local_rate
     quota: *local_quota
@@ -168,7 +176,12 @@ def spawn_router(router, work, config_text, *, ready_timeout_s=90.0, env=None):
     work.mkdir(parents=True, exist_ok=True)
     port = unused_port()
     config_path = work / "config.yaml"
-    config_path.write_text(config_text.replace("{port}", str(port)))
+    config = config_text.replace("{port}", str(port)).rstrip()
+    # API compatibility routers exercise serving APIs only. Disable the admin
+    # listener so parallel instances never contend for its shared default port.
+    if "\nadmin:" in "\n" + config:
+        raise ValueError("api_compat spawn_router configs must not declare an admin section")
+    config_path.write_text(config + "\nadmin:\n  enabled: false\n")
     run_env = os.environ | {"GOPROXY": "off", "GOSUMDB": "off", "GOTOOLCHAIN": "local"}
     if env:
         run_env |= env
