@@ -34,6 +34,7 @@ func TestToolFirewallBuiltInDenyAndAllowedURL(t *testing.T) {
 		{"metadata ip", `{"host":"169.254.169.254"}`, nil, "cloud_metadata_ip"},
 		{"url denied", `{"url":"https://outside.example/send"}`, nil, "url_not_allowed"},
 		{"non-http egress URL denied", `{"url":"ftp://api.example/send"}`, []string{"api.example"}, "url_not_allowed"},
+		{"single-character scheme denied", `{"url":"x://api.example/send"}`, []string{"api.example"}, "url_not_allowed"},
 		{"url allowed", `{"url":"https://api.example/send"}`, []string{"api.example"}, ""},
 		{"URL matcher limit fails closed", manyURLs, []string{"api.example"}, "too_many_urls"},
 	} {

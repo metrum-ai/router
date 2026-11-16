@@ -64,7 +64,7 @@ type toolFirewallOutcome struct {
 var (
 	firewallDangerousShell = regexp.MustCompile(`(?i)\b(?:curl|wget)\b[^|\n]{0,1000}\|\s*(?:ba)?sh\b`)
 	firewallRemoveRoot     = regexp.MustCompile(`(?i)\brm\s+-[a-z]*r[a-z]*\b[^\n]{0,128}\s/`)
-	firewallURL            = regexp.MustCompile(`(?i)\b[a-z][a-z0-9+.-]{1,31}://[^\s"'<>]{1,1000}`)
+	firewallURL            = regexp.MustCompile(`(?i)\b[a-z][a-z0-9+.-]{0,31}://[^\s"'<>]{1,1000}`)
 	firewallSensitivePath  = regexp.MustCompile(`(?i)(?:~/|/home/[^/]+/|/root/)(?:\.aws|\.ssh|\.env)(?:/|\b)`)
 )
 
