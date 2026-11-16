@@ -26,7 +26,6 @@ server:
     deny:
       - tool: bash
         args_regex: '(?i)curl[^|]*\|\s*(ba)?sh'
-      - any_arg_contains: "169.254.169.254"
 ```
 
 Built-in checks deny dangerous shell pipelines, root deletion, paths under

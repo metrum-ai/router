@@ -77,7 +77,6 @@ server:
     max_pending_approvals: 100
     # deny:
     #   - {tool: bash, args_regex: '(?i)curl[^|]*\|\s*(ba)?sh'}
-    #   - {any_arg_contains: '169.254.169.254'}
     # sequences:
     #   - {first_tool: read_customer, first_args_regex: sensitive, then_tool: http_request, within_turns: 3, action: hold}
   identifiers:
