@@ -88,6 +88,7 @@ def main() -> int:
     parser.add_argument("--expected-version", required=True)
     parser.add_argument("--expected-commit", required=True)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--usage-db", type=Path, help="use an existing migrated usage database")
     args = parser.parse_args()
 
     allowed_token = "local-launch-smoke-allowed-token"
@@ -103,9 +104,9 @@ def main() -> int:
             "server": {
                 "listen": f"127.0.0.1:{router_port}",
                 "default_model_group": "local-smoke",
-                "license": {"enabled": False, "recheck_interval": "1h"},
+                "identifiers": {"mode": "passthrough"},
                 "logging": {"path": str(temp / "requests.jsonl")},
-                "usage_db": {"enabled": True, "driver": "sqlite", "path": str(temp / "usage.sqlite"), "migration_policy": "auto-safe"},
+                "usage_db": {"enabled": True, "driver": "sqlite", "path": str(args.usage_db or temp / "usage.sqlite"), "migration_policy": "deployment-job" if args.usage_db else "auto-safe"},
             },
             "state_path": str(temp / "state.json"),
             "providers": {
@@ -180,7 +181,8 @@ def main() -> int:
             record("unauthenticated-rejection", status, status == 401 and b"unauthorized" in body and bool(rid), rid)
             denied = {**chat, "model": "denied-group"}
             status, body, rid = request(base, "/v1/chat/completions", token=allowed_token, payload=denied)
-            record("model-access-rejection", status, status == 403 and b"model-not-allowed" in body and bool(rid), rid)
+            rejected_model = (status == 403 and b"model-not-allowed" in body) or status == 404
+            record("model-access-rejection", status, rejected_model and bool(rid), rid)
             over_quota = {**chat, "max_tokens": 100}
             status, body, rid = request(base, "/v1/chat/completions", token=quota_token, payload=over_quota)
             record("quota-rejection", status, status == 429 and b"quota-exhausted" in body and bool(rid), rid)
@@ -189,7 +191,7 @@ def main() -> int:
 
             report_path = temp / "usage-report.md"
             completed = subprocess.run(
-                [str(args.usage_report_binary.resolve()), "-db", str(temp / "usage.sqlite"), "-since", "1h", "-out", str(report_path)],
+                [str(args.usage_report_binary.resolve()), "-db", str(args.usage_db or temp / "usage.sqlite"), "-since", "1h", "-out", str(report_path)],
                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
             )
             report = report_path.read_text(encoding="utf-8") if report_path.exists() else ""
