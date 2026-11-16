@@ -992,28 +992,32 @@ func TestSecretDLPStreamJWTResumesInsideInvalidCandidate(t *testing.T) {
 	if strings.Contains(unary, token) {
 		t.Fatal("unary redactor did not identify the regression token")
 	}
-	state := initState()
-	var pending string
-	var released strings.Builder
-	for start := 0; start < len(input); {
-		end := min(start+16, len(input))
-		safe, next, err := redactSecretStreamChunk(state, pending, input[start:end], false)
-		if err != nil {
-			t.Fatal(err)
-		}
-		released.WriteString(safe)
-		pending = next
-		start = end
+	for _, chunkSize := range []int{1, 7, 16, 31, 64} {
+		t.Run(fmt.Sprintf("chunk_%d", chunkSize), func(t *testing.T) {
+			state := initState()
+			var pending string
+			var released strings.Builder
+			for start := 0; start < len(input); {
+				end := min(start+chunkSize, len(input))
+				safe, next, err := redactSecretStreamChunk(state, pending, input[start:end], false)
+				if err != nil {
+					t.Fatal(err)
+				}
+				released.WriteString(safe)
+				pending = next
+				start = end
+			}
+			safe, _, err := redactSecretStreamChunk(state, pending, "", true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			released.WriteString(safe)
+			if strings.Contains(released.String(), token) {
+				t.Fatalf("stream released JWT after malformed candidate (released bytes=%d)", released.Len())
+			}
+			assertNoSecretFragment(t, released.String(), token, 12)
+		})
 	}
-	safe, _, err := redactSecretStreamChunk(state, pending, "", true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	released.WriteString(safe)
-	if strings.Contains(released.String(), token) {
-		t.Fatalf("stream released JWT after malformed candidate (released bytes=%d)", released.Len())
-	}
-	assertNoSecretFragment(t, released.String(), token, 12)
 }
 
 func TestSecretDLPStreamKeywordPaddingIsHeld(t *testing.T) {
