@@ -27,11 +27,93 @@ type policyDiffDocument struct {
 	Revision   int64    `json:"revision"`
 }
 
+type policySimulationRequest struct {
+	Object string `json:"object"`
+	Action string `json:"action"`
+}
+
+type policySimulationDocument struct {
+	SetID       string `json:"set_id"`
+	Revision    int64  `json:"revision"`
+	Allowed     bool   `json:"allowed"`
+	Decision    string `json:"decision"`
+	Explanation string `json:"explanation"`
+}
+
 func policyPreviewOperationSpecs() []Operation {
 	return []Operation{
+		{ID: "simulatePolicySet", Method: "POST", Path: "/admin/v1/policy-sets/{set_id}/simulate", Summary: "Simulate a request against a candidate policy", Description: "Evaluate the authenticated caller in the global admin-policy domain. The response does not include policy rules.", Object: "admin:policy", Action: "read", Domain: AdminDomainGlobal, NoSideEffect: true, Request: policySimulationRequest{}, Response: policySimulationDocument{}, Errors: []int{400, 404, 422, 503}, RateClass: AdminRateClassRead, HandlerKey: "policy.set.simulate"},
 		{ID: "validatePolicySet", Method: "POST", Path: "/admin/v1/policy-sets/{set_id}/validate", Summary: "Validate a stored policy candidate without changing state", Object: "admin:policy", Action: "read", Domain: AdminDomainGlobal, NoSideEffect: true, Request: struct{}{}, Response: policyValidationDocument{}, Errors: []int{404, 422, 503}, RateClass: AdminRateClassRead, HandlerKey: "policy.set.validate"},
 		{ID: "diffPolicySet", Method: "GET", Path: "/admin/v1/policy-sets/{set_id}/diff", Summary: "Compare normalized policy content", Object: "admin:policy", Action: "read", Domain: AdminDomainGlobal, NoSideEffect: true, Response: policyDiffDocument{}, Errors: []int{404, 422, 503}, Query: []adminQueryParameter{{Name: "against", Required: true, Description: "Base policy set ID"}}, RateClass: AdminRateClassRead, HandlerKey: "policy.set.diff"},
 	}
+}
+
+func (h *policyAdminHandler) simulate(w http.ResponseWriter, r *http.Request) {
+	var input policySimulationRequest
+	if !policyHTTPDecode(w, r, &input) {
+		return
+	}
+	input.Object = strings.TrimSpace(input.Object)
+	input.Action = strings.TrimSpace(input.Action)
+	if input.Object == "" || input.Action == "" || len(input.Object) > 200 || len(input.Action) > 100 {
+		writeAdminProblemCode(w, r, 400, "invalid-request", "")
+		return
+	}
+	principal, ok := PrincipalFrom(r.Context())
+	meta, hasMeta := AdminAuditMetaFrom(r.Context())
+	if !ok || !hasMeta || strings.TrimSpace(meta.Domain) == "" {
+		policyHTTPProblem(w, r, ErrAdminForbidden)
+		return
+	}
+	if err := validatePolicyPrincipalRequest(principal, meta.Domain, input.Object, input.Action, r.Context().Value(authorizationGuardKey{}) == true, false, true); err != nil {
+		policyHTTPProblem(w, r, err)
+		return
+	}
+	if h.store == nil || h.deps.PublishedConfig == nil || h.deps.Build == nil {
+		policyHTTPProblem(w, r, ErrAuthorizationUnavailable)
+		return
+	}
+	result := policySimulationDocument{SetID: r.PathValue("set_id")}
+	err := h.store.withPolicyResourceRead(r.Context(), func(tx *gorm.DB, revision int64) error {
+		view, err := loadPolicyResource(tx, result.SetID)
+		if err != nil {
+			return err
+		}
+		if !policyViewWithinBounds(view) {
+			return ErrInvalidPolicy
+		}
+		cfg := h.deps.PublishedConfig()
+		if cfg == nil {
+			return ErrAuthorizationUnavailable
+		}
+		candidate, err := h.deps.Build(tx, cfg, view.lines())
+		if err != nil {
+			return normalizePolicyMutationError(err)
+		}
+		result.Revision = revision
+		if candidate.currentAuthorizer() == nil {
+			return ErrAuthorizationUnavailable
+		}
+		mappedSubject := authorizationSubjectForPrincipal(principal, meta.Domain, input.Object, input.Action)
+		allowed, _, decisionErr := candidate.currentAuthorizer().explain(mappedSubject, meta.Domain, input.Object, input.Action)
+		if decisionErr != nil {
+			return ErrAuthorizationUnavailable
+		}
+		if allowed {
+			result.Allowed = true
+			result.Decision = "allow"
+			result.Explanation = "allowed by the deciding policy rule"
+		} else {
+			result.Decision = "deny"
+			result.Explanation = "denied because no candidate policy rule allowed this request"
+		}
+		return nil
+	})
+	if err != nil {
+		policyHTTPProblem(w, r, err)
+		return
+	}
+	policyHTTPJSON(w, http.StatusOK, result.Revision, result)
 }
 func (s *usageStore) withPolicyResourceRead(ctx context.Context, read func(*gorm.DB, int64) error) error {
 	if s == nil || s.db == nil || ctx == nil || read == nil || ctx.Err() != nil {

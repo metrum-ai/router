@@ -52,7 +52,7 @@ func UsageAdminAuditMigrationDefinition() MigrationDefinition {
 }
 
 var usageAdminAuditDDL = []string{
-	`CREATE TABLE IF NOT EXISTS router_admin_audit_events (event_id TEXT PRIMARY KEY, at TEXT NOT NULL, runtime_scope TEXT NOT NULL DEFAULT '', principal_subject TEXT NOT NULL DEFAULT '', principal_kind TEXT NOT NULL DEFAULT '', credential_id TEXT NOT NULL DEFAULT '', issuer TEXT NOT NULL DEFAULT '', domain TEXT NOT NULL DEFAULT '', object TEXT NOT NULL DEFAULT '', action TEXT NOT NULL DEFAULT '', operation_id TEXT NOT NULL DEFAULT '', request_id TEXT NOT NULL DEFAULT '', outcome TEXT NOT NULL, reason_code TEXT NOT NULL DEFAULT '', ticket TEXT NOT NULL DEFAULT '', config_set_id TEXT NOT NULL DEFAULT '', prev_config_set_id TEXT NOT NULL DEFAULT '', config_revision BIGINT NOT NULL DEFAULT 0, before_hash TEXT NOT NULL DEFAULT '', after_hash TEXT NOT NULL DEFAULT '', idempotency_key TEXT NOT NULL DEFAULT '', request_hash TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '')`,
+	`CREATE TABLE IF NOT EXISTS router_admin_audit_events (event_id TEXT PRIMARY KEY, at TEXT NOT NULL, runtime_scope TEXT NOT NULL DEFAULT '', principal_subject TEXT NOT NULL DEFAULT '', principal_kind TEXT NOT NULL DEFAULT '', credential_id TEXT NOT NULL DEFAULT '', issuer TEXT NOT NULL DEFAULT '', domain TEXT NOT NULL DEFAULT '', object TEXT NOT NULL DEFAULT '', action TEXT NOT NULL DEFAULT '', operation_id TEXT NOT NULL DEFAULT '', request_id TEXT NOT NULL DEFAULT '', outcome TEXT NOT NULL, reason_code TEXT NOT NULL DEFAULT '', ticket TEXT NOT NULL DEFAULT '', config_set_id TEXT NOT NULL DEFAULT '', prev_config_set_id TEXT NOT NULL DEFAULT '', config_revision BIGINT NOT NULL DEFAULT 0, before_hash TEXT NOT NULL DEFAULT '', after_hash TEXT NOT NULL DEFAULT '', idempotency_key TEXT NOT NULL DEFAULT '', request_hash TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '', previous_hash TEXT NOT NULL DEFAULT '', row_hash TEXT NOT NULL DEFAULT '')`,
 	`CREATE INDEX IF NOT EXISTS router_admin_audit_events_at ON router_admin_audit_events (at)`,
 	`CREATE INDEX IF NOT EXISTS router_admin_audit_events_object ON router_admin_audit_events (object, action, at)`,
 }
@@ -99,13 +99,48 @@ func insertAdminAuditUsageTx(tx *gorm.DB, record AdminAuditRecord) error {
 	if at.IsZero() {
 		at = time.Now().UTC()
 	}
+	record.At = at.UTC()
+	record.RuntimeScope = adminAuditFieldValue(record.RuntimeScope)
+	record.PrincipalSubject = adminAuditFieldValue(record.PrincipalSubject)
+	record.PrincipalKind = adminAuditFieldValue(record.PrincipalKind)
+	record.CredentialID = adminAuditFieldValue(record.CredentialID)
+	record.Issuer = adminAuditFieldValue(record.Issuer)
+	record.Domain = adminAuditFieldValue(record.Domain)
+	record.Object = adminAuditFieldValue(record.Object)
+	record.Action = adminAuditFieldValue(record.Action)
+	record.OperationID = adminAuditFieldValue(record.OperationID)
+	record.RequestID = adminAuditFieldValue(record.RequestID)
+	record.Outcome = adminAuditFieldValue(record.Outcome)
+	record.ReasonCode = adminAuditFieldValue(record.ReasonCode)
+	record.Ticket = adminAuditFieldValue(record.Ticket)
+	record.ConfigSetID = adminAuditFieldValue(record.ConfigSetID)
+	record.PrevConfigSetID = adminAuditFieldValue(record.PrevConfigSetID)
+	record.BeforeHash = adminAuditFieldValue(record.BeforeHash)
+	record.AfterHash = adminAuditFieldValue(record.AfterHash)
+	record.IdempotencyKey = adminAuditFieldValue(record.IdempotencyKey)
+	record.RequestHash = adminAuditFieldValue(record.RequestHash)
+	record.Detail = adminAuditFieldValue(record.Detail)
 	outcome := record.Outcome
 	if outcome == "" {
 		outcome = "committed"
 	}
+	record.Outcome = outcome
+	unlock, err := lockAdminAuditChain(tx, "usage", record.Domain)
+	if err != nil {
+		return fmt.Errorf("lock audit chain: %w", err)
+	}
+	defer unlock()
+	record.At = normalizeAdminAuditAppendTime(tx, "usage", record.Domain, usageAdminAuditTable, "domain", record.EventID, record.At)
+	at = record.At
+	row := adminAuditRowFromRecord(record, "usage")
+	record.PreviousHash = readAdminAuditChainHead(tx, "usage", record.Domain, usageAdminAuditTable, "domain")
+	record.RowHash, err = adminAuditChainHash(record.PreviousHash, row)
+	if err != nil {
+		return fmt.Errorf("calculate audit row hash: %w", err)
+	}
 	if err := tx.Exec(
-		`INSERT INTO router_admin_audit_events (event_id, at, runtime_scope, principal_subject, principal_kind, credential_id, issuer, domain, object, action, operation_id, request_id, outcome, reason_code, ticket, config_set_id, prev_config_set_id, config_revision, before_hash, after_hash, idempotency_key, request_hash, detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(event_id) DO NOTHING`,
-		record.EventID, at.UTC().Format(time.RFC3339Nano), adminAuditFieldValue(record.RuntimeScope),
+		`INSERT INTO router_admin_audit_events (event_id, at, runtime_scope, principal_subject, principal_kind, credential_id, issuer, domain, object, action, operation_id, request_id, outcome, reason_code, ticket, config_set_id, prev_config_set_id, config_revision, before_hash, after_hash, idempotency_key, request_hash, detail, previous_hash, row_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(event_id) DO NOTHING`,
+		record.EventID, adminAuditFormatTime(at), adminAuditFieldValue(record.RuntimeScope),
 		adminAuditFieldValue(record.PrincipalSubject), adminAuditFieldValue(record.PrincipalKind),
 		adminAuditFieldValue(record.CredentialID), adminAuditFieldValue(record.Issuer),
 		adminAuditFieldValue(record.Domain), adminAuditFieldValue(record.Object), adminAuditFieldValue(record.Action),
@@ -114,9 +149,12 @@ func insertAdminAuditUsageTx(tx *gorm.DB, record AdminAuditRecord) error {
 		adminAuditFieldValue(record.ConfigSetID), adminAuditFieldValue(record.PrevConfigSetID), record.ConfigRevision,
 		adminAuditFieldValue(record.BeforeHash), adminAuditFieldValue(record.AfterHash),
 		adminAuditFieldValue(record.IdempotencyKey), adminAuditFieldValue(record.RequestHash),
-		adminAuditFieldValue(record.Detail),
+		adminAuditFieldValue(record.Detail), record.PreviousHash, record.RowHash,
 	).Error; err != nil {
 		return fmt.Errorf("append usage admin audit event: %w", err)
+	}
+	if err := updateAdminAuditChainHead(tx, "usage", record.Domain, record.PreviousHash, record.RowHash); err != nil {
+		return fmt.Errorf("update usage audit chain anchor: %w", err)
 	}
 	return nil
 }

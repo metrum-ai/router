@@ -392,13 +392,14 @@ func PromoteGroupShadow(db *gorm.DB, runtimeScope, group, actor, reason string, 
 	}
 	result, err := WriteGroupTargets(db, runtimeScope, GroupTargetsWriteRequest{
 		Group: group, Targets: targets, Reason: reason, Force: force,
-		Action: configActionShadowPromote,
+		Action:      configActionShadowPromote,
+		auditDetail: "shadow_run=" + run.RunID,
 	}, actor, policy, audit, now)
 	if err != nil {
 		return nil, "", err
 	}
-	// Mark the run promoted and link the new set; stamp the shadow_run link
-	// onto the change event's detail for the audit chain.
+	// Mark the run promoted and link the new set. The corresponding change
+	// event already contains the shadow run ID and is never updated after hash.
 	if err := db.Transaction(func(tx *gorm.DB) error {
 		if err := ensureConfigShadowSchema(tx); err != nil {
 			return err
@@ -406,12 +407,6 @@ func PromoteGroupShadow(db *gorm.DB, runtimeScope, group, actor, reason string, 
 		if err := tx.Exec(
 			`UPDATE router_config_shadow_runs SET status = ?, stopped_at = CASE WHEN stopped_at = '' THEN ? ELSE stopped_at END, promoted_set_id = ? WHERE run_id = ? AND status != ?`,
 			shadowRunStatusPromoted, now.UTC().Format(time.RFC3339Nano), result.SetID, run.RunID, shadowRunStatusPromoted,
-		).Error; err != nil {
-			return err
-		}
-		if err := tx.Exec(
-			`UPDATE router_config_change_events SET detail = ? WHERE runtime_scope = ? AND config_set_id = ? AND action = ?`,
-			"shadow_run="+run.RunID, runtimeScope, result.SetID, configActionShadowPromote,
 		).Error; err != nil {
 			return err
 		}

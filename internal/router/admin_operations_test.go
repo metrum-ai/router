@@ -243,6 +243,7 @@ func runControlPlaneBackupRestoreThroughAdminAPI(t *testing.T) {
 		t.Fatalf("restored configuration revision=%d, source=%d", targetRevision, sourceRevision)
 	}
 	assertBackupTableEqual(t, sourceConfig, targetConfig, "router_config_change_events", "event_id")
+	assertBackupTableEqual(t, sourceConfig, targetConfig, adminAuditChainAnchorsTable, "source, domain")
 	assertBackupTableEqual(t, sourceConfig, targetConfig, "router_config_change_event_targets", "event_id, phase, sequence")
 	var restoredVerifier string
 	if err := targetConfig.Raw("SELECT verifier FROM admin_api_key_generations WHERE key_id = ? AND generation = 1", "backup-ops").Scan(&restoredVerifier).Error; err != nil {
@@ -255,6 +256,16 @@ func runControlPlaneBackupRestoreThroughAdminAPI(t *testing.T) {
 	verifyRestoredConfigAuditChain(t, targetConfig, sourceConfig)
 	assertOperationAudit(t, sourceUsage, "admin:backup", "committed", auditBundleDigest(bundle.SHA256), "adminkey:operations-test")
 	assertOperationAudit(t, targetUsage, "admin:restore", "committed", auditBundleDigest(bundle.SHA256), "adminkey:operations-test")
+	export := adminAuditExportHandlers(targetUsage, targetConfig)["admin.audit.export"]
+	exportRequest := httptest.NewRequest(http.MethodGet, "/admin/v1/audit-events/export", nil).WithContext(WithAdminAuditMeta(context.Background(), AdminAuditMeta{Subject: "adminkey:operations-test", Domain: AdminGlobalDomain}))
+	exportResponse := httptest.NewRecorder()
+	export(exportResponse, exportRequest)
+	if exportResponse.Code != http.StatusOK {
+		t.Fatalf("audit export after backup restore=%d body=%s", exportResponse.Code, exportResponse.Body.String())
+	}
+	if err := VerifyAdminAuditExport(strings.NewReader(exportResponse.Body.String())); err != nil {
+		t.Fatalf("audit export after backup restore does not verify: %v", err)
+	}
 	request := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
 	request.Header.Set("Authorization", "Bearer "+configAdminTestToken)
 	served := httptest.NewRecorder()

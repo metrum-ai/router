@@ -239,11 +239,14 @@ func TestAdminKeyOIDCPermissionParity(t *testing.T) {
 	// The fine-grained permissions map to stable Casbin object/action pairs,
 	// so an OIDC subject granted the same policy gets the same decision.
 	mapping := map[string][2]string{
-		"config:read":     {"admin:config", "read"},
-		"config:write":    {"admin:config", "write"},
-		"config:activate": {"admin:config", "activate"},
-		"config:force":    {"admin:config", "force"},
-		"shadow:write":    {"admin:shadow", "write"},
+		"config:read":        {"admin:config", "read"},
+		"config:write":       {"admin:config", "write"},
+		"config:activate":    {"admin:config", "activate"},
+		"config:force":       {"admin:config", "force"},
+		"shadow:write":       {"admin:shadow", "write"},
+		"admin:audit:read":   {"admin:audit", "read"},
+		"admin:audit:delete": {"admin:audit", "delete"},
+		"admin:policy:read":  {"admin:policy", "read"},
 	}
 	for permission, want := range mapping {
 		object, action, ok := adminPermissionObjectAction(permission)

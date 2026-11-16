@@ -27,6 +27,35 @@ A configuration without an `admin:` block starts the loopback admin listener by 
 Configuring only `admin.unix_socket.path` disables the default TCP admin listener; set
 `admin.listen` explicitly to keep TCP access as well.
 
+## v5.0.0 admin audit and policy simulation
+
+The v5.0.0 admin API adds `GET /admin/v1/audit-events/export` for hash-chained, cursor-paginated
+audit export. It reads events from the control-plane change-audit and usage-audit stores, restricted
+to the authenticated credential domain. Continue with the signed `Link` cursor; each row includes
+its previous hash and hash so an offline verifier can check page order and detect changed or
+missing exported rows. Each config, usage and credential event is chained on insert; hashed rows
+are never updated. The per-domain checkpoint is stored in the database and is not externally
+signed in v5.0.0. Verify a complete paginated export by passing all pages to `routerctl audit verify`.
+Audit retention now prunes expired control-plane change events in bounded batches alongside
+credential and usage audit rows, including expired deletion markers, while advancing each chain
+checkpoint to the last pruned hash. Configure the existing
+`server.admin_api.audit.retention_days` field; its default is 90 days.
+
+Manual usage-audit deletion uses `DELETE /admin/v1/audit-events/{event_id}` and requires the
+separate `admin:audit` `delete` privilege. It can remove only the oldest retained event in the
+caller's domain, advancing the chain checkpoint; its deletion marker is written in the global domain.
+Grant export with `admin:audit` `read`.
+
+`POST /admin/v1/policy-sets/{set_id}/simulate` evaluates an object/action against a stored candidate
+policy in the authenticated caller's own domain. The API accepts no domain override and does not
+return policy rules. An allow explanation names the deciding rule's subject, domain, object and
+action; synthesized grants and denies use generic explanations. Example grants:
+
+```text
+p, audit_reader, example/prod, admin:audit, read
+p, audit_deleter, example/prod, admin:audit, delete
+```
+
 ## v5.0.0 control-plane schema 17
 
 Schema 17 adds the admin client registry and credential bindings to the router-config control-plane
@@ -37,6 +66,18 @@ required migration contract is current. Client endpoints return unavailable unti
 exist. Credential bindings match configured admin identities; disabled or deleted clients and
 revoked or expired bindings cannot authenticate. Re-register replacement credentials to restore a
 disabled client. A deleted client ID cannot be re-enabled; create a new client ID instead.
+
+## v5.0.0 stored admin audit chains
+
+Migration `2026111628` stores chained hashes at write time for usage and
+router-config audit events and advances those schemas to 24 and 20 respectively.
+Both migrations depend on offline-operation marker migration `2026111627` in their
+respective database scopes; the usage marker migration follows hierarchy audit
+migration `2026111626`. Apply both through the non-serving
+migration job before serving the release. Retention prunes expired rows, including
+delete markers, and moves the chain checkpoint to the last pruned hash so the
+remaining chain stays verifiable. Delete markers remain protected from the API's
+manual delete operation until retention expires them.
 
 ## 2. Exposure options
 
@@ -156,7 +197,7 @@ without waiting for the next UTC window. `routerctl admin-resource` provides
 HTTP access to the versioned resource endpoints.
 
 Before enabling asynchronous operations, backups, or restores, apply the
-non-serving usage and router-config migrations through schema 23 and schema 19, respectively, using the
+non-serving usage and router-config migrations through schema 24 and schema 20, respectively, using the
 two-scope Job in [DATA_MIGRATIONS.md](DATA_MIGRATIONS.md). The restore API
 requires the separate `admin:restore:write` grant. It updates the configuration
 and usage databases sequentially; it is not an atomic cross-database operation.

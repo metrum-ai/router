@@ -116,17 +116,16 @@ func bumpConfigRevision(tx *gorm.DB, runtimeScope, configSetID, action, actor st
 		return 0, fmt.Errorf("read runtime revision: %w", err)
 	}
 
-	eventID := newConfigChangeEventID()
-	if err := tx.Exec(
-		`INSERT INTO router_config_change_events (event_id, runtime_scope, config_set_id, action, actor, at, config_revision, actor_kind, actor_credential_id, actor_issuer, authz_domain, object, authz_action, operation_id, request_id, outcome, ticket) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		eventID, runtimeScope, configSetID, action, actor, now, revision,
-		adminAuditFieldValue(audit.Kind), adminAuditFieldValue(audit.CredentialID),
-		adminAuditFieldValue(audit.Issuer), adminAuditFieldValue(audit.Domain),
-		adminAuditFieldValue(audit.Object), adminAuditFieldValue(audit.Action),
-		adminAuditFieldValue(audit.OperationID), adminAuditFieldValue(audit.RequestID), "committed",
-		adminAuditFieldValue(audit.Ticket),
-	).Error; err != nil {
-		return 0, fmt.Errorf("append change event: %w", err)
+	if err := insertChainedConfigChangeEventTx(tx, chainedConfigChangeEvent{
+		EventID: newConfigChangeEventID(), RuntimeScope: runtimeScope, ConfigSetID: configSetID,
+		Action: action, Actor: actor, At: now, ConfigRevision: revision,
+		ActorKind: adminAuditFieldValue(audit.Kind), ActorCredentialID: adminAuditFieldValue(audit.CredentialID),
+		ActorIssuer: adminAuditFieldValue(audit.Issuer), AuthzDomain: adminAuditFieldValue(audit.Domain),
+		Object: adminAuditFieldValue(audit.Object), AuthzAction: adminAuditFieldValue(audit.Action),
+		OperationID: adminAuditFieldValue(audit.OperationID), RequestID: adminAuditFieldValue(audit.RequestID),
+		Outcome: "committed", Ticket: adminAuditFieldValue(audit.Ticket), RequestHash: adminAuditFieldValue(audit.RequestHash),
+	}); err != nil {
+		return 0, err
 	}
 	// The credential lifecycle event commits with the credential change and records the
 	// AFFECTED credential (the actor's own identity stays in the change row's actor fields).

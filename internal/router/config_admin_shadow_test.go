@@ -111,14 +111,19 @@ func TestConfigAdminShadowLifecycle(t *testing.T) {
 		t.Fatalf("promotion did not add candidate: %s", raw)
 	}
 	// Audit chain: shadow_promote event links the run.
-	var detail string
-	if err := db.Table("router_config_change_events").Select("detail").
+	var promotedEvent adminAuditControlExportRecord
+	if err := db.Model(&adminAuditControlExportRecord{}).
 		Where("action = ? AND group_name = ?", configActionShadowPromote, "agent-default").
-		Order("at DESC").Limit(1).Scan(&detail).Error; err != nil {
+		Order("at DESC").Limit(1).First(&promotedEvent).Error; err != nil {
 		t.Fatal(err)
 	}
-	if detail != "shadow_run="+runID {
-		t.Fatalf("promote audit detail=%q", detail)
+	if promotedEvent.Detail != "shadow_run="+runID || promotedEvent.RowHash == "" {
+		t.Fatalf("promote audit event missed linked run or stored hash: %+v", promotedEvent)
+	}
+	row := adminAuditExportRow{Source: "control", EventID: promotedEvent.EventID, At: promotedEvent.At, PrincipalSubject: promotedEvent.Actor, PrincipalKind: promotedEvent.ActorKind, CredentialID: promotedEvent.ActorCredentialID, Domain: promotedEvent.AuthzDomain, Object: promotedEvent.Object, Action: promotedEvent.AuthzAction, OperationID: promotedEvent.OperationID, RequestID: promotedEvent.RequestID, Outcome: promotedEvent.Outcome, ReasonCode: promotedEvent.Reason, ConfigRevision: promotedEvent.ConfigRevision, BeforeHash: promotedEvent.BeforeHash, AfterHash: promotedEvent.AfterHash, RuntimeScope: promotedEvent.RuntimeScope, Issuer: promotedEvent.ActorIssuer, Ticket: promotedEvent.Ticket, ConfigSetID: promotedEvent.ConfigSetID, PrevConfigSetID: promotedEvent.PrevConfigSetID, IdempotencyKey: promotedEvent.IdempotencyKey, RequestHash: promotedEvent.RequestHash, Detail: promotedEvent.Detail, ControlAction: promotedEvent.Action, GroupName: promotedEvent.GroupName, Forced: promotedEvent.Forced != 0}
+	wantHash, err := adminAuditChainHash(promotedEvent.PreviousHash, row)
+	if err != nil || wantHash != promotedEvent.RowHash {
+		t.Fatalf("promote audit stored hash=%s want=%s err=%v", promotedEvent.RowHash, wantHash, err)
 	}
 	// History surfaces shadow_start, shadow_stop, shadow_promote.
 	rr = configAdminRequest(t, mux, "GET", "/admin/config/groups/agent-default/history", nil, admin)

@@ -17,7 +17,7 @@ func TestUsageMissionAttributionMigrationAndRoundTrip(t *testing.T) {
 	defer closeDB()
 	priorDefinitions := make([]MigrationDefinition, 0, len(usageMigrationDefinitions)-5)
 	for _, definition := range usageMigrationDefinitions {
-		if definition.ID != usageMissionAttributionMigrationID && definition.ID != usageRecomputedInputMigrationID && definition.ID != toolRoutingUsageMigrationID && definition.ID != usageHierarchyAuditMigrationID && definition.ID != offlineOperationMarkerMigrationID {
+		if definition.ID != usageMissionAttributionMigrationID && definition.ID != usageRecomputedInputMigrationID && definition.ID != toolRoutingUsageMigrationID && definition.ID != usageHierarchyAuditMigrationID && definition.ID != offlineOperationMarkerMigrationID && definition.ID != adminAuditChainUsageMigrationID {
 			priorDefinitions = append(priorDefinitions, definition)
 		}
 	}
@@ -36,7 +36,7 @@ func TestUsageMissionAttributionMigrationAndRoundTrip(t *testing.T) {
 	store := &usageStore{db: old.db}
 	// The baseline migration creates tables from current Go models on a fresh
 	// store, so remove the new columns to reproduce the deployed pre-migration shape.
-	for _, column := range []string{"TaskID", "HumanOwner", "RecomputedInputTokens", "OrganizationID", "TeamID", "ToolCallCount", "ToolFirstFailureClass", "ToolRetries", "ToolEscalations", "ToolReliabilityBucket", "ToolReliabilitySource"} {
+	for _, column := range []string{"TaskID", "HumanOwner", "RecomputedInputTokens", "ToolCallCount", "ToolFirstFailureClass", "ToolRetries", "ToolEscalations", "ToolReliabilityBucket", "ToolReliabilitySource"} {
 		if old.db.Migrator().HasColumn(&usageRecord{}, column) {
 			if err := old.db.Migrator().DropColumn(&usageRecord{}, column); err != nil {
 				t.Fatal(err)
@@ -44,7 +44,7 @@ func TestUsageMissionAttributionMigrationAndRoundTrip(t *testing.T) {
 		}
 	}
 	legacy := logRecord{RequestID: "before-mission-attribution", TS: time.Now().UTC().Format(time.RFC3339Nano), CallerID: "worker"}
-	if err := store.db.Omit("TaskID", "HumanOwner", "RecomputedInputTokens", "OrganizationID", "TeamID", "ToolCallCount", "ToolFirstFailureClass", "ToolRetries", "ToolEscalations", "ToolReliabilityBucket", "ToolReliabilitySource").Create(recordFromRow(rowFromRecord(legacy))).Error; err != nil {
+	if err := store.db.Omit("TaskID", "HumanOwner", "RecomputedInputTokens", "ToolCallCount", "ToolFirstFailureClass", "ToolRetries", "ToolEscalations", "ToolReliabilityBucket", "ToolReliabilitySource", "OrganizationID", "TeamID").Create(recordFromRow(rowFromRecord(legacy))).Error; err != nil {
 		t.Fatalf("write row before migration: %v", err)
 	}
 	currentDefinitions := append(append([]MigrationDefinition(nil), priorDefinitions...), UsageMissionAttributionMigrationDefinition())
@@ -59,7 +59,7 @@ func TestUsageMissionAttributionMigrationAndRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec := logRecord{RequestID: "mission-attribution", TS: time.Now().UTC().Format(time.RFC3339Nano), CallerID: "worker", TaskID: "task-7", HumanOwner: "team-ml"}
-	if err := store.db.Omit("RecomputedInputTokens", "OrganizationID", "TeamID", "ToolCallCount", "ToolFirstFailureClass", "ToolRetries", "ToolEscalations", "ToolReliabilityBucket", "ToolReliabilitySource").Create(recordFromRow(rowFromRecord(rec))).Error; err != nil {
+	if err := store.db.Omit("RecomputedInputTokens", "ToolCallCount", "ToolFirstFailureClass", "ToolRetries", "ToolEscalations", "ToolReliabilityBucket", "ToolReliabilitySource", "OrganizationID", "TeamID").Create(recordFromRow(rowFromRecord(rec))).Error; err != nil {
 		t.Fatal(err)
 	}
 	var stored usageRecord

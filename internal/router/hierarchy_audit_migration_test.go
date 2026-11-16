@@ -16,9 +16,9 @@ func hierarchyAuditMigrationTestRunner(cfg UsageDBConfig) (*migrationRunner, fun
 	if err != nil {
 		return nil, nil, err
 	}
-	definitions := make([]MigrationDefinition, 0, len(usageMigrationDefinitions)-1)
+	definitions := make([]MigrationDefinition, 0, len(usageMigrationDefinitions)-2)
 	for _, definition := range usageMigrationDefinitions {
-		if definition.ID != offlineOperationMarkerMigrationID {
+		if definition.ID != offlineOperationMarkerMigrationID && definition.ID != adminAuditChainUsageMigrationID {
 			definitions = append(definitions, definition)
 		}
 	}
@@ -49,6 +49,26 @@ func clearHierarchyAuditMigrationLedger(t *testing.T, db *gorm.DB) {
 	}
 }
 
+func clearAdminAuditChainMigrationLedger(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	if err := db.Where("scope = ? AND migration_id = ?", usageMigrationScope, adminAuditChainUsageMigrationID).Delete(&migrationAttemptRecord{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Where("scope = ? AND migration_id = ?", usageMigrationScope, adminAuditChainUsageMigrationID).Delete(&migrationLedgerRecord{}).Error; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func clearOfflineOperationMarkerUsageMigration(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	if err := db.Where("scope = ? AND migration_id = ?", usageMigrationScope, offlineOperationMarkerMigrationID).Delete(&migrationAttemptRecord{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Where("scope = ? AND migration_id = ?", usageMigrationScope, offlineOperationMarkerMigrationID).Delete(&migrationLedgerRecord{}).Error; err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestHierarchyAuditSchema22SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) {
 	cfg := uncachedSQLiteUsageDBConfigForTest(filepath.Join(t.TempDir(), "usage.sqlite"))
 	store, err := OpenUsageStore(cfg)
@@ -60,10 +80,12 @@ func TestHierarchyAuditSchema22SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	clearOfflineOperationMarkerUsageMigration(t, store.db)
+	clearAdminAuditChainMigrationLedger(t, store.db)
 	if err := revertHierarchyAuditMigration(store.db); err != nil {
 		t.Fatal(err)
 	}
 	clearHierarchyAuditMigrationLedger(t, store.db)
+	clearAdminAuditChainMigrationLedger(t, store.db)
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -102,9 +124,9 @@ func TestHierarchyAuditSchema22SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) {
 		t.Fatalf("hierarchy row=%+v err=%v", roundTrip, err)
 	}
 
-	priorDefinitions := make([]MigrationDefinition, 0, len(usageMigrationDefinitions)-1)
+	priorDefinitions := make([]MigrationDefinition, 0, len(usageMigrationDefinitions)-2)
 	for _, definition := range usageMigrationDefinitions {
-		if definition.ID != offlineOperationMarkerMigrationID {
+		if definition.ID != offlineOperationMarkerMigrationID && definition.ID != adminAuditChainUsageMigrationID {
 			priorDefinitions = append(priorDefinitions, definition)
 		}
 	}
@@ -120,6 +142,7 @@ func TestHierarchyAuditSchema22SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	clearHierarchyAuditMigrationLedger(t, runner.db)
+	clearAdminAuditChainMigrationLedger(t, runner.db)
 	afterDown, err := runner.Status()
 	if err != nil || afterDown.SchemaVersion != 21 || !afterDown.Compatible {
 		t.Fatalf("after down: %+v err=%v", afterDown, err)

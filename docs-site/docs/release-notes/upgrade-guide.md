@@ -1287,3 +1287,9 @@ and restore use the same migration ID in usage schema 23 after hierarchy audit s
 non-serving migration job before relying on offline maintenance. Offline config export is read-only
 and may run while routers serve; offline mutations and backup/restore require all routers sharing
 the database to stop. A v4.8 replica does not honor the runtime lock, so upgrade every replica first.
+
+Stored admin audit chains use migration `2026111628`: usage schema 24 follows
+offline-operation markers in schema 23 (migration `2026111627`), and router-config schema 20
+follows offline-operation markers in schema 19. Apply both scopes with the non-serving migration job before
+serving. Retention prunes expired rows, including delete markers, and advances the checkpoint so
+the remaining audit chain can be verified offline.

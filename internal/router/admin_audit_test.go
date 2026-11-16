@@ -373,7 +373,7 @@ func TestAdminCredentialEventSchema(t *testing.T) {
 		Outcome      string `gorm:"column:outcome"`
 		Lifecycle    string `gorm:"column:lifecycle"`
 	}
-	if err := db.Table(adminCredentialEventsTable).Find(&rows).Error; err != nil {
+	if err := db.Table(adminCredentialEventsTable).Where("credential_id = ?", "cred-audit").Find(&rows).Error; err != nil {
 		t.Fatal(err)
 	}
 	if len(rows) != 1 || rows[0].CredentialID != "cred-audit" || rows[0].Outcome != "success" || rows[0].Lifecycle != "auth" {
@@ -1157,7 +1157,7 @@ func TestAdminForcedAuditFailureRollsBackMutation(t *testing.T) {
 // redacted durable event alongside its change row.
 func TestAdminCredentialLifecycleEvents(t *testing.T) {
 	harness := newAdminAuditHarness(t)
-	if err := harness.db.Exec("CREATE TABLE IF NOT EXISTS router_admin_credential_events (event_id TEXT PRIMARY KEY, at TEXT NOT NULL, kind TEXT NOT NULL, credential_id TEXT NOT NULL DEFAULT '', subject TEXT NOT NULL DEFAULT '', issuer TEXT NOT NULL DEFAULT '', outcome TEXT NOT NULL, reason_code TEXT NOT NULL DEFAULT '', request_id TEXT NOT NULL DEFAULT '', client_ip_hash TEXT NOT NULL DEFAULT '', lifecycle TEXT NOT NULL DEFAULT 'auth', count INTEGER NOT NULL DEFAULT 1)").Error; err != nil {
+	if err := harness.db.Exec("CREATE TABLE IF NOT EXISTS router_admin_credential_events (event_id TEXT PRIMARY KEY, at TEXT NOT NULL, kind TEXT NOT NULL, credential_id TEXT NOT NULL DEFAULT '', subject TEXT NOT NULL DEFAULT '', issuer TEXT NOT NULL DEFAULT '', outcome TEXT NOT NULL, reason_code TEXT NOT NULL DEFAULT '', request_id TEXT NOT NULL DEFAULT '', client_ip_hash TEXT NOT NULL DEFAULT '', lifecycle TEXT NOT NULL DEFAULT 'auth', count INTEGER NOT NULL DEFAULT 1, client_id TEXT NOT NULL DEFAULT '', actor TEXT NOT NULL DEFAULT '', previous_hash TEXT NOT NULL DEFAULT '', row_hash TEXT NOT NULL DEFAULT '')").Error; err != nil {
 		t.Fatal(err)
 	}
 	body := map[string]any{"owner_user": "u", "project": "p", "environment": "e", "key_slug": "lifecycle", "allow": []string{"agent-default"}}
@@ -1208,14 +1208,15 @@ func TestAdminCredentialLifecycleEvents(t *testing.T) {
 	}
 }
 
-func TestAdminCredentialEventTimestampOrderingCollapsesSubsecondEvents(t *testing.T) {
+func TestAdminCredentialEventTimestampOrderingKeepsSubsecondRowsDistinct(t *testing.T) {
 	db := configAdminTestDB(t)
 	base := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
 	event := AdminCredentialEvent{
 		Kind: "adminkey", CredentialID: "adminkey:timestamp", Outcome: "success",
 		Lifecycle: "authenticate", RequestID: "req-timestamp",
 	}
-	for _, offset := range []time.Duration{90 * time.Millisecond, 100 * time.Millisecond} {
+	for i, offset := range []time.Duration{90 * time.Millisecond, 100 * time.Millisecond} {
+		event.EventID = fmt.Sprintf("subsecond-%d", i)
 		event.At = base.Add(offset)
 		if err := db.Transaction(func(tx *gorm.DB) error { return insertAdminCredentialEventTx(tx, event) }); err != nil {
 			t.Fatal(err)
@@ -1228,17 +1229,16 @@ func TestAdminCredentialEventTimestampOrderingCollapsesSubsecondEvents(t *testin
 	if err := db.Table(adminCredentialEventsTable).Select("COALESCE(SUM(count),0)").Scan(&count).Error; err != nil {
 		t.Fatal(err)
 	}
-	if rows != 1 || count != 2 {
-		t.Fatalf("subsecond events produced %d rows and count %d, want one row and count two", rows, count)
+	if rows != 2 || count != 2 {
+		t.Fatalf("subsecond events produced %d rows and count %d, want two immutable rows", rows, count)
 	}
 }
 
-// TestAdminAuthenticationFailureFloodIsBounded proves a flood of failed authentications is
-// bounded: identical failures collapse into a counted row, so the table cannot grow one row
-// per attempt.
+// TestAdminAuthenticationFailureFloodIsBounded proves failed-auth events are append-only
+// and the existing per-source cap still bounds untrusted failure rows.
 func TestAdminAuthenticationFailureFloodIsBounded(t *testing.T) {
 	db := configAdminTestDB(t)
-	now := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
+	now := time.Now().UTC().Truncate(adminCredentialAuditWindow)
 	event := AdminCredentialEvent{
 		Kind: "adminkey", CredentialID: "adminkey:flood", Outcome: "failure", ReasonCode: "invalid_credential",
 		RequestID: "req-flood", ClientIPHash: adminClientIPHash("203.0.113.9"), Lifecycle: "auth",
@@ -1253,15 +1253,15 @@ func TestAdminAuthenticationFailureFloodIsBounded(t *testing.T) {
 	if err := db.Table(adminCredentialEventsTable).Count(&rows).Error; err != nil {
 		t.Fatal(err)
 	}
-	if rows > 2 {
-		t.Fatalf("50 collapsed attempts produced %d rows; the table is unbounded", rows)
+	if rows > adminCredentialFailureSourceCap {
+		t.Fatalf("50 attempts produced %d rows; source cap is %d", rows, adminCredentialFailureSourceCap)
 	}
 	var counted int64
 	if err := db.Table(adminCredentialEventsTable).Select("COALESCE(SUM(count),0)").Scan(&counted).Error; err != nil {
 		t.Fatal(err)
 	}
-	if counted < 30 {
-		t.Fatalf("collapsed rows count %d of 50 attempts", counted)
+	if counted != adminCredentialFailureSourceCap {
+		t.Fatalf("append-only rows recorded %d attempts, want source cap %d", counted, adminCredentialFailureSourceCap)
 	}
 
 	// A flood that varies the claimed key ID cannot evade the cap: at most
@@ -1315,11 +1315,14 @@ func TestAdminAuditFieldRedactsBeforeTruncating(t *testing.T) {
 	}
 }
 
-// TestAdminSuccessfulAuthRowsAggregate proves a credential that authenticates repeatedly
-// produces one counted row per window rather than one row per request.
+// TestAdminSuccessfulAuthRowsAggregate proves successes in one five-minute
+// window become one immutable count-delta row rather than one global-lock append
+// per request.
 func TestAdminSuccessfulAuthRowsAggregate(t *testing.T) {
 	db := configAdminTestDB(t)
-	now := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
+	now := time.Now().UTC().Truncate(adminCredentialAuditWindow)
+	service := &Service{configControlPlane: db}
+	sink := service.adminCredentialEventSink()
 	event := AdminCredentialEvent{
 		Kind: "adminkey", CredentialID: "adminkey:scraper", Subject: "adminkey:scraper",
 		Outcome: "success", RequestID: "req-scrape", ClientIPHash: adminClientIPHash("198.51.100.7"),
@@ -1328,7 +1331,7 @@ func TestAdminSuccessfulAuthRowsAggregate(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		event.At = now.Add(time.Duration(i) * 10 * time.Second)
 		event.RequestID = fmt.Sprintf("req-scrape-%02d", i)
-		if err := db.Transaction(func(tx *gorm.DB) error { return insertAdminCredentialEventTx(tx, event) }); err != nil {
+		if err := sink.RecordCredentialEvent(context.Background(), event); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -1336,15 +1339,23 @@ func TestAdminSuccessfulAuthRowsAggregate(t *testing.T) {
 		Count     int64  `gorm:"column:count"`
 		Lifecycle string `gorm:"column:lifecycle"`
 	}
+	if err := db.Table(adminCredentialEventsTable).Where("credential_id = ?", "adminkey:scraper").Find(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 0 {
+		t.Fatalf("successful auth requests appended before their window closed: rows=%d", len(rows))
+	}
+	service.adminCredentialAuditAggregator.flushThrough(now.Add(adminCredentialAuditWindow))
 	if err := db.Table(adminCredentialEventsTable).Find(&rows).Error; err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 1 {
-		t.Fatalf("20 successful scrapes produced %d rows, want 1", len(rows))
+	if len(rows) != 1 || rows[0].Count != 20 || rows[0].Lifecycle != "auth" {
+		t.Fatalf("20 successful auths produced %+v; want one immutable count delta of 20", rows)
 	}
-	if rows[0].Count != 20 || rows[0].Lifecycle != "auth" {
-		t.Fatalf("aggregated row = %+v, want count 20", rows[0])
+	if err := verifyAdminAuditChainControl(db); err != nil {
+		t.Fatalf("aggregated credential chain: %v", err)
 	}
+	service.adminCredentialAuditAggregator.close()
 }
 
 // TestAdminAuditJanitorPurgesBothDatabases proves the retention janitor works against each
@@ -1353,7 +1364,7 @@ func TestAdminSuccessfulAuthRowsAggregate(t *testing.T) {
 func TestAdminAuditJanitorPurgesBothDatabases(t *testing.T) {
 	old := time.Now().UTC().Add(-200 * 24 * time.Hour)
 	control := configAdminTestDB(t)
-	if err := control.Exec("CREATE TABLE IF NOT EXISTS router_admin_credential_events (event_id TEXT PRIMARY KEY, at TEXT NOT NULL, kind TEXT NOT NULL, credential_id TEXT NOT NULL DEFAULT '', subject TEXT NOT NULL DEFAULT '', issuer TEXT NOT NULL DEFAULT '', outcome TEXT NOT NULL, reason_code TEXT NOT NULL DEFAULT '', request_id TEXT NOT NULL DEFAULT '', client_ip_hash TEXT NOT NULL DEFAULT '', lifecycle TEXT NOT NULL DEFAULT 'auth', count INTEGER NOT NULL DEFAULT 1)").Error; err != nil {
+	if err := control.Exec("CREATE TABLE IF NOT EXISTS router_admin_credential_events (event_id TEXT PRIMARY KEY, at TEXT NOT NULL, kind TEXT NOT NULL, credential_id TEXT NOT NULL DEFAULT '', subject TEXT NOT NULL DEFAULT '', issuer TEXT NOT NULL DEFAULT '', outcome TEXT NOT NULL, reason_code TEXT NOT NULL DEFAULT '', request_id TEXT NOT NULL DEFAULT '', client_ip_hash TEXT NOT NULL DEFAULT '', lifecycle TEXT NOT NULL DEFAULT 'auth', count INTEGER NOT NULL DEFAULT 1, client_id TEXT NOT NULL DEFAULT '', actor TEXT NOT NULL DEFAULT '', previous_hash TEXT NOT NULL DEFAULT '', row_hash TEXT NOT NULL DEFAULT '')").Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := control.Exec(`INSERT INTO router_admin_credential_events (event_id, at, kind, outcome, lifecycle, count) VALUES ('old-event', ?, 'adminkey', 'success', 'auth', 1)`, old.Format(time.RFC3339Nano)).Error; err != nil {
@@ -1380,7 +1391,7 @@ func TestAdminAuditJanitorPurgesBothDatabases(t *testing.T) {
 		t.Fatal(err)
 	}
 	if controlRows != 0 {
-		t.Fatalf("the control-plane janitor left %d expired credential rows", controlRows)
+		t.Fatalf("the control-plane janitor did not prune the expired credential row (%d rows)", controlRows)
 	}
 	if usageRows != 1 {
 		t.Fatalf("the control-plane janitor touched the usage table (%d rows)", usageRows)
@@ -1392,7 +1403,7 @@ func TestAdminAuditJanitorPurgesBothDatabases(t *testing.T) {
 		t.Fatal(err)
 	}
 	if usageRows != 0 {
-		t.Fatalf("the usage janitor left %d expired rows", usageRows)
+		t.Fatalf("the usage janitor did not prune the expired usage row (%d rows)", usageRows)
 	}
 
 	// The scheduled entry point runs against a handle and its goroutine exits on close.

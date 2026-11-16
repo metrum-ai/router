@@ -89,6 +89,9 @@ const (
 	// per-domain checks (reports). The contract layer performs no domain-wide
 	// gate, so a domain-scoped reports administrator keeps today's access.
 	AdminDomainHandler AdminDomainSource = "handler"
+	// AdminDomainCredential applies the operation's authorization in the
+	// authenticated credential's resolved domain.
+	AdminDomainCredential AdminDomainSource = "credential"
 )
 
 // AdminCheck is one additional authorization decision an operation requires.
@@ -157,6 +160,7 @@ func (op Operation) ChecksFor(body map[string]any) []AdminCheck {
 type AdminPaginationSpec struct {
 	Sorts       []string
 	DefaultSort string
+	Directions  []string
 	// CursorEndpoint overrides the cursor payload's endpoint ID; empty uses the
 	// operation ID.
 	CursorEndpoint string
@@ -286,7 +290,7 @@ func (op Operation) validate() error {
 		}
 	}
 	switch op.Domain {
-	case AdminDomainGlobal, AdminDomainCallerTarget, AdminDomainProjectEnvironment, AdminDomainCapturedRow, AdminDomainHandler:
+	case AdminDomainGlobal, AdminDomainCallerTarget, AdminDomainProjectEnvironment, AdminDomainCapturedRow, AdminDomainHandler, AdminDomainCredential:
 	default:
 		return fmt.Errorf("operation %s has invalid domain source %q", op.ID, op.Domain)
 	}

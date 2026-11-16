@@ -207,11 +207,15 @@ func (g *adminOpenAPIGenerator) operation(op Operation) (map[string]any, error) 
 		parameters = append(parameters, parameter)
 	}
 	if op.Pagination != nil {
+		directions := op.Pagination.Directions
+		if len(directions) == 0 {
+			directions = []string{"asc", "desc"}
+		}
 		parameters = append(parameters,
 			map[string]any{"name": "limit", "in": "query", "description": fmt.Sprintf("Page size. Default %d, maximum %d.", AdminV1DefaultLimit, AdminV1MaxLimit), "schema": map[string]any{"type": "integer", "minimum": 1, "maximum": AdminV1MaxLimit, "default": AdminV1DefaultLimit}},
 			map[string]any{"name": "cursor", "in": "query", "description": "Opaque cursor from the previous page's Link header. Bound to this operation's filter and sort set.", "schema": map[string]any{"type": "string"}},
 			map[string]any{"name": "sort", "in": "query", "schema": map[string]any{"type": "string", "enum": adminStringsToAny(op.Pagination.Sorts), "default": op.Pagination.DefaultSort}},
-			map[string]any{"name": "direction", "in": "query", "schema": map[string]any{"type": "string", "enum": []any{"asc", "desc"}, "default": "asc"}},
+			map[string]any{"name": "direction", "in": "query", "schema": map[string]any{"type": "string", "enum": adminStringsToAny(directions), "default": "asc"}},
 		)
 	}
 	if op.RequiredPrecondition() {

@@ -232,7 +232,11 @@ func adminParsePage(r *http.Request, op Operation, cfg AdminPaginationConfig, co
 			return page, &problem
 		}
 		if raw := strings.TrimSpace(query.Get("direction")); raw != "" {
-			if !adminValueInEnum(strings.ToLower(raw), []string{"asc", "desc"}) {
+			directions := op.Pagination.Directions
+			if len(directions) == 0 {
+				directions = []string{"asc", "desc"}
+			}
+			if !adminValueInEnum(strings.ToLower(raw), directions) {
 				problem := AdminProblemFor(r, http.StatusBadRequest, "invalid-request")
 				problem.Detail = "direction must be asc or desc"
 				return page, &problem

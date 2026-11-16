@@ -204,9 +204,9 @@ func TestAutomaticSuspendFailureRollsBackActionCapForRetry(t *testing.T) {
 	if actions != 0 || capRows != 0 {
 		t.Fatalf("failed suspend left actions=%d cap rows=%d; want both zero for retry", actions, capRows)
 	}
-	var failedAudits int64
-	if err := db.Table(usageAdminAuditTable).Where("principal_subject = ? AND outcome = ? AND reason_code = ?", "test-detector", "failed", "automatic_suspend_failed").Count(&failedAudits).Error; err != nil || failedAudits != 2 {
-		t.Fatalf("failed suspension audit rows=%d err=%v; want 2 attempts", failedAudits, err)
+	var rollbackAudits int64
+	if err := db.Table(usageAdminAuditTable).Where("principal_subject = ? AND operation_id = ? AND outcome = ? AND reason_code = ?", "test-detector", "detector_containment_rollback", "committed", "automatic_suspend_failed").Count(&rollbackAudits).Error; err != nil || rollbackAudits != 2 {
+		t.Fatalf("containment rollback audit rows=%d err=%v; want 2 append-only events", rollbackAudits, err)
 	}
 	controlPlaneSQL, err := controlPlane.DB()
 	if err != nil {

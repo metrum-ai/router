@@ -345,9 +345,12 @@ func (u *usageStore) rollbackAutomaticContainment(row automaticContainmentAction
 		if err := tx.Where("caller_id = ? AND detector_id = ? AND action = ? AND created_at = ?", row.CallerID, row.DetectorID, row.Action, createdAt).Delete(&automaticContainmentEventRecord{}).Error; err != nil {
 			return err
 		}
-		if err := tx.Table(usageAdminAuditTable).
-			Where("principal_subject = ? AND principal_kind = ? AND operation_id = ? AND action = ? AND detail = ?", row.DetectorID, "detector", "detector_containment", row.Action, row.Evidence+";expires_at="+row.ExpiresAt).
-			Updates(map[string]any{"outcome": "failed", "reason_code": "automatic_suspend_failed"}).Error; err != nil {
+		if err := insertAdminAuditUsageTx(tx, AdminAuditRecord{
+			At: time.Now().UTC(), PrincipalSubject: row.DetectorID, PrincipalKind: "detector",
+			Domain: AdminGlobalDomain, Object: authzObjectAdminContainment, Action: "rollback",
+			OperationID: "detector_containment_rollback", Outcome: "committed",
+			ReasonCode: "automatic_suspend_failed", Detail: row.Evidence + ";expires_at=" + row.ExpiresAt,
+		}); err != nil {
 			return err
 		}
 		if err := tx.Model(&automaticContainmentGuardRecord{}).Where("id = 1").UpdateColumn("revision", gorm.Expr("revision + 1")).Error; err != nil {
