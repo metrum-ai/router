@@ -4,6 +4,12 @@
 
 ### Added
 
+- Define trusted W3C `traceparent` correlation across router chains, with a new
+  span and request ID per hop and safe scalar usage fields for joining requests.
+  Trust is opt-in through `server.trace.trusted_parent_cidrs` or an authenticated
+  caller's `trust_traceparent`; malformed, duplicate, or untrusted input starts
+  a new trace. Outbound trace headers are on by default and can be disabled per
+  provider; inbound `tracestate` is deliberately dropped.
 - Add nightly evaluation aggregation across the previous 30 runs, with expected-missing cells reported separately from gate failures.
 - Added a release checklist and a bounded package upgrade-and-rollback check.
 - Retain AI review findings by exact commit range and artifact digest, scope the review credential to the tag-only review environment, and attest the release manifests and review evidence.

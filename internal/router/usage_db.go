@@ -280,6 +280,9 @@ type usageRow struct {
 	UsageSource                        string
 	TS                                 time.Time
 	RequestID                          string
+	TraceID                            string
+	SpanID                             string
+	ParentSpanID                       string
 	CallerID                           string
 	CallerUser                         string
 	CallerProject                      string
@@ -436,6 +439,9 @@ type usageRecord struct {
 	RequestKind                        string                             `gorm:"column:request_kind;type:text;not null;default:''"`
 	UsageSource                        string                             `gorm:"column:usage_source;type:text;not null;default:''"`
 	RequestID                          string                             `gorm:"column:request_id;primaryKey;type:text"`
+	TraceID                            string                             `gorm:"column:trace_id;type:text;not null;default:''"`
+	SpanID                             string                             `gorm:"column:span_id;type:text;not null;default:''"`
+	ParentSpanID                       string                             `gorm:"column:parent_span_id;type:text;not null;default:''"`
 	TS                                 string                             `gorm:"column:ts;type:text;not null;index:idx_request_usage_ts"`
 	CallerID                           string                             `gorm:"column:caller_id;type:text;not null"`
 	CallerUser                         string                             `gorm:"column:caller_user;type:text;not null"`
@@ -1672,6 +1678,10 @@ func OpenUsageStorePath(path string) (*usageStore, error) {
 		_ = store.Close()
 		return nil, err
 	}
+	if err := applyTraceCorrelationMigration(db); err != nil {
+		_ = store.Close()
+		return nil, err
+	}
 	return store, nil
 }
 
@@ -1865,6 +1875,7 @@ func applyUsageExplicitBaseline(db *gorm.DB) error {
 		usageRequestKindColumns,
 		usageTokenBreakdownColumns,
 		usageEndpointColumns,
+		usageTraceCorrelationColumns,
 	} {
 		for table, columns := range laterColumns {
 			if !created[table] {
@@ -2649,7 +2660,7 @@ var usageCachedInputPricingColumns = map[string]map[string]struct{}{
 }
 
 func mergeUsageExcludedColumns(groups ...map[string]map[string]struct{}) map[string]map[string]struct{} {
-	return mergeUsageColumnSets(append(groups, usageCacheBillingColumns, usageProvenanceColumns, usageCacheWriteColumns, usageRequestKindColumns, usageTokenBreakdownColumns, usageEndpointColumns)...)
+	return mergeUsageColumnSets(append(groups, usageCacheBillingColumns, usageProvenanceColumns, usageCacheWriteColumns, usageRequestKindColumns, usageTokenBreakdownColumns, usageEndpointColumns, usageTraceCorrelationColumns)...)
 }
 
 func mergeUsageColumnSets(groups ...map[string]map[string]struct{}) map[string]map[string]struct{} {
@@ -3282,6 +3293,9 @@ func rowFromRecord(rec logRecord) usageRow {
 	return usageRow{
 		TS:                                 ts,
 		RequestID:                          rec.RequestID,
+		TraceID:                            rec.TraceID,
+		SpanID:                             rec.SpanID,
+		ParentSpanID:                       rec.ParentSpanID,
 		CallerID:                           rec.CallerID,
 		CallerUser:                         rec.CallerUser,
 		CallerProject:                      rec.CallerProject,
@@ -3417,6 +3431,9 @@ func recordFromRow(row usageRow) *usageRecord {
 	}
 	return &usageRecord{
 		RequestID:                          row.RequestID,
+		TraceID:                            row.TraceID,
+		SpanID:                             row.SpanID,
+		ParentSpanID:                       row.ParentSpanID,
 		TS:                                 formatUsageTime(row.TS),
 		CallerID:                           row.CallerID,
 		CallerUser:                         row.CallerUser,
