@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added
+
+- Add per-request tool-routing call counts, first failure class, retries,
+  escalations, outcome bucket, and evidence source to usage records and request
+  evidence reports. The schema 17 migration is additive; raw tool arguments,
+  schemas, and outputs remain outside usage storage.
+
 ### Fixed
 
 - Migrate the API compatibility suite to Anthropic Python SDK 2.3.0 and test API-key and bearer authentication with separate clients.

@@ -527,10 +527,20 @@ type adminEvidenceBundleResponse struct {
 type adminRequestEvidenceBundle struct {
 	RequestSummary      adminReportRequest             `json:"requestSummary"`
 	CostAccounting      adminEvidenceCostAccounting    `json:"costAccounting"`
+	ToolRouting         adminEvidenceToolRouting       `json:"toolRouting"`
 	AdmissionAndShaping adminEvidenceAdmissionShaping  `json:"admissionAndShaping"`
 	TargetEligibility   adminEvidenceTargetEligibility `json:"targetEligibility"`
 	Completeness        adminEvidenceCompleteness      `json:"completeness"`
 	PrivacyBoundaries   []string                       `json:"privacyBoundaries"`
+}
+
+type adminEvidenceToolRouting struct {
+	Calls             int    `json:"calls"`
+	FirstFailureClass string `json:"firstFailureClass,omitempty"`
+	Retries           int    `json:"retries"`
+	Escalations       int    `json:"escalations"`
+	ReliabilityBucket string `json:"reliabilityBucket,omitempty"`
+	ReliabilitySource string `json:"reliabilitySource,omitempty"`
 }
 
 type adminEvidenceCostAccounting struct {
@@ -2217,6 +2227,14 @@ func adminEvidenceBundleFrom(row usageRow, request adminReportRequest, sections 
 			PricingUpdatedAt:                   row.PricingUpdatedAt,
 			StoredRequestTimeValues:            true,
 			UnknownPricing:                     unknownPricing,
+		},
+		ToolRouting: adminEvidenceToolRouting{
+			Calls:             row.ToolCallCount,
+			FirstFailureClass: row.ToolFirstFailureClass,
+			Retries:           row.ToolRetries,
+			Escalations:       row.ToolEscalations,
+			ReliabilityBucket: row.ToolReliabilityBucket,
+			ReliabilitySource: row.ToolReliabilitySource,
 		},
 		AdmissionAndShaping: adminEvidenceAdmissionShaping{
 			QuotaState:                       row.QuotaState,

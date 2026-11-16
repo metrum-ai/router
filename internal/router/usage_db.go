@@ -285,6 +285,12 @@ type usageRow struct {
 	TargetProvider                     string
 	TargetModel                        string
 	TargetDialect                      string
+	ToolCallCount                      int
+	ToolFirstFailureClass              string
+	ToolRetries                        int
+	ToolEscalations                    int
+	ToolReliabilityBucket              string
+	ToolReliabilitySource              string
 	TargetRegion                       string
 	Stream                             bool
 	Cache                              string
@@ -439,6 +445,12 @@ type usageRecord struct {
 	TargetProvider                     string                             `gorm:"column:target_provider;type:text;not null;index:idx_request_usage_provider_model,priority:1"`
 	TargetModel                        string                             `gorm:"column:target_model;type:text;not null;index:idx_request_usage_provider_model,priority:2"`
 	TargetDialect                      string                             `gorm:"column:target_dialect;type:text;not null"`
+	ToolCallCount                      int                                `gorm:"column:tool_call_count;not null;default:0"`
+	ToolFirstFailureClass              string                             `gorm:"column:tool_first_failure_class;type:text;not null;default:''"`
+	ToolRetries                        int                                `gorm:"column:tool_retries;not null;default:0"`
+	ToolEscalations                    int                                `gorm:"column:tool_escalations;not null;default:0"`
+	ToolReliabilityBucket              string                             `gorm:"column:tool_reliability_bucket;type:text;not null;default:''"`
+	ToolReliabilitySource              string                             `gorm:"column:tool_reliability_source;type:text;not null;default:''"`
 	TargetRegion                       string                             `gorm:"column:target_region;type:text;not null;default:''"`
 	Stream                             bool                               `gorm:"column:stream;not null"`
 	Cache                              string                             `gorm:"column:cache;type:text;not null"`
@@ -1660,6 +1672,10 @@ func OpenUsageStorePath(path string) (*usageStore, error) {
 		_ = store.Close()
 		return nil, err
 	}
+	if err := applyToolRoutingUsageMigration(db); err != nil {
+		_ = store.Close()
+		return nil, err
+	}
 	return store, nil
 }
 
@@ -1853,6 +1869,7 @@ func applyUsageExplicitBaseline(db *gorm.DB) error {
 		usageRequestKindColumns,
 		usageTokenBreakdownColumns,
 		usageEndpointColumns,
+		usageToolRoutingColumns,
 	} {
 		for table, columns := range laterColumns {
 			if !created[table] {
@@ -2636,7 +2653,7 @@ var usageCachedInputPricingColumns = map[string]map[string]struct{}{
 }
 
 func mergeUsageExcludedColumns(groups ...map[string]map[string]struct{}) map[string]map[string]struct{} {
-	return mergeUsageColumnSets(append(groups, usageCacheBillingColumns, usageProvenanceColumns, usageCacheWriteColumns, usageRequestKindColumns, usageTokenBreakdownColumns, usageEndpointColumns)...)
+	return mergeUsageColumnSets(append(groups, usageCacheBillingColumns, usageProvenanceColumns, usageCacheWriteColumns, usageRequestKindColumns, usageTokenBreakdownColumns, usageEndpointColumns, usageToolRoutingColumns)...)
 }
 
 func mergeUsageColumnSets(groups ...map[string]map[string]struct{}) map[string]map[string]struct{} {
@@ -3266,6 +3283,7 @@ func rowFromRecord(rec logRecord) usageRow {
 	if !rec.ReasoningCoverageMeasured {
 		reasoningTokens, reasoningAttempts, reasoningSuccesses, reasoningReported = reasoningUsageCoverage(rec.AttemptsDetail)
 	}
+	toolUsage := summarizeToolRoutingUsage(rec.AttemptsDetail)
 	return usageRow{
 		TS:                                 ts,
 		RequestID:                          rec.RequestID,
@@ -3283,6 +3301,12 @@ func rowFromRecord(rec logRecord) usageRow {
 		TargetProvider:                     rec.TargetProvider,
 		TargetModel:                        rec.TargetModel,
 		TargetDialect:                      rec.TargetDialect,
+		ToolCallCount:                      toolUsage.Calls,
+		ToolFirstFailureClass:              toolUsage.FirstFailureClass,
+		ToolRetries:                        toolUsage.Retries,
+		ToolEscalations:                    toolUsage.Escalations,
+		ToolReliabilityBucket:              toolUsage.ReliabilityBucket,
+		ToolReliabilitySource:              toolUsage.Source,
 		TargetRegion:                       rec.TargetRegion,
 		Stream:                             rec.Stream,
 		Cache:                              defaultString(rec.Cache, "bypass"),
@@ -3386,6 +3410,57 @@ func reasoningUsageCoverage(attempts []attemptLogRecord) (total *int, attempted,
 	return total, attempted, successful, reported
 }
 
+type toolRoutingUsageSummary struct {
+	Calls             int
+	FirstFailureClass string
+	Retries           int
+	Escalations       int
+	ReliabilityBucket string
+	Source            string
+}
+
+func summarizeToolRoutingUsage(attempts []attemptLogRecord) toolRoutingUsageSummary {
+	var summary toolRoutingUsageSummary
+	var selected *toolValidationLogRecord
+	for i := range attempts {
+		attempt := attempts[i]
+		if attempt.ToolValidation == nil {
+			continue
+		}
+		validation := attempt.ToolValidation
+		summary.Source = "live"
+		summary.Calls += validation.Calls
+		if summary.FirstFailureClass == "" {
+			summary.FirstFailureClass = safeOptionalReasonToken(validation.FirstFailure)
+		}
+		switch validation.Action {
+		case "retried":
+			summary.Retries++
+		case "escalated":
+			summary.Escalations++
+		}
+		if attempt.Selected {
+			selected = validation
+		}
+	}
+	if selected == nil {
+		return summary
+	}
+	switch {
+	case selected.Action == "observed_streaming":
+		summary.ReliabilityBucket = "unobserved"
+	case selected.Invalid > 0 && selected.Valid > 0:
+		summary.ReliabilityBucket = "partial"
+	case selected.Invalid > 0:
+		summary.ReliabilityBucket = "invalid"
+	case selected.Valid > 0:
+		summary.ReliabilityBucket = "valid"
+	default:
+		summary.ReliabilityBucket = "no_calls"
+	}
+	return summary
+}
+
 func recordFromRow(row usageRow) *usageRecord {
 	if row.RequestKind == "count_tokens" {
 		row.InputTokens, row.OutputTokens, row.TotalTokens = 0, 0, 0
@@ -3419,6 +3494,12 @@ func recordFromRow(row usageRow) *usageRecord {
 		TargetProvider:                     row.TargetProvider,
 		TargetModel:                        row.TargetModel,
 		TargetDialect:                      row.TargetDialect,
+		ToolCallCount:                      row.ToolCallCount,
+		ToolFirstFailureClass:              row.ToolFirstFailureClass,
+		ToolRetries:                        row.ToolRetries,
+		ToolEscalations:                    row.ToolEscalations,
+		ToolReliabilityBucket:              row.ToolReliabilityBucket,
+		ToolReliabilitySource:              row.ToolReliabilitySource,
 		TargetRegion:                       row.TargetRegion,
 		Stream:                             row.Stream,
 		Cache:                              row.Cache,
@@ -3524,6 +3605,12 @@ func rowFromUsageRecord(record usageRecord) (usageRow, error) {
 		TargetProvider:                     record.TargetProvider,
 		TargetModel:                        record.TargetModel,
 		TargetDialect:                      record.TargetDialect,
+		ToolCallCount:                      record.ToolCallCount,
+		ToolFirstFailureClass:              record.ToolFirstFailureClass,
+		ToolRetries:                        record.ToolRetries,
+		ToolEscalations:                    record.ToolEscalations,
+		ToolReliabilityBucket:              record.ToolReliabilityBucket,
+		ToolReliabilitySource:              record.ToolReliabilitySource,
 		TargetRegion:                       record.TargetRegion,
 		Stream:                             record.Stream,
 		Cache:                              record.Cache,
