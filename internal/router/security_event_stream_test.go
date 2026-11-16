@@ -393,6 +393,37 @@ func TestSecurityEventStreamWritesJSONLFile(t *testing.T) {
 	}
 }
 
+func TestSecurityEventStreamWritesJSONLStdout(t *testing.T) {
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldStdout := os.Stdout
+	os.Stdout = writer
+	t.Cleanup(func() {
+		os.Stdout = oldStdout
+		_ = writer.Close()
+		_ = reader.Close()
+	})
+	stream, err := newSecurityEventStream(SecurityEventStreamConfig{Output: "stdout"}, os.Getenv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream.record(securityAccessEvent{TS: time.Unix(1, 0), RequestID: "stdout-1", EventType: "api_auth_failed", StatusCode: http.StatusUnauthorized})
+	stream.close()
+	os.Stdout = oldStdout
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !json.Valid([]byte(strings.TrimSpace(string(body)))) || !strings.Contains(string(body), `"uid":"stdout-1"`) {
+		t.Fatalf("stdout did not receive JSONL security event: %q", body)
+	}
+}
+
 func TestOCSFSecurityEventOmitsPromptAndCredentialFields(t *testing.T) {
 	fakeCredential := strings.Join([]string{"sk", "fakecredential12345"}, "-")
 	got, err := marshalOCSFSecurityEvent(securityAccessEvent{
