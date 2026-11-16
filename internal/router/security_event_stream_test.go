@@ -254,12 +254,11 @@ func TestProviderSpendBreakerEventsReachStreamWhenReportsAreOff(t *testing.T) {
 
 func TestSecuritySigmaRulesMatchSyntheticTraces(t *testing.T) {
 	dir := filepath.Join("..", "..", "examples", "security-events")
-	tracesRaw, err := os.ReadFile(filepath.Join(dir, "synthetic-traces.jsonl"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	tracesRaw := `{"class_uid":3002,"status_id":2}
+{"class_uid":2004,"severity_id":3}
+{"class_uid":6003,"activity_id":3}`
 	var traces []map[string]any
-	for _, line := range strings.Split(strings.TrimSpace(string(tracesRaw)), "\n") {
+	for _, line := range strings.Split(strings.TrimSpace(tracesRaw), "\n") {
 		var event map[string]any
 		if err := json.Unmarshal([]byte(line), &event); err != nil {
 			t.Fatal(err)

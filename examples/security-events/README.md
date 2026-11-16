@@ -3,4 +3,4 @@
 
 # Security event examples
 
-The Sigma rules target OCSF JSONL records emitted by `server.security.events`. The synthetic traces exercise the authentication failure, security finding, and containment activity selections. The Go test checks each rule's selection against at least one trace.
+The Sigma rules target OCSF JSONL records emitted by `server.security.events`. Synthetic authentication, security finding, and containment activity records are embedded in the Go test, which checks each rule's selection against at least one trace.
