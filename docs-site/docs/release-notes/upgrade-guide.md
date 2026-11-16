@@ -859,6 +859,19 @@ Signed webhook callers do not need an ETag or idempotency header. Their nonce
 reservation is durable for at least twice the configured timestamp window and
 expired reservations are pruned hourly.
 
+## Provider usage reconciliation
+
+Daily report-mode reconciliation is disabled by default. To enable it, configure
+`server.provider_usage_reconciliation`, the usage database, and
+`server.admin_reports.security.enabled`. OpenAI and Anthropic require a
+read-only usage API credential environment reference using the
+`ROUTER_PROVIDER_USAGE_` prefix and a provider key ID. Keep the value in the
+deployment secret environment; config stores only the reference.
+Bedrock uses CloudWatch metrics in its configured AWS region and compares at
+account scope; its USD total is estimated from the router model catalog prices.
+See [Provider usage reconciliation](../security-governance/provider-usage-reconciliation.md)
+for configuration and operating details.
+
 ## MCP gateway
 
 MCP is disabled by default, so existing v4.8 configurations continue to load

@@ -154,18 +154,19 @@ type ServerConfig struct {
 	Security     SecurityEventsConfig `yaml:"security" json:"security,omitempty"`
 	// AdminAPI is the `admin.api` block of the /admin/v1 contract. The documented defaults
 	// apply when it is absent.
-	AdminAPI          AdminAPIConfig           `yaml:"admin_api" json:"admin_api"`
-	ClientIP          ClientIPConfig           `yaml:"client_ip" json:"client_ip"`
-	Cache             CacheConfig              `yaml:"cache"`
-	Logging           LoggingConfig            `yaml:"logging"`
-	UsageDB           UsageDBConfig            `yaml:"usage_db"`
-	ConfigSource      ConfigSourceConfig       `yaml:"config_source" json:"config_source"`
-	Upstream          UpstreamConfig           `yaml:"upstream"`
-	Diagnostics       DiagnosticsConfig        `yaml:"diagnostics"`
-	ContentCapture    ContentCaptureConfig     `yaml:"content_capture"`
-	Retention         RetentionConfig          `yaml:"retention"`
-	DecisionTelemetry DecisionTelemetryConfig  `yaml:"decision_telemetry"`
-	TrafficShape      ServerTrafficShapeConfig `yaml:"traffic_shape" json:"traffic_shape"`
+	AdminAPI                    AdminAPIConfig                    `yaml:"admin_api" json:"admin_api"`
+	ClientIP                    ClientIPConfig                    `yaml:"client_ip" json:"client_ip"`
+	Cache                       CacheConfig                       `yaml:"cache"`
+	Logging                     LoggingConfig                     `yaml:"logging"`
+	UsageDB                     UsageDBConfig                     `yaml:"usage_db"`
+	ProviderUsageReconciliation ProviderUsageReconciliationConfig `yaml:"provider_usage_reconciliation" json:"providerUsageReconciliation,omitempty"`
+	ConfigSource                ConfigSourceConfig                `yaml:"config_source" json:"config_source"`
+	Upstream                    UpstreamConfig                    `yaml:"upstream"`
+	Diagnostics                 DiagnosticsConfig                 `yaml:"diagnostics"`
+	ContentCapture              ContentCaptureConfig              `yaml:"content_capture"`
+	Retention                   RetentionConfig                   `yaml:"retention"`
+	DecisionTelemetry           DecisionTelemetryConfig           `yaml:"decision_telemetry"`
+	TrafficShape                ServerTrafficShapeConfig          `yaml:"traffic_shape" json:"traffic_shape"`
 	// ExperimentProfiles holds opt-in, scoped TTFT delay and delivered-token
 	// pacing profiles for endpoint-bound agent studies (#379). They are off by
 	// default, must be scoped to experiment callers/groups/targets, and never
@@ -460,6 +461,25 @@ type UsageDBConfig struct {
 	DSN             string `yaml:"dsn"`
 	Enable          *bool  `yaml:"enabled"`
 	MigrationPolicy string `yaml:"migration_policy"`
+}
+
+// ProviderUsageReconciliationConfig enables a bounded daily comparison with provider billing data.
+type ProviderUsageReconciliationConfig struct {
+	Enabled      bool                               `yaml:"enabled" json:"enabled,omitempty"`
+	ThresholdUSD float64                            `yaml:"threshold_usd" json:"thresholdUsd,omitempty"`
+	TimeoutMS    int                                `yaml:"timeout_ms" json:"timeoutMs,omitempty"`
+	MaxPages     int                                `yaml:"max_pages" json:"maxPages,omitempty"`
+	Providers    []ProviderUsageReconciliationEntry `yaml:"providers" json:"providers,omitempty"`
+}
+
+// ProviderUsageReconciliationEntry maps one router provider to its vendor billing identity.
+type ProviderUsageReconciliationEntry struct {
+	Provider      string `yaml:"provider" json:"provider"`
+	Kind          string `yaml:"kind" json:"kind"`
+	CredentialEnv string `yaml:"credential_env" json:"credentialEnv,omitempty"`
+	ProviderKeyID string `yaml:"provider_key_id" json:"providerKeyId,omitempty"`
+	AWSRegion     string `yaml:"aws_region" json:"awsRegion,omitempty"`
+	AWSRoleARN    string `yaml:"aws_role_arn" json:"awsRoleArn,omitempty"`
 }
 
 // ConfigSourceConfig selects whether the router serves from a local YAML file
@@ -2025,6 +2045,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		return fmt.Errorf("server containment_webhook requires server.config_source.mode database")
 	}
 	if err := validateAdminReports(c.Server.AdminReports, c.Server.AdminAuth, c.Server.UsageDB); err != nil {
+		return err
+	}
+	if err := validateProviderUsageReconciliation(c.Server.ProviderUsageReconciliation, c.Provider, c.Server.UsageDB, c.Server.AdminReports.Security.Enabled, requireAdminKeyEnv); err != nil {
 		return err
 	}
 	if err := validateMCPGateway(c.MCP, requireAdminKeyEnv); err != nil {
