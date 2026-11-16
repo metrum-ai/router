@@ -13,6 +13,26 @@
       }
     },
     "schemas": {
+      "ActivationEvidence": {
+        "properties": {
+          "dialect": {
+            "type": "string"
+          },
+          "directTextPassed": {
+            "type": "boolean"
+          },
+          "exactModel": {
+            "type": "string"
+          },
+          "routerTextPassed": {
+            "type": "boolean"
+          },
+          "validatedAt": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "AdminProblem": {
         "properties": {
           "code": {
@@ -54,6 +74,141 @@
           "code",
           "request_id"
         ],
+        "type": "object"
+      },
+      "BridgeStatefulSessionsConfig": {
+        "properties": {
+          "backend": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "maxEntries": {
+            "type": "integer"
+          },
+          "redis": {
+            "$ref": "#/components/schemas/BridgeStatefulSessionsRedisConfig"
+          },
+          "sessionHeader": {
+            "type": "string"
+          },
+          "ttlSeconds": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "BridgeStatefulSessionsRedisConfig": {
+        "properties": {
+          "address": {
+            "type": "string"
+          },
+          "connectTimeoutMs": {
+            "type": "integer"
+          },
+          "db": {
+            "type": "integer"
+          },
+          "namespace": {
+            "type": "string"
+          },
+          "passwordEnv": {
+            "type": "string"
+          },
+          "poolSize": {
+            "type": "integer"
+          },
+          "readTimeoutMs": {
+            "type": "integer"
+          },
+          "tls": {
+            "$ref": "#/components/schemas/BridgeStatefulSessionsRedisTLSConfig"
+          },
+          "usernameEnv": {
+            "type": "string"
+          },
+          "writeTimeoutMs": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "BridgeStatefulSessionsRedisTLSConfig": {
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "insecureSkipVerify": {
+            "type": "boolean"
+          },
+          "serverName": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "BridgeSupport": {
+        "properties": {
+          "chatToResponses": {
+            "$ref": "#/components/schemas/DialectBridgeSupport"
+          },
+          "responsesToChat": {
+            "$ref": "#/components/schemas/DialectBridgeSupport"
+          }
+        },
+        "type": "object"
+      },
+      "BudgetConfig": {
+        "properties": {
+          "requests": {
+            "format": "int64",
+            "type": "integer"
+          },
+          "tokens": {
+            "format": "int64",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "requests",
+          "tokens"
+        ],
+        "type": "object"
+      },
+      "DialectBridgeSupport": {
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "images": {
+            "type": "boolean"
+          },
+          "parallelToolCalls": {
+            "type": "boolean"
+          },
+          "reasoning": {
+            "type": "boolean"
+          },
+          "statefulSessions": {
+            "$ref": "#/components/schemas/BridgeStatefulSessionsConfig"
+          },
+          "streaming": {
+            "type": "boolean"
+          },
+          "structuredOutputs": {
+            "type": "boolean"
+          },
+          "text": {
+            "type": "boolean"
+          },
+          "toolChoice": {
+            "type": "boolean"
+          },
+          "tools": {
+            "type": "boolean"
+          }
+        },
         "type": "object"
       },
       "GroupTargetSpec": {
@@ -117,6 +272,184 @@
         ],
         "type": "object"
       },
+      "ProjectBudgetConfig": {
+        "properties": {
+          "alert_thresholds": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "daily_usd": {
+            "type": "number"
+          },
+          "monthly_usd": {
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "ProjectEnvironmentConfig": {
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "status",
+          "description"
+        ],
+        "type": "object"
+      },
+      "ProviderModel": {
+        "properties": {
+          "activationEvidence": {
+            "$ref": "#/components/schemas/ActivationEvidence"
+          },
+          "allowedBetas": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "bridges": {
+            "$ref": "#/components/schemas/BridgeSupport"
+          },
+          "cacheWritePricePerMillionUsd": {
+            "type": "number"
+          },
+          "cachedInputPricePerMillionUsd": {
+            "type": "number"
+          },
+          "contextTokens": {
+            "type": "integer"
+          },
+          "cost": {
+            "type": "integer"
+          },
+          "defaultEmbeddingDimensions": {
+            "type": "integer"
+          },
+          "dialect": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "embeddingDimensions": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array"
+          },
+          "embeddingSpace": {
+            "type": "string"
+          },
+          "forceStoreFalse": {
+            "type": "boolean"
+          },
+          "honorsMaxTokens": {
+            "type": "boolean"
+          },
+          "imageInputPricePerImageUsd": {
+            "type": "number"
+          },
+          "imageInputPricePerMillionTokensUsd": {
+            "type": "number"
+          },
+          "inputModalities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "inputPricePerMillionUsd": {
+            "type": "number"
+          },
+          "model": {
+            "type": "string"
+          },
+          "outputModalities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "outputPricePerMillionUsd": {
+            "type": "number"
+          },
+          "outputTokenField": {
+            "type": "string"
+          },
+          "pricingNotes": {
+            "type": "string"
+          },
+          "pricingSource": {
+            "type": "string"
+          },
+          "pricingUpdatedAt": {
+            "type": "string"
+          },
+          "reasoning": {
+            "$ref": "#/components/schemas/ReasoningSupport"
+          },
+          "requestShapeSupport": {
+            "$ref": "#/components/schemas/RequestShapeSupport"
+          },
+          "responsesToChat": {
+            "$ref": "#/components/schemas/ResponsesToChatBridge"
+          },
+          "rpm": {
+            "type": "integer"
+          },
+          "tier": {
+            "type": "string"
+          },
+          "toolSupport": {
+            "$ref": "#/components/schemas/ToolSupport"
+          },
+          "trafficShape": {
+            "$ref": "#/components/schemas/TrafficShapeConfig"
+          },
+          "weight": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "model"
+        ],
+        "type": "object"
+      },
+      "QuotaConfig": {
+        "properties": {
+          "day": {
+            "$ref": "#/components/schemas/BudgetConfig"
+          },
+          "month": {
+            "$ref": "#/components/schemas/BudgetConfig"
+          },
+          "soft_pct": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "day",
+          "month",
+          "soft_pct"
+        ],
+        "type": "object"
+      },
       "RateConfig": {
         "properties": {
           "concurrent": {
@@ -133,6 +466,185 @@
           "rpm",
           "tpm",
           "concurrent"
+        ],
+        "type": "object"
+      },
+      "ReasoningSupport": {
+        "properties": {
+          "budgetMustBeLessThanMaxTokens": {
+            "type": "boolean"
+          },
+          "control": {
+            "type": "string"
+          },
+          "defaultOn": {
+            "type": "boolean"
+          },
+          "maxBudgetTokens": {
+            "type": "integer"
+          },
+          "minBudgetTokens": {
+            "type": "integer"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "rejectsMaxTokens": {
+            "type": "boolean"
+          },
+          "rejectsTemperature": {
+            "type": "boolean"
+          },
+          "rejectsTopP": {
+            "type": "boolean"
+          },
+          "streamBlock": {
+            "type": "string"
+          },
+          "supported": {
+            "type": "boolean"
+          },
+          "supportsSummaries": {
+            "type": "boolean"
+          },
+          "withTools": {
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "RequestShapeSupport": {
+        "properties": {
+          "maxEstimatedInputTokens": {
+            "type": "integer"
+          },
+          "maxRequestBytes": {
+            "type": "integer"
+          },
+          "maxRequestedOutputTokens": {
+            "type": "integer"
+          },
+          "maxToolSchemaBytes": {
+            "type": "integer"
+          },
+          "minRequestedOutputTokens": {
+            "type": "integer"
+          },
+          "requiredInputModalities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "supportedInboundDialects": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "supportsLargeCodingAgentPayloads": {
+            "type": "boolean"
+          },
+          "unsupportedRequestFeatures": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "validationNotes": {
+            "type": "string"
+          },
+          "validationStatus": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "ResponsesToChatBridge": {
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "functionTools": {
+            "type": "boolean"
+          },
+          "images": {
+            "type": "boolean"
+          },
+          "reasoning": {
+            "type": "boolean"
+          },
+          "streaming": {
+            "type": "boolean"
+          },
+          "structuredOutputs": {
+            "type": "boolean"
+          },
+          "text": {
+            "type": "boolean"
+          },
+          "toolChoice": {
+            "type": "boolean"
+          },
+          "validationNotes": {
+            "type": "string"
+          },
+          "validationStatus": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "RetentionClassConfig": {
+        "properties": {
+          "batch_size": {
+            "type": "integer"
+          },
+          "data_class": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "require_finalized_rollup": {
+            "type": "boolean"
+          },
+          "retention_days": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "data_class",
+          "enabled",
+          "retention_days",
+          "batch_size",
+          "require_finalized_rollup"
+        ],
+        "type": "object"
+      },
+      "RetentionConfig": {
+        "properties": {
+          "classes": {
+            "items": {
+              "$ref": "#/components/schemas/RetentionClassConfig"
+            },
+            "type": "array"
+          },
+          "default_batch_size": {
+            "type": "integer"
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled",
+          "dry_run",
+          "default_batch_size",
+          "classes"
         ],
         "type": "object"
       },
@@ -229,6 +741,220 @@
         "required": [
           "provider",
           "sample_rate"
+        ],
+        "type": "object"
+      },
+      "ToolSupport": {
+        "properties": {
+          "anthropicMessages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "openaiChat": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "openaiResponses": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "providerHosted": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "TrafficBackoffConfig": {
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "honorRetryAfter": {
+            "type": "boolean"
+          },
+          "maxBackoffMs": {
+            "type": "integer"
+          },
+          "minBackoffMs": {
+            "type": "integer"
+          },
+          "multiplier": {
+            "type": "number"
+          }
+        },
+        "type": "object"
+      },
+      "TrafficShapeConfig": {
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "inputTokenBurst": {
+            "type": "integer"
+          },
+          "inputTokensPerSec": {
+            "type": "number"
+          },
+          "outputReservationTokenBurst": {
+            "type": "integer"
+          },
+          "outputReservationTokensPerSec": {
+            "type": "number"
+          },
+          "queue": {
+            "$ref": "#/components/schemas/TrafficShapeQueueConfig"
+          },
+          "requestBurst": {
+            "type": "integer"
+          },
+          "requestStartPerSec": {
+            "type": "number"
+          },
+          "totalReservedTokenBurst": {
+            "type": "integer"
+          },
+          "totalReservedTokensPerSec": {
+            "type": "number"
+          },
+          "upstream429Backoff": {
+            "$ref": "#/components/schemas/TrafficBackoffConfig"
+          },
+          "upstreamQuotaBackoff": {
+            "$ref": "#/components/schemas/TrafficBackoffConfig"
+          }
+        },
+        "type": "object"
+      },
+      "TrafficShapeQueueConfig": {
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "max_depth": {
+            "type": "integer"
+          },
+          "max_wait_ms": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "enabled",
+          "max_wait_ms",
+          "max_depth"
+        ],
+        "type": "object"
+      },
+      "adminCallerQuotaRequest": {
+        "properties": {
+          "quota": {
+            "$ref": "#/components/schemas/QuotaConfig"
+          }
+        },
+        "required": [
+          "quota"
+        ],
+        "type": "object"
+      },
+      "adminMembershipWriteRequest": {
+        "properties": {
+          "role": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "user_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "role"
+        ],
+        "type": "object"
+      },
+      "adminProjectWriteRequest": {
+        "properties": {
+          "budget": {
+            "$ref": "#/components/schemas/ProjectBudgetConfig"
+          },
+          "description": {
+            "type": "string"
+          },
+          "environments": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectEnvironmentConfig"
+            },
+            "type": "array"
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "adminProviderWriteRequest": {
+        "properties": {
+          "api_key_env": {
+            "type": "string"
+          },
+          "auth_scheme": {
+            "type": "string"
+          },
+          "base_url": {
+            "type": "string"
+          },
+          "dialect": {
+            "type": "string"
+          },
+          "headers": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "key_id": {
+            "type": "string"
+          },
+          "models": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ProviderModel"
+            },
+            "type": "object"
+          },
+          "upstream_kind": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "base_url",
+          "dialect"
+        ],
+        "type": "object"
+      },
+      "adminRetentionWriteRequest": {
+        "properties": {
+          "force": {
+            "type": "boolean"
+          },
+          "retention": {
+            "$ref": "#/components/schemas/RetentionConfig"
+          }
+        },
+        "required": [
+          "retention"
         ],
         "type": "object"
       },
@@ -811,6 +1537,186 @@
         "x-admin-domain": "caller-target",
         "x-admin-idempotency": "store",
         "x-admin-object": "admin:callers"
+      }
+    },
+    "/admin/v1/callers/{id}/quota": {
+      "get": {
+        "operationId": "getCallerQuota",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: caller_id, quota, revision, set_id.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "412": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Read a caller quota",
+        "tags": [
+          "configuration"
+        ],
+        "x-admin-action": "read",
+        "x-admin-concurrency": "",
+        "x-admin-domain": "caller-target",
+        "x-admin-idempotency": "",
+        "x-admin-object": "admin:quotas"
+      },
+      "post": {
+        "operationId": "updateCallerQuota",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/adminCallerQuotaRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: caller_id, quota, revision, set_id.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "412": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Update a caller quota",
+        "tags": [
+          "configuration"
+        ],
+        "x-admin-action": "write",
+        "x-admin-concurrency": "revision",
+        "x-admin-domain": "caller-target",
+        "x-admin-idempotency": "",
+        "x-admin-object": "admin:quotas"
       }
     },
     "/admin/v1/callers/{id}/revoke": {
@@ -3091,6 +3997,1280 @@
         "x-admin-object": "metrics"
       }
     },
+    "/admin/v1/models": {
+      "get": {
+        "operationId": "listModelCatalog",
+        "parameters": [
+          {
+            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: models, set_id, revision.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "412": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "List provider models and validated capability metadata",
+        "tags": [
+          "admin"
+        ],
+        "x-admin-action": "read",
+        "x-admin-concurrency": "",
+        "x-admin-domain": "global",
+        "x-admin-idempotency": "",
+        "x-admin-object": "admin:catalog"
+      }
+    },
+    "/admin/v1/projects": {
+      "get": {
+        "operationId": "listProjects",
+        "parameters": [
+          {
+            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: projects, set_id, revision.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "412": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "List projects and environments",
+        "tags": [
+          "admin"
+        ],
+        "x-admin-action": "read",
+        "x-admin-concurrency": "",
+        "x-admin-domain": "global",
+        "x-admin-extra-checks": [
+          {
+            "action": "read",
+            "object": "admin:budgets",
+            "when": "always"
+          }
+        ],
+        "x-admin-idempotency": "",
+        "x-admin-object": "admin:projects"
+      }
+    },
+    "/admin/v1/projects/{project}": {
+      "delete": {
+        "operationId": "deleteProject",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: deleted_project, deleted_memberships, revision, set_id.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "412": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Delete an unused project and its memberships",
+        "tags": [
+          "admin"
+        ],
+        "x-admin-action": "write",
+        "x-admin-concurrency": "revision",
+        "x-admin-domain": "global",
+        "x-admin-idempotency": "",
+        "x-admin-object": "admin:projects"
+      },
+      "get": {
+        "operationId": "getProject",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: project, set_id, revision.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "412": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Read a project and its environments",
+        "tags": [
+          "admin"
+        ],
+        "x-admin-action": "read",
+        "x-admin-concurrency": "",
+        "x-admin-domain": "global",
+        "x-admin-extra-checks": [
+          {
+            "action": "read",
+            "object": "admin:budgets",
+            "when": "always"
+          }
+        ],
+        "x-admin-idempotency": "",
+        "x-admin-object": "admin:projects"
+      },
+      "put": {
+        "operationId": "putProject",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/adminProjectWriteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: project, revision, set_id.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "412": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Create or update a project and its environments",
+        "tags": [
+          "admin"
+        ],
+        "x-admin-action": "write",
+        "x-admin-concurrency": "revision",
+        "x-admin-domain": "global",
+        "x-admin-extra-checks": [
+          {
+            "action": "write",
+            "description": "Required only when the request body supplies a budget object.",
+            "object": "admin:budgets",
+            "when": "body.budget"
+          }
+        ],
+        "x-admin-idempotency": "",
+        "x-admin-object": "admin:projects"
+      }
+    },
+    "/admin/v1/projects/{project}/environments/{environment}": {
+      "delete": {
+        "operationId": "deleteProjectEnvironment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: deleted_environment, deleted_memberships, revision, set_id.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "412": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Delete an unused project environment and its memberships",
+        "tags": [
+          "admin"
+        ],
+        "x-admin-action": "write",
+        "x-admin-concurrency": "revision",
+        "x-admin-domain": "global",
+        "x-admin-idempotency": "",
+        "x-admin-object": "admin:projects"
+      }
+    },
+    "/admin/v1/projects/{project}/environments/{environment}/memberships": {
+      "get": {
+        "operationId": "listProjectEnvironmentMemberships",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: memberships, set_id, revision.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "412": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "List memberships in a project environment",
+        "tags": [
+          "admin"
+        ],
+        "x-admin-action": "read",
+        "x-admin-concurrency": "",
+        "x-admin-domain": "project-environment",
+        "x-admin-idempotency": "",
+        "x-admin-object": "admin:memberships"
+      },
+      "post": {
+        "operationId": "putProjectEnvironmentMembership",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/adminMembershipWriteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: membership, revision, set_id.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "412": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Create or update a membership in a project environment",
+        "tags": [
+          "admin"
+        ],
+        "x-admin-action": "write",
+        "x-admin-concurrency": "revision",
+        "x-admin-domain": "project-environment",
+        "x-admin-idempotency": "",
+        "x-admin-object": "admin:memberships"
+      }
+    },
+    "/admin/v1/projects/{project}/environments/{environment}/memberships/{user_id}": {
+      "delete": {
+        "operationId": "deleteProjectEnvironmentMembership",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "environment",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "user_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: deleted_membership, revision, set_id.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "412": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Delete a membership from a project environment",
+        "tags": [
+          "admin"
+        ],
+        "x-admin-action": "write",
+        "x-admin-concurrency": "revision",
+        "x-admin-domain": "project-environment",
+        "x-admin-idempotency": "",
+        "x-admin-object": "admin:memberships"
+      }
+    },
+    "/admin/v1/providers": {
+      "get": {
+        "operationId": "listProviders",
+        "parameters": [
+          {
+            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: providers, set_id, revision.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "412": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "List configured providers without credentials",
+        "tags": [
+          "admin"
+        ],
+        "x-admin-action": "read",
+        "x-admin-concurrency": "",
+        "x-admin-domain": "global",
+        "x-admin-idempotency": "",
+        "x-admin-object": "admin:providers"
+      }
+    },
+    "/admin/v1/providers/{provider}": {
+      "delete": {
+        "operationId": "disableProvider",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: id, status, revision, set_id.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "412": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Disable an unused provider",
+        "tags": [
+          "admin"
+        ],
+        "x-admin-action": "write",
+        "x-admin-concurrency": "revision",
+        "x-admin-domain": "global",
+        "x-admin-idempotency": "",
+        "x-admin-object": "admin:providers"
+      },
+      "get": {
+        "operationId": "getProvider",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: id, provider, set_id, revision.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "412": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Read provider configuration without credentials",
+        "tags": [
+          "admin"
+        ],
+        "x-admin-action": "read",
+        "x-admin-concurrency": "",
+        "x-admin-domain": "global",
+        "x-admin-idempotency": "",
+        "x-admin-object": "admin:providers"
+      },
+      "put": {
+        "description": "Credential values are write-only; use api_key_env references and never expect credential fields in the response.",
+        "operationId": "putProvider",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/adminProviderWriteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: id, revision, set_id, provider.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "412": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Create or update provider configuration",
+        "tags": [
+          "admin"
+        ],
+        "x-admin-action": "write",
+        "x-admin-concurrency": "revision",
+        "x-admin-domain": "global",
+        "x-admin-idempotency": "",
+        "x-admin-object": "admin:providers"
+      }
+    },
+    "/admin/v1/providers/{provider}/validate": {
+      "post": {
+        "operationId": "validateProvider",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/adminProviderWriteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: valid, provider.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "412": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Validate provider and model capability metadata without writing",
+        "tags": [
+          "admin"
+        ],
+        "x-admin-action": "write",
+        "x-admin-concurrency": "",
+        "x-admin-domain": "global",
+        "x-admin-idempotency": "",
+        "x-admin-object": "admin:providers",
+        "x-admin-side-effects": "none"
+      }
+    },
     "/admin/v1/reports/cfo": {
       "get": {
         "operationId": "getCFOReport",
@@ -5354,6 +7534,102 @@
         "x-admin-domain": "handler",
         "x-admin-idempotency": "",
         "x-admin-object": "admin:reports"
+      }
+    },
+    "/admin/v1/retention": {
+      "put": {
+        "operationId": "putRetentionPolicy",
+        "parameters": [
+          {
+            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/adminRetentionWriteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: retention, revision, set_id, shortened.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "412": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "422": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Update retention policy",
+        "tags": [
+          "admin"
+        ],
+        "x-admin-action": "write",
+        "x-admin-concurrency": "revision",
+        "x-admin-domain": "global",
+        "x-admin-extra-checks": [
+          {
+            "action": "force",
+            "description": "Required only when the request body sets force: true.",
+            "object": "admin:retention",
+            "when": "body.force"
+          }
+        ],
+        "x-admin-idempotency": "",
+        "x-admin-object": "admin:retention"
       }
     },
     "/admin/v1/training/export": {

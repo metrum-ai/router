@@ -279,6 +279,14 @@ func RotateCallerTokenHash(cfg *router.Config, callerID, tokenHash, tokenID stri
 				cfg.Callers[i].TokenID = tokenID
 			}
 			cfg.Callers[i].Status = "active"
+			cfg.Callers[i].RevokedTokenHash = ""
+			if tokenHash != "" {
+				cfg.Callers[i].TokenFormatVersion = 2
+				cfg.Callers[i].TokenEntropyBits = 256
+			} else {
+				cfg.Callers[i].TokenFormatVersion = 0
+				cfg.Callers[i].TokenEntropyBits = 0
+			}
 			return nil
 		}
 	}

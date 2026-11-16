@@ -33,6 +33,27 @@ configurations. Update copied examples from older releases before deploying them
 
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
 
+## v5.0.0 caller-token hygiene
+
+Newly generated caller tokens append a `v2` marker and checksum to the existing
+`rtr_metrum_` format.
+Previously issued tokens continue to authenticate. Config load warns when token
+entropy is unknown or a caller uses a development environment. The token
+generator defaults an omitted environment to `prod`. The
+`security.key_hygiene.min_entropy_bits` default is 128; `0` selects that default
+and explicit values must be 1–256. Rotate old keys before setting
+`security.key_hygiene.enforce: true`; enforcement rejects unknown or below-floor
+entropy and development-environment tokens. A leaked token can revoke itself
+through `POST /v1/security/leaked-keys` only in database-backed configuration
+mode. YAML-only/file mode has no shared revocation store, so the route is not
+mounted. The verifier is recorded in a separate token-hash denylist, independent
+of config sets and revisions, and checked during authentication on every
+serving endpoint. Rollback and YAML import do not clear the denylist. Database-
+backed replicas receive changes through the configuration revision reload path.
+The denylist write, revision notification, and audit records commit together.
+Rotate the caller token to issue a new verifier and restore access; then update
+clients with the new bearer token. Only rotation restores access; the old
+verifier remains refused.
 ## Security dependency update
 
 The v5.0.0 build pins `golang.org/x/crypto` to the upstream fix for GO-2026-5932. The fix removes the unused OpenPGP packages from the module; router configuration and runtime behavior do not change. When the next tagged `x/crypto` release includes this fix, routine dependency maintenance should replace the temporary pseudo-version.
@@ -68,6 +89,50 @@ This can change client addresses recorded in security access events and used by
 admin OIDC rate limiting for proxied deployments. Review the trusted proxy
 CIDRs and verify that each proxy appends its connecting peer to
 `X-Forwarded-For`; do not trust client-controlled forwarding headers directly.
+
+## v5.0.0 admin listener and serving-port routes
+
+The authenticated admin listener starts by default at `127.0.0.1:8081`. Move machine automation
+from legacy `/admin/*` paths on the serving port to `/admin/v1/*` on the admin listener before
+upgrading. Set `admin.enabled: false` only when the deployment needs a single listener; remote binds
+require TLS or the explicit plaintext opt-in. Browser reports and `/admin/auth/*` remain on the
+serving port. Remove `admin.legacy_routes_on_serving_port` and `admin.legacy_sunset` from file
+configurations; either key fails config loading with migration guidance.
+
+For database-mode configurations, back up the router-config database and run the non-serving
+`router-migrate --scope router-config --action apply` followed by
+`router-migrate --scope router-config --action maintenance --backup-evidence-ref <backup-reference>`
+before starting v5.0.0. The maintenance migration removes those two v4-only keys from stored
+canonical documents and refreshes their content hashes. File-mode configurations need only have the
+keys removed before restart.
+
+## v5.0.0 routerctl Admin API changes
+
+The online `metrum-ai-routerctl` commands now use the versioned API on the dedicated admin
+listener. The default endpoint is `http://127.0.0.1:8081`; override it with `--router-url` or
+`ROUTER_URL`. Remote endpoints require HTTPS. Credentials remain in `ROUTER_ADMIN_KEY`,
+`ROUTER_ADMIN_KEY_FILE`, or a mode-0600 `--admin-key-file`. Endpoint values must be origins with
+no path (a single trailing slash is tolerated), query, fragment, or embedded credentials; use only
+the scheme, host, and optional port. Non-2xx responses are written to stderr as concise
+`admin API <status> <type>: <message>` diagnostics. Connection and timeout failures use
+`admin API request failed: <cause>` and include a hint to check `admin.enabled`, `admin.listen`,
+and the admin credential setting; response bodies and credentials are not printed.
+
+| Command | v5 behavior and flags |
+| --- | --- |
+| `config diff` | `--api` selects `/admin/v1/config/diff`; it remains optional for local file comparison. |
+| `config import` | Online by default through `POST /admin/v1/config/sets`; `--offline` explicitly selects direct database access. `--yaml` and `--name` remain required. |
+| `config export` | Online by default through `/admin/v1/config/sets/{id}`; `--offline` explicitly selects direct database access. `--set-id` and `--out` remain optional. |
+| `config activate` | Online by default through `/admin/v1/config/sets/{id}/activate`; use `--offline` for direct database access. |
+| `config rollback` | Online by default through `/admin/v1/config/rollback`; use `--offline` for direct database access. |
+| `groups list`, `show`, `set-targets`, `add-target`, `remove-target`, `rollback`, `history`, `shadow start|status|promote|stop` | Use `/admin/v1/config/groups/...`; `--router-url` is optional when the listener is at its default. |
+| `contain`, `release` | Use `/admin/v1/containment`; `--router-url` is optional at the default listener. |
+| `policies list|get|draft|validate|diff|activate|rollback|replace|delete` | Use `/admin/v1/policy-sets`; `--router-url` is optional at the default listener. |
+| `reports cfo` | Uses `/admin/v1/reports`; `--reports-prefix` now defaults to `/admin/v1/reports`. The old `/admin/reports` value is rejected. |
+
+For config import/export/activate/rollback, the historical `--api` flag remains accepted as a
+redundant online-mode selector and cannot be combined with `--offline`. Add `--offline` only for
+deliberate direct database operations while the router is stopped.
 
 ## Pre-Upgrade Checklist
 
@@ -253,6 +318,21 @@ and explicit writable cache and temporary mounts. The example runner also
 expects to start as its non-root user. Re-validate device access, model startup
 and runner registration in your own environment before adopting those examples;
 the offline checks in CI do not exercise a GPU or a runner image.
+
+## v5.0.0 admin resource API
+
+The versioned admin API adds provider and model-catalog reads, provider writes,
+project environments, project-environment memberships, project USD budgets and
+alert thresholds, caller quota updates,
+and retention policy writes. Mutations require
+database-backed configuration mode and a current `If-Match` revision. Provider
+API-key environment references and headers are write-only and do not appear in
+responses. Shortening retention requires the separate `config:force`
+permission. The existing config revision notifier and poller propagate changes
+to other serving replicas. No database migration is required for these routes.
+Project budget counters are per process and reset on restart; ceilings are
+approximate across replicas. Removing or raising a ceiling, or waiting for its
+UTC budget window to reset, restores admission after a trip.
 
 ## Compatibility and operations (v4.4.0)
 
@@ -823,3 +903,13 @@ administrator or by legacy configuration require all caller write permissions
 Signed webhook callers do not need an ETag or idempotency header. Their nonce
 reservation is durable for at least twice the configured timestamp window and
 expired reservations are pruned hourly.
+
+Automatic detector containment is a separate opt-in feature. It is off by
+default. Before setting `server.auto_containment.mode` to `shadow` or
+`enforce`, run `router-migrate` to create the automatic action tables. Start
+in `shadow` mode, set a low `max_actions_per_minute`, and list emergency
+caller IDs under `exempt_callers`. Throttle rules must set
+`unlimited_throttle_limit` to provide a finite base for callers with unlimited
+configured quotas. Enforced suspend rules require database config mode and
+are recorded as containment-made so the containment role or an administrator
+can resume them before their TTL. Actions expire at their configured TTL.

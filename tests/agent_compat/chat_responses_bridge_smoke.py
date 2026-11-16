@@ -53,6 +53,7 @@ def main():
   cache: {{enabled: false}}
   usage_db: {{enabled: false}}
   logging: {{path: "{work / 'router.jsonl'}"}}
+admin: {{enabled: false}}
 state_path: "{work / 'state.json'}"
 providers:
   mock: {{base_url: "http://127.0.0.1:{upstream.server_port}/v1", dialect: openai-responses}}

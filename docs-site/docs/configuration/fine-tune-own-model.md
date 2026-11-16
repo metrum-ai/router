@@ -58,10 +58,10 @@ teacher. Neither is permission to alter unrelated routing groups.
 
 ## Implemented Export Contract
 
-`POST /admin/training/outcomes/{request_id}` accepts harness attestations using
+`POST /admin/v1/training/outcomes/{request_id}` on the authenticated admin listener accepts harness attestations using
 `router-outcome-v1`; it does not infer task success from HTTP 200. The initial
 allowlisted backend is `acme-support-v1`, not arbitrary uploaded checker code.
-`POST /admin/training/export` returns a ZIP with `manifest.json`, `train.jsonl`,
+`POST /admin/v1/training/export` on the authenticated admin listener returns a ZIP with `manifest.json`, `train.jsonl`,
 `val.jsonl`, and `test.jsonl` in `metrum-router-ft-export-v1` format. Filters
 include public token ID, project, client, group and a half-open UTC time range;
 validation/test boundaries are explicit and ordered before training. Success and

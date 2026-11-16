@@ -4,6 +4,7 @@
 package router
 
 import (
+	"bytes"
 	"strings"
 	"testing"
 	"time"
@@ -22,7 +23,7 @@ func TestGenerateCallerTokenStructuredMetrumPrefix(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(generated.Token, "rtr_metrum_alice_example-project_dev_key-1_") {
+	if !strings.HasPrefix(generated.Token, "rtr_metrum_alice_example-project_dev_key-1_") || !strings.Contains(generated.Token, "_v2_") {
 		t.Fatalf("unexpected token prefix: %s", generated.Token)
 	}
 	if generated.TokenID != "rtr_metrum_alice_example-project_dev_key-1" {
@@ -30,6 +31,26 @@ func TestGenerateCallerTokenStructuredMetrumPrefix(t *testing.T) {
 	}
 	if strings.Contains(generated.TokenID, generated.Token[strings.LastIndex(generated.Token, "_")+1:]) {
 		t.Fatal("token id contains secret")
+	}
+	if !validCallerTokenChecksum(generated.Token) {
+		t.Fatal("generated caller token has invalid checksum")
+	}
+	runtime := &callerRuntime{cfg: generated.Caller, allow: map[string]bool{"default": true}}
+	auth := newCallerAuthState()
+	auth.rebuild([]*callerRuntime{runtime})
+	if caller, _ := auth.lookup(generated.Token); caller == nil {
+		t.Fatal("generated checksummed token did not authenticate")
+	}
+	changedChecksum := "0"
+	if strings.HasSuffix(generated.Token, "0") {
+		changedChecksum = "1"
+	}
+	modified := generated.Token[:len(generated.Token)-1] + changedChecksum
+	if validCallerTokenChecksum(modified) {
+		t.Fatal("modified checksum was accepted")
+	}
+	if caller, _ := auth.lookup(modified); caller != nil {
+		t.Fatal("malformed checksummed token reached authentication")
 	}
 	if !strings.HasPrefix(generated.TokenHash, "pbkdf2-sha3-512:i=20000:") || generated.Caller.TokenHash != generated.TokenHash {
 		t.Fatalf("token_hash format mismatch: %q", generated.TokenHash)
@@ -45,6 +66,23 @@ func TestGenerateCallerTokenStructuredMetrumPrefix(t *testing.T) {
 	}
 	if len(generated.Caller.Allow) != 2 || generated.Caller.Allow[0] != "default" || generated.Caller.Allow[1] != "fast" {
 		t.Fatalf("allow list mismatch: %#v", generated.Caller.Allow)
+	}
+}
+
+func TestGenerateCallerTokenWithUnderscoreSecret(t *testing.T) {
+	random := append(bytes.Repeat([]byte{0xff}, 32), bytes.Repeat([]byte{0x11}, 64)...)
+	generated, err := GenerateCallerToken(TokenGenerateOptions{
+		OwnerUser: "alice", Project: "example", Environment: "prod", KeySlug: "key1", Allow: []string{"default"},
+		Reader: bytes.NewReader(random),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime := &callerRuntime{cfg: generated.Caller, allow: map[string]bool{"default": true}}
+	auth := newCallerAuthState()
+	auth.rebuild([]*callerRuntime{runtime})
+	if caller, _ := auth.lookup(generated.Token); caller == nil {
+		t.Fatal("generated token with underscores in its secret did not authenticate")
 	}
 }
 
@@ -71,7 +109,7 @@ func TestGenerateCallerTokenDefaultsMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if generated.TokenID != "rtr_metrum_alice_example-project_dev_k20260613" {
+	if generated.TokenID != "rtr_metrum_alice_example-project_prod_k20260613" {
 		t.Fatalf("default token id=%q", generated.TokenID)
 	}
 	if len(generated.Caller.Allow) != 1 || generated.Caller.Allow[0] != "example-basic" {
@@ -122,6 +160,19 @@ func TestPublicTokenIDStripsSecretSuffix(t *testing.T) {
 	}
 	if got := publicTokenID("sha256:abcdef123456"); got != "sha256:abcdef123456" {
 		t.Fatalf("non-router token id changed: %q", got)
+	}
+}
+
+func TestCallerHasDevelopmentToken(t *testing.T) {
+	for _, caller := range []CallerConfig{
+		{Environment: "dev"},
+		{TokenID: "rtr_metrum_alice_example_test_key1"},
+		{TokenID: "rtr_metrum_alice_example_prod_key1"},
+	} {
+		want := caller.Environment == "dev" || strings.Contains(caller.TokenID, "_test_")
+		if got := callerHasDevelopmentToken(caller); got != want {
+			t.Fatalf("callerHasDevelopmentToken(%+v)=%v want %v", caller, got, want)
+		}
 	}
 }
 

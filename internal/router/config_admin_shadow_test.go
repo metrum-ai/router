@@ -237,8 +237,8 @@ models:
 		t.Fatal(err)
 	}
 	defer svc.Close()
-
 	admin := map[string]string{"Authorization": "Bearer " + adminKey.Token}
+	var adminRequestSequence atomic.Uint64
 	adminReq := func(method, path string, body string) *httptest.ResponseRecorder {
 		var reader *strings.Reader
 		if body != "" {
@@ -248,13 +248,19 @@ models:
 		}
 		req := httptest.NewRequest(method, path, reader)
 		req.Header.Set("Authorization", admin["Authorization"])
+		etag, _, err := svc.adminV1CurrentETag(req)
+		if err != nil {
+			t.Fatalf("read admin config ETag: %v", err)
+		}
+		req.Header.Set("If-Match", etag)
+		req.Header.Set("Idempotency-Key", fmt.Sprintf("shadow-e2e-%d", adminRequestSequence.Add(1)))
 		rr := httptest.NewRecorder()
-		svc.Handler().ServeHTTP(rr, req)
+		svc.AdminHandler().ServeHTTP(rr, req)
 		return rr
 	}
 
 	// Start the shadow at sample_rate 1.0 on candidate mock-model-2.
-	rr := adminReq("POST", "/admin/config/groups/default/shadow",
+	rr := adminReq("POST", "/admin/v1/config/groups/default/shadow",
 		`{"provider":"mock","model_ref":"m-two","sample_rate":1.0,"max_requests":50,"reason":"e2e shadow"}`)
 	if rr.Code != http.StatusCreated {
 		t.Fatalf("shadow start status=%d body=%s", rr.Code, rr.Body.String())
@@ -305,7 +311,7 @@ models:
 	}
 
 	// Comparison endpoint reports both sides.
-	rr = adminReq("GET", "/admin/config/groups/default/shadow", "")
+	rr = adminReq("GET", "/admin/v1/config/groups/default/shadow", "")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("shadow status=%d body=%s", rr.Code, rr.Body.String())
 	}
@@ -324,7 +330,7 @@ models:
 	}
 
 	// Promote: candidate becomes primary; callers still see zero errors.
-	rr = adminReq("POST", "/admin/config/groups/default/shadow/promote", `{"reason":"promote candidate"}`)
+	rr = adminReq("POST", "/admin/v1/config/groups/default/shadow/promote", `{"reason":"promote candidate"}`)
 	if rr.Code != http.StatusOK {
 		t.Fatalf("promote status=%d body=%s", rr.Code, rr.Body.String())
 	}

@@ -76,6 +76,10 @@ callers:
 // configAdminTestDB returns a migrated SQLite control-plane DB with one
 // active set seeded from configAdminTestYAML.
 func configAdminTestDB(t *testing.T) *gorm.DB {
+	return configAdminTestDBWithYAML(t, configAdminTestYAML)
+}
+
+func configAdminTestDBWithYAML(t *testing.T, canonicalYAML string) *gorm.DB {
 	t.Helper()
 	r, closeDB, err := ConfigControlPlaneMigrationRunner(UsageDBConfig{Driver: "sqlite", Path: filepath.Join(t.TempDir(), "config.sqlite")})
 	if err != nil {
@@ -84,7 +88,7 @@ func configAdminTestDB(t *testing.T) *gorm.DB {
 	t.Cleanup(func() { _ = closeDB() })
 	applyConfigControlPlaneMigrationsForTest(t, r)
 	db := r.db
-	setID, err := ImportCanonicalYAML(db, "prod", "seed", []byte(configAdminTestYAML), "test-seed")
+	setID, err := ImportCanonicalYAML(db, "prod", "seed", []byte(canonicalYAML), "test-seed")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -665,6 +669,56 @@ func TestConfigAdminGroupRollbackAndHistory(t *testing.T) {
 	if !strings.Contains(text, "restored_from_set=") {
 		t.Fatalf("rollback audit must link the source set: %s", text)
 	}
+}
+
+func TestExplicitAdminDisabledSurvivesDBGroupWriteRollbackAndShadow(t *testing.T) {
+	canonical := configAdminTestYAML + "\nadmin:\n  enabled: false\n"
+	db := configAdminTestDBWithYAML(t, canonical)
+	assertDisabled := func(stage string) {
+		t.Helper()
+		cfg, err := LoadActiveCanonicalConfig(db, "prod")
+		if err != nil {
+			t.Fatalf("load active canonical config after %s: %v", stage, err)
+		}
+		if cfg.Admin.Enabled {
+			t.Fatalf("admin.enabled became true after %s", stage)
+		}
+	}
+	assertDisabled("initial DB load")
+	relational, err := LoadActiveConfigFromDB(db, "prod", IdentifierConfig{Mode: "passthrough"})
+	if err != nil {
+		t.Fatalf("load relational DB projection: %v", err)
+	}
+	if relational.Admin.Enabled {
+		t.Fatal("relational DB loader overrode explicit admin.enabled: false")
+	}
+	mux := configAdminTestMux(t, db, nil)
+	admin := adminHeaders("adminkey:ops", "config:read", "config:write", "config:activate", "shadow:write")
+
+	write := map[string]any{"targets": []map[string]any{{"provider": "beta", "model_ref": "b-one"}}}
+	rr := configAdminRequest(t, mux, "PUT", "/admin/config/groups/agent-default/targets", write, admin)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("group write status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	assertDisabled("group write")
+
+	rr = configAdminRequest(t, mux, "POST", "/admin/config/groups/agent-default/shadow", map[string]any{
+		"provider": "alpha", "model_ref": "a-two", "sample_rate": 0.5, "max_requests": 5,
+	}, admin)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("shadow start status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	assertDisabled("shadow decode")
+	rr = configAdminRequest(t, mux, "DELETE", "/admin/config/groups/agent-default/shadow", map[string]any{"reason": "test complete"}, admin)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("shadow stop status=%d body=%s", rr.Code, rr.Body.String())
+	}
+
+	rr = configAdminRequest(t, mux, "POST", "/admin/config/groups/agent-default/rollback", map[string]any{"reason": "restore"}, admin)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("group rollback status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	assertDisabled("group rollback")
 }
 
 func TestConfigAdminSetsEndpoints(t *testing.T) {

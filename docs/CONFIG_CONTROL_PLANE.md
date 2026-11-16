@@ -119,6 +119,18 @@ job must first apply the online prefix, take the approved backup, then
 explicitly invoke `ApplyMaintenancePending` in a scheduled maintenance window
 and finish with `Verify`; it must never be run by router startup.
 
+## v5.0.0 stored-config cleanup
+
+The v5.0.0 router-config schema adds maintenance migration `2026111601` (schema
+13). It removes `admin.legacy_routes_on_serving_port` and `admin.legacy_sunset`
+from every stored canonical document and recalculates each document's content
+hash. For database-mode deployments, back up the router-config database, apply
+the online prefix with `router-migrate --scope router-config --action apply`,
+then run `router-migrate --scope router-config --action maintenance
+--backup-evidence-ref <backup-reference>` in a maintenance window and verify
+before starting v5.0.0. File-mode deployments remove the keys from their source
+configuration and do not need this database migration.
+
 ## Phase 6: DB-backed serving source of truth
 
 Phase 6 raises the `router_config` compatibility window to `MaxSchema: 6` and
@@ -219,13 +231,13 @@ documented in `docs-site/docs/operations/key-generation.md`.
 ## Phase 8: Admin API write surface (#395)
 
 Phase 8 delivers the control-plane write APIs as authenticated Admin API
-endpoints (`/admin/config/*`), protected by the dedicated admin credential
+endpoints (`/admin/v1/config/*`), protected by the dedicated admin credential
 from #350 with the fine-grained permissions `config:read`, `config:write`,
 `config:activate`, and `config:force`. In file mode every write returns `409
 config_source_mode_file` and reads continue to work from the live
 configuration.
 
-Group writes (`PUT/POST/DELETE /admin/config/groups/{group}/targets…`,
+Group writes (`PUT/POST/DELETE /admin/v1/config/groups/{group}/targets…`,
 `POST …/rollback`) are copy-on-write: the active canonical document is
 loaded, patched for the one group, validated (`Config.Validate` plus a
 per-target catalog/contract eligibility report), imported as a new set, and
@@ -240,11 +252,11 @@ API shape without an eligible target is refused, and the optional
 unvalidated targets unless the caller holds `config:force` and sets `force`.
 
 The generic set flow is available over HTTP as well:
-`POST /admin/config/sets` (import a canonical document as a draft),
-`GET /admin/config/sets[/{set_id}]` (list/export; export never includes
-resolved secrets), `POST /admin/config/sets/{set_id}/activate`,
-`POST /admin/config/rollback`, and `GET /admin/config/diff?from=&to=`.
-`GET /admin/config/status` reports the runtime scope, driver, active set,
+`POST /admin/v1/config/sets` (import a canonical document as a draft),
+`GET /admin/v1/config/sets[/{set_id}]` (list/export; export never includes
+resolved secrets), `POST /admin/v1/config/sets/{set_id}/activate`,
+`POST /admin/v1/config/rollback`, and `GET /admin/v1/config/diff?from=&to=`.
+`GET /admin/v1/config/status` reports the runtime scope, driver, active set,
 current revision, and this replica's loaded revision.
 
 The phase-8 migration (online, transactional, idempotent) extends
@@ -254,7 +266,7 @@ The phase-8 migration (online, transactional, idempotent) extends
 as one foreign-keyed row per target — no packed or JSON audit values), and
 adds a partial unique index making an idempotency key usable at most once
 per runtime scope. Group history is served from these tables at
-`GET /admin/config/groups/{group}/history`. Audit rows never contain raw
+`GET /admin/v1/config/groups/{group}/history`. Audit rows never contain raw
 tokens, provider credentials, or request content.
 
 Propagation: the writing replica reloads synchronously after commit; other
@@ -287,7 +299,7 @@ requests finish on the target they started with; the group name and
 ## Phase 9: shadow runs (#395 §5)
 
 Phase 9 adds `router_config_shadow_runs`, the shared registry behind
-`POST/GET/DELETE /admin/config/groups/{group}/shadow[/promote]`. A shadow run
+`POST/GET/DELETE /admin/v1/config/groups/{group}/shadow[/promote]`. A shadow run
 puts one catalog candidate in shadow against a group's served traffic at a
 bounded sample rate (`sample_rate`, with `max_requests`, `duration_seconds`,
 and `cost_cap_usd` bounds; one active run per group). Sampled requests are

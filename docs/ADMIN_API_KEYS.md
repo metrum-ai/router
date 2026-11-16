@@ -7,6 +7,10 @@ API keys (`rtr_metrum_*`, used on `/v1/*` model APIs) and from
 provider/upstream credentials (`api_key_env` references, which are never
 accepted on inbound requests).
 
+**v5.0.0 transport:** machine admin operations use `/admin/v1` on the admin listener,
+which defaults to `127.0.0.1:8081`. The legacy machine `/admin/*` routes were removed from the
+serving port; `/admin/auth/*` and the browser reports UI remain there.
+
 - Admin keys authenticate `/admin/*` routes only. They can never call the
   caller-facing model APIs, and caller or provider keys are never accepted on
   admin routes.
@@ -65,7 +69,7 @@ Use the key as a bearer token on admin routes:
 
 ```bash
 curl -fsS -H "Authorization: Bearer $(cat ops-primary.key)" \
-  "$ROUTER_BASE_URL/admin/config/groups"
+  "$ROUTER_BASE_URL/admin/v1/config/groups"
 ```
 
 Never pass the raw key as a CLI flag value; the `routerctl groups … --api`
@@ -78,12 +82,19 @@ mutations:
 
 | Permission | Grants |
 |---|---|
-| `config:read` | `GET /admin/config/...` (groups, sets, diff, status, history) |
+| `config:read` | `GET /admin/v1/config/...` (groups, sets, diff, status, history) |
 | `config:write` | Group target writes: swap, add, remove, `:validate`, dry runs |
 | `config:activate` | Set import/activate and rollback operations |
 | `config:force` | `force: true` overrides of the `require_validation_status` policy |
 | `shadow:write` | Shadow start/promote/stop |
 | `admin:auth:read` | `GET /admin/auth/check` |
+| `admin:providers:read`, `admin:providers:write` | Provider list/read and provider create/update/disable/validate |
+| `admin:catalog:read` | `GET /admin/v1/models` |
+| `admin:projects:read`, `admin:projects:write` | Project and environment list/read/write |
+| `admin:memberships:read`, `admin:memberships:write` | Project environment membership list/upsert |
+| `admin:quotas:read`, `admin:quotas:write` | Caller quota read/update |
+| `admin:budgets:read`, `admin:budgets:write` | Project budget read/update |
+| `admin:retention:write`, `admin:retention:force` | Retention policy update; force is required for changes that can purge more data |
 
 Admin keys may also hold the pre-existing `object:action` permissions used by
 the other admin endpoints: `admin:callers:list|issue|rotate|revoke`,
@@ -108,6 +119,28 @@ server:
         - p, user:ops@example.com, example/prod, admin:config, read
 ```
 
+Resource routes use their own Casbin objects so policies can grant least
+privilege independently of configuration-set access. For example:
+
+```yaml
+        - p, user:ops@example.com, *, admin:providers, read
+        - p, user:ops@example.com, *, admin:catalog, read
+        - p, user:ops@example.com, *, admin:projects, read
+        - p, user:ops@example.com, example/prod, admin:memberships, read
+        - p, user:ops@example.com, example/prod, admin:quotas, read
+        - p, user:ops@example.com, *, admin:budgets, read
+        - p, user:ops@example.com, *, admin:retention, write
+```
+
+Project routes, including their embedded budget reads and writes, authorize in
+the plane-global domain (`*`), so a grant scoped to `example/prod` does not
+cover them. Project reads also require `admin:budgets/read` because the response
+includes the budget. Project writes require `admin:projects/write`; when the
+request includes a `budget` object it additionally requires
+`admin:budgets/write`. Membership and caller-quota routes authorize in their
+target project or caller domain. A retention update that can delete more data
+additionally requires `admin:retention/force`.
+
 ## Rotate a key
 
 Rotation is zero-downtime because multiple keys may be active at once:
@@ -125,11 +158,12 @@ key is unused before deleting it.
 
 ## Migration from browser admin only
 
-Existing deployments keep working: HTTP Basic and OIDC behave exactly as
-before when `api_keys` is empty, and `/admin/auth/check`, `/admin/reports`,
-`/admin/callers`, and `/admin/training` are unchanged. To adopt admin keys,
-add one `api_keys` entry with the permissions your automation needs and point
-automation at `Authorization: Bearer rtr_admin_…`. No caller tokens change.
+HTTP Basic and OIDC remain available for browser access when `api_keys` is
+empty. Machine admin operations must use `/admin/v1` on the dedicated admin
+listener; the former serving-port routes such as `/admin/callers` and
+`/admin/training` have been removed. To adopt admin keys, add one `api_keys`
+entry with the permissions your automation needs and point automation at
+`Authorization: Bearer rtr_admin_…`. No caller tokens change.
 
 Note: `GET /admin/auth/check` accepts admin keys that hold
 `admin:auth:read`; the Basic challenge behavior for browsers is unchanged.

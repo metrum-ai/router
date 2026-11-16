@@ -119,16 +119,18 @@ def http_stream(url: str, body: dict, headers: dict, out_lines: list, timeout=18
 
 
 class RouterProc:
-    def __init__(self, name: str, binary: Path, config: Path, listen: str, log_path: Path, extra_env=None):
+    def __init__(self, name: str, binary: Path, config: Path, listen: str, admin_listen: str, log_path: Path, extra_env=None):
         self.name = name
         self.base = f"http://{listen}"
+        self.admin_base = f"http://{admin_listen}"
         self.listen = listen
+        self.admin_listen = admin_listen
         self.log_path = log_path
         env = os.environ.copy()
         if extra_env:
             env.update(extra_env)
         self._logf = open(log_path, "wb")
-        args = [str(binary), "--config", str(config), "--listen", listen]
+        args = [str(binary), "--config", str(config), "--listen", listen, "--admin-listen", admin_listen]
         self.proc = subprocess.Popen(args, env=env, stdout=self._logf, stderr=subprocess.STDOUT)
 
     def wait_ready(self, timeout=60):
@@ -569,10 +571,13 @@ def main():
     try:
         for name, conf in [("r1", boot1), ("r2", boot1), ("r3", boot1), ("rf", bootf)]:
             port = free_port()
+            admin_port = free_port()
+            while admin_port == port:
+                admin_port = free_port()
             rp = None
             for attempt in (1, 2):
                 rp = RouterProc(name, bins["router"], conf, f"127.0.0.1:{port}",
-                                workdir / f"router-{name}.log", extra_env=env)
+                                f"127.0.0.1:{admin_port}", workdir / f"router-{name}.log", extra_env=env)
                 try:
                     rp.wait_ready()
                     break
@@ -584,7 +589,7 @@ def main():
             routers.append(rp)
             time.sleep(1)
         r1, r2, r3, rf = routers
-        log(f"routers ready: r1={r1.base} r2={r2.base} r3={r3.base} rf={rf.base} (rf file mode)")
+        log(f"routers ready: r1={r1.base} r2={r2.base} r3={r3.base} rf={rf.base} (rf file mode; admin listeners use unique loopback ports)")
     except Exception:
         for rp in routers:
             rp.stop()
@@ -736,11 +741,11 @@ def admin(router, key_headers, method, path, body=None, extra_headers=None):
     headers = dict(key_headers)
     if extra_headers:
         headers.update(extra_headers)
-    return http(method, router.base + path, body, headers)
+    return http(method, router.admin_base + path, body, headers)
 
 
 def current_revision(router, key_headers):
-    status, parsed, _ = admin(router, key_headers, "GET", "/admin/config/status")
+    status, parsed, _ = admin(router, key_headers, "GET", "/admin/v1/config/status")
     assert status == 200, f"status endpoint failed: {parsed}"
     return parsed["revision"]
 
@@ -755,7 +760,7 @@ def swap(router, key_headers, group, targets, *, strategy="", reason="", dry_run
     body = {"targets": targets, "reason": reason, "dry_run": dry_run, "force": force}
     if strategy:
         body["strategy"] = strategy
-    return admin(router, key_headers, "PUT", f"/admin/config/groups/{group}/targets", body, headers)
+    return admin(router, key_headers, "PUT", f"/admin/v1/config/groups/{group}/targets", body, headers)
 
 
 def wait_served_model(router, caller, group, want_prefix, timeout=25, stream=False):
@@ -783,17 +788,17 @@ def run_cases(suite: Suite, bins, r1, r2, r3, rf, ops, readonly, writer, caller,
                        note="" if st == 200 else json.dumps(parsed)[:300])
 
     # ---- reads in both modes ----
-    st, body, ms = admin(r1, ops, "GET", "/admin/config/groups")
-    ok &= suite.record("groups-list (DB mode)", "GET /admin/config/groups", 200, st, latency_ms=ms,
+    st, body, ms = admin(r1, ops, "GET", "/admin/v1/config/groups")
+    ok &= suite.record("groups-list (DB mode)", "GET /admin/v1/config/groups", 200, st, latency_ms=ms,
                        note=f"mode={body.get('mode')} groups={len(body.get('groups', []))}")
-    st, body, ms = admin(rf, ops, "GET", "/admin/config/groups")
-    ok &= suite.record("groups-list (file mode)", "GET /admin/config/groups on file-mode router", 200, st,
+    st, body, ms = admin(rf, ops, "GET", "/admin/v1/config/groups")
+    ok &= suite.record("groups-list (file mode)", "GET /admin/v1/config/groups on file-mode router", 200, st,
                        latency_ms=ms, note=f"mode={body.get('mode')}")
-    st, body, ms = admin(r1, ops, "GET", "/admin/config/groups/agent-default")
+    st, body, ms = admin(r1, ops, "GET", "/admin/v1/config/groups/agent-default")
     note = "catalog visible" if "gemini-3-flash-preview" in json.dumps(body) else "catalog missing"
-    ok &= suite.record("group-detail (DB mode)", "GET /admin/config/groups/agent-default", 200, st,
+    ok &= suite.record("group-detail (DB mode)", "GET /admin/v1/config/groups/agent-default", 200, st,
                        latency_ms=ms, note=note)
-    st, body, ms = admin(rf, ops, "GET", "/admin/config/groups/agent-default")
+    st, body, ms = admin(rf, ops, "GET", "/admin/v1/config/groups/agent-default")
     ok &= suite.record("group-detail (file mode)", "GET group on file-mode router", 200, st, latency_ms=ms)
 
     # ---- dry run ----
@@ -803,7 +808,7 @@ def run_cases(suite: Suite, bins, r1, r2, r3, rf, ops, readonly, writer, caller,
     diff = body.get("diff", {}) if isinstance(body, dict) else {}
     dry_note = f"added={diff.get('added')} removed={diff.get('removed')}" if st == 200 else "err=" + json.dumps(body)[:300]
     ok &= suite.record("dry-run swap", "PUT targets dry_run=true", 200, st, latency_ms=ms, note=dry_note)
-    st, body, _ = admin(r1, ops, "GET", "/admin/config/status")
+    st, body, _ = admin(r1, ops, "GET", "/admin/v1/config/status")
     ok &= suite.record("dry-run changed nothing", "revision unchanged after dry_run", rev0, body.get("revision"),
                        note=f"rev {rev0} -> {body.get('revision')}")
 
@@ -892,10 +897,10 @@ def run_cases(suite: Suite, bins, r1, r2, r3, rf, ops, readonly, writer, caller,
     # Multi-replica status convergence after the chain.
     revs = []
     for rp in (r1, r2, r3):
-        st, body, _ = admin(rp, ops, "GET", "/admin/config/status")
+        st, body, _ = admin(rp, ops, "GET", "/admin/v1/config/status")
         revs.append((body.get("revision"), body.get("replica", {}).get("loaded_revision"), body.get("replica", {}).get("current")))
     converged = all(r is not None and r[0] == r[1] and r[2] for r in revs)
-    ok &= suite.record("multi-replica convergence", "/admin/config/status on 3 replicas share revision",
+    ok &= suite.record("multi-replica convergence", "/admin/v1/config/status on 3 replicas share revision",
                        True, converged, note=f"revisions={revs}")
 
     # ---- multi-shape group: swap and re-verify Responses + Anthropic shapes ----
@@ -912,7 +917,7 @@ def run_cases(suite: Suite, bins, r1, r2, r3, rf, ops, readonly, writer, caller,
                        served=model, note=f"chat={st_c} responses={st_r} anthropic={st_a}")
 
     # ---- add / failover-reorder / remove ----
-    st, body, ms = admin(r1, ops, "POST", "/admin/config/groups/agent-default/targets",
+    st, body, ms = admin(r1, ops, "POST", "/admin/v1/config/groups/agent-default/targets",
                          {"target": tgt("openrouter", "deepseek-v4-flash-nitro"), "reason": "add fallback"})
     ok &= suite.record("add-target", "POST target (append)", 200, st, latency_ms=ms)
     # Reorder: deliberately broken first target proves failover order.
@@ -925,26 +930,26 @@ def run_cases(suite: Suite, bins, r1, r2, r3, rf, ops, readonly, writer, caller,
     ok &= suite.record("failover keeps clients error-free", "chat with dead first target",
                        200, st_c, served=model_c, latency_ms=ms_c,
                        note="served by fallback target")
-    st, body, ms = admin(r1, ops, "DELETE", "/admin/config/groups/agent-default/targets/broken/dead",
+    st, body, ms = admin(r1, ops, "DELETE", "/admin/v1/config/groups/agent-default/targets/broken/dead",
                          {"reason": "remove broken"})
     ok &= suite.record("remove-target", "DELETE broken/dead", 200, st, latency_ms=ms)
-    st, body, _ = admin(r1, ops, "GET", "/admin/config/groups/agent-default")
+    st, body, _ = admin(r1, ops, "GET", "/admin/v1/config/groups/agent-default")
     remaining = [t["provider"] + "/" + t.get("model_ref", t.get("model", "")) for t in body.get("targets", [])]
     ok &= suite.record("remove-target leaves fallback", "group has [openai/gpt-6.1-terra, openrouter/...]",
                        True, "openai/gpt-6.1-terra" in remaining and "broken/dead" not in remaining,
                        note=str(remaining))
 
     # ---- one-call group rollback ----
-    st, body, ms = admin(r1, ops, "POST", "/admin/config/groups/agent-default/rollback", {"reason": "e2e rollback"})
+    st, body, ms = admin(r1, ops, "POST", "/admin/v1/config/groups/agent-default/rollback", {"reason": "e2e rollback"})
     ok &= suite.record("group rollback", "POST rollback (default prior set)", 200, st, latency_ms=ms,
                        note=f"restored_from={body.get('restored_from_set_id','')}")
 
     # ---- export / diff / CLI rollback over the API ----
-    st, body, ms = admin(r1, ops, "GET", "/admin/config/sets/active")
-    ok &= suite.record("config export (API)", "GET /admin/config/sets/active", 200, st, latency_ms=ms,
+    st, body, ms = admin(r1, ops, "GET", "/admin/v1/config/sets/active")
+    ok &= suite.record("config export (API)", "GET /admin/v1/config/sets/active", 200, st, latency_ms=ms,
                        note="canonical YAML" if "providers:" in str(body) else "unexpected body")
-    st, body, ms = admin(r1, ops, "GET", "/admin/config/diff")
-    ok &= suite.record("config diff (API)", "GET /admin/config/diff", 200, st, latency_ms=ms)
+    st, body, ms = admin(r1, ops, "GET", "/admin/v1/config/diff")
+    ok &= suite.record("config diff (API)", "GET /admin/v1/config/diff", 200, st, latency_ms=ms)
     # CLI rollback reverts the last API change.
     prior = subprocess.run([str(bins["routerctl"]), "groups", "history",
                             "--router-url", r1.base, "agent-default"],
@@ -973,7 +978,7 @@ def run_cases(suite: Suite, bins, r1, r2, r3, rf, ops, readonly, writer, caller,
                        note=f"same set_id={body2.get('set_id') == first_set} replayed={body2.get('replayed')}")
 
     # ---- shadow flow ----
-    st, body, ms = admin(r1, ops, "POST", "/admin/config/groups/agent-default/shadow",
+    st, body, ms = admin(r1, ops, "POST", "/admin/v1/config/groups/agent-default/shadow",
                          {"provider": "fireworks", "model_ref": "deepseek-v4p1-flash-1017", "sample_rate": 0.5,
                           "max_requests": 100, "reason": "e2e shadow",
                           "validation": {"status": "passed", "workload": "e2e", "validated_at": "2026-10-27"}})
@@ -991,7 +996,7 @@ def run_cases(suite: Suite, bins, r1, r2, r3, rf, ops, readonly, writer, caller,
     served_reqs = 0
     shadow_cost = 0.0
     while time.monotonic() < deadline:
-        st, body, _ = admin(r1, ops, "GET", "/admin/config/groups/agent-default/shadow")
+        st, body, _ = admin(r1, ops, "GET", "/admin/v1/config/groups/agent-default/shadow")
         if st == 200:
             shadow_reqs = body.get("shadow", {}).get("requests", 0)
             served_reqs = body.get("served", {}).get("requests", 0)
@@ -1003,23 +1008,23 @@ def run_cases(suite: Suite, bins, r1, r2, r3, rf, ops, readonly, writer, caller,
     ok &= suite.record("shadow comparison", "GET shadow after N=20 served requests at rate 0.5",
                        True, 0 < shadow_reqs <= n_shadow_calls and served_reqs >= n_shadow_calls and shadow_errs == 0,
                        note=f"served={served_reqs} shadowed={shadow_reqs} shadow_errors={shadow_errs} shadow_cost=${shadow_cost:.6f}")
-    st, body, ms = admin(r1, ops, "POST", "/admin/config/groups/agent-default/shadow/promote",
+    st, body, ms = admin(r1, ops, "POST", "/admin/v1/config/groups/agent-default/shadow/promote",
                          {"reason": "promote gpt-oss-20b"})
     ok &= suite.record("shadow promote", "POST shadow/promote", 200, st, latency_ms=ms,
                        note=f"run={body.get('shadow_run_id','')}" if st == 200 else json.dumps(body)[:300])
     hit, model = wait_served_model(r1, caller, "agent-default", "accounts/fireworks/models/deepseek-v4p1-flash-1017", timeout=25)
     ok &= suite.record("promoted candidate serves", "chat serves the promoted candidate after promote", True, hit, served=model)
-    st, body, _ = admin(r1, ops, "GET", "/admin/config/groups/agent-default/history")
+    st, body, _ = admin(r1, ops, "GET", "/admin/v1/config/groups/agent-default/history")
     linked = f"shadow_run={run_id}" in json.dumps(body)
     ok &= suite.record("audit chain links shadow to promotion", "history detail contains shadow_run=<id>",
                        True, linked)
     # Second shadow started and stopped without promotion.
-    st, body, _ = admin(r1, ops, "POST", "/admin/config/groups/agent-default/shadow",
+    st, body, _ = admin(r1, ops, "POST", "/admin/v1/config/groups/agent-default/shadow",
                         {"provider": "gemini", "model_ref": "gemini-3.1-flash-lite", "sample_rate": 0.25,
                          "duration_seconds": 300, "reason": "second shadow",
                          "validation": {"status": "passed", "workload": "e2e", "validated_at": "2026-10-27"}})
     ok &= suite.record("second shadow start", "POST shadow (gemini candidate)", 201, st)
-    st, body, ms = admin(r1, ops, "DELETE", "/admin/config/groups/agent-default/shadow", {"reason": "stop only"})
+    st, body, ms = admin(r1, ops, "DELETE", "/admin/v1/config/groups/agent-default/shadow", {"reason": "stop only"})
     ok &= suite.record("shadow stop without promote", "DELETE shadow", 200, st, latency_ms=ms,
                        note=body.get("shadow", {}).get("status", "") if isinstance(body, dict) else "")
 
@@ -1031,11 +1036,11 @@ def run_cases(suite: Suite, bins, r1, r2, r3, rf, ops, readonly, writer, caller,
                        note=body.get("error", {}).get("type", ""))
     st, body, ms = swap(r1, ops, "agent-default", [tgt("openai", "gpt-99-nope")], if_match=False)
     ok &= suite.record("unknown model refused", "PUT openai/gpt-99-nope", 422, st, latency_ms=ms)
-    st, body, ms = admin(r1, ops, "PUT", "/admin/config/groups/agent-default/targets",
+    st, body, ms = admin(r1, ops, "PUT", "/admin/v1/config/groups/agent-default/targets",
                          {"targets": [{"provider": "evil", "model": "x", "api_key": "sk-notreal0000000000000000"}]})
     ok &= suite.record("ad hoc credentials field refused", "PUT target with api_key field", 400, st, latency_ms=ms,
                        note=body.get("error", {}).get("type", ""))
-    st, body, ms = admin(r1, ops, "PUT", "/admin/config/groups/agent-default/targets",
+    st, body, ms = admin(r1, ops, "PUT", "/admin/v1/config/groups/agent-default/targets",
                          {"targets": [tgt("openai", "gpt-6-luna")], "reason": CANARY_SECRET})
     leaked = CANARY_SECRET in json.dumps(body)
     ok &= suite.record("credential-shaped reason refused, not echoed", "PUT reason=<canary secret>",
@@ -1047,56 +1052,56 @@ def run_cases(suite: Suite, bins, r1, r2, r3, rf, ops, readonly, writer, caller,
     ok &= suite.record("contract-ineligible target refused", "PUT agent-tools <- no-tools target",
                        422, st, latency_ms=ms,
                        note="contract-required-tools" if "contract-required-tools" in report else report[-160:])
-    st, body, ms = admin(r1, ops, "DELETE", "/admin/config/groups/agent-shapes/targets/openai-resp/gpt-6-astra",
+    st, body, ms = admin(r1, ops, "DELETE", "/admin/v1/config/groups/agent-shapes/targets/openai-resp/gpt-6-astra",
                          {"reason": "remove last"})
     ok &= suite.record("remove last target refused", "DELETE sole target of agent-shapes", 422, st, latency_ms=ms,
                        note=body.get("error", {}).get("type", ""))
-    st, body, ms = admin(r1, ops, "PUT", "/admin/config/groups/agent-default/targets",
+    st, body, ms = admin(r1, ops, "PUT", "/admin/v1/config/groups/agent-default/targets",
                          {"targets": [tgt("openai", "gpt-6-luna")]}, {"If-Match": "1"})
     ok &= suite.record("stale If-Match refused", "PUT If-Match: 1", 409, st, latency_ms=ms,
                        note=f"current_revision={body.get('error', {}).get('current_revision', '')}")
-    st, body, ms = admin(r1, ops, "PUT", "/admin/config/groups/agent-default/targets",
+    st, body, ms = admin(r1, ops, "PUT", "/admin/v1/config/groups/agent-default/targets",
                          {"targets": [{"provider": "openai", "model_ref": "gpt-6-luna"}]})
     ok &= suite.record("unvalidated target refused by policy", "PUT without validation.status=passed",
                        422, st, latency_ms=ms, note=body.get("error", {}).get("type", ""))
-    st, body, ms = admin(r1, writer, "PUT", "/admin/config/groups/agent-default/targets",
+    st, body, ms = admin(r1, writer, "PUT", "/admin/v1/config/groups/agent-default/targets",
                          {"targets": [{"provider": "openai", "model_ref": "gpt-6-luna"}], "force": True})
     ok &= suite.record("force without config:force", "PUT force=true (writer key)", 403, st, latency_ms=ms,
                        note=body.get("error", {}).get("type", ""))
-    st, body, ms = admin(r1, ops, "PUT", "/admin/config/groups/agent-default/targets",
+    st, body, ms = admin(r1, ops, "PUT", "/admin/v1/config/groups/agent-default/targets",
                          {"targets": [{"provider": "openai", "model_ref": "gpt-6-luna"}], "force": True,
                           "reason": "forced e2e"}, {"Idempotency-Key": "force-001"})
     ok &= suite.record("force with config:force succeeds", "PUT force=true (ops key)", 200, st, latency_ms=ms,
                        note="" if st == 200 else json.dumps(body)[:300])
-    st, body, _ = admin(r1, ops, "GET", "/admin/config/groups/agent-default/history")
+    st, body, _ = admin(r1, ops, "GET", "/admin/v1/config/groups/agent-default/history")
     ok &= suite.record("forced write audited forced=true", "history forced flag", True,
                        '"forced": true' in json.dumps(body))
     # restore validation-compliant state after the forced write
     swap(r1, ops, "agent-default", [tgt("openai", "gpt-6-luna")], reason="restore", idem="restore-001")
 
-    st, body, ms = admin(r1, {}, "PUT", "/admin/config/groups/agent-default/targets", {"targets": []})
+    st, body, ms = admin(r1, {}, "PUT", "/admin/v1/config/groups/agent-default/targets", {"targets": []})
     ok &= suite.record("no token -> 401", "PUT without Authorization", 401, st, latency_ms=ms)
-    st, body, ms = admin(r1, caller, "PUT", "/admin/config/groups/agent-default/targets", {"targets": []})
+    st, body, ms = admin(r1, caller, "PUT", "/admin/v1/config/groups/agent-default/targets", {"targets": []})
     ok &= suite.record("caller key rejected", "PUT with caller token", 401, st, latency_ms=ms)
     provider_key_headers = {"Authorization": "Bearer " + os.environ["OPENAI_API_KEY"]}
-    st, body, ms = admin(r1, provider_key_headers, "GET", "/admin/config/groups")
+    st, body, ms = admin(r1, provider_key_headers, "GET", "/admin/v1/config/groups")
     ok &= suite.record("provider key rejected", "GET with provider key as bearer", 401, st, latency_ms=ms,
                        note="no key material in response" if os.environ["OPENAI_API_KEY"] not in json.dumps(body) else "LEAK")
-    st, body, ms = admin(r1, readonly, "PUT", "/admin/config/groups/agent-default/targets",
+    st, body, ms = admin(r1, readonly, "PUT", "/admin/v1/config/groups/agent-default/targets",
                          {"targets": [tgt("openai", "gpt-6-luna")]})
     ok &= suite.record("read-only admin write -> 403", "PUT with config:read-only key", 403, st, latency_ms=ms,
                        note=body.get("error", {}).get("type", ""))
-    st, body, ms = admin(r1, writer, "POST", "/admin/config/groups/agent-default/shadow",
+    st, body, ms = admin(r1, writer, "POST", "/admin/v1/config/groups/agent-default/shadow",
                          {"provider": "gemini", "model_ref": "gemini-3.1-flash-lite", "sample_rate": 0.1,
                           "max_requests": 5})
     ok &= suite.record("shadow:write missing -> 403", "POST shadow with writer key (no shadow:write)",
                        403, st, latency_ms=ms, note=body.get("error", {}).get("type", ""))
-    st, body, ms = admin(rf, ops, "PUT", "/admin/config/groups/agent-default/targets",
+    st, body, ms = admin(rf, ops, "PUT", "/admin/v1/config/groups/agent-default/targets",
                          {"targets": [tgt("openai", "gpt-6-luna")]})
     ok &= suite.record("file-mode write -> 409 config_source_mode_file", "PUT on file-mode router",
                        409, st, latency_ms=ms, note=body.get("error", {}).get("type", ""))
     # malformed body
-    req = urllib.request.Request(r1.base + "/admin/config/groups/agent-default/targets",
+    req = urllib.request.Request(r1.base + "/admin/v1/config/groups/agent-default/targets",
                                  data=b"{not json", method="PUT",
                                  headers={"Content-Type": "application/json", **ops})
     try:
@@ -1106,7 +1111,7 @@ def run_cases(suite: Suite, bins, r1, r2, r3, rf, ops, readonly, writer, caller,
         st = e.code
     ok &= suite.record("malformed body -> 400", "PUT invalid JSON", 400, st)
     oversized = {"targets": [tgt("openai", "gpt-6-luna") for _ in range(101)]}
-    st, body, ms = admin(r1, ops, "PUT", "/admin/config/groups/agent-default/targets", oversized)
+    st, body, ms = admin(r1, ops, "PUT", "/admin/v1/config/groups/agent-default/targets", oversized)
     ok &= suite.record("oversized target list -> 400", "PUT 101 targets", 400, st, latency_ms=ms,
                        note=body.get("error", {}).get("type", ""))
 
@@ -1116,7 +1121,7 @@ def run_cases(suite: Suite, bins, r1, r2, r3, rf, ops, readonly, writer, caller,
     targets_pool = [[tgt("openai", "gpt-6-luna")], [tgt("openai", "gpt-6.1-sol")],
                     [tgt("openai", "gpt-6-astra")], [tgt("openai", "gpt-6.1-terra")]]
     with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
-        futs = [pool.submit(admin, r1, ops, "PUT", "/admin/config/groups/agent-default/targets",
+        futs = [pool.submit(admin, r1, ops, "PUT", "/admin/v1/config/groups/agent-default/targets",
                             {"targets": t, "reason": "concurrent"}, {"If-Match": str(rev)})
                 for t in targets_pool]
         codes = [f.result()[0] for f in futs]
@@ -1125,7 +1130,7 @@ def run_cases(suite: Suite, bins, r1, r2, r3, rf, ops, readonly, writer, caller,
                        1, wins, note=f"codes={codes}")
 
     # active set unchanged by negative cases except the deliberate force/concurrency wins
-    st, body, _ = admin(r1, ops, "GET", "/admin/config/groups/agent-default")
+    st, body, _ = admin(r1, ops, "GET", "/admin/v1/config/groups/agent-default")
     ok &= suite.record("active set coherent after negatives", "group readable after negative matrix",
                        200, st, note=f"targets={len(body.get('targets', []))}")
     return ok

@@ -68,3 +68,46 @@ DETECTOR_URL=http://127.0.0.1:8081/v1/detect go test ./pkg/detector -run TestExt
 The example service runs the bounded rogue-agent rules for authentication
 storms, tiny-request sweeps, denied model-group enumeration, and spend spikes.
 It supports TLS with `--tls-cert` and `--tls-key`.
+
+## Automatic containment
+
+Detector signals can be mapped to temporary key throttles or suspensions. The
+default mode is `off`; `shadow` writes proposed actions to the security event
+path without affecting requests, and `enforce` applies matching rules. Only
+signals from detectors configured with `mode: enforce` are eligible. The
+per-minute action cap and exempt caller IDs apply before every write. Every
+action expires at its configured TTL.
+
+```yaml
+server:
+  auto_containment:
+    mode: shadow
+    max_actions_per_minute: 5
+    exempt_callers: [emergency]
+    rules:
+      - detector_id: honeytoken
+        severity: critical
+        action: suspend
+        ttl_ms: 300000
+      - detector_id: rogue_agent
+        severity: high
+        action: throttle
+        throttle_percent: 10
+        ttl_ms: 60000
+    unlimited_throttle_limit: 100
+```
+
+`unlimited_throttle_limit` is required when a rule throttles callers whose
+configured limit is unlimited (`0`); it supplies the base limit before the
+percentage is applied. Throttling remains in the usage database. Run
+`router-migrate` before enabling this feature. Postgres replicas receive a
+dedicated NOTIFY signal and poll shared throttle rows every second as fallback;
+SQLite applies throttle state locally.
+
+An enforced `suspend` rule requires `server.config_source.mode: database` and
+uses the caller-containment path. Its canonical record is marked as
+containment-made by the detector, so the containment role or an administrator
+can resume it before its TTL. Shadow mode writes only proposed actions and does
+not affect admission. The router records detector ID, caller ID, action, and
+expiry metadata. It never copies token values or prompt text into containment
+state or events.
