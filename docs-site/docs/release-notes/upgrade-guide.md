@@ -155,14 +155,31 @@ available otherwise.
 Anthropic Messages requests routed through Bedrock Converse now forward the
 `thinking` request option for supported Claude models and retain signed
 `thinking` and `redacted_thinking` history through unary and streaming tool
-continuations. No router configuration change is required; callers opt in with
-their normal Anthropic `thinking` object. The router rejects missing thinking
-signatures and malformed redacted data before dispatch. Opaque signatures are
-returned in Anthropic continuation blocks for provider validation, are excluded
-from usage rows and request logs, and are not returned in OpenAI Chat responses.
-Bedrock still validates signature authenticity, and opaque signatures may be
-scoped to a provider account. Keep reasoning history on the same Bedrock target
-and account; cross-provider and cross-account replay is unsupported.
+continuations. Keep the complete continuation on the same supported Bedrock
+Claude target and account; cross-provider or cross-account signature replay is
+not supported. Signatures are preserved and returned in Anthropic continuation
+blocks for provider validation, are excluded from usage rows and request logs,
+and are not returned in OpenAI Chat responses. Bedrock validates signature
+authenticity, and opaque signatures may be scoped to a provider account.
+
+## v5.0.0 hierarchy governance
+
+Hierarchy governance is opt-in. Existing configurations without
+`server.hierarchy` retain their current behavior. Configure a parent with a
+child-to-caller mapping and configure the child with the parent's HTTPS URL, a
+machine credential source, and a bounded policy cache TTL. The parent fetch
+endpoint is authenticated and versioned. Child policies may narrow inherited
+model-group, tool and PII permissions, never widen them. Organization request
+and token budgets are shared across the parent and its mapped child callers;
+child-local quotas continue to apply separately.
+
+Hierarchy audit rows add organization and team IDs to the existing trace/span
+join fields. Reports can filter by those IDs and include hop-level details.
+The default hierarchy cache is process-local, so use one parent replica unless
+shared quota storage has been separately validated. On parent outage, the child
+serves the last validated policy only until its TTL expires, then returns HTTP
+503 before inference. Restore parent reachability or correct the child's
+credential/URL to recover; no manual cache reset is needed.
 
 ## v5.0.0 secret DLP
 
