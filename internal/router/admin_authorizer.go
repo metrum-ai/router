@@ -104,6 +104,9 @@ func (s *Service) Authorize(ctx context.Context, principal Principal, domain, ob
 	if strings.HasPrefix(principal.Subject, internalAuthorizationSubjectPrefix) || strings.TrimSpace(principal.Subject) == "" || principal.Subject == securityAdministratorRole {
 		return ErrAdminForbidden
 	}
+	if principal.Subject == authzRoleContainment && (object != authzObjectAdminContainment || action != authzActionContain) {
+		return ErrAdminForbidden
+	}
 	internalObject := strings.HasPrefix(object, internalAuthorizationSubjectPrefix)
 	guardQuery := internalObject && ctx.Value(authorizationGuardKey{}) == true
 	if guardQuery && object != securityAdministratorCapability {
