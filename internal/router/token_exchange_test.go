@@ -17,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -659,15 +660,144 @@ func TestTokenExchangeHTTPPositiveAndNegativePaths(t *testing.T) {
 	}
 }
 
+func TestMissionTokenSurvivesExpiryDuringRealHandlerStream(t *testing.T) {
+	var upstreamCalls atomic.Int64
+	started := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
+	defer unblock()
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if upstreamCalls.Add(1) == 1 {
+			close(started)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Error("upstream response writer does not flush")
+			return
+		}
+		fmt.Fprint(w, "data: {\"id\":\"mission-expiry\",\"model\":\"up\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"started\"},\"finish_reason\":null}]}\n\n")
+		flusher.Flush()
+		select {
+		case <-release:
+		case <-r.Context().Done():
+			return
+		}
+		fmt.Fprint(w, "data: {\"id\":\"mission-expiry\",\"model\":\"up\",\"choices\":[],\"usage\":{\"prompt_tokens\":4,\"completion_tokens\":2,\"total_tokens\":6}}\n\n")
+		fmt.Fprint(w, "data: [DONE]\n\n")
+		flusher.Flush()
+	}))
+	defer upstream.Close()
+	var honorsMaxTokens = true
+	target := Target{
+		Provider: "native", Model: "up", ContextTokens: 4096,
+		InputPricePerMillionUSD: 10, OutputPricePerMillionUSD: 10, HonorsMaxTokens: &honorsMaxTokens,
+		RequestShapeSupport: RequestShapeSupport{SupportedInboundDialects: []string{"openai-chat"}, ValidationStatus: "passed", MaxEstimatedInputTokens: 100, MinRequestedOutputTokens: 1, MaxRequestedOutputTokens: 100},
+		InputModalities:     []string{"text"}, OutputModalities: []string{"text"},
+	}
+	svc := nativeStreamTestService(t, upstream.URL, "openai-chat", []Target{target})
+	caller, _ := svc.callerAuth.lookup(testToken)
+	if caller == nil {
+		t.Fatal("test caller unavailable")
+	}
+	issuer, subjectKey := runtimeJWTIssuerFixture(t, caller.cfg.ID, "federated")
+	grant := TokenExchangeSubjectGrant{Claim: "sub", Value: "automation", CallerID: caller.cfg.ID, HumanOwner: "owner-team", AllowedGroups: []string{"native-stream"}, MaxSpendUSD: .00011, MaxTokens: 100}
+	rt := &tokenExchangeRuntime{key: []byte(strings.Repeat("k", 32)), ttl: 2 * time.Second, issuers: map[string]*tokenExchangeIssuer{issuer.cfg.Issuer: {auth: issuer, taskClaim: "task_id", grants: map[string]tokenExchangeGrant{"sub\x00automation": {config: grant}}}}, callers: map[string]*callerRuntime{caller.cfg.ID: caller}, budgets: make(map[string]*missionBudget)}
+	svc.tokenExchange = rt
+	subjectClaims := runtimeJWTClaims(issuer.cfg.Issuer)
+	subjectClaims["task_id"] = "stream-expiry-task"
+	subject := machineSignedJWTType(t, subjectKey, "known", jose.ES256, "JWT", subjectClaims)
+	missionToken, _, err := rt.exchange(context.Background(), subject, []string{"native-stream"}, "stream-expiry-task")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, mission, err := rt.verifyAccessToken(missionToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewServer(svc.Handler())
+	defer server.Close()
+	request := func(token string) *http.Response {
+		req, err := http.NewRequest(http.MethodPost, server.URL+"/v1/chat/completions", strings.NewReader(`{"model":"native-stream","stream":true,"stream_options":{"include_usage":true},"max_tokens":6,"messages":[{"role":"user","content":"hello"}]}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := server.Client().Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return resp
+	}
+	first := request(missionToken)
+	if first.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(first.Body)
+		first.Body.Close()
+		t.Fatalf("stream request status=%d body=%s", first.StatusCode, body)
+	}
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		first.Body.Close()
+		t.Fatal("stream did not reach upstream")
+	}
+	if wait := time.Until(mission.Expiry.Time().Add(100 * time.Millisecond)); wait > 0 {
+		time.Sleep(wait)
+	}
+	if _, _, _, err := rt.verifyAccessToken(missionToken); err == nil {
+		first.Body.Close()
+		t.Fatal("mission token did not expire while the upstream stream was held")
+	}
+	unblock()
+	streamBody, err := io.ReadAll(first.Body)
+	first.Body.Close()
+	if err != nil {
+		t.Fatalf("read completed stream after token expiry: %v", err)
+	}
+	if !strings.Contains(string(streamBody), `"total_tokens":6`) || !strings.Contains(string(streamBody), "[DONE]") {
+		t.Fatalf("stream did not deliver final usage and completion after expiry: %s", streamBody)
+	}
+
+	rt.budgetMu.Lock()
+	budget := rt.budgets[mission.GrantID]
+	if budget == nil {
+		rt.budgetMu.Unlock()
+		t.Fatal("stream finish did not create the grant budget")
+	}
+	usedTokens, usedSpend := budget.usedTokens, budget.usedSpend
+	reservedTokens, reservedSpend := budget.reservedTokens, budget.reservedSpend
+	rt.budgetMu.Unlock()
+	if usedTokens != 6 || usedSpend <= 0 || usedSpend >= grant.MaxSpendUSD || reservedTokens != 0 || reservedSpend != 0 {
+		t.Fatalf("late stream settlement tokens=%d spend=%g reserved=(%d,%g)", usedTokens, usedSpend, reservedTokens, reservedSpend)
+	}
+
+	refreshedToken, _, err := rt.exchange(context.Background(), subject, []string{"native-stream"}, "stream-expiry-task")
+	if err != nil {
+		t.Fatalf("re-exchange after streamed settlement failed: %v", err)
+	}
+	refreshed := request(refreshedToken)
+	defer refreshed.Body.Close()
+	if refreshed.StatusCode != http.StatusForbidden {
+		body, _ := io.ReadAll(refreshed.Body)
+		t.Fatalf("re-exchanged token bypassed settled spend cap: status=%d body=%s", refreshed.StatusCode, body)
+	}
+	if got := upstreamCalls.Load(); got != 1 {
+		t.Fatalf("upstream calls=%d after rejected re-exchange request, want 1", got)
+	}
+}
+
 func TestTokenExchangeHTTPAllowsNoTaskSource(t *testing.T) {
 	svc, key, issuer := configuredTokenExchangeHTTPFixture(t)
 	config := svc.cfg.Security.TokenExchange.Issuers[0]
 	config.TaskClaim = ""
-	config.Subjects = []TokenExchangeSubjectGrant{{Claim: "sub", Value: "automation", CallerID: "caller-a", HumanOwner: "team-ml", AllowedGroups: []string{"small"}, MaxSpendUSD: .25, MaxTokens: 100}}
+	config.Subjects = []TokenExchangeSubjectGrant{
+		{Claim: "sub", Value: "system:serviceaccount:jobs:worker", CallerID: "caller-a", HumanOwner: "team-ml", AllowedGroups: []string{"small"}, MaxSpendUSD: .25, MaxTokens: 100},
+		{Claim: "sub", Value: "spiffe://example.org/ns/default/sa/worker", CallerID: "caller-a", HumanOwner: "team-ml", AllowedGroups: []string{"small"}, MaxSpendUSD: .25, MaxTokens: 100},
+	}
 	svc.tokenExchange.installIssuerConfig(TokenExchangeConfig{Enabled: true, Issuers: []TokenExchangeIssuerConfig{config}})
-	claims := map[string]any{"iss": issuer, "aud": "router-exchange", "sub": "automation", "iat": time.Now().Unix() - 1, "exp": time.Now().Unix() + 60}
-	subject := machineSignedJWTType(t, key, "configured-kid", jose.ES256, "JWT", claims)
-	post := func(task string) *httptest.ResponseRecorder {
+	post := func(subject, task string) *httptest.ResponseRecorder {
 		form := url.Values{"grant_type": {tokenExchangeGrantType}, "subject_token": {subject}, "subject_token_type": {jwtSubjectTokenType}, "scope": {"small"}}
 		if task != "" {
 			form.Set("task_id", task)
@@ -678,22 +808,38 @@ func TestTokenExchangeHTTPAllowsNoTaskSource(t *testing.T) {
 		svc.Handler().ServeHTTP(w, r)
 		return w
 	}
-	issued := post("")
-	if issued.Code != http.StatusOK {
-		t.Fatalf("subject without task claim status=%d body=%s", issued.Code, issued.Body.String())
-	}
-	var result struct {
-		AccessToken string `json:"access_token"`
-	}
-	if err := json.Unmarshal(issued.Body.Bytes(), &result); err != nil {
-		t.Fatal(err)
-	}
-	_, _, mission, err := svc.tokenExchange.verifyAccessToken(result.AccessToken)
-	if err != nil || mission.TaskID != "" {
-		t.Fatalf("taskless mission token claims=%+v err=%v", mission, err)
-	}
-	if denied := post("invented-task"); denied.Code != http.StatusUnauthorized {
-		t.Fatalf("form task created attribution without a configured source: status=%d body=%s", denied.Code, denied.Body.String())
+	for _, tc := range []struct{ name, subject, typ string }{
+		{"kubernetes-service-account", "system:serviceaccount:jobs:worker", "JWT"},
+		{"spiffe-jwt-svid", "spiffe://example.org/ns/default/sa/worker", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			claims := map[string]any{"iss": issuer, "aud": []string{"router-exchange"}, "sub": tc.subject, "iat": time.Now().Unix() - 1, "exp": time.Now().Unix() + 60}
+			if tc.name == "kubernetes-service-account" {
+				claims["kubernetes.io"] = map[string]any{
+					"namespace":      "jobs",
+					"serviceaccount": map[string]any{"name": "worker", "uid": "fixture-sa-uid"},
+					"pod":            map[string]any{"name": "worker-7d9f", "uid": "fixture-pod-uid"},
+				}
+			}
+			subject := machineSignedJWTType(t, key, "configured-kid", jose.ES256, tc.typ, claims)
+			issued := post(subject, "")
+			if issued.Code != http.StatusOK {
+				t.Fatalf("taskless realistic subject status=%d body=%s", issued.Code, issued.Body.String())
+			}
+			var result struct {
+				AccessToken string `json:"access_token"`
+			}
+			if err := json.Unmarshal(issued.Body.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			_, _, mission, err := svc.tokenExchange.verifyAccessToken(result.AccessToken)
+			if err != nil || mission.TaskID != "" {
+				t.Fatalf("taskless realistic mission claims=%+v err=%v", mission, err)
+			}
+			if denied := post(subject, "invented-task"); denied.Code != http.StatusUnauthorized {
+				t.Fatalf("form task created attribution without a configured source: status=%d body=%s", denied.Code, denied.Body.String())
+			}
+		})
 	}
 }
 
