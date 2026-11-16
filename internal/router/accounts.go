@@ -5,6 +5,7 @@ package router
 
 import (
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -109,6 +110,28 @@ func (c *Config) validateAccounts() (accountDirectory, error) {
 		}
 		project.ID = id
 		project.Status = status
+		budget := project.Budget
+		if budget.DailyUSD < 0 || budget.MonthlyUSD < 0 || math.IsNaN(budget.DailyUSD) || math.IsInf(budget.DailyUSD, 0) || math.IsNaN(budget.MonthlyUSD) || math.IsInf(budget.MonthlyUSD, 0) {
+			return dir, fmt.Errorf("project %s has invalid budget ceiling", id)
+		}
+		seenThreshold := map[int]bool{}
+		for _, threshold := range budget.AlertThresholds {
+			if threshold < 1 || threshold > 100 || seenThreshold[threshold] {
+				return dir, fmt.Errorf("project %s has invalid or duplicate budget alert threshold %d", id, threshold)
+			}
+			seenThreshold[threshold] = true
+		}
+		seenEnvironment := map[string]bool{}
+		for _, environment := range project.Environments {
+			environmentID := normalizeAccountID(environment.ID)
+			if environmentID == "" || seenEnvironment[environmentID] {
+				return dir, fmt.Errorf("project %s has missing or duplicate environment id %q", id, environment.ID)
+			}
+			if !validAccountStatus(normalizeStatusDefault(environment.Status)) {
+				return dir, fmt.Errorf("project %s environment %s has invalid status %q", id, environmentID, environment.Status)
+			}
+			seenEnvironment[environmentID] = true
+		}
 		dir.projects[id] = project
 		seenProjectRaw[id] = project.ID
 	}
@@ -131,13 +154,21 @@ func (c *Config) validateAccounts() (accountDirectory, error) {
 			return dir, fmt.Errorf("project membership %s/%s has invalid status %q", userID, projectID, membership.Status)
 		}
 		role := normalizeRoleDefault(membership.Role)
-		key := membershipKey(userID, projectID)
-		raw := strings.TrimSpace(membership.UserID) + "/" + strings.TrimSpace(membership.Project)
+		environment := normalizeAccountID(membership.Environment)
+		if environment != "" {
+			project := dir.projects[projectID]
+			if len(project.Environments) == 0 || !projectHasEnvironment(project, environment) {
+				return dir, fmt.Errorf("project membership references unknown environment %s/%s", projectID, environment)
+			}
+		}
+		key := membershipKey(userID, projectID, environment)
+		raw := strings.TrimSpace(membership.UserID) + "/" + strings.TrimSpace(membership.Project) + "/" + strings.TrimSpace(membership.Environment)
 		if previous, ok := seenMembershipRaw[key]; ok {
 			return dir, fmt.Errorf("duplicate project membership %q conflicts with %q after normalization", raw, previous)
 		}
 		membership.UserID = userID
 		membership.Project = projectID
+		membership.Environment = environment
 		membership.Status = status
 		membership.Role = role
 		dir.memberships[key] = membership
@@ -181,7 +212,10 @@ func (c *Config) validateAccounts() (accountDirectory, error) {
 		if projectCfg.Status != accountStatusActive {
 			return dir, fmt.Errorf("caller %s references non-active project %s", caller.ID, project)
 		}
-		membership, ok := dir.memberships[membershipKey(owner, project)]
+		if len(projectCfg.Environments) > 0 && !projectHasEnvironment(projectCfg, normalizeAccountID(caller.Environment)) {
+			return dir, fmt.Errorf("caller %s references unknown environment %s/%s", caller.ID, project, caller.Environment)
+		}
+		membership, ok := accountMembership(dir, owner, project, normalizeAccountID(caller.Environment))
 		if !ok {
 			return dir, fmt.Errorf("caller %s has no active membership for owner_user %s in project %s", caller.ID, owner, project)
 		}
@@ -199,7 +233,7 @@ func addSyntheticAccount(dir accountDirectory, owner, project string) {
 	if _, ok := dir.projects[project]; !ok {
 		dir.projects[project] = ProjectConfig{ID: project, Status: accountStatusActive}
 	}
-	key := membershipKey(owner, project)
+	key := membershipKey(owner, project, "")
 	if _, ok := dir.memberships[key]; !ok {
 		dir.memberships[key] = ProjectMembershipConfig{UserID: owner, Project: project, Role: "member", Status: accountStatusActive}
 	}
@@ -267,6 +301,27 @@ func normalizeRoleDefault(v string) string {
 	return v
 }
 
-func membershipKey(userID, project string) string {
-	return userID + "\x00" + project
+func membershipKey(userID, project string, environment ...string) string {
+	env := ""
+	if len(environment) > 0 {
+		env = environment[0]
+	}
+	return userID + "\x00" + project + "\x00" + env
+}
+
+func projectHasEnvironment(project ProjectConfig, environment string) bool {
+	for _, candidate := range project.Environments {
+		if normalizeAccountID(candidate.ID) == environment && normalizeStatusDefault(candidate.Status) == accountStatusActive {
+			return true
+		}
+	}
+	return false
+}
+
+func accountMembership(dir accountDirectory, userID, project, environment string) (ProjectMembershipConfig, bool) {
+	if membership, ok := dir.memberships[membershipKey(userID, project, environment)]; ok {
+		return membership, true
+	}
+	membership, ok := dir.memberships[membershipKey(userID, project, "")]
+	return membership, ok
 }

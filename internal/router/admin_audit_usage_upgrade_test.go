@@ -86,6 +86,9 @@ func loadV471UsageDatabase(t *testing.T, db *gorm.DB) {
 	if v480Pending != 3 {
 		t.Fatalf("expected exactly the three v4.8.0 usage migrations pending, got %d", v480Pending)
 	}
+	if !pending[automaticContainmentMigrationID] {
+		t.Fatalf("expected automatic-containment migration %d to remain pending", automaticContainmentMigrationID)
+	}
 	if !pending[toolRoutingUsageMigrationID] {
 		t.Fatalf("expected v5.0.0 tool usage migration %d to remain pending", toolRoutingUsageMigrationID)
 	}

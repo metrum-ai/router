@@ -33,7 +33,7 @@ func runCFOReport(args []string, out io.Writer) error {
 	fs.SetOutput(io.Discard)
 	routerURL := fs.String("router-url", "", "router URL or ROUTER_URL")
 	keyFile := fs.String("admin-key-file", "", "admin credential file")
-	prefix := fs.String("reports-prefix", "/admin/reports", "admin reports path prefix")
+	prefix := fs.String("reports-prefix", "/admin/v1/reports", "admin reports path prefix")
 	format := fs.String("format", "json", "json, csv or markdown")
 	since := fs.String("since", "", "relative period, for example 24h")
 	from := fs.String("from", "", "inclusive RFC3339 start")
@@ -46,10 +46,10 @@ func runCFOReport(args []string, out io.Writer) error {
 		return errors.New("unexpected reports cfo arguments")
 	}
 	p := strings.TrimSpace(*prefix)
-	if path.Clean(p) != p || (p != "/admin/reports" && !strings.HasPrefix(p, "/admin/reports/")) || strings.ContainsAny(p, "?#%\\") {
+	if path.Clean(p) != p || (p != "/admin/v1/reports" && !strings.HasPrefix(p, "/admin/v1/reports/")) || strings.ContainsAny(p, "?#%\\") {
 		return errors.New("invalid reports prefix")
 	}
-	endpoint := "/api/cfo"
+	endpoint := "/cfo"
 	switch *format {
 	case "json":
 	case "csv":

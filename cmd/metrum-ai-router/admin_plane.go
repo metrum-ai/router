@@ -12,8 +12,8 @@ import (
 )
 
 // startAdminPlane builds and starts the admin control-plane listener (#809).
-// It returns (nil, nil) when the plane is disabled, which keeps v4.7
-// configurations unchanged: no second listener and no new failure mode.
+// It returns (nil, nil) when the plane is explicitly disabled. Configurations
+// that omit the admin block start the loopback listener by default.
 func startAdminPlane(cfg *router.Config, svc *router.Service, listenOverride string) (*router.AdminPlane, error) {
 	if cfg == nil || !cfg.Admin.Enabled {
 		return nil, nil
@@ -40,10 +40,6 @@ func startAdminPlane(cfg *router.Config, svc *router.Service, listenOverride str
 		return nil, err
 	}
 	log.Printf("Metrum AI Router admin plane listening on %s", plane.Addr())
-	if cfg.Admin.LegacyRoutesOnServingPort == nil || *cfg.Admin.LegacyRoutesOnServingPort {
-		log.Printf("WARNING: legacy /admin/* machine routes are still served on the serving port; they are deprecated in favour of /admin/v1 (Sunset %s). Set admin.legacy_routes_on_serving_port: false to remove them.",
-			strings.TrimSpace(cfg.Admin.LegacySunset))
-	}
 	go func() {
 		if serveErr, ok := <-plane.Err(); ok && serveErr != nil {
 			// An admin accept-loop failure must never stop inference (ACP-006).

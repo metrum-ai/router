@@ -131,7 +131,7 @@ def collect(args, env, selected):
                'validation_from': boundaries[1], 'test_from': boundaries[2], 'to': boundaries[3],
                'success_only': True, 'min_quality': 1, 'teacher_terms_decision': full.collect.DECISION, 'task_source': source}
     full.private_json(args.out/'export-request.json', filters)
-    _, _, raw = full.collect.request(base, '/admin/training/export', filters)
+    _, _, raw = full.collect.request('http://127.0.0.1:18412', '/admin/v1/training/export', filters, env['TRACE_ADMIN_KEY'])
     manifest = full.collect.validate_archive(raw); dataset = args.out/'dataset'; dataset.mkdir(mode=0o700)
     with zipfile.ZipFile(io.BytesIO(raw)) as archive:
         for name in ('manifest.json', 'train.jsonl', 'val.jsonl', 'test.jsonl'):

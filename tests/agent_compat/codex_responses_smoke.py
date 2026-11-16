@@ -128,6 +128,7 @@ def main():
   cache: {{enabled: false}}
   usage_db: {{enabled: false}}
   logging: {{path: "{work / f'router-{index}.jsonl'}"}}
+admin: {{enabled: false}}
 state_path: "{work / f'state-{index}.json'}"
 providers:
   mock: {{base_url: "http://127.0.0.1:{upstream_port}/v1", dialect: openai-responses, api_key: "${{AGENT_COMPAT_NEXT_TOKEN}}", api_key_env: AGENT_COMPAT_NEXT_TOKEN}}

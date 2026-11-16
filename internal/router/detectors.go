@@ -195,6 +195,7 @@ func (s *Service) handleDetectorResult(result detect.Result) {
 		if consumer != nil {
 			consumer(result)
 		}
+		s.applyAutomaticContainmentResult(result)
 		return
 	}
 	for _, signal := range result.Signals {
@@ -214,11 +215,12 @@ func (s *Service) handleDetectorResult(result detect.Result) {
 	if consumer != nil {
 		consumer(result)
 	}
+	s.applyAutomaticContainmentResult(result)
 }
 
-// SetDetectorResultConsumer is the handoff point for asynchronous enforce
-// consumers such as automatic containment. Enforce results are marked by both
-// Result.Enforce and Result.FailClosed; callers must never infer them from text.
+// SetDetectorResultConsumer installs an optional asynchronous result observer.
+// Automatic containment consumes the same results independently. Enforce results
+// are marked by Result.Enforce and Result.FailClosed, not inferred from text.
 func (s *Service) SetDetectorResultConsumer(consumer func(detect.Result)) {
 	if s != nil {
 		s.detectorMu.Lock()

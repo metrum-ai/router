@@ -65,7 +65,7 @@ func TestToolRoutingUsageSchema17UpgradeDownAndRoundTrip(t *testing.T) {
 	}
 	clearToolRoutingUsageLedger(t, store.db)
 	if err := verifyPolicyRuntimeMigration(store.db); err != nil {
-		t.Fatalf("schema 15 postcondition: %v", err)
+		t.Fatalf("schema 16 postcondition: %v", err)
 	}
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
@@ -77,7 +77,7 @@ func TestToolRoutingUsageSchema17UpgradeDownAndRoundTrip(t *testing.T) {
 	}
 	defer closeDB()
 	before, err := runner.Status()
-	if err != nil || before.SchemaVersion != 15 {
+	if err != nil || before.SchemaVersion != 16 {
 		t.Fatalf("before upgrade=%+v err=%v", before, err)
 	}
 	if err := runner.ApplyPending("tool-routing-usage-test"); err != nil {
@@ -113,25 +113,25 @@ func TestToolRoutingUsageSchema17UpgradeDownAndRoundTrip(t *testing.T) {
 	if err != nil || roundTrip.ToolCallCount != 3 || roundTrip.ToolFirstFailureClass != toolFailureMissingRequired || roundTrip.ToolRetries != 1 || roundTrip.ToolEscalations != 1 || roundTrip.ToolReliabilityBucket != "valid" || roundTrip.ToolReliabilitySource != "live" {
 		t.Fatalf("roundTrip=%+v err=%v", roundTrip, err)
 	}
-	old, err := NewMigrationRunnerWithDataJobs(runner.db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 15, MinData: 0, MaxData: 1}, usageMigrationDefinitions[:len(usageMigrationDefinitions)-1], usageDataJobDefinitions)
+	old, err := NewMigrationRunnerWithDataJobs(runner.db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 16, MinData: 0, MaxData: 1}, usageMigrationDefinitions[:len(usageMigrationDefinitions)-1], usageDataJobDefinitions)
 	if err != nil {
 		t.Fatal(err)
 	}
 	oldStatus, err := old.Status()
 	if err != nil || oldStatus.Compatible || oldStatus.State != "incompatible" {
-		t.Fatalf("schema 15 binary should reject schema 17: %+v err=%v", oldStatus, err)
+		t.Fatalf("schema 16 binary should reject schema 17: %+v err=%v", oldStatus, err)
 	}
 	if err := revertToolRoutingUsageMigration(runner.db); err != nil {
 		t.Fatal(err)
 	}
 	clearToolRoutingUsageLedger(t, runner.db)
 	status, err = runner.Status()
-	if err != nil || status.SchemaVersion != 15 || !status.Compatible {
+	if err != nil || status.SchemaVersion != 16 || !status.Compatible {
 		t.Fatalf("down status=%+v err=%v", status, err)
 	}
 	oldStatus, err = old.Status()
-	if err != nil || !oldStatus.Compatible || oldStatus.SchemaVersion != 15 {
-		t.Fatalf("schema 15 binary should accept reversed schema: %+v err=%v", oldStatus, err)
+	if err != nil || !oldStatus.Compatible || oldStatus.SchemaVersion != 16 {
+		t.Fatalf("schema 16 binary should accept reversed schema: %+v err=%v", oldStatus, err)
 	}
 	for _, field := range []string{"ToolCallCount", "ToolFirstFailureClass", "ToolRetries", "ToolEscalations", "ToolReliabilityBucket", "ToolReliabilitySource"} {
 		if runner.db.Migrator().HasColumn(&usageRecord{}, field) {

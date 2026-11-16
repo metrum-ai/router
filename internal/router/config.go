@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -35,11 +36,11 @@ func (c EligibilityConfig) implicitEnabled() bool {
 }
 
 type Config struct {
-	Eligibility EligibilityConfig `yaml:"eligibility"`
-	Server      ServerConfig      `yaml:"server"`
-	// Admin is the control plane's own listener (#809). An absent or disabled
-	// block keeps the v4.7 surface: no second listener, legacy /admin/* and
-	// /metrics on the serving port.
+	Eligibility EligibilityConfig    `yaml:"eligibility"`
+	Security    RouterSecurityConfig `yaml:"security" json:"security,omitempty"`
+	Server      ServerConfig         `yaml:"server"`
+	// Admin is the control plane's own listener (#809). File configuration
+	// enables it by default; explicit false keeps one listener.
 	Admin              AdminPlaneConfig          `yaml:"admin" json:"admin"`
 	Users              []UserConfig              `yaml:"users"`
 	Projects           []ProjectConfig           `yaml:"projects"`
@@ -53,6 +54,15 @@ type Config struct {
 	// config (${NAME} references and env.json keys) so later errors can be
 	// redacted by name. See secret_redaction.go.
 	secretEnvRefs []string
+}
+
+type RouterSecurityConfig struct {
+	KeyHygiene KeyHygieneConfig `yaml:"key_hygiene" json:"keyHygiene,omitempty"`
+}
+
+type KeyHygieneConfig struct {
+	MinEntropyBits int  `yaml:"min_entropy_bits" json:"minEntropyBits,omitempty"`
+	Enforce        bool `yaml:"enforce" json:"enforce,omitempty"`
 }
 
 const defaultMaxSSELineBytes = 8 << 20
@@ -78,8 +88,9 @@ type ResponsesConfig struct {
 }
 
 type ServerConfig struct {
-	Detectors []DetectorConfig `yaml:"detectors,omitempty" json:"detectors,omitempty"`
-	Streaming StreamingConfig  `yaml:"streaming" json:"streaming"`
+	Detectors       []DetectorConfig      `yaml:"detectors,omitempty" json:"detectors,omitempty"`
+	AutoContainment AutoContainmentConfig `yaml:"auto_containment,omitempty" json:"auto_containment,omitempty"`
+	Streaming       StreamingConfig       `yaml:"streaming" json:"streaming"`
 	// HTTP server deadlines (#759). Zero selects the default. The write
 	// deadline is absolute, so it defaults above the upstream budget; event
 	// streams additionally get a progress deadline (StreamIdleTimeoutMS).
@@ -123,6 +134,24 @@ type ServerConfig struct {
 	// ResponsesAffinity enables owner-bound stored Responses affinity for
 	// explicitly listed model groups (#533). It is off by default.
 	ResponsesAffinity ResponsesAffinityConfig `yaml:"responses_affinity" json:"responsesAffinity,omitempty"`
+}
+
+// AutoContainmentConfig maps enforce-mode detector signals to bounded key actions.
+// It is off by default; shadow mode records proposed actions without changing admission.
+type AutoContainmentConfig struct {
+	Mode                   string                      `yaml:"mode" json:"mode,omitempty"`
+	MaxActionsPerMinute    int                         `yaml:"max_actions_per_minute" json:"maxActionsPerMinute,omitempty"`
+	UnlimitedThrottleLimit int                         `yaml:"unlimited_throttle_limit,omitempty" json:"unlimitedThrottleLimit,omitempty"`
+	ExemptCallers          []string                    `yaml:"exempt_callers,omitempty" json:"exemptCallers,omitempty"`
+	Rules                  []AutoContainmentRuleConfig `yaml:"rules,omitempty" json:"rules,omitempty"`
+}
+
+type AutoContainmentRuleConfig struct {
+	DetectorID      string `yaml:"detector_id" json:"detectorId"`
+	Severity        string `yaml:"severity" json:"severity"`
+	Action          string `yaml:"action" json:"action"`
+	TTLMS           int    `yaml:"ttl_ms" json:"ttlMs"`
+	ThrottlePercent int    `yaml:"throttle_percent,omitempty" json:"throttlePercent,omitempty"`
 }
 
 // ContainmentWebhookConfig enables signed SOAR/EDR containment requests.
@@ -1131,12 +1160,15 @@ type CallerConfig struct {
 	TokenHash string `yaml:"token_hash,omitempty" json:"token_hash,omitempty"`
 	// TokenSHA256 is the deprecated unsalted SHA-256 hex of the caller token.
 	// It is still accepted, with a startup warning; use TokenHash instead.
-	TokenSHA256    string               `yaml:"token_sha256,omitempty" json:"token_sha256,omitempty"`
-	TokenID        string               `yaml:"token_id" json:"token_id"`
-	Allow          []string             `yaml:"allow" json:"allow"`
-	MetricsAdmin   bool                 `yaml:"metrics_admin" json:"metrics_admin"`
-	ContentAdmin   bool                 `yaml:"content_admin" json:"content_admin"`
-	ContentCapture ContentCaptureConfig `yaml:"content_capture" json:"content_capture"`
+	TokenSHA256        string               `yaml:"token_sha256,omitempty" json:"token_sha256,omitempty"`
+	TokenID            string               `yaml:"token_id" json:"token_id"`
+	TokenFormatVersion int                  `yaml:"token_format_version,omitempty" json:"token_format_version,omitempty"`
+	TokenEntropyBits   int                  `yaml:"token_entropy_bits,omitempty" json:"token_entropy_bits,omitempty"`
+	RevokedTokenHash   string               `yaml:"revoked_token_hash,omitempty" json:"revoked_token_hash,omitempty"`
+	Allow              []string             `yaml:"allow" json:"allow"`
+	MetricsAdmin       bool                 `yaml:"metrics_admin" json:"metrics_admin"`
+	ContentAdmin       bool                 `yaml:"content_admin" json:"content_admin"`
+	ContentCapture     ContentCaptureConfig `yaml:"content_capture" json:"content_capture"`
 	// SpendCeiling is the caller's opt-in entitlement for semantic/dynamic_score escalation.
 	SpendCeiling SpendCeilingConfig  `yaml:"spend_ceiling" json:"spend_ceiling"`
 	Rate         RateConfig          `yaml:"rate" json:"rate"`
@@ -1156,6 +1188,21 @@ type UserConfig struct {
 }
 
 type ProjectConfig struct {
+	ID           string                     `yaml:"id" json:"id"`
+	Name         string                     `yaml:"name" json:"name"`
+	Status       string                     `yaml:"status" json:"status"`
+	Description  string                     `yaml:"description" json:"description"`
+	Environments []ProjectEnvironmentConfig `yaml:"environments,omitempty" json:"environments,omitempty"`
+	Budget       ProjectBudgetConfig        `yaml:"budget,omitempty" json:"budget,omitempty"`
+}
+
+type ProjectBudgetConfig struct {
+	DailyUSD        float64 `yaml:"daily_usd,omitempty" json:"daily_usd,omitempty"`
+	MonthlyUSD      float64 `yaml:"monthly_usd,omitempty" json:"monthly_usd,omitempty"`
+	AlertThresholds []int   `yaml:"alert_thresholds,omitempty" json:"alert_thresholds,omitempty"`
+}
+
+type ProjectEnvironmentConfig struct {
 	ID          string `yaml:"id" json:"id"`
 	Name        string `yaml:"name" json:"name"`
 	Status      string `yaml:"status" json:"status"`
@@ -1163,12 +1210,13 @@ type ProjectConfig struct {
 }
 
 type ProjectMembershipConfig struct {
-	UserID   string `yaml:"user_id" json:"user_id"`
-	Project  string `yaml:"project" json:"project"`
-	Role     string `yaml:"role" json:"role"`
-	Status   string `yaml:"status" json:"status"`
-	Source   string `yaml:"source" json:"source"`
-	JoinedAt string `yaml:"joined_at" json:"joined_at"`
+	UserID      string `yaml:"user_id" json:"user_id"`
+	Project     string `yaml:"project" json:"project"`
+	Environment string `yaml:"environment,omitempty" json:"environment,omitempty"`
+	Role        string `yaml:"role" json:"role"`
+	Status      string `yaml:"status" json:"status"`
+	Source      string `yaml:"source" json:"source"`
+	JoinedAt    string `yaml:"joined_at" json:"joined_at"`
 }
 
 type RateConfig struct {
@@ -1265,10 +1313,54 @@ func loadConfigFile(path string, redactor *secretRedactor) (*Config, error) {
 	if err := yaml.Unmarshal(cleaned, &cfg); err != nil {
 		return nil, err
 	}
+	if err := applyV5AdminConfig(cleaned, &cfg); err != nil {
+		return nil, err
+	}
 	cfg.setDefaults()
 	cfg.baseDir = filepath.Dir(path)
 	cfg.secretEnvRefs = envRefs
 	return &cfg, cfg.Validate()
+}
+
+func applyV5AdminConfig(raw []byte, cfg *Config) error {
+	adminEnabledSet, err := validateV5AdminConfig(raw)
+	if err != nil {
+		return err
+	}
+	if cfg != nil {
+		cfg.Admin.enabledSet = adminEnabledSet
+	}
+	return nil
+}
+
+// validateV5AdminConfig rejects removed v4.8 admin settings and reports
+// whether admin.enabled was explicitly set. Omission enables the listener.
+func validateV5AdminConfig(raw []byte) (bool, error) {
+	var root yaml.Node
+	if err := yaml.Unmarshal(raw, &root); err != nil {
+		return false, err
+	}
+	if root.Kind != yaml.DocumentNode || len(root.Content) == 0 || root.Content[0].Kind != yaml.MappingNode {
+		return false, nil
+	}
+	for i := 0; i+1 < len(root.Content[0].Content); i += 2 {
+		if root.Content[0].Content[i].Value != "admin" || root.Content[0].Content[i+1].Kind != yaml.MappingNode {
+			continue
+		}
+		admin := root.Content[0].Content[i+1]
+		enabledSet := false
+		for j := 0; j+1 < len(admin.Content); j += 2 {
+			key := admin.Content[j].Value
+			switch key {
+			case "enabled":
+				enabledSet = true
+			case "legacy_routes_on_serving_port", "legacy_sunset":
+				return false, fmt.Errorf("config key admin.%s was removed in v5.0.0; remove it from file configuration, or run `metrum-ai-router-migrate --scope router-config --action apply` followed by `metrum-ai-router-migrate --scope router-config --action maintenance --backup-evidence-ref <backup-reference>` for stored configurations; use /admin/v1 on the admin listener", key)
+			}
+		}
+		return enabledSet, nil
+	}
+	return false, nil
 }
 
 func validateRemovedScriptConfig(raw []byte) error {
@@ -1509,6 +1601,9 @@ func (c *Config) attemptChainBudgetMS() int {
 }
 
 func (c *Config) setDefaults() {
+	if !c.Admin.enabledSet {
+		c.Admin.Enabled = true
+	}
 	defaultAdminPlaneConfig(&c.Admin)
 	for i := range c.Server.Detectors {
 		detector := &c.Server.Detectors[i]
@@ -1700,10 +1795,15 @@ func (c *Config) setDefaults() {
 	for i := range c.Projects {
 		c.Projects[i].ID = normalizeAccountID(c.Projects[i].ID)
 		c.Projects[i].Status = normalizeStatusDefault(c.Projects[i].Status)
+		for j := range c.Projects[i].Environments {
+			c.Projects[i].Environments[j].ID = normalizeAccountID(c.Projects[i].Environments[j].ID)
+			c.Projects[i].Environments[j].Status = normalizeStatusDefault(c.Projects[i].Environments[j].Status)
+		}
 	}
 	for i := range c.ProjectMemberships {
 		c.ProjectMemberships[i].UserID = normalizeAccountID(c.ProjectMemberships[i].UserID)
 		c.ProjectMemberships[i].Project = normalizeAccountID(c.ProjectMemberships[i].Project)
+		c.ProjectMemberships[i].Environment = normalizeAccountID(c.ProjectMemberships[i].Environment)
 		c.ProjectMemberships[i].Status = normalizeStatusDefault(c.ProjectMemberships[i].Status)
 		c.ProjectMemberships[i].Role = normalizeRoleDefault(c.ProjectMemberships[i].Role)
 	}
@@ -1762,6 +1862,24 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 	if err := validateDetectorConfigs(c.Server.Detectors); err != nil {
 		return err
 	}
+	if err := validateAutoContainment(c.Server.AutoContainment); err != nil {
+		return err
+	}
+	if c.Server.AutoContainment.Mode == "enforce" && c.Server.ConfigSource.Mode != "database" {
+		for _, rule := range c.Server.AutoContainment.Rules {
+			if rule.Action == "suspend" {
+				return errors.New("server.auto_containment suspend rules require server.config_source.mode database so containment can be resumed")
+			}
+		}
+	}
+	if c.Security.KeyHygiene.MinEntropyBits < 0 || c.Security.KeyHygiene.MinEntropyBits > 256 {
+		return fmt.Errorf("security.key_hygiene.min_entropy_bits must be 0 (default) or between 1 and 256")
+	}
+	entropyFloor := c.Security.KeyHygiene.MinEntropyBits
+	if entropyFloor == 0 {
+		entropyFloor = 128
+	}
+
 	if n := c.Server.Streaming.MaxSSELineBytes; n != 0 && (n < minMaxSSELineBytes || n > maxMaxSSELineBytes) {
 		return fmt.Errorf("server.streaming.max_sse_line_bytes must be between %d and %d (zero selects %d)", minMaxSSELineBytes, maxMaxSSELineBytes, defaultMaxSSELineBytes)
 	}
@@ -2203,6 +2321,32 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 			return fmt.Errorf("duplicate caller id %q for callers %s and %s", caller.ID, previousCallerID, caller.ID)
 		}
 		callerIDs[caller.ID] = caller.ID
+		entropyBits := caller.TokenEntropyBits
+		if caller.TokenFormatVersion != 0 && caller.TokenFormatVersion != 2 {
+			return fmt.Errorf("caller %s token_format_version must be 2 when set", caller.ID)
+		}
+		if entropyBits < 0 || entropyBits > 256 {
+			return fmt.Errorf("caller %s token_entropy_bits must be between 1 and 256", caller.ID)
+		}
+		if caller.TokenFormatVersion == 2 && !strings.HasPrefix(caller.TokenID, tokenPrefixName+"_") {
+			return fmt.Errorf("caller %s token_format_version requires a structured token_id", caller.ID)
+		}
+		if entropyBits > 0 && caller.TokenFormatVersion != 2 {
+			return fmt.Errorf("caller %s token_entropy_bits requires token_format_version 2", caller.ID)
+		}
+		devKey := callerHasDevelopmentToken(caller)
+		if entropyBits < entropyFloor {
+			if c.Security.KeyHygiene.Enforce {
+				return fmt.Errorf("caller %s token entropy is below security.key_hygiene.min_entropy_bits", caller.ID)
+			}
+			log.Printf("WARNING: caller %q token entropy is unknown or below configured floor; rotate to a checksummed v2 token with at least %d bits", caller.ID, entropyFloor)
+		}
+		if devKey {
+			if c.Security.KeyHygiene.Enforce {
+				return fmt.Errorf("caller %s uses a development environment token", caller.ID)
+			}
+			log.Printf("WARNING: caller %q uses a development environment token", caller.ID)
+		}
 		if ownerUser == "" && (caller.Project != "" || caller.User != "" || caller.OwnerUser != "") {
 			return fmt.Errorf("caller %s has invalid owner_user", caller.ID)
 		}
@@ -2251,6 +2395,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 			}
 			callerTokenHashes[tokenHashKey] = caller.ID
 		}
+		if caller.RevokedTokenHash != "" && caller.RevokedTokenHash != caller.TokenHash && !strings.EqualFold(caller.RevokedTokenHash, caller.TokenSHA256) {
+			return fmt.Errorf("caller %s revoked_token_hash must match its stored token verifier", caller.ID)
+		}
 		if caller.TokenID != "" {
 			if previousCallerID, ok := callerTokenIDs[caller.TokenID]; ok {
 				return fmt.Errorf("duplicate caller token_id for callers %s and %s", previousCallerID, caller.ID)
@@ -2273,6 +2420,56 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		}
 		if err := validateSpendCeiling("caller "+caller.ID+" spend_ceiling", caller.SpendCeiling, knownTiers); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func validateAutoContainment(cfg AutoContainmentConfig) error {
+	if cfg.Mode != "" && cfg.Mode != "off" && cfg.Mode != "shadow" && cfg.Mode != "enforce" {
+		return errors.New("server.auto_containment.mode must be off, shadow, or enforce")
+	}
+	if cfg.MaxActionsPerMinute < 0 || cfg.MaxActionsPerMinute > 60 {
+		return errors.New("server.auto_containment.max_actions_per_minute must be between 1 and 60 when set")
+	}
+	if cfg.Mode != "" && cfg.Mode != "off" && (cfg.MaxActionsPerMinute == 0 || len(cfg.Rules) == 0) {
+		return errors.New("server.auto_containment requires max_actions_per_minute and rules when enabled")
+	}
+	if cfg.UnlimitedThrottleLimit < 0 || cfg.UnlimitedThrottleLimit > 1000000 {
+		return errors.New("server.auto_containment.unlimited_throttle_limit must be between 0 and 1000000")
+	}
+	if len(cfg.Rules) > 64 || len(cfg.ExemptCallers) > 256 {
+		return errors.New("server.auto_containment exceeds bounded rule or exemption limits")
+	}
+	seen := map[string]bool{}
+	for i, rule := range cfg.Rules {
+		if !safeDetectorID(rule.DetectorID) || (rule.Severity != "low" && rule.Severity != "medium" && rule.Severity != "high" && rule.Severity != "critical") {
+			return fmt.Errorf("server.auto_containment.rules[%d] has invalid detector_id or severity", i)
+		}
+		if rule.Action != "throttle" && rule.Action != "suspend" {
+			return fmt.Errorf("server.auto_containment.rules[%d].action must be throttle or suspend", i)
+		}
+		if rule.TTLMS < 1000 || rule.TTLMS > 24*60*60*1000 {
+			return fmt.Errorf("server.auto_containment.rules[%d].ttl_ms must be between 1000 and 86400000", i)
+		}
+		if rule.Action == "throttle" && (rule.ThrottlePercent < 1 || rule.ThrottlePercent > 100) {
+			return fmt.Errorf("server.auto_containment.rules[%d].throttle_percent must be between 1 and 100", i)
+		}
+		if rule.Action == "throttle" && cfg.UnlimitedThrottleLimit < 1 {
+			return errors.New("server.auto_containment.unlimited_throttle_limit is required for throttle rules")
+		}
+		if rule.Action == "suspend" && rule.ThrottlePercent != 0 {
+			return fmt.Errorf("server.auto_containment.rules[%d] suspend cannot set throttle_percent", i)
+		}
+		key := rule.DetectorID + ":" + rule.Severity
+		if seen[key] {
+			return fmt.Errorf("server.auto_containment has duplicate rule %s", key)
+		}
+		seen[key] = true
+	}
+	for _, caller := range cfg.ExemptCallers {
+		if !safeDetectorID(caller) {
+			return errors.New("server.auto_containment.exempt_callers contains invalid caller id")
 		}
 	}
 	return nil
@@ -3293,6 +3490,9 @@ func validateRetentionConfig(cfg RetentionConfig) error {
 		seen[dataClass] = true
 		if class.RetentionDays <= 0 {
 			return fmt.Errorf("%s retention_days must be positive", label)
+		}
+		if class.RetentionDays > 36500 {
+			return fmt.Errorf("%s retention_days must not exceed 36500", label)
 		}
 		if class.BatchSize <= 0 {
 			return fmt.Errorf("%s batch_size must be positive", label)

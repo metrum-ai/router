@@ -160,7 +160,7 @@ def episode(base,key,task,ledger):
            'backend':'acme-support-v1','seed':task['seed'],'expected_calls':task['expected_calls'],'expected_final':task['expected_final']}
     for attempt in range(120):
         try:
-            collect.request(base,'/admin/training/outcomes/'+ids[-1],label);captured=True;break
+            collect.request('http://127.0.0.1:18412','/admin/v1/training/outcomes/'+ids[-1],label,os.environ['TRACE_ADMIN_KEY']);captured=True;break
         except urllib.error.HTTPError as error:
             if error.code!=404: raise
             captured=False
@@ -202,7 +202,7 @@ def run(args,env,selected):
     filters={'project':'acme-support','group':'support-agent','from':boundaries[0],'validation_from':boundaries[1],'test_from':boundaries[2],'to':boundaries[3],
              'success_only':True,'min_quality':1,'teacher_terms_decision':collect.DECISION,'task_source':source}
     private_json(args.out/'export-request.json',filters)
-    _,_,raw=collect.request(base,'/admin/training/export',filters)
+    _,_,raw=collect.request('http://127.0.0.1:18412','/admin/v1/training/export',filters,os.environ['TRACE_ADMIN_KEY'])
     dataset=args.out/'dataset';dataset.mkdir(mode=0o700)
     (dataset/'dataset.zip').write_bytes(raw)
     manifest=collect.validate_archive(raw)
