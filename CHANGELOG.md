@@ -8,13 +8,14 @@
 
 - `router-migrate --json` keeps stdout valid JSON by directing GORM diagnostics
   to stderr.
-- Cap process-wide in-flight SSE line-buffer capacity and expose current usage and rejections in Prometheus metrics.
 - Drop target-declared unsupported `temperature` and `top_p` fields before dispatch; classify structured 400/422 sampling-parameter refusals for pre-commit fallback; and forward `top_p` when translating to OpenAI Chat Completions.
 
 All notable changes to Metrum AI Router are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+- Cap process-wide in-flight SSE line-buffer capacity and expose current usage and rejections in Prometheus metrics.
 
 ## [Unreleased]
 

@@ -7,10 +7,11 @@ doc_type: reference
 
 For v5.0.0, `metrum-ai-router-migrate --json` writes one JSON document to stdout. Database diagnostics are sent to stderr.
 
-Streaming now caps total in-flight SSE line-buffer capacity per router process with `server.streaming.max_inflight_line_bytes` (default 64 MiB). Set an explicit value from 64 KiB to 1 GiB if needed. Exhaustion fails a stream with `upstream_stream_buffer_limit`; pre-commit requests can use existing fallback. Monitor `metrum_ai_router_sse_line_buffer_bytes`, `metrum_ai_router_sse_line_buffer_limit_bytes` and `metrum_ai_router_sse_line_buffer_rejections_total`.
 Targets that ignore caller sampling controls can declare `temperature` or `top_p` in `request_shape_support.unsupported_request_features`; the router omits each declared field from both the translated request and its raw field map, and records the omission on the attempt. OpenAI Chat Completions translations now forward `top_p`. Pre-commit HTTP 400/422 refusals fall back only when the structured provider error identifies `temperature` or `top_p` with a supported unsupported-value/parameter code (or no code). Free-form message text and other 4xx responses do not trigger this fallback.
 
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
+
+Streaming now caps total in-flight SSE line-buffer capacity per router process with `server.streaming.max_inflight_line_bytes` (default 64 MiB). Set an explicit value from 64 KiB to 1 GiB if needed. Exhaustion fails a stream with `upstream_stream_buffer_limit`; pre-commit requests can use existing fallback. Monitor `metrum_ai_router_sse_line_buffer_bytes`, `metrum_ai_router_sse_line_buffer_limit_bytes` and `metrum_ai_router_sse_line_buffer_rejections_total`.
 
 ## Security dependency update
 
