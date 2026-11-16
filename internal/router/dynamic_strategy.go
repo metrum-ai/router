@@ -268,14 +268,16 @@ func (s *Service) pickDynamicScore(rc *requestContext, groupName string, group M
 	coldStart := totalObservations < minObservations
 	if coldStart {
 		ordered := configuredWeightOrder(candidates)
+		ordered = s.preferTieredKVCandidates(groupName, ordered, req)
 		var affinitySignal routingSignalLogRecord
-		ordered, affinitySignal = s.applyDynamicAffinity(cfg, caller, groupName, callerDialect, req, ordered)
+		var affinityKey string
+		ordered, affinitySignal, affinityKey = s.applyDynamicAffinity(cfg, caller, groupName, callerDialect, req, ordered)
 		trace := dynamicDecisionTrace(cfg, req, ordered, true, "configured_weight")
 		trace = annotateSpendCeilingTrace(trace, ceiling)
 		signals := dynamicRoutingSignalTelemetry(cfg, "dynamic_score")
 		signals = appendDynamicAffinitySignal(signals, affinitySignal)
 		terms := dynamicColdStartRankingTelemetry(ordered, groupName)
-		return decision{Target: ordered[0].Target, Fallbacks: dynamicFallbacks(ordered[1:]), Strategy: "dynamic_score", GroupName: groupName, TargetIndex: ordered[0].Index, DecisionTrace: trace, RoutingSignals: signals, DynamicScoreTerms: terms}, nil
+		return decision{Target: ordered[0].Target, Fallbacks: dynamicFallbacks(ordered[1:]), Strategy: "dynamic_score", GroupName: groupName, TargetIndex: ordered[0].Index, DecisionTrace: trace, RoutingSignals: signals, DynamicScoreTerms: terms, AffinityKey: affinityKey, AffinityConfig: cfg.Affinity}, nil
 	}
 	dynamicNormalizeScores(candidates, req, cfg)
 	terms := dynamicTermsForRequest(cfg, req)
@@ -318,14 +320,46 @@ func (s *Service) pickDynamicScore(rc *requestContext, groupName string, group M
 		}
 		return candidates[i].Index < candidates[j].Index
 	})
+	candidates = s.preferTieredKVCandidates(groupName, candidates, req)
 	var affinitySignal routingSignalLogRecord
-	candidates, affinitySignal = s.applyDynamicAffinity(cfg, caller, groupName, callerDialect, req, candidates)
+	var affinityKey string
+	candidates, affinitySignal, affinityKey = s.applyDynamicAffinity(cfg, caller, groupName, callerDialect, req, candidates)
 	trace := dynamicDecisionTrace(cfg, req, candidates, false, "score")
 	trace = annotateSpendCeilingTrace(trace, ceiling)
 	signals := dynamicRoutingSignalTelemetry(cfg, "dynamic_score")
 	signals = appendDynamicAffinitySignal(signals, affinitySignal)
 	scoreTerms := dynamicScoreTermTelemetry(candidates, terms, groupName)
-	return decision{Target: candidates[0].Target, Fallbacks: dynamicFallbacks(candidates[1:]), Strategy: "dynamic_score", GroupName: groupName, TargetIndex: candidates[0].Index, DecisionTrace: trace, RoutingSignals: signals, DynamicScoreTerms: scoreTerms}, nil
+	return decision{Target: candidates[0].Target, Fallbacks: dynamicFallbacks(candidates[1:]), Strategy: "dynamic_score", GroupName: groupName, TargetIndex: candidates[0].Index, DecisionTrace: trace, RoutingSignals: signals, DynamicScoreTerms: scoreTerms, AffinityKey: affinityKey, AffinityConfig: cfg.Affinity}, nil
+}
+
+func (s *Service) preferTieredKVCandidates(groupName string, candidates []dynamicCandidate, req *IRRequest) []dynamicCandidate {
+	if len(candidates) < 2 || estimateTokens(req) < longContextKVCacheThresholdTokens {
+		return candidates
+	}
+	hasTiered := false
+	for _, candidate := range candidates {
+		hasTiered = hasTiered || candidate.Target.TieredKVCache
+	}
+	if !hasTiered {
+		return candidates
+	}
+	ordered := make([]dynamicCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate.Target.TieredKVCache && !s.tieredKVTargetUnhealthy(groupName, candidate.Target) {
+			ordered = append(ordered, candidate)
+		}
+	}
+	for _, candidate := range candidates {
+		if !candidate.Target.TieredKVCache {
+			ordered = append(ordered, candidate)
+		}
+	}
+	for _, candidate := range candidates {
+		if candidate.Target.TieredKVCache && s.tieredKVTargetUnhealthy(groupName, candidate.Target) {
+			ordered = append(ordered, candidate)
+		}
+	}
+	return ordered
 }
 
 func dynamicPassesThresholds(stats dynamicStats, thresholds DynamicScoreThresholds) bool {

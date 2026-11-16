@@ -25,6 +25,8 @@ type UsageTokenBreakdown struct {
 	ReasoningReportedRequests       int64 `json:"reasoningReportedRequests" gorm:"column:reasoning_reported_request_count;not null;default:0"`
 	CachedInputTokens               int64 `json:"cachedInputTokens" gorm:"column:cached_input_tokens;not null;default:0"`
 	CachedInputReportedRequests     int64 `json:"cachedInputReportedRequests" gorm:"column:cached_input_reported_request_count;not null;default:0"`
+	RecomputedInputTokens           int64 `json:"recomputedInputTokens" gorm:"column:recomputed_input_tokens;not null;default:0"`
+	RecomputedInputReportedRequests int64 `json:"recomputedInputReportedRequests" gorm:"column:recomputed_input_reported_request_count;not null;default:0"`
 }
 
 func (b *UsageTokenBreakdown) addUsage(row usageRow) {
@@ -48,6 +50,10 @@ func (b *UsageTokenBreakdown) addUsage(row usageRow) {
 	if row.CachedInputTokens != nil {
 		b.CachedInputTokens += int64(*row.CachedInputTokens)
 		b.CachedInputReportedRequests++
+		if value := recomputedInputTokens(row.InputTokens, row.CachedInputTokens); value != nil {
+			b.RecomputedInputTokens += int64(*value)
+			b.RecomputedInputReportedRequests++
+		}
 	}
 }
 
@@ -65,6 +71,8 @@ func (b *UsageTokenBreakdown) add(other UsageTokenBreakdown) {
 	b.ReasoningReportedRequests += other.ReasoningReportedRequests
 	b.CachedInputTokens += other.CachedInputTokens
 	b.CachedInputReportedRequests += other.CachedInputReportedRequests
+	b.RecomputedInputTokens += other.RecomputedInputTokens
+	b.RecomputedInputReportedRequests += other.RecomputedInputReportedRequests
 }
 
 // dimensionLabel renders one rollup key for a table cell. The single-value
@@ -88,11 +96,11 @@ func providerModelDimensionLabel(key string) string {
 
 func writeTokenBreakdownTable(b *strings.Builder, title string, rows map[string]*agg, label func(string) string) {
 	fmt.Fprintf(b, "\n## %s\n\n", title)
-	fmt.Fprintln(b, "| Dimension | Reasoning Tokens | Reasoning Reported Requests | Cached Input Tokens | Cache Reported Requests | Cache Write Tokens | Cache Write Reported Requests | Reasoning Attempts | Successful Reasoning Attempts | Reported Reasoning Attempts |")
-	fmt.Fprintln(b, "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
+	fmt.Fprintln(b, "| Dimension | Reasoning Tokens | Reasoning Reported Requests | Cached Input Tokens | Cache Reported Requests | Recomputed Input Tokens | Recomputed Reported Requests | Cache Write Tokens | Cache Write Reported Requests | Reasoning Attempts | Successful Reasoning Attempts | Reported Reasoning Attempts |")
+	fmt.Fprintln(b, "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
 	for _, key := range sortedAggKeys(rows) {
 		a := rows[key]
-		fmt.Fprintf(b, "| %s | %d | %d | %d | %d | %d | %d | %d | %d | %d |\n", label(key), a.ReasoningTokens, a.ReasoningReportedRequests, a.CachedInputTokens, a.CachedInputReportedRequests, a.CacheWriteInputTokens, a.CacheWriteReportedRequests, a.ReasoningAttemptCount, a.ReasoningSuccessfulAttemptCount, a.ReasoningReportedAttemptCount)
+		fmt.Fprintf(b, "| %s | %d | %d | %d | %d | %d | %d | %d | %d | %d | %d | %d |\n", label(key), a.ReasoningTokens, a.ReasoningReportedRequests, a.CachedInputTokens, a.CachedInputReportedRequests, a.RecomputedInputTokens, a.RecomputedInputReportedRequests, a.CacheWriteInputTokens, a.CacheWriteReportedRequests, a.ReasoningAttemptCount, a.ReasoningSuccessfulAttemptCount, a.ReasoningReportedAttemptCount)
 	}
 }
 
@@ -105,4 +113,6 @@ var usageTokenBreakdownSQL = usageCostComponentsSQL() + "SUM(" + undiscountedUsa
  SUM(COALESCE(reasoning_tokens,0)) AS reasoning_tokens,
  SUM(CASE WHEN reasoning_tokens IS NOT NULL THEN 1 ELSE 0 END) AS reasoning_reported_request_count,
  SUM(COALESCE(cached_input_tokens,0)) AS cached_input_tokens,
- SUM(CASE WHEN cached_input_tokens IS NOT NULL THEN 1 ELSE 0 END) AS cached_input_reported_request_count,`
+ SUM(CASE WHEN cached_input_tokens IS NOT NULL THEN 1 ELSE 0 END) AS cached_input_reported_request_count,
+ SUM(CASE WHEN cached_input_tokens IS NOT NULL THEN CASE WHEN cached_input_tokens < 0 THEN input_tokens WHEN input_tokens >= cached_input_tokens THEN input_tokens - cached_input_tokens ELSE 0 END ELSE 0 END) AS recomputed_input_tokens,
+ SUM(CASE WHEN cached_input_tokens IS NOT NULL THEN 1 ELSE 0 END) AS recomputed_input_reported_request_count,`

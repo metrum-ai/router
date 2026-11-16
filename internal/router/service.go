@@ -199,6 +199,8 @@ type decision struct {
 	DynamicScoreTerms []dynamicScoreTermLogRecord
 	PolicyExecutions  []policyExecutionLogRecord
 	ConversationKey   string
+	AffinityKey       string
+	AffinityConfig    DynamicScoreAffinityConfig
 }
 
 type routingEligibilityError struct {
@@ -2504,6 +2506,21 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 			served = selected
 			s.applyServingTargetRecord(rc, served)
 		}
+		if dec.AffinityKey != "" && dynamicAffinityEnabled(dec.AffinityConfig) && s.affinity != nil && strings.EqualFold(dec.Strategy, "dynamic_score") {
+			for i, candidate := range append([]Target{dec.Target}, dec.Fallbacks...) {
+				if candidate.Provider == served.Provider && candidate.Model == served.Model {
+					configuredIndex := i
+					for j, configured := range group.Targets {
+						if configured.Provider == served.Provider && configured.Model == served.Model && configured.Dialect == served.Dialect {
+							configuredIndex = j
+							break
+						}
+					}
+					s.affinity.set(dec.AffinityKey, dynamicCandidate{Target: served, Index: configuredIndex}, dynamicAffinityTTL(dec.AffinityConfig), dynamicAffinityMaxEntries(dec.AffinityConfig))
+					break
+				}
+			}
+		}
 		s.captureResponseContent(rc, resp, captureDecision)
 		cacheResp := resp
 		if piiRestoreEnabled(group.PIIFilter) {
@@ -3453,6 +3470,7 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 			}
 			targets = kept
 			if len(filtered) > 0 {
+				targets = s.preferTieredKVTargets(groupName, targets, req)
 				trace := spendCeilingDecisionTrace(ceiling, len(filtered))
 				if label != nil {
 					label = safePolicyClassLabel(*label)
@@ -3493,6 +3511,7 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 		// decision-model contract without issuing a second upstream request until
 		// the bounded selector and overhead accounting are available.
 		label := "intelligent:baseline-only"
+		targets = s.preferTieredKVTargets(groupName, targets, req)
 		return decision{
 			Target:      targets[0],
 			Fallbacks:   targets[1:],
@@ -3519,7 +3538,53 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 	if label != nil {
 		label = safePolicyClassLabel(*label)
 	}
+	targets = s.preferTieredKVTargets(groupName, targets, req)
 	return decision{Target: targets[0], Fallbacks: targets[1:], ClassLabel: label, Strategy: strategy, GroupName: groupName, DynamicScoreTerms: simpleStrategyRankingTelemetry(strategy, targets, s.cfg.Provider)}, nil
+}
+
+const longContextKVCacheThresholdTokens = 32000
+
+func (s *Service) preferTieredKVTargets(groupName string, targets []Target, req *IRRequest) []Target {
+	if len(targets) < 2 || estimateTokens(req) < longContextKVCacheThresholdTokens {
+		return targets
+	}
+	hasTiered := false
+	for _, target := range targets {
+		hasTiered = hasTiered || target.TieredKVCache
+	}
+	if !hasTiered {
+		return targets
+	}
+	ordered := make([]Target, 0, len(targets))
+	for _, target := range targets {
+		if target.TieredKVCache && !s.tieredKVTargetUnhealthy(groupName, target) {
+			ordered = append(ordered, target)
+		}
+	}
+	for _, target := range targets {
+		if !target.TieredKVCache {
+			ordered = append(ordered, target)
+		}
+	}
+	for _, target := range targets {
+		if target.TieredKVCache && s.tieredKVTargetUnhealthy(groupName, target) {
+			ordered = append(ordered, target)
+		}
+	}
+	return ordered
+}
+
+const (
+	tieredKVUnhealthyMinObservations = 2
+	tieredKVUnhealthyErrorRate       = 0.5
+)
+
+func (s *Service) tieredKVTargetUnhealthy(groupName string, target Target) bool {
+	if s == nil || s.observations == nil {
+		return false
+	}
+	stats := s.observations.stats(dynamicObservationKey(groupName, target.Provider, target.Model), s.dynamicObservationRetention(groupName))
+	return stats.Count >= tieredKVUnhealthyMinObservations && stats.ErrorRate >= tieredKVUnhealthyErrorRate
 }
 
 func (s *Service) loadExternalPolicies() {

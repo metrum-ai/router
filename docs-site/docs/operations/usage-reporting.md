@@ -67,6 +67,18 @@ coverage, while an omitted field does not. See
 [Usage, Cost, And Reports](../usage-cost-reports/overview) for field names and
 cost/savings attribution caveats.
 
+The backend cache hit rate is derived from the counters
+`metrum_ai_router_backend_cache_hit_requests_total` and
+`metrum_ai_router_backend_cache_reported_requests_total`; there is no separate
+gauge. The counters distinguish hit requests from all requests with reported
+cache usage; requests with omitted cache fields are excluded. OpenAI-compatible
+backends, including OpenAI and vLLM, report this when their response usage
+includes `prompt_tokens_details.cached_tokens` or
+`input_tokens_details.cached_tokens`. Anthropic reports it through
+`cache_read_input_tokens`. Other engines are covered only when their adapter
+provides one of those recognized fields; missing fields remain unknown and do
+not count as cache misses.
+
 The browser and compatible aggregate APIs can explicitly read finalized daily
 history using `history_source=rollup`. This is not a new CLI Markdown input
 flag: CLI/server Markdown exports still read retained raw requests. Daily
@@ -455,6 +467,12 @@ Cost fields are captured when each request finishes. Reports do not look up curr
 For image requests, `input_price_per_million_usd` remains the fallback input-token rate. If a VLM has separate image pricing, configure `image_input_price_per_million_tokens_usd` for upstream-reported image tokens or `image_input_price_per_image_usd` for fixed per-image cost allocation. When an upstream returns billed cost, the router stores those values as upstream-reported cost fields in addition to router-calculated cost fields.
 
 For prompt-cache accounting, configure optional `cached_input_price_per_million_usd` on the catalog or target. The router persists upstream `cached_input_tokens` when reported and applies the cached price only when both the count and price are known for that request. Missing evidence keeps ordinary input pricing. Anthropic usage includes cache reads and writes in the router's input total; client-visible Anthropic usage partitions them back into disjoint fields. Optional `cache_write_price_per_million_usd` prices `cache_write_input_tokens` separately; missing write pricing uses the base input price with `missing-cache-write-pricing-metadata`. Both 5-minute and 1-hour creation counts are recognized, but one target write price applies to both.
+
+## KV-cache routing and metering
+
+When upstream reports cached input tokens, each usage row also records recomputed input tokens as `max(input_tokens - cached_input_tokens, 0)`. Missing cache evidence stays unknown. Usage and cost reports expose cached and recomputed token totals and their reported-request counts by caller, key, model group, and provider/model. Router response-cache hits are excluded because they make no upstream request.
+
+For long prompts, set `tiered_kv_cache: true` on targets whose backend supports CPU or SSD KV-cache offload. Requests with at least 32,000 estimated input tokens prefer those eligible targets while retaining load-balance fallback order. The value is operator supplied. It does not probe the backend. Dynamic-score affinity can pin a caller's `metadata.session_id`; otherwise, it uses the conversation prefix. Affinity is bounded and process-local, so replicas can make independent choices and restart clears pins.
 
 For a buyer-facing explanation of cost policy and cost allocation, see [Cost Governance](/docs/evaluation/cost-governance).
 
