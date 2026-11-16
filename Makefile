@@ -528,6 +528,7 @@ test-fast: secret-contract capability-smoke-contracts
 	python3 scripts/validate_release_tag_test.py
 	python3 scripts/hierarchy_release_gate_test.py
 	uv run --with pyyaml python scripts/release_provenance_test.py
+	python3 scripts/normalize_docs_404_test.py
 	python3 scripts/test_release_ai_review.py
 	python3 scripts/select_previous_release_test.py
 	python3 scripts/test_sign_release_windows_packages.py
@@ -810,6 +811,7 @@ docs-qa: docs-diag-schema-check docs-brand-policy-test docs-origin-test
 
 docs-build: docs-qa
 	cd "$(DOCS_SITE_DIR)" && npm ci && DOCS_ROUTER_VERSION="$${VERSION}" DOCS_ROUTER_BUILD_DATE="$${BUILD_DATE}" npm run build
+	python3 scripts/normalize_docs_404.py "$(DOCS_SITE_DIR)/build/404.html"
 	find "$(DOCS_EMBED_DIR)" -mindepth 1 ! -name .keep -exec rm -rf {} +
 	cp -R "$(DOCS_SITE_DIR)/build/." "$(DOCS_EMBED_DIR)/"
 
