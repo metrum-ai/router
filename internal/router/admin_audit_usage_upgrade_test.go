@@ -98,7 +98,7 @@ func upgradeToV480(t *testing.T, db *gorm.DB) MigrationStatus {
 	if err != nil {
 		t.Fatalf("verify-serving after the v4.8.0 deployment job: %v", err)
 	}
-	if status.SchemaVersion != 15 || status.DataVersion != 1 || !UsageMigrationServingCompatible(status) {
+	if status.SchemaVersion != 16 || status.DataVersion != 1 || !UsageMigrationServingCompatible(status) {
 		t.Fatalf("upgraded database is not serving compatible: %+v", status)
 	}
 	return status
