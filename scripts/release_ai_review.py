@@ -23,7 +23,7 @@ API_URL = "https://api.anthropic.com/v1/messages"
 API_VERSION = "2023-06-01"
 MAX_DIFF_BYTES = 1_000_000
 SENSITIVE = re.compile(r"(?i)(?:sk-[a-z0-9_-]{12,}|bearer\s+\S+|api[_ -]?key\s*[:=]|token\s*[:=]|password\s*[:=])")
-REVIEW_SYSTEM = """You are the independent release reviewer for Metrum AI Router. Review the supplied source diff since the previous release, CHANGELOG.md changes, and v5.0.0 upgrade-guide changes. Return only JSON with keys summary and findings. Each finding has severity (blocking or informational), title, rationale, and files (list of repository paths). Block only a concrete security, correctness, compatibility, or release-integrity issue that must be fixed before publish. Do not quote source, prompt text, credentials, tokens, or secret values. Mention only file paths and concise reasoning. A clean review has an empty findings array."""
+REVIEW_SYSTEM = """You are the independent release reviewer for Metrum AI Router. Review the supplied source diff since the previous production release, CHANGELOG.md changes, and v5.0.0 upgrade-guide changes. Return only JSON with keys summary and findings. Each finding has severity (blocking or informational), category (exactly one of security, correctness, compatibility, release-integrity), title, rationale, and locations (a non-empty list of objects containing repository-relative file and positive integer line). Block only a concrete security, correctness, compatibility, or release-integrity issue that must be fixed before publish. Do not quote source, prompt text, credentials, tokens, or secret values. Mention only file paths and concise reasoning. A clean review has an empty findings array."""
 
 
 def git_diff(base: str, head: str) -> str:
@@ -88,7 +88,9 @@ def safe_text(value: object, field: str) -> str:
     return value
 
 
-def evaluate(review: dict[str, Any], responses: dict[str, Any]) -> tuple[dict[str, Any], int]:
+def evaluate(review: dict[str, Any], responses: dict[str, Any], base: str, head: str) -> tuple[dict[str, Any], int]:
+    if not isinstance(base, str) or not base or not isinstance(head, str) or not head:
+        raise ValueError("AI release review range is invalid")
     summary = safe_text(review.get("summary"), "summary")
     raw_findings = review.get("findings")
     if not isinstance(raw_findings, list):
@@ -102,15 +104,36 @@ def evaluate(review: dict[str, Any], responses: dict[str, Any]) -> tuple[dict[st
         severity = finding.get("severity")
         if severity not in {"blocking", "informational"}:
             raise ValueError("AI release review finding has an invalid severity")
+        category = finding.get("category")
+        if category not in {"security", "correctness", "compatibility", "release-integrity"}:
+            raise ValueError("AI release review finding has an invalid category")
         title = safe_text(finding.get("title"), "finding title")
         rationale = safe_text(finding.get("rationale"), "finding rationale")
-        raw_files = finding.get("files", [])
-        if not isinstance(raw_files, list) or any(not isinstance(item, str) for item in raw_files):
-            raise ValueError("AI release review finding files must be a list of paths")
-        files = sorted({item for item in raw_files if item and not item.startswith("/") and ".." not in Path(item).parts})
-        if len(files) != len(raw_files):
-            raise ValueError("AI release review finding contains an invalid repository path")
-        identity = "\n".join([severity, title.lower(), *files])
+        raw_locations = finding.get("locations")
+        if not isinstance(raw_locations, list) or not raw_locations:
+            raise ValueError("AI release review finding locations must be a non-empty list")
+        locations: set[tuple[str, int]] = set()
+        for location in raw_locations:
+            if not isinstance(location, dict):
+                raise ValueError("AI release review finding location must be an object")
+            file_path, line = location.get("file"), location.get("line")
+            if (
+                not isinstance(file_path, str)
+                or not file_path
+                or file_path.startswith("/")
+                or ".." in Path(file_path).parts
+                or not isinstance(line, int)
+                or isinstance(line, bool)
+                or line < 1
+            ):
+                raise ValueError("AI release review finding contains an invalid location")
+            locations.add((file_path, line))
+        ordered_locations = sorted(locations)
+        identity = json.dumps({
+            "range": [base, head],
+            "category": category,
+            "locations": ordered_locations,
+        }, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
         finding_id = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:12]
         if finding_id in seen:
             raise ValueError("AI release review returned duplicate findings")
@@ -125,9 +148,11 @@ def evaluate(review: dict[str, Any], responses: dict[str, Any]) -> tuple[dict[st
         normalized.append({
             "id": finding_id,
             "severity": severity,
+            "category": category,
             "title": title,
             "rationale": rationale,
-            "files": files,
+            "locations": [{"file": file_path, "line": line} for file_path, line in ordered_locations],
+            "files": sorted({file_path for file_path, _ in ordered_locations}),
             "maintainer_response": response,
         })
     return {"summary": summary, "findings": normalized, "decision": "pass" if unanswered == 0 else "block"}, unanswered
@@ -184,7 +209,7 @@ def main() -> int:
         if not isinstance(maintainer_responses, dict):
             raise ValueError("maintainer responses must be an object")
         review = call_model(api_key, diff)
-        report, unanswered = evaluate(review, maintainer_responses)
+        report, unanswered = evaluate(review, maintainer_responses, args.base, args.head)
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(render(report, args.base, args.head, args.tag), encoding="utf-8")
     except (OSError, subprocess.CalledProcessError, json.JSONDecodeError, RuntimeError, ValueError) as exc:

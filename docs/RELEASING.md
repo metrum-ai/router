@@ -13,8 +13,13 @@ git tag -a vX.Y.Z -m "Metrum AI Router vX.Y.Z"
 git push origin vX.Y.Z
 ```
 
-A `workflow_dispatch` run on a non-tag ref is build-only; a dispatch on a
-matching tag ref can publish a release. Do not use a real tag as a dry run.
+The `workflow_dispatch` dry run is limited to `main`. It builds release
+packages, compares a clean rebuild, exercises the upgrade/rollback path from
+the latest published non-prerelease release, reviews that production range,
+and assembles and smoke-tests the multi-architecture image in a local OCI
+layout. It does not publish artifacts, push images, or enter the protected
+`release` environment. Tag pushes run the same validation and publish only
+after approval in that environment.
 
 ## Required hierarchy compatibility matrix (#434)
 
@@ -106,7 +111,9 @@ If the AI review report lists a blocking finding, the tag run fails before
 publish and retains the report as a workflow artifact. A maintainer can answer
 it by adding the finding ID and a short resolution under `responses` in
 `docs/release-review-responses.json` on `main`, then rerunning the same tag
-workflow. Unanswered blockers, a missing API credential, a review timeout, or
+workflow. A finding ID is derived from the reviewed release range, rule
+category, and source file/line locations, so model wording changes do not
+invalidate an existing answer for the same finding. Unanswered blockers, a missing API credential, a review timeout, or
 an invalid model response block publication.
 
 Verify one downloaded package asset and its signature and provenance:

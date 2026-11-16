@@ -24,6 +24,10 @@ var (
 	binaryDigest     string
 )
 
+func init() {
+	CurrentBinarySHA256()
+}
+
 type Info struct {
 	Version      string `json:"version"`
 	Commit       string `json:"commit"`

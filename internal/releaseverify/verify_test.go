@@ -50,6 +50,33 @@ func TestVerifyAcceptsSignedLinuxReleaseBinary(t *testing.T) {
 	if !strings.Contains(strings.Join(commands[0], " "), "refs/tags/v1.2.3") {
 		t.Fatalf("cosign identity did not bind the tag: %#v", commands[0])
 	}
+	wantAttestation := []string{
+		"gh", "attestation", "verify", "metrum-ai-router-v1.2.3-linux-amd64.tar.gz",
+		"--repo", "metrum-ai/router",
+		"--signer-workflow", "github.com/metrum-ai/router/.github/workflows/release.yml",
+		"--source-ref", "refs/tags/v1.2.3",
+	}
+	if len(commands[1]) != len(wantAttestation) || strings.Join(commands[1][:3], " ") != "gh attestation verify" || strings.Join(commands[1][4:], " ") != strings.Join(wantAttestation[4:], " ") {
+		t.Fatalf("GitHub provenance command did not pin signer workflow and tag: %#v", commands[1])
+	}
+}
+
+func TestAttestationPolicyRejectsDifferentWorkflowOrTag(t *testing.T) {
+	args := attestationVerificationArgs("artifact.tar.gz", "metrum-ai/router", "v1.2.3")
+	contains := func(flag, value string) bool {
+		for i := 0; i+1 < len(args); i++ {
+			if args[i] == flag && args[i+1] == value {
+				return true
+			}
+		}
+		return false
+	}
+	if !contains("--signer-workflow", "github.com/metrum-ai/router/.github/workflows/release.yml") || !contains("--source-ref", "refs/tags/v1.2.3") {
+		t.Fatalf("expected workflow/tag policy missing from %#v", args)
+	}
+	if contains("--signer-workflow", "github.com/metrum-ai/router/.github/workflows/other.yml") || contains("--source-ref", "refs/tags/v1.2.4") {
+		t.Fatal("verification policy accepts a different workflow or tag")
+	}
 }
 
 func TestVerifyRejectsModifiedLocalBinary(t *testing.T) {

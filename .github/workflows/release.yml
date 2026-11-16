@@ -7,6 +7,13 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Run the complete release pipeline without publishing"
+        type: boolean
+        required: true
+        default: true
 
 permissions:
   contents: read
@@ -14,11 +21,13 @@ permissions:
 jobs:
   # Every hierarchy compatibility cell must pass before release packaging.
   hierarchy-matrix:
+    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.dry_run)
     uses: ./.github/workflows/hierarchy-matrix.yml
     permissions:
       contents: read
 
   resolve:
+    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.dry_run)
     needs: hierarchy-matrix
     runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     outputs:
@@ -34,14 +43,26 @@ jobs:
       - name: Resolve immutable build metadata
         id: metadata
         env:
+          RELEASE_EVENT_NAME: ${{ github.event_name }}
+          DRY_RUN_INPUT: ${{ inputs.dry_run }}
           RELEASE_REF_NAME: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          tag="$(python3 scripts/validate_release_tag.py "${RELEASE_REF_NAME}")"
+          if [ "${RELEASE_EVENT_NAME}" = "workflow_dispatch" ]; then
+            if [ "${GITHUB_REF}" != "refs/heads/main" ] || [ "${DRY_RUN_INPUT}" != "true" ]; then
+              echo "manual release runs are limited to dry runs dispatched from main" >&2
+              exit 2
+            fi
+            candidate="v5.0.0-dry-run"
+          else
+            candidate="${RELEASE_REF_NAME}"
+          fi
+          tag="$(python3 scripts/validate_release_tag.py "${candidate}")"
           commit="$(git rev-parse HEAD)"
           source_date_epoch="$(git show -s --format=%ct HEAD)"
           build_date="$(date -u -d "@${source_date_epoch}" +%Y-%m-%dT%H:%M:%SZ)"
-          previous_tag="$(git describe --tags --abbrev=0 --match 'v[0-9]*' "${commit}^")"
+          previous_tag="$(gh release list --repo "${GITHUB_REPOSITORY}" --limit 100 --json tagName,isPrerelease,isDraft,publishedAt | python3 scripts/select_previous_release.py --current "${tag}")"
           printf 'tag=%s\n' "${tag}" >> "${GITHUB_OUTPUT}"
           printf 'commit=%s\n' "${commit}" >> "${GITHUB_OUTPUT}"
           printf 'build_date=%s\n' "${build_date}" >> "${GITHUB_OUTPUT}"
@@ -65,39 +86,16 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "22"
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
-      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
-        if: startsWith(github.ref, 'refs/tags/')
-        with:
-          distribution: temurin
-          java-version: '21'
-      - name: Fetch pinned jsign (checksum-verified)
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          set -euo pipefail
-          mkdir -p "${RUNNER_TEMP}/signing"
-          curl -fsSL -o "${RUNNER_TEMP}/signing/jsign.jar" https://github.com/ebourg/jsign/releases/download/7.6/jsign-7.6.jar
-          echo "6cf58aa080e7ff82656f320cff8d4a3bff30408df8766806dcba3740dd839fa5  ${RUNNER_TEMP}/signing/jsign.jar" | sha256sum -c -
       - name: Verify Go patch floor
         run: python3 scripts/check_go_toolchain.py
       - name: Build release binaries
-        env:
-          RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
-          JSIGN_JAR: ${{ runner.temp }}/signing/jsign.jar
-          ROUTER_SIGN_WINDOWS: ${{ startsWith(github.ref, 'refs/tags/') && '1' || '' }}
-          ROUTER_REQUIRE_WINDOWS_SIGNING: ${{ vars.WINDOWS_SIGNING_REQUIRED == 'true' && '1' || '' }}
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
-          TRUSTED_SIGNING_ENDPOINT: ${{ secrets.TRUSTED_SIGNING_ENDPOINT }}
-          TRUSTED_SIGNING_ACCOUNT: ${{ secrets.TRUSTED_SIGNING_ACCOUNT }}
-          TRUSTED_SIGNING_CERT_PROFILE: ${{ secrets.TRUSTED_SIGNING_CERT_PROFILE }}
         run: make package
       - name: Validate binary inventory and checksums
         run: python3 scripts/release_artifact_inventory.py --dist-dir dist --version "${VERSION}" --commit "${COMMIT}" --build-date "${BUILD_DATE}" --set binary
@@ -153,7 +151,7 @@ jobs:
 
   upgrade-and-rollback:
     needs: [resolve, package-binaries]
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.dry_run)
     runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     timeout-minutes: 40
     permissions:
@@ -211,12 +209,11 @@ jobs:
 
   ai-release-review:
     needs: resolve
-    if: startsWith(github.ref, 'refs/tags/')
+    if: startsWith(github.ref, 'refs/tags/') || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.dry_run)
     runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     timeout-minutes: 10
     permissions:
       contents: read
-      actions: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -248,6 +245,94 @@ jobs:
           name: release-ai-review
           path: dist/AI-release-review.md
           if-no-files-found: warn
+          retention-days: 14
+
+  dry-run-verify:
+    needs: [resolve, package-binaries, reproducible-build, ai-release-review, upgrade-and-rollback]
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.dry_run && needs.resolve.result == 'success' && needs.package-binaries.result == 'success' && needs.reproducible-build.result == 'success' && needs.ai-release-review.result == 'success' && needs.upgrade-and-rollback.result == 'success'
+    runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.resolve.outputs.tag }}
+      COMMIT: ${{ needs.resolve.outputs.commit }}
+      PREVIOUS_TAG: ${{ needs.resolve.outputs.previous_tag }}
+      SOURCE_DATE_EPOCH: ${{ needs.resolve.outputs.source_date_epoch }}
+      CRANE: ${{ github.workspace }}/crane
+      IMAGE: ghcr.io/${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.commit }}
+          fetch-depth: 0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: release-binaries
+          path: dist
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: release-ai-review
+          path: dist
+      - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: release-upgrade-rollback
+          path: dist
+      - name: Require passing AI review
+        run: |
+          rg -q '^\- Decision: \*\*PASS\*\*$' dist/AI-release-review.md
+      - name: Validate release package inventory
+        run: python3 scripts/release_artifact_inventory.py --dist-dir dist --version "${VERSION}" --commit "${COMMIT}" --build-date "$(date -u -d "@${SOURCE_DATE_EPOCH}" +%Y-%m-%dT%H:%M:%SZ)" --set binary
+      - name: Install pinned Crane
+        run: bash scripts/install_crane.sh "${CRANE}"
+      - name: Assemble images in a local multi-architecture OCI layout
+        run: |
+          set -euo pipefail
+          base="$(python3 scripts/release_image_layer.py --print-base-image)"
+          test "$(sed -n 's/^FROM \(.*\)$/\1/p' Dockerfile | tail -1)" = "$base"
+          layout="${RUNNER_TEMP}/release-oci"
+          for arch in amd64 arm64; do
+            package="dist/metrum-ai-router-${VERSION}-linux-${arch}.tar.gz"
+            layer="${RUNNER_TEMP}/router-${arch}-layer.tar.gz"
+            image_tar="${RUNNER_TEMP}/router-${arch}-image.tar"
+            python3 scripts/release_image_layer.py --package "$package" --output "$layer" --epoch "${SOURCE_DATE_EPOCH}" > "${RUNNER_TEMP}/router-${arch}-binary-sha256.txt"
+            "${CRANE}" mutate "$base" --append "$layer" --platform "linux/${arch}" \
+              --entrypoint=/app/bin/metrum-ai-router --cmd=--config,/app/config/config.yaml \
+              --user=65532:65532 --workdir=/app --exposed-ports=8080/tcp --set-platform="linux/${arch}" \
+              --label="org.opencontainers.image.title=Metrum AI Router" \
+              --label="org.opencontainers.image.version=${VERSION}" \
+              --label="org.opencontainers.image.revision=${COMMIT}" \
+              --label="org.opencontainers.image.created=$(date -u -d "@${SOURCE_DATE_EPOCH}" +%Y-%m-%dT%H:%M:%SZ)" \
+              --label="org.opencontainers.image.licenses=Apache-2.0" --output "$image_tar"
+            python3 scripts/release_image_oci_layout.py --archive "$image_tar" --layout "$layout" \
+              --ref "${IMAGE}:${VERSION}" --platform "linux/${arch}"
+          done
+          echo "RELEASE_OCI_LAYOUT=${layout}" >> "${GITHUB_ENV}"
+      - name: Verify both image binaries match release packages
+        run: |
+          set -euo pipefail
+          for arch in amd64 arm64; do
+            python3 scripts/verify_release_image_binaries.py --crane "${CRANE}" \
+              --oci-layout "${RELEASE_OCI_LAYOUT}" --image-tag "${IMAGE}:${VERSION}" \
+              --platform "linux/${arch}" --package "dist/metrum-ai-router-${VERSION}-linux-${arch}.tar.gz"
+          done
+      - name: Run local OCI image version and health smoke
+        run: python3 scripts/release_image_smoke.py --crane "${CRANE}" --oci-layout "${RELEASE_OCI_LAYOUT}" --image "${IMAGE}:${VERSION}" --version "${VERSION}"
+      - name: Verify dry-run evidence
+        run: python3 scripts/check_release_dry_run.py --dist-dir dist --oci-layout "${RELEASE_OCI_LAYOUT}" --version "${VERSION}" --commit "${COMMIT}" --previous "${PREVIOUS_TAG}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: release-dry-run-evidence
+          path: |
+            dist/AI-release-review.md
+            dist/upgrade-rollback-results.json
+            dist/SHA256SUMS
+            dist/release-artifacts.json
+          if-no-files-found: error
           retention-days: 14
 
   publish-release:
@@ -300,6 +385,28 @@ jobs:
         with:
           name: release-upgrade-rollback
           path: dist
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Fetch pinned jsign (checksum-verified)
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/signing"
+          curl -fsSL -o "${RUNNER_TEMP}/signing/jsign.jar" https://github.com/ebourg/jsign/releases/download/7.6/jsign-7.6.jar
+          echo "6cf58aa080e7ff82656f320cff8d4a3bff30408df8766806dcba3740dd839fa5  ${RUNNER_TEMP}/signing/jsign.jar" | sha256sum -c -
+      - name: Sign Windows release packages after reproducibility comparison
+        env:
+          JSIGN_JAR: ${{ runner.temp }}/signing/jsign.jar
+          ROUTER_SIGN_WINDOWS: '1'
+          ROUTER_REQUIRE_WINDOWS_SIGNING: ${{ vars.WINDOWS_SIGNING_REQUIRED == 'true' && '1' || '' }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          TRUSTED_SIGNING_ENDPOINT: ${{ secrets.TRUSTED_SIGNING_ENDPOINT }}
+          TRUSTED_SIGNING_ACCOUNT: ${{ secrets.TRUSTED_SIGNING_ACCOUNT }}
+          TRUSTED_SIGNING_CERT_PROFILE: ${{ secrets.TRUSTED_SIGNING_CERT_PROFILE }}
+        run: python3 scripts/sign_release_windows_packages.py --dist-dir dist --version "${VERSION}"
       - name: Verify successful AI review artifact
         run: |
           set -euo pipefail
@@ -408,7 +515,8 @@ jobs:
         run: |
           set -euo pipefail
           for arch in amd64 arm64; do
-            ref="${IMAGE}:${VERSION}-linux-${arch}"
+            digest="$(cat "${RUNNER_TEMP}/router-${arch}-digest.txt")"
+            ref="${IMAGE}@${digest}"
             sbom="dist/metrum-ai-router-${VERSION}-linux-${arch}-image.spdx.json"
             "${SYFT_COMMAND}" "$ref" -o spdx-json > "$sbom"
             cosign attach sbom --sbom "$sbom" "$ref"
@@ -416,7 +524,8 @@ jobs:
       - name: Sign images keylessly
         run: |
           set -euo pipefail
-          for ref in "${IMAGE}:${VERSION}-linux-amd64" "${IMAGE}:${VERSION}-linux-arm64" "${IMAGE}:${VERSION}"; do
+          for digest in "$(cat "${RUNNER_TEMP}/router-amd64-digest.txt")" "$(cat "${RUNNER_TEMP}/router-arm64-digest.txt")" "$(cat "${RUNNER_TEMP}/router-index-digest.txt")"; do
+            ref="${IMAGE}@${digest}"
             cosign sign --yes "$ref"
             cosign verify "$ref" --certificate-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/${VERSION}" --certificate-oidc-issuer https://token.actions.githubusercontent.com >/dev/null
           done
@@ -438,6 +547,8 @@ jobs:
             dist/metrum-ai-router-*.tar.gz
             dist/metrum-ai-router-*.zip
             dist/upgrade-rollback-results.json
+            dist/SHA256SUMS
+            dist/release-artifacts.json
       - name: Attest OCI image index
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
@@ -459,12 +570,19 @@ jobs:
       - name: Verify attestations and require complete payload
         run: |
           set -euo pipefail
-          for asset in dist/metrum-ai-router-"${VERSION}"-*.tar.gz dist/metrum-ai-router-"${VERSION}"-*.zip; do gh attestation verify "$asset" --repo "${GITHUB_REPOSITORY}" >/dev/null; done
-          for arch in amd64 arm64; do
-            gh attestation verify "oci://${IMAGE}@$(cat "${RUNNER_TEMP}/router-${arch}-digest.txt")" --repo "${GITHUB_REPOSITORY}" >/dev/null
+          for asset in dist/metrum-ai-router-"${VERSION}"-*.tar.gz dist/metrum-ai-router-"${VERSION}"-*.zip dist/upgrade-rollback-results.json dist/SHA256SUMS dist/release-artifacts.json; do
+            gh attestation verify "$asset" --repo "${GITHUB_REPOSITORY}" \
+              --signer-workflow "github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml" \
+              --source-ref "refs/tags/${VERSION}" >/dev/null
           done
-          gh attestation verify "oci://${IMAGE}@$(cat "${RUNNER_TEMP}/router-index-digest.txt")" --repo "${GITHUB_REPOSITORY}" >/dev/null
-          sha256sum dist/metrum-ai-router-"${VERSION}"-*.tar.gz dist/metrum-ai-router-"${VERSION}"-*.zip > dist/SHA256SUMS
+          for arch in amd64 arm64; do
+            gh attestation verify "oci://${IMAGE}@$(cat "${RUNNER_TEMP}/router-${arch}-digest.txt")" --repo "${GITHUB_REPOSITORY}" \
+              --signer-workflow "github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml" \
+              --source-ref "refs/tags/${VERSION}" >/dev/null
+          done
+          gh attestation verify "oci://${IMAGE}@$(cat "${RUNNER_TEMP}/router-index-digest.txt")" --repo "${GITHUB_REPOSITORY}" \
+            --signer-workflow "github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml" \
+            --source-ref "refs/tags/${VERSION}" >/dev/null
           python3 scripts/check_release_payload.py --dist-dir dist --version "${VERSION}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

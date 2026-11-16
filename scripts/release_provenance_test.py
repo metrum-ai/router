@@ -24,8 +24,20 @@ SUBJECTS = {
 def validate(workflow):
     jobs = workflow["jobs"]
     triggers = workflow.get("on", workflow.get(True))
-    assert set(triggers) == {"push"}
+    assert set(triggers) == {"push", "workflow_dispatch"}
     assert triggers["push"]["tags"] == ["v*"]
+    assert "dry_run" in triggers["workflow_dispatch"]["inputs"]
+    dispatch = triggers["workflow_dispatch"]["inputs"]["dry_run"]
+    assert dispatch["type"] == "boolean" and dispatch["required"] is True and dispatch["default"] is True
+    for name in ("hierarchy-matrix", "resolve", "upgrade-and-rollback", "ai-release-review"):
+        guard = jobs[name].get("if", "")
+        assert "github.ref == 'refs/heads/main'" in guard and "inputs.dry_run" in guard
+    ai_review = jobs["ai-release-review"]
+    assert ai_review["permissions"] == {"contents": "read"}
+    ai_step = next(step for step in ai_review["steps"] if step.get("name") == "Review release diff and documentation")
+    assert ai_step["env"]["REVIEW_BASE"] == "${{ needs.resolve.outputs.previous_tag }}"
+    resolve_run = next(step["run"] for step in jobs["resolve"]["steps"] if step.get("name") == "Resolve immutable build metadata")
+    assert "select_previous_release.py" in resolve_run and "git describe" not in resolve_run
     publish = jobs["publish-release"]
     assert publish.get("environment") == "release"
     assert publish.get("if", "").startswith("always() && startsWith(github.ref, 'refs/tags/')")
@@ -36,6 +48,8 @@ def validate(workflow):
     upgrade = jobs["upgrade-and-rollback"]
     assert upgrade["needs"] == ["resolve", "package-binaries"]
     assert "release_upgrade_rollback.py" in "\n".join(step.get("run", "") for step in upgrade["steps"])
+    upgrade_step = next(step for step in upgrade["steps"] if step.get("name") == "Run upgrade and rollback checks")
+    assert upgrade_step["env"]["PREVIOUS_TAG"] == "${{ needs.resolve.outputs.previous_tag }}"
     assert any(step.get("name") == "Download and verify previous production package" for step in upgrade["steps"])
     assert "docker-runner-preflight" not in jobs and "package-images" not in jobs
     steps = publish["steps"]
@@ -71,6 +85,27 @@ def validate(workflow):
     assert "upgrade-rollback-results.json" in all_runs
     rebuild = jobs["reproducible-build"]
     assert "compare_release_checksums.py" in "\n".join(step.get("run", "") for step in rebuild["steps"])
+    signing = names.index("Sign Windows release packages after reproducibility comparison")
+    rebuild_steps = jobs["reproducible-build"]["steps"]
+    rebuild_names = [step.get("name") for step in rebuild_steps]
+    assert rebuild_names.index("Rebuild binary packages on a clean runner") < rebuild_names.index("Compare package checksums")
+    assert "reproducible-build" in publish["needs"]
+    assert signing > names.index("Verify release environment protection before publish")
+    assert "release_image_oci_layout.py" in "\n".join(step.get("run", "") for step in jobs["dry-run-verify"]["steps"])
+    dry_run = jobs["dry-run-verify"]
+    assert "workflow_dispatch" in dry_run["if"] and "inputs.dry_run" in dry_run["if"]
+    assert "environment" not in dry_run
+    assert dry_run["permissions"] == {"contents": "read"}
+    dry_run_runs = "\n".join(step.get("run", "") for step in dry_run["steps"])
+    assert "crane push" not in dry_run_runs and "cosign" not in dry_run_runs and "gh release create" not in dry_run_runs
+    assert {"package-binaries", "reproducible-build", "ai-release-review", "upgrade-and-rollback"} <= set(dry_run["needs"])
+    assert "check_release_dry_run.py" in "\n".join(step.get("run", "") for step in dry_run["steps"])
+    assert "release_ai_review.py" in "\n".join(step.get("run", "") for step in ai_review["steps"])
+    verify = steps[verify]["run"]
+    assert verify.count("--signer-workflow") >= 3 and verify.count("--source-ref") >= 3
+    assert "dist/SHA256SUMS" in steps[archive_attest]["with"]["subject-path"]
+    assert "dist/release-artifacts.json" in steps[archive_attest]["with"]["subject-path"]
+    assert 'ref="${IMAGE}@${digest}"' in steps[sign].get("run", "")
 
 
 class ProvenanceWorkflowTest(unittest.TestCase):
@@ -112,10 +147,10 @@ class ProvenanceWorkflowTest(unittest.TestCase):
         with self.assertRaises(AssertionError):
             validate(doc)
 
-    def test_release_workflow_has_no_manual_untrusted_dispatch(self):
+    def test_dispatch_is_dry_run_only_and_main_only(self):
         doc = copy.deepcopy(self.workflow)
         trigger_key = "on" if "on" in doc else True
-        doc[trigger_key]["workflow_dispatch"] = {"inputs": {"tag": {"required": True}}}
+        del doc[trigger_key]["workflow_dispatch"]["inputs"]["dry_run"]
         with self.assertRaises(AssertionError):
             validate(doc)
 

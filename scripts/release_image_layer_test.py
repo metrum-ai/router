@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import re
 import tarfile
 import tempfile
 import unittest
@@ -12,8 +13,18 @@ from pathlib import Path
 
 from release_image_layer import BASE_IMAGE, BINARIES, LEGAL, create_layer
 
+ROOT = Path(__file__).resolve().parents[1]
+
 
 class ReleaseImageLayerTest(unittest.TestCase):
+    def test_dockerfile_and_crane_builder_share_valid_base_digest(self) -> None:
+        dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+        match = re.search(r"(?m)^FROM cgr\.dev/chainguard/static:[^\s]+@sha256:([0-9a-f]+)$", dockerfile)
+        self.assertIsNotNone(match)
+        digest = match.group(1) if match else ""
+        self.assertEqual(len(digest), 64)
+        self.assertEqual(f"cgr.dev/chainguard/static:latest@sha256:{digest}", BASE_IMAGE)
+
     def make_package(self, root: Path, omit: str | None = None) -> tuple[Path, dict[str, bytes]]:
         package = root / "package.tar.gz"
         files = {f"pkg/bin/{name}": f"binary:{name}".encode() for name in BINARIES}

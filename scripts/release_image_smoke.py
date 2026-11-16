@@ -17,6 +17,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from release_image_oci_layout import image_descriptor, image_file
 
 def free_port() -> int:
     with socket.socket() as listener:
@@ -24,8 +25,7 @@ def free_port() -> int:
         return listener.getsockname()[1]
 
 
-def run(crane: str, image: str, version: str) -> None:
-    config = json.loads(subprocess.check_output([crane, "config", image], text=True))
+def smoke(config: dict, binary_data: bytes, version: str) -> None:
     runtime = config.get("config", {})
     if runtime.get("Entrypoint") != ["/app/bin/metrum-ai-router"]:
         raise RuntimeError("image entrypoint differs from release router binary")
@@ -40,13 +40,11 @@ def run(crane: str, image: str, version: str) -> None:
         raise RuntimeError("smoke image must be linux/amd64")
     with tempfile.TemporaryDirectory(prefix="router-image-smoke-") as temporary:
         root = Path(temporary)
-        exported = root / "rootfs.tar"
-        subprocess.run([crane, "export", image, str(exported)], check=True)
-        with tarfile.open(exported) as archive:
-            archive.extractall(root / "rootfs", filter="data")
-        binary = root / "rootfs/app/bin/metrum-ai-router"
-        version = subprocess.run([binary, "--version"], capture_output=True, text=True, check=True)
-        if not version.stdout.strip() or f"version={version}" not in version.stdout:
+        binary = root / "metrum-ai-router"
+        binary.write_bytes(binary_data)
+        binary.chmod(0o755)
+        version_result = subprocess.run([binary, "--version"], capture_output=True, text=True, check=True)
+        if not version_result.stdout.strip() or f"version={version}" not in version_result.stdout:
             raise RuntimeError("release image binary version output does not match the release")
         port = free_port()
         cfg = root / "config.yaml"
@@ -96,13 +94,36 @@ def run(crane: str, image: str, version: str) -> None:
                 process.stderr.close()
 
 
+def run(crane: str, image: str, version: str) -> None:
+    config = json.loads(subprocess.check_output([crane, "config", image], text=True))
+    with tempfile.TemporaryDirectory(prefix="router-image-export-") as temporary:
+        exported = Path(temporary) / "rootfs.tar"
+        subprocess.run([crane, "export", image, str(exported)], check=True)
+        with tarfile.open(exported) as archive:
+            member = archive.getmember("app/bin/metrum-ai-router")
+            source = archive.extractfile(member)
+            if source is None:
+                raise RuntimeError("release image router binary cannot be read")
+            smoke(config, source.read(), version)
+
+
+def run_local(layout: Path, image_tag: str, version: str) -> None:
+    _, config = image_descriptor(layout, image_tag, "linux/amd64")
+    binary = image_file(layout, image_tag, "app/bin/metrum-ai-router", "linux/amd64")
+    smoke(config, binary, version)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--crane", required=True)
     parser.add_argument("--image", required=True)
+    parser.add_argument("--oci-layout", type=Path)
     parser.add_argument("--version", required=True)
     args = parser.parse_args()
-    run(args.crane, args.image, args.version)
+    if args.oci_layout:
+        run_local(args.oci_layout, args.image, args.version)
+    else:
+        run(args.crane, args.image, args.version)
     print("crane-built image version and /healthz smoke passed")
     return 0
 

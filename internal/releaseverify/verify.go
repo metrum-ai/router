@@ -134,7 +134,7 @@ func Verify(ctx context.Context, options Options) (Result, error) {
 	if gh == "" {
 		gh = "gh"
 	}
-	if err := run(ctx, gh, "attestation", "verify", archive, "--repo", repo); err != nil {
+	if err := run(ctx, gh, attestationVerificationArgs(archive, repo, options.Release)...); err != nil {
 		return Result{}, fmt.Errorf("verify GitHub provenance: %w", err)
 	}
 
@@ -151,6 +151,15 @@ func Verify(ctx context.Context, options Options) (Result, error) {
 		BinarySHA256: localDigest,
 		Verified:     true,
 	}, nil
+}
+
+func attestationVerificationArgs(archive, repo, release string) []string {
+	return []string{
+		"attestation", "verify", archive,
+		"--repo", repo,
+		"--signer-workflow", "github.com/" + repo + "/.github/workflows/release.yml",
+		"--source-ref", "refs/tags/" + release,
+	}
 }
 
 func artifactNames(release, goos, goarch string) (archive, binary string, err error) {
