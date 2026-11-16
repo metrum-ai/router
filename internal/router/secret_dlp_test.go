@@ -8,9 +8,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func fakeGitHubToken() string  { return "ghp_" + strings.Repeat("1", 36) }
@@ -21,6 +23,7 @@ func fakePrivateKeyBlock() string {
 
 func TestSecretDLPRequestAndUnaryResponseE2E(t *testing.T) {
 	key := fakeGitHubToken()
+	toolResultKey := fakeAWSAccessKey()
 	var calls atomic.Int64
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
@@ -28,10 +31,10 @@ func TestSecretDLPRequestAndUnaryResponseE2E(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatal(err)
 		}
-		messages := body["messages"].([]any)
-		content := messages[0].(map[string]any)["content"].(string)
-		if strings.Contains(content, key) || !strings.Contains(content, "[SECRET_GITHUB_1]") {
-			t.Errorf("upstream content did not redact credential: %q", content)
+		serialized, _ := json.Marshal(body["messages"])
+		if strings.Contains(string(serialized), key) || strings.Contains(string(serialized), toolResultKey) ||
+			!strings.Contains(string(serialized), "[SECRET_GITHUB_1]") || !strings.Contains(string(serialized), "[SECRET_AWS_1]") {
+			t.Errorf("upstream prompt or tool result did not redact credentials: %s", serialized)
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"id": "secret-dlp", "choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": "returned " + key}}}, "usage": map[string]any{"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5}})
 	}))
@@ -39,16 +42,22 @@ func TestSecretDLPRequestAndUnaryResponseE2E(t *testing.T) {
 
 	workDir := t.TempDir()
 	cfg := testConfig(t, upstream.URL, "provider-key", workDir)
+	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(workDir, "usage.sqlite"))
 	group := cfg.Models["default"]
 	group.PIIFilter.Enabled = true
 	group.PIIFilter.SecretsEnabled = true
 	cfg.Models["default"] = group
-	svc, err := New(cfg)
+	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer svc.Close()
-	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"default","messages":[{"role":"user","content":"credential `+key+`"}]}`))
+	const promptPrefix = "private-prompt-marker-before-"
+	const promptSuffix = "-private-prompt-marker-after"
+	const toolResultPrefix = "private-tool-result-marker-before-"
+	const toolResultSuffix = "-private-tool-result-marker-after"
+	body := `{"model":"default","messages":[{"role":"user","content":"` + promptPrefix + key + promptSuffix + `"},{"role":"assistant","tool_calls":[{"id":"call_1","type":"function","function":{"name":"read_secret","arguments":"{}"}}]},{"role":"tool","tool_call_id":"call_1","content":"` + toolResultPrefix + toolResultKey + toolResultSuffix + `"}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	response := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(response, req)
@@ -62,8 +71,33 @@ func TestSecretDLPRequestAndUnaryResponseE2E(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(logData), key) {
-		t.Fatal("request log contains detected credential")
+	for _, sensitive := range []string{key, toolResultKey, promptPrefix, promptSuffix, toolResultPrefix, toolResultSuffix} {
+		if strings.Contains(string(logData), sensitive) {
+			t.Fatalf("request log contains sensitive request data %q", sensitive)
+		}
+	}
+	var rows []usageRecord
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if err := svc.usage.db.Find(&rows).Error; err != nil {
+			t.Fatal(err)
+		}
+		if len(rows) > 0 {
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	if len(rows) == 0 {
+		t.Fatal("usage database did not record the request")
+	}
+	serializedRows, err := json.Marshal(rows)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, sensitive := range []string{key, toolResultKey, promptPrefix, promptSuffix, toolResultPrefix, toolResultSuffix} {
+		if strings.Contains(string(serializedRows), sensitive) {
+			t.Fatalf("usage database rows contain sensitive request data %q", sensitive)
+		}
 	}
 }
 
@@ -149,6 +183,74 @@ func TestSecretDLPFailClosedOnUnaryResponse(t *testing.T) {
 	svc.Handler().ServeHTTP(response, req)
 	if response.Code != http.StatusBadGateway || strings.Contains(response.Body.String(), key) || !strings.Contains(response.Body.String(), "pii-filter-blocked") {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestSecretDLPUpstreamTimeoutAfterRedaction(t *testing.T) {
+	key := fakeAWSAccessKey()
+	const promptMarker = "private-timeout-prompt-marker"
+	var calls atomic.Int64
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+			return
+		}
+		messages := valueAsSlice(body["messages"])
+		content := stringValue(messages[0].(map[string]any)["content"])
+		if strings.Contains(content, key) || !strings.Contains(content, "[SECRET_AWS_1]") {
+			t.Errorf("timed-out upstream received unredacted credential: %q", content)
+		}
+		time.Sleep(100 * time.Millisecond)
+		writeJSON(w, http.StatusOK, map[string]any{"id": "late", "choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": "late"}}}})
+	}))
+	defer upstream.Close()
+	dir := t.TempDir()
+	cfg := testConfig(t, upstream.URL, "provider-key", dir)
+	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
+	group := cfg.Models["default"]
+	group.AttemptTimeoutMS = 10
+	group.PIIFilter.Enabled = true
+	group.PIIFilter.SecretsEnabled = true
+	cfg.Models["default"] = group
+	svc, err := newServiceWithVerifiedFixture(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"default","messages":[{"role":"user","content":"`+promptMarker+" "+key+`"}]}`))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	response := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(response, req)
+	if response.Code != http.StatusGatewayTimeout || calls.Load() != 1 || strings.Contains(response.Body.String(), key) {
+		t.Fatalf("status=%d calls=%d body=%s", response.Code, calls.Load(), response.Body.String())
+	}
+	flushUsageForTest(t, svc)
+	var attempts []requestAttemptRecord
+	if err := svc.usage.db.Find(&attempts).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(attempts) != 1 || !attempts[0].TimedOut || attempts[0].ErrorClass != "upstream_timeout" {
+		t.Fatalf("unexpected timeout attempts: %#v", attempts)
+	}
+	var rows []usageRecord
+	if err := svc.usage.db.Find(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	serialized, err := json.Marshal(map[string]any{"attempts": attempts, "usage": rows})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(serialized), key) || strings.Contains(string(serialized), promptMarker) {
+		t.Fatal("timeout usage records contain secret or prompt text")
+	}
+	logData, err := os.ReadFile(cfg.Server.Logging.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(logData), key) || strings.Contains(string(logData), promptMarker) {
+		t.Fatal("timeout request log contains secret or prompt text")
 	}
 }
 
