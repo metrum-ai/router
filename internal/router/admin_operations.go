@@ -21,6 +21,7 @@ import (
 )
 
 const adminOperationsTable = "router_admin_operations"
+const adminOperationsMigrationID = 2026111606
 
 const (
 	adminOperationPending              = "pending"
@@ -472,7 +473,7 @@ type adminOperationResult struct {
 
 func adminOperationsMigrationDefinition() MigrationDefinition {
 	return FinalizeMigrationDefinition(MigrationDefinition{
-		ID: 2026111606, Scope: configControlPlaneScope,
+		ID: adminOperationsMigrationID, Scope: configControlPlaneScope,
 		Name: "durable asynchronous admin operations", Release: "2026.11",
 		Checksum: MigrationChecksum("router-config.admin-operations.v1"), SchemaVersion: 16,
 		Transactional: true, MaintenanceMode: "online", RollbackClass: "restore-required",

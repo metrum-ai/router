@@ -915,6 +915,60 @@
         ],
         "type": "object"
       },
+      "adminClientCreateBody": {
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "type": "object"
+      },
+      "adminClientCredentialBody": {
+        "properties": {
+          "expires_at": {
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "identity": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "identity",
+          "subject",
+          "expires_at"
+        ],
+        "type": "object"
+      },
+      "adminClientUpdateBody": {
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
       "adminMembershipWriteRequest": {
         "properties": {
           "role": {
@@ -1575,24 +1629,6 @@
               ],
               "type": "string"
             }
-          },
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -1620,12 +1656,6 @@
           "409": {
             "$ref": "#/components/responses/Problem"
           },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -1641,9 +1671,9 @@
           "configuration"
         ],
         "x-admin-action": "list",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "caller-target",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:callers"
       }
     },
@@ -1745,24 +1775,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -1790,15 +1802,6 @@
           "404": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -1814,9 +1817,9 @@
           "configuration"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "caller-target",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:quotas"
       },
       "post": {
@@ -1836,15 +1839,6 @@
             "name": "If-Match",
             "required": true,
             "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
               "type": "string"
             }
           }
@@ -1910,7 +1904,7 @@
         "x-admin-action": "write",
         "x-admin-concurrency": "revision",
         "x-admin-domain": "caller-target",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:quotas"
       }
     },
@@ -2086,6 +2080,610 @@
         "x-admin-object": "admin:callers"
       }
     },
+    "/admin/v1/clients": {
+      "get": {
+        "operationId": "listAdminClients",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: clients.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "List machine clients",
+        "tags": [
+          "admin"
+        ],
+        "x-admin-action": "list",
+        "x-admin-concurrency": "none",
+        "x-admin-domain": "global",
+        "x-admin-idempotency": "none",
+        "x-admin-object": "admin:clients"
+      },
+      "post": {
+        "operationId": "createAdminClient",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/adminClientCreateBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: client.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Register a machine client",
+        "tags": [
+          "admin"
+        ],
+        "x-admin-action": "create",
+        "x-admin-concurrency": "none",
+        "x-admin-domain": "global",
+        "x-admin-idempotency": "none",
+        "x-admin-object": "admin:clients"
+      }
+    },
+    "/admin/v1/clients/access-review": {
+      "get": {
+        "operationId": "getAdminClientAccessReview",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: clients, generatedAt.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Export client credentials and effective grants",
+        "tags": [
+          "admin"
+        ],
+        "x-admin-action": "review",
+        "x-admin-concurrency": "none",
+        "x-admin-domain": "global",
+        "x-admin-idempotency": "none",
+        "x-admin-object": "admin:clients"
+      }
+    },
+    "/admin/v1/clients/{client}": {
+      "delete": {
+        "operationId": "deleteAdminClient",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: status.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Delete a machine client",
+        "tags": [
+          "admin"
+        ],
+        "x-admin-action": "delete",
+        "x-admin-concurrency": "none",
+        "x-admin-domain": "global",
+        "x-admin-idempotency": "none",
+        "x-admin-object": "admin:clients"
+      },
+      "get": {
+        "operationId": "getAdminClient",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: client.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Read one machine client",
+        "tags": [
+          "admin"
+        ],
+        "x-admin-action": "get",
+        "x-admin-concurrency": "none",
+        "x-admin-domain": "global",
+        "x-admin-idempotency": "none",
+        "x-admin-object": "admin:clients"
+      },
+      "put": {
+        "operationId": "updateAdminClient",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/adminClientUpdateBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: status.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Update a machine client",
+        "tags": [
+          "admin"
+        ],
+        "x-admin-action": "update",
+        "x-admin-concurrency": "none",
+        "x-admin-domain": "global",
+        "x-admin-idempotency": "none",
+        "x-admin-object": "admin:clients"
+      }
+    },
+    "/admin/v1/clients/{client}/credentials": {
+      "post": {
+        "operationId": "registerAdminClientCredential",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/adminClientCredentialBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: credential.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Register credential metadata for a machine client",
+        "tags": [
+          "admin"
+        ],
+        "x-admin-action": "register",
+        "x-admin-concurrency": "none",
+        "x-admin-domain": "global",
+        "x-admin-idempotency": "none",
+        "x-admin-object": "admin:clients"
+      }
+    },
+    "/admin/v1/clients/{client}/credentials/{credential}": {
+      "delete": {
+        "operationId": "revokeAdminClientCredential",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "credential",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: status.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Revoke one client credential",
+        "tags": [
+          "admin"
+        ],
+        "x-admin-action": "revoke",
+        "x-admin-concurrency": "none",
+        "x-admin-domain": "global",
+        "x-admin-idempotency": "none",
+        "x-admin-object": "admin:clients"
+      }
+    },
+    "/admin/v1/clients/{client}/disable": {
+      "post": {
+        "operationId": "disableAdminClient",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: status.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Disable a machine client and revoke its credentials",
+        "tags": [
+          "admin"
+        ],
+        "x-admin-action": "disable",
+        "x-admin-concurrency": "none",
+        "x-admin-domain": "global",
+        "x-admin-idempotency": "none",
+        "x-admin-object": "admin:clients"
+      }
+    },
+    "/admin/v1/clients/{client}/enable": {
+      "post": {
+        "operationId": "enableAdminClient",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: status.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Re-enable a client to register replacement credentials",
+        "tags": [
+          "admin"
+        ],
+        "x-admin-action": "enable",
+        "x-admin-concurrency": "none",
+        "x-admin-domain": "global",
+        "x-admin-idempotency": "none",
+        "x-admin-object": "admin:clients"
+      }
+    },
     "/admin/v1/config/diff": {
       "get": {
         "operationId": "diffConfig",
@@ -2105,24 +2703,6 @@
             "name": "to",
             "required": true,
             "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
               "type": "string"
             }
           }
@@ -2155,12 +2735,6 @@
           "409": {
             "$ref": "#/components/responses/Problem"
           },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -2176,9 +2750,9 @@
           "configuration"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "global",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:config"
       }
     },
@@ -2242,24 +2816,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -2290,12 +2846,6 @@
           "409": {
             "$ref": "#/components/responses/Problem"
           },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -2311,9 +2861,9 @@
           "configuration"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "global",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:config"
       }
     },
@@ -2326,24 +2876,6 @@
             "name": "group",
             "required": true,
             "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
               "type": "string"
             }
           }
@@ -2370,15 +2902,6 @@
           "403": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -2394,9 +2917,9 @@
           "configuration"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "global",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:config"
       }
     },
@@ -2599,24 +3122,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -2641,15 +3146,6 @@
           "403": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -2665,9 +3161,9 @@
           "configuration"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "global",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:config"
       },
       "post": {
@@ -3508,24 +4004,6 @@
               ],
               "type": "string"
             }
-          },
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -3553,12 +4031,6 @@
           "409": {
             "$ref": "#/components/responses/Problem"
           },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -3574,9 +4046,9 @@
           "configuration"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "global",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:config"
       },
       "post": {
@@ -3677,24 +4149,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -3722,15 +4176,6 @@
           "404": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -3746,9 +4191,9 @@
           "configuration"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "global",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:config"
       }
     },
@@ -3855,26 +4300,6 @@
     "/admin/v1/config/status": {
       "get": {
         "operationId": "getConfigStatus",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -3897,15 +4322,6 @@
           "403": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -3921,9 +4337,9 @@
           "configuration"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "global",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:config"
       }
     },
@@ -4221,26 +4637,6 @@
       "post": {
         "description": "Returns 202 Accepted with a Location header for the operation resource. Download the completed versioned bundle from the separately authorized backup resource.",
         "operationId": "startControlPlaneBackup",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "202": {
             "content": {
@@ -4280,15 +4676,6 @@
           "403": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -4304,9 +4691,9 @@
           "admin"
         ],
         "x-admin-action": "write",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "global",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:backup"
       }
     },
@@ -4319,24 +4706,6 @@
             "name": "operation_id",
             "required": true,
             "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
               "type": "string"
             }
           }
@@ -4369,12 +4738,6 @@
           "409": {
             "$ref": "#/components/responses/Problem"
           },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -4390,35 +4753,15 @@
           "admin"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "global",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:backup"
       }
     },
     "/admin/v1/control-plane/restores": {
       "post": {
         "operationId": "startControlPlaneRestore",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -4471,12 +4814,6 @@
           "409": {
             "$ref": "#/components/responses/Problem"
           },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -4492,9 +4829,9 @@
           "admin"
         ],
         "x-admin-action": "write",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "global",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:restore"
       }
     },
@@ -4502,26 +4839,6 @@
       "get": {
         "description": "The versioned spelling of the admin listener's /metrics. Both use the same renderer and the same metrics/read decision in the whole-plane domain; no caller token is involved.",
         "operationId": "getAdminMetrics",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -4542,15 +4859,6 @@
           "403": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -4566,35 +4874,15 @@
           "metrics"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "global",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "metrics"
       }
     },
     "/admin/v1/models": {
       "get": {
         "operationId": "listModelCatalog",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -4620,12 +4908,6 @@
           "409": {
             "$ref": "#/components/responses/Problem"
           },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -4641,9 +4923,9 @@
           "admin"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "global",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:catalog"
       }
     },
@@ -4656,24 +4938,6 @@
             "name": "operation_id",
             "required": true,
             "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
               "type": "string"
             }
           }
@@ -4701,15 +4965,6 @@
           "404": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -4725,35 +4980,15 @@
           "admin"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "global",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:operations"
       }
     },
     "/admin/v1/projects": {
       "get": {
         "operationId": "listProjects",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -4776,15 +5011,6 @@
           "403": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -4800,7 +5026,7 @@
           "admin"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "global",
         "x-admin-extra-checks": [
           {
@@ -4809,7 +5035,7 @@
             "when": "always"
           }
         ],
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:projects"
       }
     },
@@ -4831,15 +5057,6 @@
             "name": "If-Match",
             "required": true,
             "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
               "type": "string"
             }
           }
@@ -4895,7 +5112,7 @@
         "x-admin-action": "write",
         "x-admin-concurrency": "revision",
         "x-admin-domain": "global",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:projects"
       },
       "get": {
@@ -4906,24 +5123,6 @@
             "name": "project",
             "required": true,
             "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
               "type": "string"
             }
           }
@@ -4953,15 +5152,6 @@
           "404": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -4977,7 +5167,7 @@
           "admin"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "global",
         "x-admin-extra-checks": [
           {
@@ -4986,7 +5176,7 @@
             "when": "always"
           }
         ],
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:projects"
       },
       "put": {
@@ -5006,15 +5196,6 @@
             "name": "If-Match",
             "required": true,
             "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
               "type": "string"
             }
           }
@@ -5088,7 +5269,7 @@
             "when": "body.budget"
           }
         ],
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:projects"
       }
     },
@@ -5118,15 +5299,6 @@
             "name": "If-Match",
             "required": true,
             "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
               "type": "string"
             }
           }
@@ -5182,7 +5354,7 @@
         "x-admin-action": "write",
         "x-admin-concurrency": "revision",
         "x-admin-domain": "global",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:projects"
       }
     },
@@ -5203,24 +5375,6 @@
             "name": "environment",
             "required": true,
             "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
               "type": "string"
             }
           }
@@ -5250,15 +5404,6 @@
           "404": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -5274,9 +5419,9 @@
           "admin"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "project-environment",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:memberships"
       },
       "post": {
@@ -5304,15 +5449,6 @@
             "name": "If-Match",
             "required": true,
             "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
               "type": "string"
             }
           }
@@ -5381,7 +5517,7 @@
         "x-admin-action": "write",
         "x-admin-concurrency": "revision",
         "x-admin-domain": "project-environment",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:memberships"
       }
     },
@@ -5421,15 +5557,6 @@
             "schema": {
               "type": "string"
             }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
           }
         ],
         "responses": {
@@ -5457,9 +5584,6 @@
           "404": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
           "412": {
             "$ref": "#/components/responses/Problem"
           },
@@ -5483,33 +5607,13 @@
         "x-admin-action": "write",
         "x-admin-concurrency": "revision",
         "x-admin-domain": "project-environment",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:memberships"
       }
     },
     "/admin/v1/providers": {
       "get": {
         "operationId": "listProviders",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -5535,12 +5639,6 @@
           "409": {
             "$ref": "#/components/responses/Problem"
           },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -5556,9 +5654,9 @@
           "admin"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "global",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:providers"
       }
     },
@@ -5580,15 +5678,6 @@
             "name": "If-Match",
             "required": true,
             "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
               "type": "string"
             }
           }
@@ -5644,7 +5733,7 @@
         "x-admin-action": "write",
         "x-admin-concurrency": "revision",
         "x-admin-domain": "global",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:providers"
       },
       "get": {
@@ -5655,24 +5744,6 @@
             "name": "provider",
             "required": true,
             "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
               "type": "string"
             }
           }
@@ -5702,15 +5773,6 @@
           "404": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -5726,9 +5788,9 @@
           "admin"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "global",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:providers"
       },
       "put": {
@@ -5749,15 +5811,6 @@
             "name": "If-Match",
             "required": true,
             "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
               "type": "string"
             }
           }
@@ -5826,7 +5879,7 @@
         "x-admin-action": "write",
         "x-admin-concurrency": "revision",
         "x-admin-domain": "global",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:providers"
       }
     },
@@ -5839,24 +5892,6 @@
             "name": "provider",
             "required": true,
             "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
               "type": "string"
             }
           }
@@ -5896,16 +5931,7 @@
           "404": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
           "422": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
             "$ref": "#/components/responses/Problem"
           },
           "429": {
@@ -5923,9 +5949,9 @@
           "admin"
         ],
         "x-admin-action": "write",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "global",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:providers",
         "x-admin-side-effects": "none"
       }
@@ -5933,26 +5959,6 @@
     "/admin/v1/reports/cfo": {
       "get": {
         "operationId": "getCFOReport",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -5975,15 +5981,6 @@
           "403": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -5999,35 +5996,15 @@
           "reports"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "handler",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:reports"
       }
     },
     "/admin/v1/reports/cfo/export.csv": {
       "get": {
         "operationId": "exportCFOReportCSV",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -6048,15 +6025,6 @@
           "403": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -6072,35 +6040,15 @@
           "reports"
         ],
         "x-admin-action": "export",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "handler",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:reports"
       }
     },
     "/admin/v1/reports/cfo/export.md": {
       "get": {
         "operationId": "exportCFOReportMarkdown",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -6119,15 +6067,6 @@
             "$ref": "#/components/responses/Problem"
           },
           "403": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
             "$ref": "#/components/responses/Problem"
           },
           "429": {
@@ -6145,35 +6084,15 @@
           "reports"
         ],
         "x-admin-action": "export",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "handler",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:reports"
       }
     },
     "/admin/v1/reports/errors-fallbacks": {
       "get": {
         "operationId": "errorsFallbacks",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -6196,15 +6115,6 @@
           "403": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -6220,35 +6130,15 @@
           "reports"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "handler",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:reports"
       }
     },
     "/admin/v1/reports/export.md": {
       "get": {
         "operationId": "exportAdminReportMarkdown",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -6269,15 +6159,6 @@
           "403": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -6293,35 +6174,15 @@
           "reports"
         ],
         "x-admin-action": "export",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "handler",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:reports"
       }
     },
     "/admin/v1/reports/latency-throughput": {
       "get": {
         "operationId": "latencyThroughput",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -6344,15 +6205,6 @@
           "403": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -6368,35 +6220,15 @@
           "reports"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "handler",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:reports"
       }
     },
     "/admin/v1/reports/migrations": {
       "get": {
         "operationId": "getAdminMigrationStatus",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -6419,15 +6251,6 @@
           "403": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -6443,35 +6266,15 @@
           "reports"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "handler",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:reports"
       }
     },
     "/admin/v1/reports/model-groups-by-user": {
       "get": {
         "operationId": "modelGroupsByUser",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -6494,15 +6297,6 @@
           "403": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -6518,35 +6312,15 @@
           "reports"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "handler",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:reports"
       }
     },
     "/admin/v1/reports/overview": {
       "get": {
         "operationId": "getAdminReportOverview",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -6569,15 +6343,6 @@
           "403": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -6593,35 +6358,15 @@
           "reports"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "handler",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:reports"
       }
     },
     "/admin/v1/reports/provider-catalog-status": {
       "get": {
         "operationId": "getAdminProviderCatalogStatus",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -6644,15 +6389,6 @@
           "403": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -6668,35 +6404,15 @@
           "reports"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "handler",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:reports"
       }
     },
     "/admin/v1/reports/provider-model-mix": {
       "get": {
         "operationId": "providerModelMix",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -6719,15 +6435,6 @@
           "403": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -6743,35 +6450,15 @@
           "reports"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "handler",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:reports"
       }
     },
     "/admin/v1/reports/quota-status": {
       "get": {
         "operationId": "getAdminQuotaStatus",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -6794,15 +6481,6 @@
           "403": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -6818,9 +6496,9 @@
           "reports"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "handler",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:reports"
       }
     },
@@ -6834,24 +6512,6 @@
             "name": "request_id",
             "required": true,
             "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
               "type": "string"
             }
           }
@@ -6881,15 +6541,6 @@
           "404": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -6905,35 +6556,15 @@
           "reports"
         ],
         "x-admin-action": "drilldown",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "handler",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:reports"
       }
     },
     "/admin/v1/reports/requested-models": {
       "get": {
         "operationId": "requestedModels",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -6954,15 +6585,6 @@
             "$ref": "#/components/responses/Problem"
           },
           "403": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
             "$ref": "#/components/responses/Problem"
           },
           "429": {
@@ -6980,35 +6602,15 @@
           "reports"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "handler",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:reports"
       }
     },
     "/admin/v1/reports/requests": {
       "get": {
         "operationId": "listAdminReportRequests",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -7031,15 +6633,6 @@
           "403": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -7055,9 +6648,9 @@
           "reports"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "handler",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:reports"
       }
     },
@@ -7070,24 +6663,6 @@
             "name": "request_id",
             "required": true,
             "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
               "type": "string"
             }
           }
@@ -7117,15 +6692,6 @@
           "404": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -7141,35 +6707,15 @@
           "reports"
         ],
         "x-admin-action": "drilldown",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "handler",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:reports"
       }
     },
     "/admin/v1/reports/retention-status": {
       "get": {
         "operationId": "getAdminRetentionStatus",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -7192,15 +6738,6 @@
           "403": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -7216,35 +6753,15 @@
           "reports"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "handler",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:reports"
       }
     },
     "/admin/v1/reports/savings": {
       "get": {
         "operationId": "getAdminReportSavings",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -7267,15 +6784,6 @@
           "403": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -7291,35 +6799,15 @@
           "reports"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "handler",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:reports"
       }
     },
     "/admin/v1/reports/savings-by-group": {
       "get": {
         "operationId": "savingsByGroup",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -7340,15 +6828,6 @@
             "$ref": "#/components/responses/Problem"
           },
           "403": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
             "$ref": "#/components/responses/Problem"
           },
           "429": {
@@ -7366,35 +6845,15 @@
           "reports"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "handler",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:reports"
       }
     },
     "/admin/v1/reports/savings-by-key": {
       "get": {
         "operationId": "savingsByKey",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -7415,15 +6874,6 @@
             "$ref": "#/components/responses/Problem"
           },
           "403": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
             "$ref": "#/components/responses/Problem"
           },
           "429": {
@@ -7441,35 +6891,15 @@
           "reports"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "handler",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:reports"
       }
     },
     "/admin/v1/reports/savings-by-project": {
       "get": {
         "operationId": "savingsByProject",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -7490,15 +6920,6 @@
             "$ref": "#/components/responses/Problem"
           },
           "403": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
             "$ref": "#/components/responses/Problem"
           },
           "429": {
@@ -7516,35 +6937,15 @@
           "reports"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "handler",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:reports"
       }
     },
     "/admin/v1/reports/savings-by-provider-model": {
       "get": {
         "operationId": "savingsByProviderModel",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -7565,15 +6966,6 @@
             "$ref": "#/components/responses/Problem"
           },
           "403": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
             "$ref": "#/components/responses/Problem"
           },
           "429": {
@@ -7591,35 +6983,15 @@
           "reports"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "handler",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:reports"
       }
     },
     "/admin/v1/reports/savings-by-user": {
       "get": {
         "operationId": "savingsByUser",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -7642,15 +7014,6 @@
           "403": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -7666,35 +7029,15 @@
           "reports"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "handler",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:reports"
       }
     },
     "/admin/v1/reports/security/events": {
       "get": {
         "operationId": "listAdminSecurityEvents",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -7717,15 +7060,6 @@
           "403": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -7741,35 +7075,15 @@
           "reports"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "handler",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:security_reports"
       }
     },
     "/admin/v1/reports/security/export.csv": {
       "get": {
         "operationId": "exportAdminSecurityCSV",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -7790,15 +7104,6 @@
           "403": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -7814,35 +7119,15 @@
           "reports"
         ],
         "x-admin-action": "export",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "handler",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:security_reports"
       }
     },
     "/admin/v1/reports/security/export.json": {
       "get": {
         "operationId": "exportAdminSecurityIncidentJSON",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -7868,15 +7153,6 @@
           "404": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -7892,35 +7168,15 @@
           "reports"
         ],
         "x-admin-action": "export",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "handler",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:security_reports"
       }
     },
     "/admin/v1/reports/security/export.md": {
       "get": {
         "operationId": "exportAdminSecurityIncidentMarkdown",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -7944,15 +7200,6 @@
           "404": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -7968,35 +7215,15 @@
           "reports"
         ],
         "x-admin-action": "export",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "handler",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:security_reports"
       }
     },
     "/admin/v1/reports/security/overview": {
       "get": {
         "operationId": "getAdminSecurityOverview",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -8019,15 +7246,6 @@
           "403": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -8043,35 +7261,15 @@
           "reports"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "handler",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:security_reports"
       }
     },
     "/admin/v1/reports/security/posture/latest": {
       "get": {
         "operationId": "getAdminSecurityPostureReport",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -8097,15 +7295,6 @@
           "404": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -8121,33 +7310,13 @@
           "reports"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "handler",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:security_reports"
       },
       "post": {
         "operationId": "saveAdminSecurityPostureReport",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -8182,16 +7351,7 @@
           "403": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
           "413": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
             "$ref": "#/components/responses/Problem"
           },
           "429": {
@@ -8209,35 +7369,15 @@
           "reports"
         ],
         "x-admin-action": "write",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "handler",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:security_reports"
       }
     },
     "/admin/v1/reports/summary": {
       "get": {
         "operationId": "getAdminReportSummary",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -8260,15 +7400,6 @@
           "403": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -8284,35 +7415,15 @@
           "reports"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "handler",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:reports"
       }
     },
     "/admin/v1/reports/usage-by-caller": {
       "get": {
         "operationId": "usageByCaller",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -8333,15 +7444,6 @@
             "$ref": "#/components/responses/Problem"
           },
           "403": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
             "$ref": "#/components/responses/Problem"
           },
           "429": {
@@ -8359,35 +7461,15 @@
           "reports"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "handler",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:reports"
       }
     },
     "/admin/v1/reports/usage-by-key": {
       "get": {
         "operationId": "usageByKey",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -8410,15 +7492,6 @@
           "403": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -8434,35 +7507,15 @@
           "reports"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "handler",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:reports"
       }
     },
     "/admin/v1/reports/version": {
       "get": {
         "operationId": "getAdminReportVersion",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "responses": {
           "200": {
             "content": {
@@ -8485,15 +7538,6 @@
           "403": {
             "$ref": "#/components/responses/Problem"
           },
-          "409": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
-            "$ref": "#/components/responses/Problem"
-          },
           "429": {
             "$ref": "#/components/responses/Problem"
           },
@@ -8509,9 +7553,9 @@
           "reports"
         ],
         "x-admin-action": "read",
-        "x-admin-concurrency": "",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "handler",
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:reports"
       }
     },
@@ -8525,15 +7569,6 @@
             "name": "If-Match",
             "required": true,
             "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
               "type": "string"
             }
           }
@@ -8607,7 +7642,7 @@
             "when": "body.force"
           }
         ],
-        "x-admin-idempotency": "",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:retention"
       }
     },

@@ -235,9 +235,9 @@ def main() -> int:
                            "scope_count": len(statuses),
                            "compatible": all(status.get("Compatible", status.get("compatible", True)) for status in statuses)})
         config_status = strict_json(candidate_migrate, "status", config_database, args.service_user, "--scope=router-config")
-        if config_status.get("SchemaVersion", config_status.get("schemaVersion")) != 16:
-            raise RuntimeError("Kubernetes migration Job did not apply router-config schema 16")
-        checks.append({"check": "kubernetes-migration-job-router-config-schema-16", "passed": True})
+        if config_status.get("SchemaVersion", config_status.get("schemaVersion")) != 17:
+            raise RuntimeError("Kubernetes migration Job did not apply router-config schema 17")
+        checks.append({"check": "kubernetes-migration-job-router-config-schema-17", "passed": True})
         status = strict_json(candidate_migrate, "resume", database, args.service_user,
                              "--job=historical-usage-validation-v1", "--checkpoint-ordinal=0")
         checks.append({"check": "candidate-resume", "strict_json": True,

@@ -49,6 +49,31 @@ func TestAdminOpenAPIUpToDate(t *testing.T) {
 	}
 }
 
+func TestAdminClientOpenAPIDoesNotRequireRevisionOrIdempotencyHeaders(t *testing.T) {
+	var document struct {
+		Paths map[string]map[string]struct {
+			Parameters []struct {
+				Name     string `json:"name"`
+				Required bool   `json:"required"`
+			} `json:"parameters"`
+		} `json:"paths"`
+	}
+	if err := json.Unmarshal(adminOpenAPIForTest(t), &document); err != nil {
+		t.Fatal(err)
+	}
+	for _, operation := range AdminV1Operations() {
+		if operation.Object != adminClientsObject || operation.Method == "GET" {
+			continue
+		}
+		generated := document.Paths[operation.Path][strings.ToLower(operation.Method)]
+		for _, parameter := range generated.Parameters {
+			if parameter.Name == "If-Match" || parameter.Name == "Idempotency-Key" {
+				t.Fatalf("client operation %s unexpectedly documents %s (required=%t)", operation.ID, parameter.Name, parameter.Required)
+			}
+		}
+	}
+}
+
 func repoRootForTest(t *testing.T) string {
 	t.Helper()
 	dir, err := os.Getwd()
@@ -102,6 +127,7 @@ func TestAdminOpenAPISchemaCoverage(t *testing.T) {
 	operations := AdminV1Operations()
 	count := 0
 	for _, op := range operations {
+		op = op.normalized()
 		pathItem, ok := document.Paths[op.Path]
 		if !ok {
 			t.Fatalf("operation %s path %s missing from document", op.ID, op.Path)

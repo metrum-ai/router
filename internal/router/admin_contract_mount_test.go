@@ -166,6 +166,9 @@ func newAdminV1Harness(t *testing.T) *adminV1Harness {
 			writeJSON(w, http.StatusOK, map[string]any{"deleted": 0})
 		},
 	}
+	for _, op := range adminClientOperations() {
+		extra[op.HandlerKey] = func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) }
+	}
 	harness := &adminV1Harness{
 		mux:          http.NewServeMux(),
 		registry:     registry,
@@ -274,9 +277,8 @@ func addReportPlaceholderHandlers(registry *AdminV1Registry, handlers map[string
 		if _, ok := out[op.HandlerKey]; ok {
 			continue
 		}
-		opID := op.ID
 		out[op.HandlerKey] = func(w http.ResponseWriter, r *http.Request) {
-			writeJSON(w, http.StatusOK, map[string]any{"report": opID})
+			writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 		}
 	}
 	return out
@@ -1094,15 +1096,25 @@ func TestAdminV1ServiceHandlerComposition(t *testing.T) {
 		CallerAdminDeps{},
 		noop,
 		map[string]http.HandlerFunc{
-			"admin.operations.get":    noop,
-			"admin.backup.start":      noop,
-			"admin.backup.download":   noop,
-			"admin.backup.restore":    noop,
-			"training.export":         noop,
-			"training.outcomes.label": noop,
-			"metrics.scrape":          noop,
-			"content.captures.delete": noop,
-			"content.captures.purge":  noop,
+			"admin.operations.get":               noop,
+			"admin.backup.start":                 noop,
+			"admin.backup.download":              noop,
+			"admin.backup.restore":               noop,
+			"training.export":                    noop,
+			"training.outcomes.label":            noop,
+			"metrics.scrape":                     noop,
+			"content.captures.delete":            noop,
+			"content.captures.purge":             noop,
+			"admin.clients.list":                 noop,
+			"admin.clients.get":                  noop,
+			"admin.clients.create":               noop,
+			"admin.clients.update":               noop,
+			"admin.clients.enable":               noop,
+			"admin.clients.disable":              noop,
+			"admin.clients.delete":               noop,
+			"admin.clients.credentials.register": noop,
+			"admin.clients.credentials.revoke":   noop,
+			"admin.clients.review":               noop,
 		},
 	)
 	for _, op := range registry.Operations() {

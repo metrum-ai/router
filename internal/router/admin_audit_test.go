@@ -716,7 +716,7 @@ func TestAdminEveryMutationHasOneAuditRow(t *testing.T) {
 	}
 	mutations, usageMutations := 0, 0
 	for _, op := range registry.Operations() {
-		if op.Method == "GET" || op.ID == "exportTrainingData" {
+		if op.Method == "GET" || op.ID == "exportTrainingData" || op.Object == adminClientsObject {
 			continue
 		}
 		if op.ID == "startControlPlaneBackup" {
@@ -778,6 +778,7 @@ func TestAdminEveryMutationHasOneAuditRow(t *testing.T) {
 	if mutations == 0 || usageMutations != 3 {
 		t.Fatalf("exercised %d mutations (%d usage-side), want the full registry", mutations, usageMutations)
 	}
+	assertAdminClientLifecycleAudit(t)
 	// The control-plane class gets its own forced-audit-failure rollback case.
 	assertControlPlaneAuditRollback(t)
 }
@@ -1199,6 +1200,31 @@ func TestAdminCredentialLifecycleEvents(t *testing.T) {
 		if row.CredentialID != callerID || row.Subject != callerID {
 			t.Fatalf("lifecycle row %d names %q/%q, want the affected caller %q", i, row.CredentialID, row.Subject, callerID)
 		}
+	}
+}
+
+func TestAdminCredentialEventTimestampOrderingCollapsesSubsecondEvents(t *testing.T) {
+	db := configAdminTestDB(t)
+	base := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
+	event := AdminCredentialEvent{
+		Kind: "adminkey", CredentialID: "adminkey:timestamp", Outcome: "success",
+		Lifecycle: "authenticate", RequestID: "req-timestamp",
+	}
+	for _, offset := range []time.Duration{90 * time.Millisecond, 100 * time.Millisecond} {
+		event.At = base.Add(offset)
+		if err := db.Transaction(func(tx *gorm.DB) error { return insertAdminCredentialEventTx(tx, event) }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var rows, count int64
+	if err := db.Table(adminCredentialEventsTable).Count(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Table(adminCredentialEventsTable).Select("COALESCE(SUM(count),0)").Scan(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if rows != 1 || count != 2 {
+		t.Fatalf("subsecond events produced %d rows and count %d, want one row and count two", rows, count)
 	}
 }
 

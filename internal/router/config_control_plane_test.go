@@ -54,6 +54,25 @@ func TestConfigControlPlaneMigrationManifestIsStrictAndExecutable(t *testing.T) 
 	}
 }
 
+func TestAdminClientAndOperationsMigrationOrder(t *testing.T) {
+	var client, operations *MigrationDefinition
+	for i := range configControlPlaneMigrationDefinitions {
+		definition := &configControlPlaneMigrationDefinitions[i]
+		switch definition.ID {
+		case 2026111610:
+			client = definition
+		case adminOperationsMigrationID:
+			operations = definition
+		}
+	}
+	if client == nil || operations == nil {
+		t.Fatalf("v5 migrations missing: client=%v operations=%v", client, operations)
+	}
+	if client.SchemaVersion != 17 || operations.SchemaVersion != 16 || client.ID <= operations.ID || len(client.Dependencies) != 1 || client.Dependencies[0] != operations.ID {
+		t.Fatalf("migration ordering/version mismatch: client=%+v operations=%+v", *client, *operations)
+	}
+}
+
 func TestConfigControlPlanePhase1MigratesRelationalSchema(t *testing.T) {
 	r, closeDB, err := ConfigControlPlaneMigrationRunner(UsageDBConfig{Driver: "sqlite", Path: filepath.Join(t.TempDir(), "config.sqlite")})
 	if err != nil {

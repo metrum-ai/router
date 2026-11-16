@@ -100,7 +100,8 @@ func (a *adminMTLSAuthenticator) Authenticate(ctx context.Context, r *http.Reque
 func (a *adminMTLSAuthenticator) principalForVerifiedLeaf(ctx context.Context, leaf *x509.Certificate) (Principal, error) {
 	// Unmapped extra SANs are ignored. All mapped SANs must agree on exactly
 	// one subject; no preference ordering can mask conflicting mapped SANs.
-	subject := ""
+	subject, identity := "", ""
+	var identities []string
 	match := func(san string) bool {
 		mapped := a.subjects[san]
 		if mapped == "" {
@@ -110,6 +111,19 @@ func (a *adminMTLSAuthenticator) principalForVerifiedLeaf(ctx context.Context, l
 			return false
 		}
 		subject = mapped
+		if identity == "" {
+			identity = san
+		}
+		seen := false
+		for _, existing := range identities {
+			if existing == san {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			identities = append(identities, san)
+		}
 		return true
 	}
 	uris, err := adminRawCertificateURISANs(leaf)
@@ -130,7 +144,7 @@ func (a *adminMTLSAuthenticator) principalForVerifiedLeaf(ctx context.Context, l
 		return Principal{}, ErrInvalidCredential
 	}
 	fingerprint := sha256.Sum256(leaf.Raw)
-	return Principal{Subject: subject, Kind: "mtls", Issuer: a.issuer, CredentialID: hex.EncodeToString(fingerprint[:])}, nil
+	return Principal{Subject: subject, Identity: identity, Identities: strings.Join(identities, "\x00"), Kind: "mtls", Issuer: a.issuer, CredentialID: hex.EncodeToString(fingerprint[:])}, nil
 }
 
 // Read URI GeneralNames from the signed SAN extension bytes, not url.URL's
