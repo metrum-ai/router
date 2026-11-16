@@ -9,6 +9,20 @@ For v5.0.0, `metrum-ai-router-migrate --json` writes one JSON document to stdout
 
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
 
+## v5.0.0 secret DLP
+
+Model groups can set `pii_filter.secrets_enabled: true` to apply the built-in
+credential detector pack to inbound text and buffered responses. `mode:
+redact_only` replaces matches with placeholders; `mode: fail_on_match` rejects
+matching requests before upstream dispatch and blocks matching buffered
+responses. The detector uses bounded RE2 patterns and a high-entropy token
+heuristic, so operators should validate it against their traffic. Existing
+`pii_filter` rules and replacement limits continue to apply. Configure
+`apply_to.tool_results` for tool-result coverage. Streaming text and held tool
+calls require the bounded stream inspection gate. Until that integration is
+available, a request with `stream: true` in a group using this setting fails
+with HTTP 400 `secret-dlp-stream-inspection-required` before upstream dispatch.
+
 ## v5.0.0 provider spend breaker
 
 Provider `spend_breaker` is optional. Existing configurations keep their prior

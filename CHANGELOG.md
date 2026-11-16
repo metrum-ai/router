@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Add an opt-in `pii_filter.secrets_enabled` detector pack for common credentials in inbound and buffered response text; matches use the configured redaction or fail-closed mode, and streaming fails closed until bounded inspection is integrated.
 - Add optional per-provider hourly and daily spend breakers. Breaker state uses estimated costs in memory, emits structured trip/reset events, and returns `503 provider_spend_breaker` when configured to stop.
 - Raise the Go patch floor to 1.27.4 for GO-2026-6859 (CVE-2026-97054), an HTTP/1
   server crash caused by a `MaxBytesReader` header race in `net/http`. Release binaries,

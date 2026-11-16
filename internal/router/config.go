@@ -655,6 +655,7 @@ type DynamicEvaluationTarget struct {
 
 type PIIFilterConfig struct {
 	Enabled                   bool             `yaml:"enabled" json:"enabled"`
+	SecretsEnabled            bool             `yaml:"secrets_enabled" json:"secretsEnabled"`
 	Mode                      string           `yaml:"mode" json:"mode"`
 	FailOnMatch               bool             `yaml:"fail_on_match" json:"failOnMatch"`
 	ApplyTo                   PIIFilterApplyTo `yaml:"apply_to" json:"applyTo"`
@@ -3105,7 +3106,7 @@ func validatePIIFilter(group string, cfg PIIFilterConfig) error {
 		return fmt.Errorf("F-011: pii-filter-redact-and-restore-unsupported: model group %s", group)
 	}
 	if !cfg.Enabled {
-		if cfg.Mode != "" || cfg.FailOnMatch || cfg.RestoreResponse != nil || cfg.MaxReplacementsPerRequest != 0 || len(cfg.Rules) > 0 {
+		if cfg.SecretsEnabled || cfg.Mode != "" || cfg.FailOnMatch || cfg.RestoreResponse != nil || cfg.MaxReplacementsPerRequest != 0 || len(cfg.Rules) > 0 {
 			return fmt.Errorf("model group %s configures pii_filter but pii_filter.enabled is false", group)
 		}
 		return nil
@@ -3118,10 +3119,15 @@ func validatePIIFilter(group string, cfg PIIFilterConfig) error {
 	if cfg.MaxReplacementsPerRequest < 0 {
 		return fmt.Errorf("model group %s pii_filter max_replacements_per_request cannot be negative", group)
 	}
-	if len(cfg.Rules) == 0 {
+	if len(cfg.Rules) == 0 && !cfg.SecretsEnabled {
 		return fmt.Errorf("model group %s pii_filter requires at least one rule", group)
 	}
 	seen := map[string]bool{}
+	if cfg.SecretsEnabled {
+		for _, rule := range builtinSecretRules() {
+			seen[rule.Name] = true
+		}
+	}
 	for i, rule := range cfg.Rules {
 		name := strings.TrimSpace(rule.Name)
 		if name == "" {
