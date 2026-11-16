@@ -78,7 +78,7 @@ func toolCallsFromOpenAIChat(m map[string]any) ([]IRToolCall, IRToolCallTruncate
 }
 
 func toolCallsFromResponses(m map[string]any) ([]IRToolCall, IRToolCallTruncated) {
-	output, _ := m["output"].([]any)
+	output := valueAsSlice(m["output"])
 	calls := make([]IRToolCall, 0, len(output))
 	index := 0
 	for _, item := range output {

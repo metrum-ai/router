@@ -239,115 +239,137 @@ func TestToolFirewallSequenceE2E(t *testing.T) {
 }
 
 func TestToolFirewallApprovalHoldE2E(t *testing.T) {
-	for _, decision := range []string{"release", "deny", "timeout"} {
-		t.Run(decision, func(t *testing.T) {
-			var capturedLog bytes.Buffer
-			oldLog := log.Writer()
-			log.SetOutput(&capturedLog)
-			t.Cleanup(func() { log.SetOutput(oldLog) })
-			upstream := sequenceUpstream(t,
-				chatToolCallBodyNamed(t, "read_customer", `{"record":"account-7"}`),
-				chatToolCallBodyNamed(t, "http_request", `{"body":"send"}`),
-			)
-			defer upstream.Close()
-			cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
-			cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(t.TempDir(), "usage.sqlite"))
-			cfg.Server.AdminReports = AdminReportsConfig{Enabled: true, Security: AdminSecurityReportsConfig{Enabled: true, RetentionDays: 7}}
-			t.Setenv("TOOL_FIREWALL_ADMIN_HASH", mustBcryptHash(t, "tool-firewall-admin-password"))
-			cfg.Server.AdminAuth.Basic = AdminBasicAuthConfig{Enabled: true, AllowInsecureHTTP: true, Users: []AdminBasicAuthUser{{Username: "admin", PasswordHashEnv: "TOOL_FIREWALL_ADMIN_HASH", Subject: "basic:admin", Domain: "test"}}}
-			cfg.Server.AdminAuth.Authorization = AdminAuthorizationConfig{Enabled: true, Policy: []string{"p, basic:admin, test, admin:reports, read"}}
-			group := cfg.Models["default"]
-			group.Targets[0].ToolSupport = ToolSupport{OpenAIChat: []string{"tools", "tool_choice"}}
-			cfg.Models["default"] = group
-			cfg.Server.ToolFirewall = ToolFirewallConfig{
-				Mode: toolFirewallEnforce, ApprovalTimeoutMS: 100,
-				Sequences: []ToolFirewallSequenceRule{{FirstTool: "read_customer", FirstArgsRegex: "account", ThenTool: "http_request", WithinTurns: 3, Action: "hold"}},
-			}
-			cfg.Admin.Enabled = true
-			svc, err := newServiceWithVerifiedFixture(cfg)
-			if err != nil {
-				t.Fatal(err)
-			}
-			defer svc.Close()
-			makeRequest := func() *httptest.ResponseRecorder {
-				body := `{"model":"default","messages":[{"role":"user","content":"conversation seed"}],"tools":[{"type":"function","function":{"name":"read_customer","parameters":{"type":"object"}}},{"type":"function","function":{"name":"http_request","parameters":{"type":"object"}}}]}`
-				req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
-				req.Header.Set("Authorization", "Bearer "+testToken)
-				rec := httptest.NewRecorder()
-				svc.Handler().ServeHTTP(rec, req)
-				return rec
-			}
-			if first := makeRequest(); first.Code != http.StatusOK || !strings.Contains(first.Body.String(), "tool_calls") {
-				t.Fatalf("first status=%d body=%s", first.Code, first.Body.String())
-			}
-			result := make(chan *httptest.ResponseRecorder, 1)
-			go func() { result <- makeRequest() }()
-			var approvalID string
-			deadline := time.Now().Add(time.Second)
-			for time.Now().Before(deadline) {
-				svc.toolApprovals.mu.Lock()
-				for id := range svc.toolApprovals.pending {
-					approvalID = id
-					break
+	for _, client := range []string{"chat", "responses"} {
+		for _, decision := range []string{"release", "deny", "timeout"} {
+			t.Run(client+"/"+decision, func(t *testing.T) {
+				var capturedLog bytes.Buffer
+				oldLog := log.Writer()
+				log.SetOutput(&capturedLog)
+				t.Cleanup(func() { log.SetOutput(oldLog) })
+				upstream := sequenceUpstream(t,
+					chatToolCallBodyNamed(t, "read_customer", `{"record":"account-7"}`),
+					chatToolCallBodyNamed(t, "http_request", `{"body":"send"}`),
+				)
+				defer upstream.Close()
+				cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
+				cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(t.TempDir(), "usage.sqlite"))
+				cfg.Server.AdminReports = AdminReportsConfig{Enabled: true, Security: AdminSecurityReportsConfig{Enabled: true, RetentionDays: 7}}
+				t.Setenv("TOOL_FIREWALL_ADMIN_HASH", mustBcryptHash(t, "tool-firewall-admin-password"))
+				cfg.Server.AdminAuth.Basic = AdminBasicAuthConfig{Enabled: true, AllowInsecureHTTP: true, Users: []AdminBasicAuthUser{{Username: "admin", PasswordHashEnv: "TOOL_FIREWALL_ADMIN_HASH", Subject: "basic:admin", Domain: "test"}}}
+				cfg.Server.AdminAuth.Authorization = AdminAuthorizationConfig{Enabled: true, Policy: []string{"p, basic:admin, test, admin:reports, read"}}
+				group := cfg.Models["default"]
+				group.Targets[0].ToolSupport = ToolSupport{OpenAIChat: []string{"tools", "tool_choice"}}
+				group.Targets[0].ResponsesToChat = ResponsesToChatBridge{Enabled: true, Text: true, FunctionTools: true, ToolChoice: true}
+				cfg.Models["default"] = group
+				cfg.Server.ToolFirewall = ToolFirewallConfig{
+					Mode: toolFirewallEnforce, ApprovalTimeoutMS: 100,
+					Sequences: []ToolFirewallSequenceRule{{FirstTool: "read_customer", FirstArgsRegex: "account", ThenTool: "http_request", WithinTurns: 3, Action: "hold"}},
 				}
-				svc.toolApprovals.mu.Unlock()
-				if approvalID != "" {
-					break
-				}
-				time.Sleep(time.Millisecond)
-			}
-			if approvalID == "" {
-				t.Fatal("approval hold was not registered")
-			}
-			if decision != "timeout" {
-				request := httptest.NewRequest(http.MethodPost, "/admin/v1/tool-approvals/"+approvalID, strings.NewReader(`{"decision":"`+decision+`"}`))
-				request.SetPathValue("approval_id", approvalID)
-				recorder := httptest.NewRecorder()
-				svc.handleToolApprovalResolution(recorder, request)
-				if recorder.Code != http.StatusOK {
-					t.Fatalf("resolution status=%d body=%s", recorder.Code, recorder.Body.String())
-				}
-			}
-			second := <-result
-			if second.Code != http.StatusOK {
-				t.Fatalf("second status=%d body=%s", second.Code, second.Body.String())
-			}
-			if decision == "release" {
-				if !strings.Contains(second.Body.String(), "tool_calls") || strings.Contains(second.Body.String(), "Tool call blocked") {
-					t.Fatalf("released tool call was not returned: %s", second.Body.String())
-				}
-			} else if strings.Contains(second.Body.String(), "tool_calls") || !strings.Contains(second.Body.String(), "Tool call blocked") {
-				t.Fatalf("%s hold did not block call: %s", decision, second.Body.String())
-			}
-			var events []securityAccessEventRecord
-			eventDeadline := time.Now().Add(time.Second)
-			for time.Now().Before(eventDeadline) {
-				if err := svc.usage.db.Where("event_type LIKE ?", "tool_firewall_approval_%").Find(&events).Error; err != nil {
+				cfg.Admin.Enabled = true
+				svc, err := newServiceWithVerifiedFixture(cfg)
+				if err != nil {
 					t.Fatal(err)
 				}
-				if len(events) >= 2 {
-					break
+				defer svc.Close()
+				makeRequest := func() *httptest.ResponseRecorder {
+					path := "/v1/chat/completions"
+					body := `{"model":"default","messages":[{"role":"user","content":"conversation seed"}],"tools":[{"type":"function","function":{"name":"read_customer","parameters":{"type":"object"}}},{"type":"function","function":{"name":"http_request","parameters":{"type":"object"}}}]}`
+					if client == "responses" {
+						path = "/v1/responses"
+						body = `{"model":"default","input":[{"role":"user","content":"conversation seed"}],"max_output_tokens":128,"store":false,"prompt_cache_key":"synthetic","tools":[{"type":"function","name":"read_customer","parameters":{"type":"object"}},{"type":"function","name":"http_request","parameters":{"type":"object"}}]}`
+					}
+					req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+					req.Header.Set("Authorization", "Bearer "+testToken)
+					rec := httptest.NewRecorder()
+					svc.Handler().ServeHTTP(rec, req)
+					return rec
 				}
-				time.Sleep(time.Millisecond)
-			}
-			if len(events) < 2 {
-				t.Fatalf("approval events=%d, want pending and resolution", len(events))
-			}
-			serialized, err := json.Marshal(events)
-			if err != nil {
-				t.Fatal(err)
-			}
-			for _, sensitive := range []string{"conversation seed", "account-7", `"body":"send"`} {
-				if strings.Contains(string(serialized), sensitive) {
-					t.Fatalf("tool data %q appeared in security events", sensitive)
+				first := makeRequest()
+				firstHasCall := strings.Contains(first.Body.String(), "tool_calls")
+				if client == "responses" {
+					firstHasCall = strings.Contains(first.Body.String(), "function_call")
 				}
-				if strings.Contains(capturedLog.String(), sensitive) {
-					t.Fatalf("tool data %q appeared in structured logs", sensitive)
+				if first.Code != http.StatusOK || !firstHasCall {
+					t.Fatalf("first status=%d body=%s", first.Code, first.Body.String())
 				}
-			}
-			if !strings.Contains(capturedLog.String(), "event=tool_firewall_approval_pending") || strings.Contains(capturedLog.String(), "event=tool_firewall_approval_approval_") {
-				t.Fatalf("approval logs are not clean structured events: %s", capturedLog.String())
-			}
-		})
+				result := make(chan *httptest.ResponseRecorder, 1)
+				go func() { result <- makeRequest() }()
+				var approvalID string
+				deadline := time.Now().Add(time.Second)
+				for time.Now().Before(deadline) {
+					svc.toolApprovals.mu.Lock()
+					for id := range svc.toolApprovals.pending {
+						approvalID = id
+						break
+					}
+					svc.toolApprovals.mu.Unlock()
+					if approvalID != "" {
+						break
+					}
+					time.Sleep(time.Millisecond)
+				}
+				if approvalID == "" {
+					select {
+					case finished := <-result:
+						t.Fatalf("approval hold was not registered; inference completed with status=%d body=%s", finished.Code, finished.Body.String())
+					default:
+					}
+					t.Fatal("approval hold was not registered")
+				}
+				if decision != "timeout" {
+					request := httptest.NewRequest(http.MethodPost, "/admin/v1/tool-approvals/"+approvalID, strings.NewReader(`{"decision":"`+decision+`"}`))
+					request.SetPathValue("approval_id", approvalID)
+					recorder := httptest.NewRecorder()
+					svc.handleToolApprovalResolution(recorder, request)
+					if recorder.Code != http.StatusOK {
+						t.Fatalf("resolution status=%d body=%s", recorder.Code, recorder.Body.String())
+					}
+				}
+				second := <-result
+				if second.Code != http.StatusOK {
+					t.Fatalf("second status=%d body=%s", second.Code, second.Body.String())
+				}
+				secondHasCall := strings.Contains(second.Body.String(), "tool_calls")
+				if client == "responses" {
+					secondHasCall = strings.Contains(second.Body.String(), "function_call")
+				}
+				if decision == "release" {
+					if !secondHasCall || strings.Contains(second.Body.String(), "Tool call blocked") {
+						t.Fatalf("released tool call was not returned: %s", second.Body.String())
+					}
+				} else if secondHasCall || !strings.Contains(second.Body.String(), "Tool call blocked") {
+					t.Fatalf("%s hold did not block call: %s", decision, second.Body.String())
+				}
+				var events []securityAccessEventRecord
+				eventDeadline := time.Now().Add(time.Second)
+				for time.Now().Before(eventDeadline) {
+					if err := svc.usage.db.Where("event_type LIKE ?", "tool_firewall_approval_%").Find(&events).Error; err != nil {
+						t.Fatal(err)
+					}
+					if len(events) >= 2 {
+						break
+					}
+					time.Sleep(time.Millisecond)
+				}
+				if len(events) < 2 {
+					t.Fatalf("approval events=%d, want pending and resolution", len(events))
+				}
+				serialized, err := json.Marshal(events)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, sensitive := range []string{"conversation seed", "account-7", `"body":"send"`} {
+					if strings.Contains(string(serialized), sensitive) {
+						t.Fatalf("tool data %q appeared in security events", sensitive)
+					}
+					if strings.Contains(capturedLog.String(), sensitive) {
+						t.Fatalf("tool data %q appeared in structured logs", sensitive)
+					}
+				}
+				if !strings.Contains(capturedLog.String(), "event=tool_firewall_approval_pending") || strings.Contains(capturedLog.String(), "event=tool_firewall_approval_approval_") {
+					t.Fatalf("approval logs are not clean structured events: %s", capturedLog.String())
+				}
+			})
+		}
 	}
 }
