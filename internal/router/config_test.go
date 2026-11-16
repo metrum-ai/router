@@ -494,6 +494,31 @@ func TestModelGroupContractValidation(t *testing.T) {
 	}
 }
 
+func TestKeyHygieneConfigEnforcement(t *testing.T) {
+	cfg := minimalConfig(t)
+	cfg.Security.KeyHygiene = KeyHygieneConfig{MinEntropyBits: 128, Enforce: true}
+	cfg.Callers[0].Environment = "prod"
+	cfg.Callers[0].TokenID = "rtr_metrum_alice_example_prod_key1"
+	cfg.Callers[0].TokenFormatVersion = 2
+	cfg.Callers[0].TokenEntropyBits = 256
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("strong production key rejected: %v", err)
+	}
+	cfg.Callers[0].TokenID = "rtr_metrum_alice_example_prod_key1"
+	cfg.Callers[0].TokenFormatVersion = 0
+	cfg.Callers[0].TokenEntropyBits = 0
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "token entropy") {
+		t.Fatalf("weak/unknown entropy error=%v", err)
+	}
+	cfg.Callers[0].TokenID = "rtr_metrum_alice_example_dev_key1"
+	cfg.Callers[0].TokenFormatVersion = 2
+	cfg.Callers[0].TokenEntropyBits = 256
+	cfg.Callers[0].Environment = "dev"
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "development environment") {
+		t.Fatalf("development key error=%v", err)
+	}
+}
+
 func TestProviderSpendBreakerConfigValidation(t *testing.T) {
 	for _, tt := range []struct {
 		name string

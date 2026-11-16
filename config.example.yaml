@@ -3,6 +3,13 @@
 eligibility:
   implicit_openai_to_anthropic: true
 
+# Warn for tokens whose entropy cannot be confirmed and for development keys.
+# Set enforce: true after rotating old tokens to the generated checksummed format.
+security:
+  key_hygiene:
+    min_entropy_bits: 128
+    enforce: false
+
 # Admin control plane (v4.8.0). Machine-to-machine only: no Basic, no cookies,
 # no browser sessions, no HTML. Disabled by default so a v4.7 configuration
 # keeps exactly one listener. The human reports UI is not part of the control
