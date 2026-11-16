@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestAdminQuotaStatusAuthzAndFilters(t *testing.T) {
@@ -129,5 +130,46 @@ func TestAdminQuotaStatusAuthzAndFilters(t *testing.T) {
 	}
 	if allBody.Count != 2 {
 		t.Fatalf("global count=%d", allBody.Count)
+	}
+}
+
+func TestAdminQuotaStatusUsesOrganizationCounters(t *testing.T) {
+	now := time.Now().UTC()
+	quota := QuotaConfig{Day: BudgetConfig{Tokens: 100}, Month: BudgetConfig{Tokens: 200}}
+	makeCaller := func(id string) *callerRuntime {
+		return &callerRuntime{cfg: CallerConfig{
+			ID: id, OwnerUser: "owner", Project: "finance", Environment: "test", Status: "active", Quota: quota,
+		}, quotaScope: "hierarchy-org:org-a", ownerUser: "owner"}
+	}
+	store := &quotaStore{
+		callers: map[string]*callerRuntime{"a": makeCaller("a"), "b": makeCaller("b")},
+		state: persistentState{Callers: map[string]*callerState{
+			"a":                   {DayStart: dayStart(now), MonthStart: monthStart(now), DayTokens: 1, MonthTokens: 2},
+			"b":                   {DayStart: dayStart(now), MonthStart: monthStart(now), DayTokens: 3, MonthTokens: 4},
+			"hierarchy-org:org-a": {DayStart: dayStart(now), MonthStart: monthStart(now), DayTokens: 40, MonthTokens: 60},
+		}},
+	}
+	svc := &Service{quota: store}
+	recorder := httptest.NewRecorder()
+	svc.handleAdminQuotaStatus(recorder, httptest.NewRequest(http.MethodGet, "/admin/reports/api/quota-status", nil), adminAuthSubject{domain: "finance/test"}, false)
+	var response struct {
+		Callers []struct {
+			Quota struct {
+				Day struct {
+					Tokens int64 `json:"tokens"`
+				} `json:"day"`
+				Month struct {
+					Tokens int64 `json:"tokens"`
+				} `json:"month"`
+			} `json:"quota"`
+		} `json:"callers"`
+	}
+	if recorder.Code != http.StatusOK || json.Unmarshal(recorder.Body.Bytes(), &response) != nil || len(response.Callers) != 2 {
+		t.Fatalf("status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	for _, caller := range response.Callers {
+		if caller.Quota.Day.Tokens != 40 || caller.Quota.Month.Tokens != 60 {
+			t.Fatalf("quota status omitted organization counters: %+v", caller.Quota)
+		}
 	}
 }

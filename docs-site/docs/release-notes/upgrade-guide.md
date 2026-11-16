@@ -124,6 +124,8 @@ The opt-in `security.token_exchange` feature adds the `POST /oauth/token` route 
 
 Usage schema version 19 adds `task_id` and `human_owner` columns. With the default deployment-job migration policy, run the usage migration plan, apply and serving verification steps before starting v5.0.0. Keep the database backup and rollback procedure in the [data migration runbook](https://github.com/metrum-ai/router/blob/main/docs/DATA_MIGRATIONS.md) available for the upgrade window.
 
+Usage schema version 20 adds `organization_id` and `team_id` for hierarchy audit attribution. The hierarchy migration depends on the schema 19 mission-attribution migration and is reversible; keep a database restore available for rollback.
+
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
 
 ## v5.0.0 bounded tool-call streaming hold
@@ -203,14 +205,38 @@ available otherwise.
 Anthropic Messages requests routed through Bedrock Converse now forward the
 `thinking` request option for supported Claude models and retain signed
 `thinking` and `redacted_thinking` history through unary and streaming tool
-continuations. No router configuration change is required; callers opt in with
-their normal Anthropic `thinking` object. The router rejects missing thinking
-signatures and malformed redacted data before dispatch. Opaque signatures are
-returned in Anthropic continuation blocks for provider validation, are excluded
-from usage rows and request logs, and are not returned in OpenAI Chat responses.
-Bedrock still validates signature authenticity, and opaque signatures may be
-scoped to a provider account. Keep reasoning history on the same Bedrock target
-and account; cross-provider and cross-account replay is unsupported.
+continuations. Keep the complete continuation on the same supported Bedrock
+Claude target and account; cross-provider or cross-account signature replay is
+not supported. Signatures are preserved and returned in Anthropic continuation
+blocks for provider validation, are excluded from usage rows and request logs,
+and are not returned in OpenAI Chat responses. Bedrock validates signature
+authenticity, and opaque signatures may be scoped to a provider account.
+
+## v5.0.0 hierarchy governance
+
+Hierarchy governance is opt-in. Existing configurations without
+`server.hierarchy` retain their current behavior. Configure a parent with a
+child-to-caller mapping and configure the child with the parent's HTTPS URL, a
+machine credential source, and a bounded policy cache TTL. The parent fetch
+endpoint is authenticated and versioned. Child policies may narrow inherited
+model-group, tool and PII permissions, never widen them. Organization request
+and token budgets are shared across the parent and its mapped child callers;
+child-local quotas continue to apply separately.
+
+Use the same exact model-group names in the parent caller allow list, hierarchy
+mapping and child model configuration. A mismatch fails closed. Set
+`trust_traceparent: true` on parent callers whose credentials authenticate a
+child router to preserve one trace ID through the chain.
+
+Hierarchy audit rows add organization and team IDs to the existing trace/span
+join fields. Reports can filter by those IDs and include hop-level details.
+The child policy cache is process-local; reload or restart drops it and the
+next request fetches a new snapshot. The shared parent quota counter is also
+process-local, so use one parent replica unless shared quota storage has been
+separately validated. On parent outage, the child serves its last validated
+policy through the configured TTL and for at most 30 additional seconds. After
+that grace period, it returns HTTP 503 before inference. Restore parent
+reachability or correct the child's credential/URL to recover.
 
 ## v5.0.0 secret DLP
 

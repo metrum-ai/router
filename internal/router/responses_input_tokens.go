@@ -108,6 +108,22 @@ func (s *Service) handleResponsesInputTokens(w http.ResponseWriter, r *http.Requ
 		s.finish(rc, http.StatusOK, nil)
 		return
 	}
+	policy, policyErr := s.effectiveHierarchyPolicy(r.Context(), rc.caller)
+	if policyErr != nil {
+		s.writeError(w, rc, http.StatusServiceUnavailable, hierarchyPolicyErrorCode(policyErr))
+		return
+	}
+	if policy != nil {
+		if !hierarchyPolicyAllowsGroup(policy, req.Model) {
+			s.writeModelNotFound(w, rc, req.Model, "model-not-allowed")
+			return
+		}
+		group.PIIFilter, err = mergeHierarchyPIIFilters(group.PIIFilter, policy.PIIFilter)
+		if err != nil {
+			s.writeError(w, rc, http.StatusServiceUnavailable, "hierarchy-policy-invalid")
+			return
+		}
+	}
 	rc.rec.RequestedModel = req.Model
 	// Never silently route stored-response references to a different account.
 	if rawValuePresent(req.Raw, "previous_response_id") {

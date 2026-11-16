@@ -43,10 +43,12 @@ func (s *Service) handleAdminQuotaStatus(w http.ResponseWriter, r *http.Request,
 		if !globalReports && !adminDomainAllowsCaller(subject.domain, c.cfg.Project, c.cfg.Environment) {
 			continue
 		}
-		st := s.quota.stateFor(c.cfg.ID, now)
+		st := s.quota.stateFor(c.quotaStateID(), now)
+		keySt := s.quota.stateFor(c.cfg.ID, now)
 		s.quota.resetWindows(st, now)
+		s.quota.resetWindows(keySt, now)
 		quotaState, _ := s.quota.quotaState(c.cfg, st, 0)
-		keyState := s.quota.keyState(c.cfg, st, 0)
+		keyState := s.quota.keyState(c.cfg, keySt, 0)
 		rows = append(rows, map[string]any{
 			"caller_id":   c.cfg.ID,
 			"token_id":    c.cfg.TokenID,
@@ -56,7 +58,7 @@ func (s *Service) handleAdminQuotaStatus(w http.ResponseWriter, r *http.Request,
 			"status":      c.cfg.Status,
 			"quota_state": quotaState,
 			"key_state":   keyState,
-			"exhausted":   st.Disabled,
+			"exhausted":   keySt.Disabled,
 			"rate": map[string]any{
 				"rpm":        c.cfg.Rate.RPM,
 				"tpm":        c.cfg.Rate.TPM,
@@ -82,8 +84,8 @@ func (s *Service) handleAdminQuotaStatus(w http.ResponseWriter, r *http.Request,
 				"soft_pct": c.cfg.Quota.SoftPct,
 			},
 			"key": map[string]any{
-				"lifetime_tokens":   st.LifetimeTokens,
-				"remaining_tokens":  remaining(c.cfg.Key.LifetimeTokens, st.LifetimeTokens),
+				"lifetime_tokens":   keySt.LifetimeTokens,
+				"remaining_tokens":  remaining(c.cfg.Key.LifetimeTokens, keySt.LifetimeTokens),
 				"configured_budget": c.cfg.Key.LifetimeTokens,
 			},
 		})

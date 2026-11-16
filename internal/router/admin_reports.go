@@ -762,6 +762,9 @@ type adminReportFilterDTO struct {
 	CallerUser        string `json:"caller_user,omitempty"`
 	CallerProject     string `json:"caller_project,omitempty"`
 	CallerEnvironment string `json:"caller_environment,omitempty"`
+	OrganizationID    string `json:"organization_id,omitempty"`
+	TeamID            string `json:"team_id,omitempty"`
+	HopID             string `json:"hop_id,omitempty"`
 	RequestedModel    string `json:"requested_model,omitempty"`
 	ResolvedGroup     string `json:"resolved_group,omitempty"`
 	TargetProvider    string `json:"provider,omitempty"`
@@ -800,6 +803,11 @@ type adminReportRequest struct {
 	UsageSource                     string  `json:"usageSource"`
 	TimeUTC                         string  `json:"timeUtc"`
 	RequestID                       string  `json:"requestId"`
+	TraceID                         string  `json:"traceId,omitempty"`
+	HopID                           string  `json:"hopId,omitempty"`
+	ParentHopID                     string  `json:"parentHopId,omitempty"`
+	OrganizationID                  string  `json:"organizationId,omitempty"`
+	TeamID                          string  `json:"teamId,omitempty"`
 	CallerID                        string  `json:"callerId"`
 	CallerUser                      string  `json:"callerUser"`
 	Project                         string  `json:"project"`
@@ -2922,6 +2930,9 @@ func (s *Service) parseAdminReportFilters(w http.ResponseWriter, r *http.Request
 		CallerUser:         q.Get("caller_user"),
 		CallerProject:      q.Get("caller_project"),
 		CallerEnvironment:  q.Get("caller_environment"),
+		OrganizationID:     strings.TrimSpace(q.Get("organization_id")),
+		TeamID:             strings.TrimSpace(q.Get("team_id")),
+		HopID:              strings.TrimSpace(q.Get("hop_id")),
 		RequestedModel:     strings.TrimSpace(q.Get("requested_model")),
 		ResolvedGroup:      q.Get("resolved_group"),
 		TargetProvider:     strings.TrimSpace(q.Get("provider")),
@@ -5952,6 +5963,9 @@ func adminFilterDTO(filters adminReportFilters) adminReportFilterDTO {
 		CallerUser:        filters.CallerUser,
 		CallerProject:     filters.CallerProject,
 		CallerEnvironment: filters.CallerEnvironment,
+		OrganizationID:    filters.OrganizationID,
+		TeamID:            filters.TeamID,
+		HopID:             filters.HopID,
 		RequestedModel:    filters.RequestedModel,
 		ResolvedGroup:     filters.ResolvedGroup,
 		TargetProvider:    filters.TargetProvider,
@@ -5972,6 +5986,11 @@ func adminRequestFromRow(row usageRow) adminReportRequest {
 		UsageSource:                     row.UsageSource,
 		TimeUTC:                         formatUsageTime(row.TS),
 		RequestID:                       row.RequestID,
+		TraceID:                         row.TraceID,
+		HopID:                           row.SpanID,
+		ParentHopID:                     row.ParentSpanID,
+		OrganizationID:                  row.OrganizationID,
+		TeamID:                          row.TeamID,
 		CallerID:                        row.CallerID,
 		CallerUser:                      row.CallerUser,
 		Project:                         row.CallerProject,

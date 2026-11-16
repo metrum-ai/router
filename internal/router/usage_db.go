@@ -97,6 +97,9 @@ type UsageReportOptions struct {
 	CallerUser           string
 	CallerProject        string
 	CallerEnvironment    string
+	OrganizationID       string
+	TeamID               string
+	HopID                string
 	RequestedModel       string
 	ResolvedGroup        string
 	TargetProvider       string
@@ -283,6 +286,8 @@ type usageRow struct {
 	TraceID                            string
 	SpanID                             string
 	ParentSpanID                       string
+	OrganizationID                     string
+	TeamID                             string
 	CallerID                           string
 	CallerUser                         string
 	CallerProject                      string
@@ -444,6 +449,8 @@ type usageRecord struct {
 	TraceID                            string                             `gorm:"column:trace_id;type:text;not null;default:''"`
 	SpanID                             string                             `gorm:"column:span_id;type:text;not null;default:''"`
 	ParentSpanID                       string                             `gorm:"column:parent_span_id;type:text;not null;default:''"`
+	OrganizationID                     string                             `gorm:"column:organization_id;type:text;not null;default:''"`
+	TeamID                             string                             `gorm:"column:team_id;type:text;not null;default:''"`
 	TS                                 string                             `gorm:"column:ts;type:text;not null;index:idx_request_usage_ts"`
 	CallerID                           string                             `gorm:"column:caller_id;type:text;not null"`
 	CallerUser                         string                             `gorm:"column:caller_user;type:text;not null"`
@@ -1686,6 +1693,10 @@ func OpenUsageStorePath(path string) (*usageStore, error) {
 		_ = store.Close()
 		return nil, err
 	}
+	if err := applyHierarchyAuditMigration(db); err != nil {
+		_ = store.Close()
+		return nil, err
+	}
 	return store, nil
 }
 
@@ -1880,6 +1891,7 @@ func applyUsageExplicitBaseline(db *gorm.DB) error {
 		usageTokenBreakdownColumns,
 		usageEndpointColumns,
 		usageTraceCorrelationColumns,
+		usageHierarchyAuditColumns,
 	} {
 		for table, columns := range laterColumns {
 			if !created[table] {
@@ -2688,7 +2700,7 @@ var usageCachedInputPricingColumns = map[string]map[string]struct{}{
 }
 
 func mergeUsageExcludedColumns(groups ...map[string]map[string]struct{}) map[string]map[string]struct{} {
-	return mergeUsageColumnSets(append(groups, usageCacheBillingColumns, usageProvenanceColumns, usageCacheWriteColumns, usageRequestKindColumns, usageTokenBreakdownColumns, usageEndpointColumns, usageTraceCorrelationColumns, usageMissionAttributionColumns)...)
+	return mergeUsageColumnSets(append(groups, usageCacheBillingColumns, usageProvenanceColumns, usageCacheWriteColumns, usageRequestKindColumns, usageTokenBreakdownColumns, usageEndpointColumns, usageTraceCorrelationColumns, usageMissionAttributionColumns, usageHierarchyAuditColumns)...)
 }
 
 func mergeUsageColumnSets(groups ...map[string]map[string]struct{}) map[string]map[string]struct{} {
@@ -3324,6 +3336,8 @@ func rowFromRecord(rec logRecord) usageRow {
 		TraceID:                            rec.TraceID,
 		SpanID:                             rec.SpanID,
 		ParentSpanID:                       rec.ParentSpanID,
+		OrganizationID:                     rec.OrganizationID,
+		TeamID:                             rec.TeamID,
 		CallerID:                           rec.CallerID,
 		CallerUser:                         rec.CallerUser,
 		CallerProject:                      rec.CallerProject,
@@ -3464,6 +3478,8 @@ func recordFromRow(row usageRow) *usageRecord {
 		TraceID:                            row.TraceID,
 		SpanID:                             row.SpanID,
 		ParentSpanID:                       row.ParentSpanID,
+		OrganizationID:                     row.OrganizationID,
+		TeamID:                             row.TeamID,
 		TS:                                 formatUsageTime(row.TS),
 		CallerID:                           row.CallerID,
 		CallerUser:                         row.CallerUser,
@@ -3572,6 +3588,11 @@ func rowFromUsageRecord(record usageRecord) (usageRow, error) {
 	return usageRow{
 		TS:                                 ts,
 		RequestID:                          record.RequestID,
+		TraceID:                            record.TraceID,
+		SpanID:                             record.SpanID,
+		ParentSpanID:                       record.ParentSpanID,
+		OrganizationID:                     record.OrganizationID,
+		TeamID:                             record.TeamID,
 		CallerID:                           record.CallerID,
 		CallerUser:                         record.CallerUser,
 		CallerProject:                      record.CallerProject,
@@ -7349,6 +7370,15 @@ func (s *usageStore) usageRowsQuery(opts UsageReportOptions) *gorm.DB {
 	}
 	if opts.CallerID != "" {
 		q = q.Where("caller_id = ?", opts.CallerID)
+	}
+	if opts.OrganizationID != "" {
+		q = q.Where("organization_id = ?", opts.OrganizationID)
+	}
+	if opts.TeamID != "" {
+		q = q.Where("team_id = ?", opts.TeamID)
+	}
+	if opts.HopID != "" {
+		q = q.Where("span_id = ?", opts.HopID)
 	}
 	if opts.CallerIP != "" {
 		q = q.Where("caller_ip = ?", opts.CallerIP)
