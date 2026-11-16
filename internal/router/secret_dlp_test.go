@@ -12,6 +12,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -637,6 +638,63 @@ func TestSecretDLPStreamFailsClosedUntilInspectionGate(t *testing.T) {
 	svc.Handler().ServeHTTP(response, req)
 	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "secret-dlp-stream-inspection-required") || calls.Load() != 0 {
 		t.Fatalf("status=%d calls=%d body=%s", response.Code, calls.Load(), response.Body.String())
+	}
+}
+
+func TestSecretDLPRedactsHeldToolCallArguments(t *testing.T) {
+	secret := fakeGitHubToken()
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprintf(w, "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"type\":\"function\",\"function\":{\"name\":\"lookup\",\"arguments\":\"{\\\"token\\\":\\\"%s\\\"}\"}}]},\"finish_reason\":null}]}\n\n", secret)
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"tool_calls\"}]}\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer upstream.Close()
+	cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
+	group := cfg.Models["default"]
+	group.PIIFilter.Enabled = true
+	group.PIIFilter.SecretsEnabled = true
+	group.Strategy = "tool_aware"
+	group.Targets[0].ToolSupport = ToolSupport{OpenAIChat: []string{"tools", "tool_choice"}}
+	group.ToolRouting.Streaming = ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20}
+	cfg.Models["default"] = group
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	body := `{"model":"default","stream":true,"messages":[{"role":"user","content":"look up token"}],"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	response := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(response, req)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), secret) || !strings.Contains(response.Body.String(), "[SECRET_GITHUB_1]") {
+		t.Fatalf("stream leaked tool argument or missed redaction: %s", response.Body.String())
+	}
+	if used := svc.lineBufferBudget.Used(); used != 0 {
+		t.Fatalf("aggregate budget after DLP inspection=%d, want 0", used)
+	}
+}
+
+func TestSecretDLPToolCallInspectorBlocksFailOnMatch(t *testing.T) {
+	rules, err := compilePIIRules(builtinSecretRules())
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := &piiRedactionState{
+		rules: rules, limit: 20, result: &piiFilterResult{RuleCounts: map[string]int{}},
+		placeholderFor: map[string]string{},
+	}
+	inspector := secretDLPToolCallInspector{dlp: &secretStreamDLP{state: state, mode: "fail_on_match"}}
+	result, err := inspector.inspectStreamToolCalls([]IRToolCall{{Index: 0, ID: "call_1", Name: "lookup", Arguments: `{"token":"` + fakeGitHubToken() + `"}`}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Action != toolCallInspectionBlock {
+		t.Fatalf("inspector action=%q, want block", result.Action)
 	}
 }
 

@@ -14,6 +14,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/metrum-ai/router/internal/stream"
 )
 
 func nativeStreamEligible(req *IRRequest, callerDialect, upstreamDialect string) bool {
@@ -80,6 +82,9 @@ func proxyNativeSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, 
 	}
 	var downstreamStart time.Time
 	defer func() {
+		if rc != nil && rc.streamToolCallHold != nil {
+			rc.streamToolCallHold.reset()
+		}
 		if rc != nil && !downstreamStart.IsZero() {
 			duration := durationMillis(time.Since(downstreamStart))
 			rc.rec.DownstreamMS = &duration
@@ -136,26 +141,12 @@ func proxyNativeSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, 
 		if frameComplete || (err == io.EOF && frame.Len() > 0) {
 			rawFrame := append([]byte(nil), frame.Bytes()...)
 			frame.Reset()
-			frames := [][]byte{rawFrame}
-			if rc != nil && rc.secretStreamDLP != nil {
-				var filterErr error
-				frames, filterErr = filterNativeSecretStreamFrame(rawFrame, rc.secretStreamDLP)
-				if filterErr != nil {
-					return result, upstreamError{Class: "secret_dlp_stream_filter_error", Message: "stream secret inspection failed", Retryable: !result.Committed, Fallbackable: !result.Committed, Committed: result.Committed, Err: filterErr}
-				}
-			}
 			done, terminal := accumulateNativeSSE(result.Response, dialect, rawFrame)
 			if done {
 				result.Done = true
 			}
 			if terminal {
 				result.Terminal = true
-			}
-			if len(frames) == 0 {
-				if result.Done {
-					return result, nil
-				}
-				continue
 			}
 			// Meter upstream usage even when it was requested by the router, but
 			// do not expose the usage-only chunk unless the caller opted in.
@@ -164,35 +155,60 @@ func proxyNativeSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, 
 				frameReserved = 0
 				continue
 			}
-			firstFrame := !result.Committed
-			if firstFrame {
-				w.Header().Set("Content-Type", "text/event-stream")
-				w.Header().Set("Cache-Control", "no-cache")
-				w.Header().Set("X-Accel-Buffering", "no")
-				w.Header().Set("Connection", "keep-alive")
-				w.WriteHeader(http.StatusOK)
-				result.Committed = true
-				downstreamStart = time.Now()
-			}
-			for _, frame := range frames {
-				frame = rewriter.rewrite(frame, dialect)
-				if rc != nil && rc.wrapStreamFrame != nil {
-					frame = rc.wrapStreamFrame(frame)
+			frames := [][]byte{rawFrame}
+			if rc != nil && rc.streamToolCallHold != nil {
+				gated, gateErr := rc.streamToolCallHold.apply(nativeStreamEvent(rawFrame))
+				if gateErr != nil {
+					return result, gateErr
 				}
-				if _, writeErr := w.Write(frame); writeErr != nil {
+				frames = frames[:0]
+				for _, event := range gated {
+					frames = append(frames, event.Frame())
+				}
+			}
+			if rc != nil && rc.secretStreamDLP != nil {
+				filteredFrames := make([][]byte, 0, len(frames))
+				for _, frame := range frames {
+					filtered, filterErr := filterNativeSecretStreamFrame(frame, rc.secretStreamDLP)
+					if filterErr != nil {
+						return result, upstreamError{Class: "secret_dlp_stream_filter_error", Message: "stream secret inspection failed", Retryable: !result.Committed, Fallbackable: !result.Committed, Committed: result.Committed, Err: filterErr}
+					}
+					filteredFrames = append(filteredFrames, filtered...)
+				}
+				frames = filteredFrames
+			}
+			for _, outputFrame := range frames {
+				firstFrame := !result.Committed
+				if firstFrame {
+					w.Header().Set("Content-Type", "text/event-stream")
+					w.Header().Set("Cache-Control", "no-cache")
+					w.Header().Set("X-Accel-Buffering", "no")
+					w.Header().Set("Connection", "keep-alive")
+					w.WriteHeader(http.StatusOK)
+					result.Committed = true
+					downstreamStart = time.Now()
+				}
+				outputFrame = rewriter.rewrite(outputFrame, dialect)
+				if rc != nil && rc.wrapStreamFrame != nil {
+					outputFrame = rc.wrapStreamFrame(outputFrame)
+				}
+				if _, writeErr := w.Write(outputFrame); writeErr != nil {
 					return result, upstreamError{Class: "downstream_write_error", Message: "downstream stream write failed", Canceled: true, Committed: true, Err: writeErr}
 				}
 				if flusher, ok := w.(http.Flusher); ok {
 					flusher.Flush()
 				}
+				if firstFrame && rc != nil {
+					ttfb := durationMillis(time.Since(rc.start))
+					rc.rec.TTFBMS = &ttfb
+					rc.trace("downstream_first_frame", "", Target{}, 0, 0, "", false, ttfb)
+				}
+			}
+			if rc != nil && rc.streamToolCallHold != nil {
+				rc.streamToolCallHold.releaseEmitted()
 			}
 			rc.releaseSSELineBuffer(frameReserved)
 			frameReserved = 0
-			if firstFrame && rc != nil {
-				ttfb := durationMillis(time.Since(rc.start))
-				rc.rec.TTFBMS = &ttfb
-				rc.trace("downstream_first_frame", "", Target{}, 0, 0, "", false, ttfb)
-			}
 			if result.Done {
 				return result, nil
 			}
@@ -212,6 +228,21 @@ func proxyNativeSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, 
 			return result, upErr
 		}
 	}
+}
+
+func nativeStreamEvent(frame []byte) stream.Event {
+	event := stream.Event{Data: sseFrameData(frame)}
+	for _, line := range bytes.Split(frame, []byte{'\n'}) {
+		line = bytes.TrimSuffix(line, []byte{'\r'})
+		if bytes.HasPrefix(line, []byte("event:")) {
+			event.Name = strings.TrimSpace(string(line[len("event:"):]))
+		}
+	}
+	var payload map[string]any
+	if json.Unmarshal(event.Data, &payload) == nil {
+		event.Type = stringValue(payload["type"])
+	}
+	return event
 }
 
 func isChatUsageOnlyFrame(frame []byte) bool {

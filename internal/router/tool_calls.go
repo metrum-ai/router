@@ -215,13 +215,33 @@ func (a *toolCallAccumulator) addDelta(dialect string, index int, id, name, argu
 	}
 }
 
+// setArguments replaces accumulated argument fragments with a provider's
+// authoritative complete-arguments event, as in OpenAI Responses `.done`.
+func (a *toolCallAccumulator) setArguments(index int, arguments string) {
+	if a == nil {
+		return
+	}
+	if _, ok := a.calls[index]; !ok {
+		return
+	}
+	if a.args[index] == nil {
+		a.args[index] = &strings.Builder{}
+	}
+	a.args[index].Reset()
+	if len(arguments) > maxToolCallArgumentBytes {
+		arguments = arguments[:maxToolCallArgumentBytes]
+		a.truncatedC = true
+	}
+	_, _ = a.args[index].WriteString(arguments)
+}
+
 // snapshot returns the calls assembled so far, in first-seen order.
 func (a *toolCallAccumulator) snapshot() []IRToolCall {
 	if a == nil {
 		return nil
 	}
 	out := make([]IRToolCall, 0, len(a.order))
-	for position, index := range a.order {
+	for _, index := range a.order {
 		arguments := ""
 		if a.args[index] != nil {
 			arguments = a.args[index].String()
@@ -230,7 +250,7 @@ func (a *toolCallAccumulator) snapshot() []IRToolCall {
 			ID:        a.ids[index],
 			Name:      a.names[index],
 			Arguments: arguments,
-			Index:     position,
+			Index:     index,
 			Dialect:   a.dialects[index],
 		})
 	}

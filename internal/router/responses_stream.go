@@ -44,56 +44,72 @@ func runResponsesStream(ctx context.Context, w http.ResponseWriter, body io.Read
 	reason := stream.StopError
 	var started time.Time
 	emit := func(events []stream.Event) error {
-		if rc != nil && rc.secretStreamDLP != nil {
-			filtered, err := rc.secretStreamDLP.filterEvents(events)
-			if err != nil {
-				return upstreamError{Class: "secret_dlp_stream_filter_error", Message: "stream secret inspection failed", Retryable: !result.Committed, Fallbackable: !result.Committed, Committed: result.Committed, Err: err}
-			}
-			events = filtered
-		}
-		for _, e := range events {
+		for _, incoming := range events {
 			if err := ctx.Err(); err != nil {
 				return err
 			}
-			// Only terminal metadata is retained, never deltas or complete output items.
-			if e.Type == "response.completed" || e.Type == "response.failed" || e.Type == "response.incomplete" {
-				accumulateNativeSSE(result.Response, "openai-responses", e.Frame())
-				if rc.publicModel() != "" {
-					// Caller frames carry the public group; keep the upstream
-					// model on the IR response for usage and diagnostics.
-					result.Response.Model = model
+			toWrite := []stream.Event{incoming}
+			if rc != nil && rc.streamToolCallHold != nil {
+				var err error
+				toWrite, err = rc.streamToolCallHold.apply(incoming)
+				if err != nil {
+					return err
 				}
 			}
-			if !result.Committed {
-				w.Header().Set("Content-Type", "text/event-stream")
-				w.Header().Set("Cache-Control", "no-cache")
-				w.Header().Set("X-Accel-Buffering", "no")
-			}
-			// A failed/partial Write can still put bytes on the wire: forbid fallback.
-			result.Committed = true
-			// Opaque reasoning provenance (#622): bind provider-owned values to
-			// the target that minted them before the caller sees them.
-			if rc != nil && rc.wrapStreamFrame != nil {
-				e.Data = rc.wrapStreamFrame(e.Data)
-			}
-			if _, err := w.Write(e.Frame()); err != nil {
-				return upstreamError{Class: "downstream_write_error", Message: "downstream stream write failed", Canceled: true, Committed: true, Err: err}
-			}
-			if err := http.NewResponseController(w).Flush(); err != nil {
-				return upstreamError{Class: "downstream_write_error", Message: "downstream stream flush failed", Canceled: true, Committed: true, Err: err}
-			}
-			if started.IsZero() {
-				started = time.Now()
-				if rc != nil {
-					ms := durationMillis(time.Since(rc.start))
-					rc.rec.TTFBMS = &ms
-					rc.trace("downstream_first_frame", "", Target{}, 0, 0, "", false, ms)
+			if rc != nil && rc.secretStreamDLP != nil {
+				var err error
+				toWrite, err = rc.secretStreamDLP.filterEvents(toWrite)
+				if err != nil {
+					return upstreamError{Class: "secret_dlp_stream_filter_error", Message: "stream secret inspection failed", Retryable: !result.Committed, Fallbackable: !result.Committed, Committed: result.Committed, Err: err}
 				}
+			}
+			for _, e := range toWrite {
+				// Only terminal metadata is retained, never deltas or complete output items.
+				if e.Type == "response.completed" || e.Type == "response.failed" || e.Type == "response.incomplete" {
+					accumulateNativeSSE(result.Response, "openai-responses", e.Frame())
+					if rc.publicModel() != "" {
+						// Caller frames carry the public group; keep the upstream
+						// model on the IR response for usage and diagnostics.
+						result.Response.Model = model
+					}
+				}
+				if !result.Committed {
+					w.Header().Set("Content-Type", "text/event-stream")
+					w.Header().Set("Cache-Control", "no-cache")
+					w.Header().Set("X-Accel-Buffering", "no")
+				}
+				// A failed/partial Write can still put bytes on the wire: forbid fallback.
+				result.Committed = true
+				// Opaque reasoning provenance (#622): bind provider-owned values to
+				// the target that minted them before the caller sees them.
+				if rc != nil && rc.wrapStreamFrame != nil {
+					e.Data = rc.wrapStreamFrame(e.Data)
+				}
+				if _, err := w.Write(e.Frame()); err != nil {
+					return upstreamError{Class: "downstream_write_error", Message: "downstream stream write failed", Canceled: true, Committed: true, Err: err}
+				}
+				if err := http.NewResponseController(w).Flush(); err != nil {
+					return upstreamError{Class: "downstream_write_error", Message: "downstream stream flush failed", Canceled: true, Committed: true, Err: err}
+				}
+				if started.IsZero() {
+					started = time.Now()
+					if rc != nil {
+						ms := durationMillis(time.Since(rc.start))
+						rc.rec.TTFBMS = &ms
+						rc.trace("downstream_first_frame", "", Target{}, 0, 0, "", false, ms)
+					}
+				}
+			}
+			if rc != nil && rc.streamToolCallHold != nil {
+				rc.streamToolCallHold.releaseEmitted()
 			}
 		}
 		return nil
 	}
 	defer func() {
+		if rc != nil && rc.streamToolCallHold != nil {
+			rc.streamToolCallHold.reset()
+		}
 		if recover() != nil {
 			retErr = upstreamError{Class: "stream_translator_error", Message: "stream translator panicked", Committed: result.Committed}
 		}
