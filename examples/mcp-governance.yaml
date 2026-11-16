@@ -1,0 +1,24 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+
+mcp:
+  enabled: true
+  timeout_ms: 30000
+  servers:
+    - name: knowledge
+      url: https://mcp.example.invalid/rpc
+      allow_hosts: [mcp.example.invalid]
+      credential_env: ROUTER_MCP_KNOWLEDGE_TOKEN
+  rpm: 60
+  limits:
+    - caller: support-bot
+      tool: knowledge/search
+      rpm: 30
+      cost_per_call_usd: 0.01
+      hourly_usd: 2
+      daily_usd: 10
+  policies:
+    - project: support
+      deny_by_default: true
+      tools:
+        - knowledge/search

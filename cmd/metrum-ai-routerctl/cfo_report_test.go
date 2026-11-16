@@ -52,6 +52,15 @@ func TestCFOReportCommand(t *testing.T) {
 	}
 }
 
+func TestCFOReportUsesDefaultAdminEndpointAndHints(t *testing.T) {
+	t.Setenv("ROUTER_URL", "")
+	t.Setenv("ROUTER_ADMIN_KEY", "rtr_admin_fake")
+	err := runCFOReport(nil, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "127.0.0.1:8081") || !strings.Contains(err.Error(), "admin.listen") {
+		t.Fatalf("default endpoint failure lacks setup hints: %v", err)
+	}
+}
+
 func TestCFORouterURLNeverLeaksCredentials(t *testing.T) {
 	for _, raw := range []string{"https://user:secret@host%zz", "https://user:secret@example.com", "http:user:secret@host"} {
 		err := runCFOReport([]string{"--router-url", raw}, &bytes.Buffer{})

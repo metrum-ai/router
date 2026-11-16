@@ -107,7 +107,7 @@ func TestRevokedKeyScopedSecurityLocalhostE2E(t *testing.T) {
 	}
 	flushUsageForTest(t, svc)
 	var deniedAccess securityAccessEventRecord
-	if err := svc.usage.db.Where("event_type = ? AND admin_subject = ? AND requested_model = ?", "admin_access", "basic:other", authzActionContain).Order("id DESC").First(&deniedAccess).Error; err != nil {
+	if err := svc.usage.db.Where("event_type = ? AND path_template = ?", "admin_authz_failed", "/admin/reports/api/security/containment").Order("id DESC").First(&deniedAccess).Error; err != nil {
 		t.Fatalf("denied containment access event missing: %v", err)
 	}
 	if deniedAccess.StatusCode != http.StatusForbidden || deniedAccess.Outcome != "forbidden" {

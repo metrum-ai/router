@@ -48,12 +48,54 @@ type Config struct {
 	Provider           map[string]ProviderConfig `yaml:"providers"`
 	Models             map[string]ModelGroup     `yaml:"models"`
 	Callers            []CallerConfig            `yaml:"callers"`
+	MCP                MCPGatewayConfig          `yaml:"mcp"`
 	StatePath          string                    `yaml:"state_path"`
 	baseDir            string
 	// secretEnvRefs names the environment variables expanded into this
 	// config (${NAME} references and env.json keys) so later errors can be
 	// redacted by name. See secret_redaction.go.
 	secretEnvRefs []string
+}
+
+// MCPGatewayConfig configures the caller-authenticated MCP gateway.
+type MCPGatewayConfig struct {
+	Enabled   bool                 `yaml:"enabled"`
+	Path      string               `yaml:"path"`
+	TimeoutMS int                  `yaml:"timeout_ms"`
+	RPM       int                  `yaml:"rpm"`
+	Servers   []MCPServerConfig    `yaml:"servers"`
+	Policies  []MCPPolicyConfig    `yaml:"policies"`
+	Limits    []MCPToolLimitConfig `yaml:"limits"`
+}
+
+// MCPServerConfig identifies one upstream MCP server and an optional static credential.
+type MCPServerConfig struct {
+	Name            string   `yaml:"name"`
+	URL             string   `yaml:"url"`
+	CredentialEnv   string   `yaml:"credential_env"`
+	AllowHosts      []string `yaml:"allow_hosts"`
+	AllowHTTP       bool     `yaml:"allow_http"`
+	ProtocolVersion string   `yaml:"protocol_version"`
+}
+
+// MCPPolicyConfig limits selected callers, projects, or model groups to named tools.
+type MCPPolicyConfig struct {
+	Caller        string   `yaml:"caller"`
+	Project       string   `yaml:"project"`
+	ModelGroup    string   `yaml:"model_group"`
+	Tools         []string `yaml:"tools"`
+	DenyByDefault bool     `yaml:"deny_by_default"`
+}
+
+// MCPToolLimitConfig caps requests and estimated spend for one caller. An
+// empty tool applies the spend ceiling to the caller across all MCP tools.
+type MCPToolLimitConfig struct {
+	Caller         string  `yaml:"caller"`
+	Tool           string  `yaml:"tool"`
+	RPM            int     `yaml:"rpm"`
+	HourlyUSD      float64 `yaml:"hourly_usd"`
+	DailyUSD       float64 `yaml:"daily_usd"`
+	CostPerCallUSD float64 `yaml:"cost_per_call_usd"`
 }
 
 type RouterSecurityConfig struct {
@@ -107,8 +149,9 @@ type ServerConfig struct {
 	ContainmentWebhook  ContainmentWebhookConfig  `yaml:"containment_webhook" json:"containmentWebhook,omitempty"`
 	// TLS configures the serving listener's own certificate (#810). The zero
 	// value keeps the v4.7 plaintext listener.
-	TLS          ServerTLSConfig    `yaml:"tls,omitempty"`
-	AdminReports AdminReportsConfig `yaml:"admin_reports"`
+	TLS          ServerTLSConfig      `yaml:"tls,omitempty"`
+	AdminReports AdminReportsConfig   `yaml:"admin_reports"`
+	Security     SecurityEventsConfig `yaml:"security" json:"security,omitempty"`
 	// AdminAPI is the `admin.api` block of the /admin/v1 contract. The documented defaults
 	// apply when it is absent.
 	AdminAPI          AdminAPIConfig           `yaml:"admin_api" json:"admin_api"`
@@ -241,6 +284,21 @@ type AdminReportsConfig struct {
 type AdminSecurityReportsConfig struct {
 	Enabled       bool `yaml:"enabled" json:"enabled"`
 	RetentionDays int  `yaml:"retention_days" json:"retention_days"`
+}
+
+// SecurityEventsConfig controls the opt-in OCSF JSON Lines event stream.
+type SecurityEventsConfig struct {
+	Events SecurityEventStreamConfig `yaml:"events" json:"events,omitempty"`
+}
+
+type SecurityEventStreamConfig struct {
+	Enabled           bool     `yaml:"enabled" json:"enabled,omitempty"`
+	Version           string   `yaml:"version" json:"version,omitempty"`
+	Output            string   `yaml:"output" json:"output,omitempty"`
+	Path              string   `yaml:"path" json:"path,omitempty"`
+	WebhookURL        string   `yaml:"webhook_url" json:"webhookUrl,omitempty"`
+	WebhookAllowHosts []string `yaml:"webhook_allow_hosts,omitempty" json:"webhookAllowHosts,omitempty"`
+	WebhookSecretEnv  string   `yaml:"webhook_secret_env" json:"webhookSecretEnv,omitempty"`
 }
 
 type ClientIPConfig struct {
@@ -1843,6 +1901,9 @@ func (c *Config) setDefaults() {
 			})
 		}
 	}
+	if c.MCP.Enabled && c.MCP.RPM == 0 {
+		c.MCP.RPM = 60
+	}
 }
 
 func (c *Config) Validate() error {
@@ -1966,6 +2027,15 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 	if err := validateAdminReports(c.Server.AdminReports, c.Server.AdminAuth, c.Server.UsageDB); err != nil {
 		return err
 	}
+	if err := validateMCPGateway(c.MCP, requireAdminKeyEnv); err != nil {
+		return err
+	}
+	if c.MCP.Enabled && c.Server.UsageDB.Enable != nil && !*c.Server.UsageDB.Enable {
+		return fmt.Errorf("mcp.enabled requires usage_db enabled for invocation audit")
+	}
+	if err := validateSecurityEvents(c.Server.Security.Events); err != nil {
+		return err
+	}
 	if err := validateClientIP(c.Server.ClientIP); err != nil {
 		return err
 	}
@@ -2015,6 +2085,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		}
 	}
 	if _, err := c.validateAccounts(); err != nil {
+		return err
+	}
+	if err := validateMCPPolicyReferences(c.MCP, c.Callers, c.Projects, c.Models); err != nil {
 		return err
 	}
 	for name, p := range c.Provider {
@@ -3735,18 +3808,26 @@ func (c *Config) resolveTarget(group string, target Target) (Target, error) {
 	if !ok {
 		return target, fmt.Errorf("model group %s references unknown provider %s", group, target.Provider)
 	}
-	if target.ModelRef == "" {
+	var catalog ProviderModel
+	directModel := target.ModelRef == ""
+	if directModel {
 		if target.Model == "" {
 			return target, fmt.Errorf("model group %s target for provider %s missing model or model_ref", group, target.Provider)
 		}
-		return target, nil
-	}
-	catalog, ok := provider.Models[target.ModelRef]
-	if !ok {
-		return target, fmt.Errorf("model group %s target references unknown model_ref %s for provider %s", group, target.ModelRef, target.Provider)
-	}
-	if target.Model == "" {
-		target.Model = catalog.Model
+		catalog, ok = providerModelByID(provider.Models, target.Model, target.Dialect, provider.Dialect)
+		if !ok {
+			// Preserve direct-model targets that are not represented in the provider catalog.
+			return target, nil
+		}
+		return mergeTargetCapabilities(target, catalog), nil
+	} else {
+		catalog, ok = provider.Models[target.ModelRef]
+		if !ok {
+			return target, fmt.Errorf("model group %s target references unknown model_ref %s for provider %s", group, target.ModelRef, target.Provider)
+		}
+		if target.Model == "" {
+			target.Model = catalog.Model
+		}
 	}
 	if target.Dialect == "" {
 		target.Dialect = catalog.Dialect
@@ -3836,6 +3917,73 @@ func (c *Config) resolveTarget(group string, target Target) (Target, error) {
 		return target, fmt.Errorf("model group %s target model_ref %s for provider %s resolved without model", group, target.ModelRef, target.Provider)
 	}
 	return target, nil
+}
+
+// providerModelByID finds the unique catalog entry for a direct model target.
+// When multiple entries describe the same provider-facing ID, only a matching
+// target/provider dialect disambiguates them; otherwise no metadata is inherited.
+func providerModelByID(models map[string]ProviderModel, modelID, targetDialect, providerDialect string) (ProviderModel, bool) {
+	var matches []ProviderModel
+	for key, catalog := range models {
+		if key == modelID || catalog.Model == modelID {
+			matches = append(matches, catalog)
+		}
+	}
+	if len(matches) == 0 {
+		return ProviderModel{}, false
+	}
+	wantDialect := normalizeDialect(targetDialect)
+	if wantDialect == "" {
+		wantDialect = normalizeDialect(providerDialect)
+	}
+	if wantDialect != "" {
+		var dialectMatches []ProviderModel
+		for _, catalog := range matches {
+			if normalizeDialect(catalog.Dialect) == wantDialect {
+				dialectMatches = append(dialectMatches, catalog)
+			}
+		}
+		if len(dialectMatches) == 1 {
+			return dialectMatches[0], true
+		}
+	}
+	if len(matches) == 1 {
+		return matches[0], true
+	}
+	return ProviderModel{}, false
+}
+
+// Direct model IDs have historically kept their explicitly configured routing,
+// dialect and pricing values. Only inherit capabilities needed for eligibility.
+func mergeTargetCapabilities(target Target, catalog ProviderModel) Target {
+	if toolSupportEmpty(target.ToolSupport) {
+		target.ToolSupport = catalog.ToolSupport
+	}
+	if reasoningSupportEmpty(target.Reasoning) {
+		target.Reasoning = catalog.Reasoning
+	}
+	if len(target.InputModalities) == 0 {
+		target.InputModalities = catalog.InputModalities
+	}
+	if len(target.OutputModalities) == 0 {
+		target.OutputModalities = catalog.OutputModalities
+	}
+	if target.EmbeddingSpace == "" {
+		target.EmbeddingSpace = catalog.EmbeddingSpace
+	}
+	if len(target.EmbeddingDimensions) == 0 {
+		target.EmbeddingDimensions = catalog.EmbeddingDimensions
+	}
+	if target.DefaultEmbeddingDimensions == 0 {
+		target.DefaultEmbeddingDimensions = catalog.DefaultEmbeddingDimensions
+	}
+	if target.HonorsMaxTokens == nil {
+		target.HonorsMaxTokens = catalog.HonorsMaxTokens
+	}
+	target.Bridges = mergeBridgeSupport(catalog.Bridges, target.Bridges)
+	target.RequestShapeSupport = mergeRequestShapeSupport(catalog.RequestShapeSupport, target.RequestShapeSupport)
+	target.ResponsesToChat = mergeResponsesToChatBridge(catalog.ResponsesToChat, target.ResponsesToChat)
+	return target
 }
 
 func mergeBridgeSupport(base, override BridgeSupport) BridgeSupport {
@@ -4721,4 +4869,48 @@ func normalizeDialect(d string) string {
 	default:
 		return ""
 	}
+}
+
+func validateSecurityEvents(cfg SecurityEventStreamConfig) error {
+	if !cfg.Enabled {
+		if cfg.Version != "" || cfg.Output != "" || cfg.Path != "" || cfg.WebhookURL != "" || len(cfg.WebhookAllowHosts) != 0 || cfg.WebhookSecretEnv != "" {
+			return fmt.Errorf("server.security.events settings require enabled: true")
+		}
+		return nil
+	}
+	if cfg.Version != "1.4.0" {
+		return fmt.Errorf("server.security.events.version must be 1.4.0")
+	}
+	output := strings.ToLower(strings.TrimSpace(cfg.Output))
+	if output != "stdout" && output != "file" {
+		return fmt.Errorf("server.security.events.output must be stdout or file")
+	}
+	if output == "file" && strings.TrimSpace(cfg.Path) == "" {
+		return fmt.Errorf("server.security.events.path is required for file output")
+	}
+	if output == "stdout" && strings.TrimSpace(cfg.Path) != "" {
+		return fmt.Errorf("server.security.events.path is only valid with file output")
+	}
+	if cfg.WebhookURL == "" && cfg.WebhookSecretEnv != "" {
+		return fmt.Errorf("server.security.events.webhook_secret_env requires webhook_url")
+	}
+	if cfg.WebhookURL == "" && len(cfg.WebhookAllowHosts) != 0 {
+		return fmt.Errorf("server.security.events.webhook_allow_hosts requires webhook_url")
+	}
+	if cfg.WebhookURL != "" {
+		u, err := url.Parse(cfg.WebhookURL)
+		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Fragment != "" {
+			return fmt.Errorf("server.security.events.webhook_url must be an https URL without userinfo or fragment")
+		}
+		if !regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`).MatchString(cfg.WebhookSecretEnv) {
+			return fmt.Errorf("server.security.events.webhook_secret_env must name an environment variable")
+		}
+		if len(cfg.WebhookAllowHosts) == 0 {
+			return fmt.Errorf("server.security.events.webhook_allow_hosts must allow the webhook host")
+		}
+		if err := validateSecurityEventWebhookURL(u, cfg.WebhookAllowHosts); err != nil {
+			return fmt.Errorf("server.security.events.webhook_url: %w", err)
+		}
+	}
+	return nil
 }

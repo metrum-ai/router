@@ -302,6 +302,13 @@ server:
     security:
       enabled: false
       retention_days: 90
+  # OCSF JSON Lines security-event streaming is opt-in. Webhook signing keys are
+  # loaded from the named environment variable and never copied into events.
+  security:
+    events:
+      enabled: false
+      # When enabled, set version: "1.4.0" and output: stdout or file.
+      # File output needs path; webhooks need an HTTPS host allow-list and secret.
   client_ip:
     trusted_proxy_cidrs: []
     header_order:

@@ -58,6 +58,8 @@ verifier remains refused.
 
 The v5.0.0 build pins `golang.org/x/crypto` to the upstream fix for GO-2026-5932. The fix removes the unused OpenPGP packages from the module; router configuration and runtime behavior do not change. When the next tagged `x/crypto` release includes this fix, routine dependency maintenance should replace the temporary pseudo-version.
 
+Direct `model` targets inherit provider-catalog capabilities, such as reasoning, tools, modalities and request-shape support, when their model ID matches a catalog entry. Their configured dialect, pricing and routing values remain unchanged. A weighted or failover group can therefore select an OpenAI reasoning model even when the target is written with `model:` instead of `model_ref:`. When mixed eligibility rejections leave the reasoning error parameter unset but removing requested reasoning makes a target eligible, `param` identifies the caller field (`reasoning_effort` for Chat Completions, `reasoning` for Responses, or `thinking` for Anthropic). Anthropic output reasoning requires `control: token_budget` or active default thinking.
+
 ## v5.0.0 provider spend breaker
 
 Provider `spend_breaker` is optional. Existing configurations keep their prior
@@ -111,7 +113,12 @@ keys removed before restart.
 The online `metrum-ai-routerctl` commands now use the versioned API on the dedicated admin
 listener. The default endpoint is `http://127.0.0.1:8081`; override it with `--router-url` or
 `ROUTER_URL`. Remote endpoints require HTTPS. Credentials remain in `ROUTER_ADMIN_KEY`,
-`ROUTER_ADMIN_KEY_FILE`, or a mode-0600 `--admin-key-file`.
+`ROUTER_ADMIN_KEY_FILE`, or a mode-0600 `--admin-key-file`. Endpoint values must be origins with
+no path (a single trailing slash is tolerated), query, fragment, or embedded credentials; use only
+the scheme, host, and optional port. Non-2xx responses are written to stderr as concise
+`admin API <status> <type>: <message>` diagnostics. Connection and timeout failures use
+`admin API request failed: <cause>` and include a hint to check `admin.enabled`, `admin.listen`,
+and the admin credential setting; response bodies and credentials are not printed.
 
 | Command | v5 behavior and flags |
 | --- | --- |
@@ -852,6 +859,17 @@ Signed webhook callers do not need an ETag or idempotency header. Their nonce
 reservation is durable for at least twice the configured timestamp window and
 expired reservations are pruned hourly.
 
+## MCP gateway
+
+MCP is disabled by default, so existing v4.8 configurations continue to load
+without changes. To enable it, add an `mcp` block, set each server's explicit
+`allow_hosts`, configure server-side credential environment variables with
+the `ROUTER_MCP_` prefix, and enable the usage database for durable tool
+invocation audit records. MCP has a per-caller request-rate limit and supports
+per-caller and per-tool request and estimated-spend limits. See the
+[MCP gateway guide](../configuration/mcp-gateway.md) for configuration fields
+and policy behavior.
+
 Automatic detector containment is a separate opt-in feature. It is off by
 default. Before setting `server.auto_containment.mode` to `shadow` or
 `enforce`, run `router-migrate` to create the automatic action tables. Start
@@ -861,6 +879,10 @@ caller IDs under `exempt_callers`. Throttle rules must set
 configured quotas. Enforced suspend rules require database config mode and
 are recorded as containment-made so the containment role or an administrator
 can resume them before their TTL. Actions expire at their configured TTL.
+
+## Security event stream
+
+The OCSF 1.4.0 JSON Lines stream is disabled by default. To enable it, set `server.security.events.enabled`, choose stdout or file output, and optionally configure an HTTPS webhook with `webhook_allow_hosts` and a 32-byte-or-longer secret supplied through the environment. Webhook signatures cover the timestamp, a random nonce, and the exact body; receivers must enforce a timestamp window and reject nonce replay. Detector signals and failures use the configured detector ID and bounded signal metadata; evidence request IDs use the finding UID, capped at 256 characters. Containment events use Account Change Disable/Enable and include the target caller and acting principal. Database-backed changes to this config require a router restart. Firewall-hold (#891) and honeytoken (#884) source integrations follow when those PRs merge; keep #885 open until then. See [Security event stream](../security-governance/security-events) for full verification and queue behavior.
 
 ## v5.0.0 Security Console
 

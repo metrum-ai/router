@@ -4108,7 +4108,10 @@ func retentionTablesForClass(dataClass string) []retentionTableSpec {
 			{DataClass: retentionDataClassDecisionTelemetry, TableName: "request_cache_reasons", TSColumn: "ts", UseRequestUsageTS: true},
 		}
 	case retentionDataClassSecurityAccess:
-		return []retentionTableSpec{{DataClass: retentionDataClassSecurityAccess, TableName: "security_access_events", TSColumn: "ts"}}
+		return []retentionTableSpec{
+			{DataClass: retentionDataClassSecurityAccess, TableName: "security_access_events", TSColumn: "ts"},
+			{DataClass: retentionDataClassSecurityAccess, TableName: mcpToolAuditTable, TSColumn: "ts"},
+		}
 	case retentionDataClassContentCapture:
 		return []retentionTableSpec{{DataClass: retentionDataClassContentCapture, TableName: "request_content_captures", TSColumn: "ts"}}
 	case retentionDataClassUsageDetail:

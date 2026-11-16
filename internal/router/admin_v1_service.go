@@ -24,7 +24,9 @@ package router
 // the credential-event table.
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -159,7 +161,7 @@ func (s *Service) adminV1HandlerSet(registry *AdminV1Registry) map[string]http.H
 		"content.captures.delete": s.handleContentCaptureDelete,
 		"content.captures.purge":  s.handleContentCapturePurgeExpired,
 	}
-	return AdminV1ServiceHandlers(
+	handlers := AdminV1ServiceHandlers(
 		registry,
 		AdminV1ConfigAdminDeps(ConfigAdminDeps{
 			DB:                      s.configControlPlane,
@@ -192,6 +194,72 @@ func (s *Service) adminV1HandlerSet(registry *AdminV1Registry) map[string]http.H
 		s.handleAdminReports,
 		extra,
 	)
+	for _, key := range []string{"callers.containment", "containment.webhook"} {
+		if handler := handlers[key]; handler != nil {
+			handlers[key] = s.securityContainmentEventHandler(handler)
+		}
+	}
+	return handlers
+}
+
+func (s *Service) securityContainmentEventHandler(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		capture := &securityResponseCapture{header: make(http.Header)}
+		next(capture, r)
+		for key, values := range capture.header {
+			for _, value := range values {
+				w.Header().Add(key, value)
+			}
+		}
+		status := capture.status
+		if status == 0 {
+			status = http.StatusOK
+		}
+		responseBody := capture.body.Bytes()
+		w.WriteHeader(status)
+		_, _ = w.Write(responseBody)
+		if status < 200 || status >= 300 {
+			return
+		}
+		var result struct {
+			Status   string `json:"status"`
+			CallerID string `json:"caller_id"`
+		}
+		if json.Unmarshal(responseBody, &result) != nil {
+			return
+		}
+		eventType := "caller_containment"
+		if result.Status == accountStatusSuspended {
+			eventType = "caller_suspended"
+		} else if result.Status == accountStatusActive {
+			eventType = "caller_released"
+		}
+		principal, _ := PrincipalFrom(r.Context())
+		s.recordSecurityAccessEvent(securityAccessEvent{
+			TS: time.Now().UTC(), EventType: eventType, Surface: "admin_api", HTTPMethod: r.Method,
+			PathTemplate: "/admin/v1/containment", StatusCode: status, Outcome: "allowed",
+			CallerID: result.CallerID, AdminSubject: principal.Subject,
+		})
+	}
+}
+
+type securityResponseCapture struct {
+	header http.Header
+	status int
+	body   bytes.Buffer
+}
+
+func (c *securityResponseCapture) Header() http.Header { return c.header }
+func (c *securityResponseCapture) WriteHeader(status int) {
+	if c.status == 0 {
+		c.status = status
+	}
+}
+func (c *securityResponseCapture) Write(body []byte) (int, error) {
+	if c.status == 0 {
+		c.status = http.StatusOK
+	}
+	return c.body.Write(body)
 }
 
 // adminV1Authorize answers a handler's secondary check through the single
@@ -237,6 +305,18 @@ func (s *Service) adminDenialSink() AdminDenialSink {
 			ClientIPHash:   adminAuditFieldValue(record.ClientIPHash),
 		}).Error; err != nil {
 			return fmt.Errorf("record admin denial: %w", err)
+		}
+		if s.securityEventStream != nil {
+			event := securityAccessEvent{
+				TS: record.At, RequestID: record.RequestID, EventType: "admin_authz_failed", Surface: "admin_api",
+				HTTPMethod: record.Method, PathTemplate: record.Path, StatusCode: record.Status,
+				Outcome: securityOutcome(record.Status), ReasonCode: record.ReasonCode,
+				CallerID: record.PrincipalSubject, AdminSubject: record.PrincipalSubject,
+				IPAddress: record.SourceIP,
+			}
+			if isSecurityStreamEvent(event.EventType) {
+				s.securityEventStream.record(event)
+			}
 		}
 		return nil
 	})
