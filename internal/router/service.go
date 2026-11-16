@@ -133,6 +133,7 @@ type Service struct {
 	honeytokenEventDrops   atomic.Uint64
 	shaping                *upstreamShapeManager
 	providerSpend          *providerSpendBreaker
+	hierarchyPolicy        atomic.Pointer[hierarchyPolicyRuntime]
 	contentCaptureKeys     contentCaptureKeyResolver
 	reportCursor           [32]byte
 	tlsManager             *tlsacme.Manager
@@ -454,6 +455,17 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		provenance:         provenance,
 		responsesAffinity:  responsesAffinity,
 		tlsManager:         tlsManager,
+	}
+	if !hierarchyChildConfigEmpty(cfg.Server.Hierarchy.Child) {
+		hierarchyPolicy, hierarchyErr := newHierarchyPolicyRuntime(cfg.Server.Hierarchy.Child)
+		if hierarchyErr != nil {
+			_ = quota.Close()
+			_ = logger.Close()
+			_ = usage.Close()
+			bridgeSessions.Close()
+			return nil, hierarchyErr
+		}
+		s.hierarchyPolicy.Store(hierarchyPolicy)
 	}
 	s.configSnapshot.Store(cfg)
 	s.lineBufferBudget = newLineBufferBudget(int64(cfg.Server.Streaming.MaxInflightLineBytes), s.metrics)
@@ -833,6 +845,13 @@ func (s *Service) reloadActiveConfigFromDB() error {
 		return fmt.Errorf("reload active config: freshness: %w", err)
 	}
 	newAdminKeys := buildAdminAPIKeyRuntimes(newCfg, os.LookupEnv)
+	var newHierarchyPolicy *hierarchyPolicyRuntime
+	if !hierarchyChildConfigEmpty(newCfg.Server.Hierarchy.Child) {
+		newHierarchyPolicy, err = newHierarchyPolicyRuntime(newCfg.Server.Hierarchy.Child)
+		if err != nil {
+			return fmt.Errorf("reload active config: hierarchy policy: %w", err)
+		}
+	}
 	// ONE publication installs the whole reload or none of it: the synchronized
 	// authorizer and its freshness acknowledgement, the prepared caller
 	// directory, the serving-port key catalogue, the configuration, and the
@@ -865,14 +884,16 @@ func (s *Service) reloadActiveConfigFromDB() error {
 			}
 		}
 		return &machinePlanePublication{
-			Generation:    generation,
-			Authorizer:    preparedPolicy.authorizer,
-			Config:        newCfg,
-			Callers:       preparedCallers,
-			RevokedTokens: revokedCallerTokens,
-			APIKeys:       newAdminKeys,
-			MaxStaleness:  maxStaleness,
-			Policy:        preparedPolicy.observation,
+			Generation:         generation,
+			Authorizer:         preparedPolicy.authorizer,
+			Config:             newCfg,
+			Callers:            preparedCallers,
+			RevokedTokens:      revokedCallerTokens,
+			APIKeys:            newAdminKeys,
+			MaxStaleness:       maxStaleness,
+			Policy:             preparedPolicy.observation,
+			HierarchyPolicy:    newHierarchyPolicy,
+			SetHierarchyPolicy: true,
 		}, nil
 	}); err != nil {
 		return fmt.Errorf("reload active config: publish machine plane: %w", err)
@@ -1039,6 +1060,7 @@ func (s *Service) routes() {
 		}
 	}
 	s.mux.HandleFunc("GET /.well-known/security.txt", securityTextHandler)
+	s.mux.HandleFunc("GET "+hierarchyPolicyPath, s.handleHierarchyPolicy)
 	docs := docsHandler()
 	s.mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/admin/") {
@@ -1136,7 +1158,11 @@ func (s *Service) handleModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer s.finish(rc, http.StatusOK, nil)
-	data := rc.filterMissionModelMetadata(s.callerModelMetadata(rc.caller))
+	data, err := s.filterHierarchyModelMetadata(r.Context(), rc.caller, rc.filterMissionModelMetadata(s.callerModelMetadata(rc.caller)))
+	if err != nil {
+		s.writeError(w, rc, http.StatusServiceUnavailable, hierarchyPolicyErrorCode(err))
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "mode": "default", "data": data, "models": data})
 }
 
@@ -1146,7 +1172,12 @@ func (s *Service) handleModelGet(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	for _, model := range rc.filterMissionModelMetadata(s.callerModelMetadata(rc.caller)) {
+	models, err := s.filterHierarchyModelMetadata(r.Context(), rc.caller, rc.filterMissionModelMetadata(s.callerModelMetadata(rc.caller)))
+	if err != nil {
+		s.writeError(w, rc, http.StatusServiceUnavailable, hierarchyPolicyErrorCode(err))
+		return
+	}
+	for _, model := range models {
 		if model["id"] == r.PathValue("model") {
 			defer s.finish(rc, http.StatusOK, nil)
 			if isAnthropicModelRequest(r) {
@@ -1181,8 +1212,32 @@ func (s *Service) handleCodexModels(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	models, err := s.filterHierarchyModelMetadata(r.Context(), rc.caller, rc.filterMissionModelMetadata(s.codexModelMetadata(rc.caller)))
+	if err != nil {
+		s.writeError(w, rc, http.StatusServiceUnavailable, hierarchyPolicyErrorCode(err))
+		return
+	}
 	defer s.finish(rc, http.StatusOK, nil)
-	writeJSON(w, http.StatusOK, map[string]any{"models": rc.filterMissionModelMetadata(s.codexModelMetadata(rc.caller))})
+	writeJSON(w, http.StatusOK, map[string]any{"models": models})
+}
+
+func (s *Service) filterHierarchyModelMetadata(ctx context.Context, caller *callerRuntime, models []map[string]any) ([]map[string]any, error) {
+	policy, err := s.effectiveHierarchyPolicy(ctx, caller)
+	if err != nil || policy == nil {
+		return models, err
+	}
+	filtered := make([]map[string]any, 0, len(models))
+	for _, model := range models {
+		name, _ := model["id"].(string)
+		if group, ok := s.cfg.Models[name]; ok && group.Canary != nil {
+			filtered = append(filtered, model)
+			continue
+		}
+		if hierarchyPolicyAllowsGroup(policy, name) {
+			filtered = append(filtered, model)
+		}
+	}
+	return filtered, nil
 }
 
 func (s *Service) callerModelMetadata(caller *callerRuntime) []map[string]any {
@@ -1769,7 +1824,6 @@ func (s *Service) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		s.writeAnthropicModelNotFound(w, rc, "model-not-allowed")
 		return
 	}
-	rc.rec.RequestedModel = req.Model
 	if rc.caller.cfg.Honeytoken != nil || group.Canary != nil {
 		if group.Canary != nil {
 			s.recordCanaryUse(rc, req.Model)
@@ -1784,6 +1838,40 @@ func (s *Service) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		s.writeEstimatedCountTokens(w, rc, req)
 		return
 	}
+	policy, policyErr := s.effectiveHierarchyPolicy(r.Context(), rc.caller)
+	if policyErr != nil {
+		s.writeError(w, rc, http.StatusServiceUnavailable, hierarchyPolicyErrorCode(policyErr))
+		return
+	}
+	if policy != nil {
+		if !hierarchyPolicyAllowsGroup(policy, req.Model) {
+			s.writeAnthropicModelNotFound(w, rc, "model-not-allowed")
+			return
+		}
+		group.PIIFilter, err = mergeHierarchyPIIFilters(group.PIIFilter, policy.PIIFilter)
+		if err != nil {
+			s.writeError(w, rc, http.StatusServiceUnavailable, "hierarchy-policy-invalid")
+			return
+		}
+		pii, piiErr := applyPIIFilter(req, group.PIIFilter, "anthropic")
+		if piiErr != nil {
+			var blocked piiFilterBlockedError
+			if errors.As(piiErr, &blocked) {
+				s.writeError(w, rc, http.StatusBadRequest, "pii-filter-blocked")
+			} else {
+				s.writeError(w, rc, http.StatusBadGateway, "pii-filter-failed")
+			}
+			return
+		}
+		if pii.Applied {
+			body, err = json.Marshal(req.Raw)
+			if err != nil {
+				s.writeError(w, rc, http.StatusBadRequest, "invalid-request")
+				return
+			}
+		}
+	}
+	rc.rec.RequestedModel = req.Model
 	rc.rec.QuotaState = conc.QuotaState
 	rc.rec.KeyState = conc.KeyState
 	rc.rec.UsageSource = "none"
@@ -2044,6 +2132,28 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		s.writeIR(w, dialect, response, req.Stream, rc)
 		s.finish(rc, http.StatusOK, nil)
 		return
+	}
+	inheritedPolicy, policyErr := s.effectiveHierarchyPolicy(r.Context(), rc.caller)
+	if policyErr != nil {
+		s.writeError(w, rc, http.StatusServiceUnavailable, hierarchyPolicyErrorCode(policyErr))
+		return
+	}
+	if inheritedPolicy != nil {
+		rc.rec.OrganizationID = inheritedPolicy.OrganizationID
+		rc.rec.TeamID = inheritedPolicy.TeamID
+		if !hierarchyPolicyAllowsGroup(inheritedPolicy, req.Model) {
+			s.writeModelNotFound(w, rc, req.Model, "model-not-allowed")
+			return
+		}
+		if !hierarchyPolicyAllowsTools(inheritedPolicy, req.Tools) {
+			s.writeError(w, rc, http.StatusForbidden, "hierarchy-tool-not-allowed")
+			return
+		}
+		group.PIIFilter, err = mergeHierarchyPIIFilters(group.PIIFilter, inheritedPolicy.PIIFilter)
+		if err != nil {
+			s.writeError(w, rc, http.StatusServiceUnavailable, "hierarchy-policy-invalid")
+			return
+		}
 	}
 	if responsesBodyOnChatEndpoint && rawValuePresent(req.Raw, "previous_response_id") && !modelGroupHasNativeResponsesTarget(s.cfg, group) {
 		rc.trace("openai_compatibility_shape", "endpoint=/v1/chat/completions detected_shape=openai-responses bridge_direction=responses_to_chat mode=enabled rejection_reason="+openAIChatEndpointPreviousResponseUnsupportedError, Target{}, 0, http.StatusBadRequest, openAIChatEndpointPreviousResponseUnsupportedError, false, 0)

@@ -182,6 +182,13 @@ func (s *Service) resolveStoredResponse(r *http.Request, rc *requestContext) (*r
 	if rc == nil || !rc.callerCanUseGroup(row.ModelGroup) {
 		return nil, nil, "", affinityClientError{status: http.StatusNotFound, code: "response_not_found", message: "The response was not found."}
 	}
+	policy, policyErr := s.effectiveHierarchyPolicy(r.Context(), rc.caller)
+	if policyErr != nil {
+		return nil, nil, "", affinityClientError{status: http.StatusServiceUnavailable, code: "hierarchy-policy-unavailable", message: "Inherited hierarchy policy is unavailable."}
+	}
+	if !hierarchyPolicyAllowsGroup(policy, row.ModelGroup) {
+		return nil, nil, "", affinityClientError{status: http.StatusForbidden, code: "hierarchy-group-forbidden", message: "The stored response model group is not allowed by inherited policy."}
+	}
 	group, ok := s.cfg.Models[row.ModelGroup]
 	if !ok || !s.responsesAffinity.enabledFor(row.ModelGroup) {
 		return nil, nil, "", affinityClientError{status: http.StatusConflict, code: "response_target_unavailable", message: "The model group that holds this stored response is no longer available."}

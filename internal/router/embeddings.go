@@ -402,11 +402,8 @@ func (s *Service) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, rc, http.StatusNotFound, "model_not_found")
 		return
 	}
-	sinkhole := rc.caller.cfg.Honeytoken != nil || group.Canary != nil
 	if group.Canary != nil {
 		s.recordCanaryUse(rc, req.Model)
-	}
-	if sinkhole {
 		s.quota.Release(rc.caller)
 		bodyHeld = false
 		if !s.admitSinkhole(w, rc) {
@@ -415,6 +412,22 @@ func (s *Service) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		defer s.quota.Release(rc.caller)
 		s.writeError(w, rc, http.StatusBadRequest, "unsupported_capability")
 		return
+	}
+	inheritedPolicy, policyErr := s.effectiveHierarchyPolicy(r.Context(), rc.caller)
+	if policyErr != nil {
+		s.writeError(w, rc, http.StatusServiceUnavailable, "hierarchy-policy-unavailable")
+		return
+	}
+	if inheritedPolicy != nil {
+		if !hierarchyPolicyAllowsGroup(inheritedPolicy, req.Model) {
+			s.writeError(w, rc, http.StatusNotFound, "model_not_found")
+			return
+		}
+		group.PIIFilter, err = mergeHierarchyPIIFilters(group.PIIFilter, inheritedPolicy.PIIFilter)
+		if err != nil {
+			s.writeError(w, rc, http.StatusServiceUnavailable, "hierarchy-policy-invalid")
+			return
+		}
 	}
 	targets, dimensions, err := embeddingGroupTargets(group, req.Dimensions)
 	if err != nil {

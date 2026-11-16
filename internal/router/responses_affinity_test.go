@@ -856,6 +856,28 @@ func TestStoredResponseRewriteAndStreamGet(t *testing.T) {
 	_ = upstream
 }
 
+func TestStoredResponseOperationHonorsInheritedGroupNarrowing(t *testing.T) {
+	svc, upstream := storedAffinityService(t, true)
+	created := postAffinity(t, svc, affinityTestToken, `{"model":"stored","input":"hello"}`)
+	if created.Code != http.StatusOK {
+		t.Fatalf("create status=%d body=%s", created.Code, created.Body.String())
+	}
+	id := stringValue(decodeJSONBody(t, created.Body.String())["id"])
+	before := upstream.opCount()
+	t.Setenv("HIERARCHY_STORED_CREDENTIAL", "stored-policy-test-credential")
+	runtime, err := newHierarchyPolicyRuntime(HierarchyChildConfig{ID: "app", ParentURL: "https://parent.example.test", CredentialEnv: "HIERARCHY_STORED_CREDENTIAL", CacheTTL: "30s"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime.policy = HierarchyPolicy{Version: 1, ChildID: "app", OrganizationID: "org-a", TeamID: "team-a", AllowedGroups: []string{"other"}}
+	runtime.fetchedAt = time.Now()
+	svc.hierarchyPolicy.Store(runtime)
+	response := storedAffinityDo(t, svc, http.MethodGet, "/v1/responses/"+id, affinityTestToken)
+	if response.Code != http.StatusForbidden || upstream.opCount() != before {
+		t.Fatalf("stored response escaped inherited group narrowing: status=%d upstream_ops=%d->%d body=%s", response.Code, before, upstream.opCount(), response.Body.String())
+	}
+}
+
 func TestResponsesAffinityKeyRotationKeepsOldRowsReachable(t *testing.T) {
 	upstream := &affinityUpstream{}
 	server := httptest.NewServer(upstream)

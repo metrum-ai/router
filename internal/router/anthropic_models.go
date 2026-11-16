@@ -39,7 +39,11 @@ func (s *Service) writeAnthropicModelList(w http.ResponseWriter, r *http.Request
 		s.writeAnthropicModelError(w, rc, http.StatusBadRequest, "invalid-pagination", "invalid_request_error", "before_id and after_id cannot be combined")
 		return
 	}
-	models := rc.filterMissionModelMetadata(s.callerModelMetadata(rc.caller))
+	models, err := s.filterHierarchyModelMetadata(r.Context(), rc.caller, rc.filterMissionModelMetadata(s.callerModelMetadata(rc.caller)))
+	if err != nil {
+		s.writeAnthropicModelError(w, rc, http.StatusServiceUnavailable, hierarchyPolicyErrorCode(err), "api_error", "Model catalog unavailable")
+		return
+	}
 	start, end := 0, len(models)
 	cursor := before
 	if after != "" {

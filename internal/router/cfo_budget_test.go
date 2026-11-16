@@ -42,6 +42,31 @@ func TestCFOBudgetSnapshotScopeAndUnlimited(t *testing.T) {
 	}
 }
 
+func TestCFOBudgetUsesSharedOrganizationCounters(t *testing.T) {
+	now := time.Now().UTC()
+	quota := QuotaConfig{Day: BudgetConfig{Tokens: 100}, Month: BudgetConfig{Tokens: 200}}
+	makeCaller := func(id string) *callerRuntime {
+		return &callerRuntime{cfg: CallerConfig{ID: id, Project: "finance", Environment: "test", Quota: quota}, quotaScope: hierarchyQuotaScopePrefix + "org-a"}
+	}
+	store := &quotaStore{
+		callers: map[string]*callerRuntime{"a": makeCaller("a"), "b": makeCaller("b")},
+		state: persistentState{Callers: map[string]*callerState{
+			"a":                                 {DayStart: dayStart(now), MonthStart: monthStart(now), DayTokens: 1, MonthTokens: 2},
+			"b":                                 {DayStart: dayStart(now), MonthStart: monthStart(now), DayTokens: 3, MonthTokens: 4},
+			hierarchyQuotaScopePrefix + "org-a": {DayStart: dayStart(now), MonthStart: monthStart(now), DayTokens: 40, MonthTokens: 60},
+		}},
+	}
+	result := (&Service{quota: store}).cfoBudgets(adminAuthSubject{domain: "finance/test"}, false, UsageReportOptions{})
+	if len(result.Rows) != 6 {
+		t.Fatalf("rows=%+v", result.Rows)
+	}
+	for _, row := range result.Rows {
+		if row.Window == "day" && row.Used != 40 || row.Window == "month" && row.Used != 60 {
+			t.Fatalf("caller %s read non-organization %s counter: %+v", row.CallerID, row.Window, row)
+		}
+	}
+}
+
 func TestCFOBudgetTokenFilteringWithoutDisclosure(t *testing.T) {
 	secret := "rtr_metrum_alice_finance_test_public_fake-secret"
 	store := &quotaStore{callers: map[string]*callerRuntime{

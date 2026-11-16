@@ -39,7 +39,7 @@ func TestUsageRecomputedInputSchema20SQLiteUpgradeFrom19(t *testing.T) {
 	}
 	cached := 40
 	legacy := usageRecord{RequestID: "schema-19-row", TS: "2026-11-16T00:00:00Z", InputTokens: 100, CachedInputTokens: &cached}
-	if err := db.Omit("RecomputedInputTokens", "ToolCallCount", "ToolFirstFailureClass", "ToolRetries", "ToolEscalations", "ToolReliabilityBucket", "ToolReliabilitySource").Create(&legacy).Error; err != nil {
+	if err := db.Omit("RecomputedInputTokens", "OrganizationID", "TeamID", "ToolCallCount", "ToolFirstFailureClass", "ToolRetries", "ToolEscalations", "ToolReliabilityBucket", "ToolReliabilitySource").Create(&legacy).Error; err != nil {
 		t.Fatal(err)
 	}
 	definitionsThrough20 := make([]MigrationDefinition, 0, len(usageMigrationDefinitions)-1)

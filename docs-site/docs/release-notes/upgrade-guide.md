@@ -266,6 +266,37 @@ Bedrock still validates signature authenticity, and opaque signatures may be
 scoped to a provider account. Keep reasoning history on the same Bedrock target
 and account; cross-provider and cross-account replay is unsupported.
 
+## v5.0.0 hierarchy governance
+
+Usage schema version 22 adds `organization_id` and `team_id` for hierarchy audit attribution after schema 21 tool-routing usage. Migration `2026111626` depends on tool-routing migration `2026111623`. The migration is restore-required for rollback; keep a database restore available.
+
+Hierarchy governance is opt-in. Existing configurations without
+`server.hierarchy` retain their current behavior. Configure a parent with a
+child-to-caller mapping and configure the child with the parent's HTTPS URL, a
+machine credential source, and a bounded policy cache TTL. The parent fetch
+endpoint is authenticated and versioned. Child policies may narrow inherited
+model-group, tool and PII permissions, never widen them. For requests the parent
+serves, it applies the mapped caller's organization request and token quota;
+mapped callers in one organization share the parent's daily and monthly usage
+counters. The child applies its own local quotas independently and does not
+combine the parent's quota with its local cap.
+
+Use the same exact model-group names in the parent caller allow list, hierarchy
+mapping and child model configuration. A mismatch fails closed. Set
+`trust_traceparent: true` on parent callers whose credentials authenticate a
+child router to preserve one trace ID through the chain.
+
+Hierarchy audit rows add organization and team IDs to the existing trace/span
+join fields. Reports can filter by those IDs and include hop-level details.
+The child policy cache is process-local; reload or restart drops it and the
+next request fetches a new snapshot. Parent daily and monthly usage counters
+persist in the configured state file, while in-flight quota reservations are
+process-local. Use one parent replica unless shared quota storage has been
+separately validated. On parent outage, the child serves its last validated
+policy through the configured TTL and for at most 30 additional seconds. After
+that grace period, it returns HTTP 503 before inference. Restore parent
+reachability or correct the child's credential/URL to recover.
+
 ## v5.0.0 secret DLP
 
 Model groups can set `pii_filter.secrets_enabled: true` to apply the built-in

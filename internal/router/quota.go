@@ -19,12 +19,13 @@ import (
 var errQuotaStatePersist = errors.New("quota-state-error")
 
 type quotaStore struct {
-	mu      sync.Mutex
-	path    string
-	keyID   string
-	key     []byte
-	callers map[string]*callerRuntime
-	state   persistentState
+	mu             sync.Mutex
+	path           string
+	keyID          string
+	key            []byte
+	callers        map[string]*callerRuntime
+	scopedReserved map[string]int64
+	state          persistentState
 	// saveFault, when set, forces saveLocked to return without writing. Tests only.
 	saveFault error
 }
@@ -64,12 +65,13 @@ func prepareQuotaCallers(cfg *Config) (map[string]*callerRuntime, error) {
 		return nil, fmt.Errorf("rebuild callers: %w", err)
 	}
 	newCallers := make(map[string]*callerRuntime, len(cfg.Callers))
+	quotaScopes := hierarchyQuotaScopes(cfg.Server.Hierarchy)
 	for _, callerCfg := range cfg.Callers {
 		allow := map[string]bool{}
 		for _, group := range callerCfg.Allow {
 			allow[group] = true
 		}
-		rt := &callerRuntime{cfg: callerCfg, allow: allow, keyStatus: normalizeStatusDefault(callerCfg.Status)}
+		rt := &callerRuntime{cfg: callerCfg, quotaScope: quotaScopes[callerCfg.ID], allow: allow, keyStatus: normalizeStatusDefault(callerCfg.Status)}
 		rt.ownerUser, _ = callerOwnerUser(callerCfg)
 		rt.project = normalizeAccountID(callerCfg.Project)
 		if user, ok := dir.users[rt.ownerUser]; ok {
@@ -100,6 +102,7 @@ func (q *quotaStore) installPreparedCallers(newCallers map[string]*callerRuntime
 	now := time.Now().UTC()
 	q.mu.Lock()
 	defer q.mu.Unlock()
+	ensureHierarchyQuotaStates(q.state.Callers, newCallers, q.callers, now)
 	// Preserve existing caller state for IDs that survive the reload.
 	for id, rt := range newCallers {
 		if existing, ok := q.callers[id]; ok {
@@ -114,7 +117,7 @@ func (q *quotaStore) installPreparedCallers(newCallers map[string]*callerRuntime
 	}
 	// Remove state for callers that no longer exist.
 	for id := range q.state.Callers {
-		if newCallers[id] == nil {
+		if newCallers[id] == nil && !hierarchyQuotaScopeReferenced(id, newCallers) {
 			delete(q.state.Callers, id)
 		}
 	}
@@ -123,6 +126,7 @@ func (q *quotaStore) installPreparedCallers(newCallers map[string]*callerRuntime
 
 type callerRuntime struct {
 	cfg                    CallerConfig
+	quotaScope             string
 	allow                  map[string]bool
 	ownerUser              string
 	ownerUserStatus        string
@@ -187,7 +191,7 @@ type quotaReservation struct {
 
 func newQuotaStore(path string, cfg *Config) (*quotaStore, error) {
 	key, keyID := quotaStateIntegrityKey(cfg)
-	qs := &quotaStore{path: path, keyID: keyID, key: key, callers: map[string]*callerRuntime{}, state: persistentState{Callers: map[string]*callerState{}}}
+	qs := &quotaStore{path: path, keyID: keyID, key: key, callers: map[string]*callerRuntime{}, scopedReserved: map[string]int64{}, state: persistentState{Callers: map[string]*callerState{}}}
 	if raw, err := readVersionedStateFile(path); err == nil && len(raw) > 0 {
 		state, enveloped, err := unmarshalIntegrityState[persistentState](raw, keyID, key)
 		if err != nil {
@@ -218,7 +222,7 @@ func newQuotaStore(path string, cfg *Config) (*quotaStore, error) {
 		for _, group := range callerCfg.Allow {
 			allow[group] = true
 		}
-		rt := &callerRuntime{cfg: callerCfg, allow: allow, keyStatus: normalizeStatusDefault(callerCfg.Status)}
+		rt := &callerRuntime{cfg: callerCfg, quotaScope: hierarchyQuotaScopes(cfg.Server.Hierarchy)[callerCfg.ID], allow: allow, keyStatus: normalizeStatusDefault(callerCfg.Status)}
 		rt.ownerUser, _ = callerOwnerUser(callerCfg)
 		rt.project = normalizeAccountID(callerCfg.Project)
 		if user, ok := dir.users[rt.ownerUser]; ok {
@@ -243,6 +247,7 @@ func newQuotaStore(path string, cfg *Config) (*quotaStore, error) {
 			qs.state.Callers[callerCfg.ID] = &callerState{DayStart: dayStart(now), MonthStart: monthStart(now)}
 		}
 	}
+	ensureHierarchyQuotaStates(qs.state.Callers, qs.callers, nil, now)
 	if path != "" {
 		if err := qs.saveLocked(); err != nil {
 			return nil, err
@@ -266,11 +271,13 @@ func (q *quotaStore) admit(c *callerRuntime, estTokens, rpmOverride int) admissi
 		return ad
 	}
 	now := time.Now().UTC()
-	st := q.stateFor(c.cfg.ID, now)
+	st := q.stateFor(c.quotaStateID(), now)
 	q.resetWindows(st, now)
-	keyState := q.keyState(c.cfg, st, 0)
-	if st.Disabled || keyState == "exhausted" {
-		if ad := q.persistExhaustedLocked(st); !ad.OK {
+	keySt := q.stateFor(c.cfg.ID, now)
+	q.resetWindows(keySt, now)
+	keyState := q.keyState(c.cfg, keySt, 0)
+	if keySt.Disabled || keyState == "exhausted" {
+		if ad := q.persistExhaustedLocked(keySt); !ad.OK {
 			return ad
 		}
 		return admission{Status: http.StatusForbidden, Reason: "key-exhausted", QuotaState: "ok", KeyState: "exhausted"}
@@ -315,10 +322,13 @@ func (q *quotaStore) admit(c *callerRuntime, estTokens, rpmOverride int) admissi
 		}
 	}
 	reservedEstimate := c.inFlightReservedTokens
+	if c.quotaScope != "" {
+		reservedEstimate = q.scopedReserved[c.quotaScope]
+	}
 	quotaState, warning := q.quotaState(c.cfg, st, reservedEstimate)
-	keyState = q.keyState(c.cfg, st, 0)
+	keyState = q.keyState(c.cfg, keySt, 0)
 	if estTokens > 0 {
-		keyState = q.keyState(c.cfg, st, reservedEstimate)
+		keyState = q.keyState(c.cfg, keySt, c.inFlightReservedTokens)
 	}
 	return admission{OK: true, Status: http.StatusOK, QuotaState: quotaState, KeyState: keyState, WarningText: warning, Reservation: res}
 }
@@ -400,11 +410,15 @@ func (q *quotaStore) AcquireConcurrency(c *callerRuntime) admission {
 		return ad
 	}
 	now := time.Now().UTC()
-	st := q.stateFor(c.cfg.ID, now)
+	st := q.stateFor(c.quotaStateID(), now)
 	q.resetWindows(st, now)
-	keyState := q.keyState(c.cfg, st, 0)
-	if st.Disabled || keyState == "exhausted" {
-		if ad := q.persistExhaustedLocked(st); !ad.OK {
+	keySt := q.stateFor(c.cfg.ID, now)
+	q.resetWindows(keySt, now)
+	// Concurrency admission must not turn temporary token estimates into
+	// lifetime usage. The full Admit/ReserveTokens path accounts for estimates.
+	keyState := q.keyState(c.cfg, keySt, 0)
+	if keySt.Disabled || keyState == "exhausted" {
+		if ad := q.persistExhaustedLocked(keySt); !ad.OK {
 			return ad
 		}
 		return admission{Status: http.StatusForbidden, Reason: "key-exhausted", QuotaState: "ok", KeyState: "exhausted"}
@@ -437,12 +451,14 @@ func (q *quotaStore) ReserveTokens(c *callerRuntime, estTokens int) admission {
 		return ad
 	}
 	now := time.Now().UTC()
-	st := q.stateFor(c.cfg.ID, now)
+	st := q.stateFor(c.quotaStateID(), now)
 	q.resetWindows(st, now)
-	keyState := q.keyState(c.cfg, st, c.inFlightReservedTokens)
-	actualKeyState := q.keyState(c.cfg, st, 0)
-	if st.Disabled || actualKeyState == "exhausted" {
-		if ad := q.persistExhaustedLocked(st); !ad.OK {
+	keySt := q.stateFor(c.cfg.ID, now)
+	q.resetWindows(keySt, now)
+	keyState := q.keyState(c.cfg, keySt, c.inFlightReservedTokens)
+	actualKeyState := q.keyState(c.cfg, keySt, 0)
+	if keySt.Disabled || actualKeyState == "exhausted" {
+		if ad := q.persistExhaustedLocked(keySt); !ad.OK {
 			return ad
 		}
 		return admission{Status: http.StatusForbidden, Reason: "key-exhausted", QuotaState: "ok", KeyState: "exhausted"}
@@ -455,8 +471,11 @@ func (q *quotaStore) ReserveTokens(c *callerRuntime, estTokens int) admission {
 		return ad
 	}
 	reservedEstimate := c.inFlightReservedTokens
+	if c.quotaScope != "" {
+		reservedEstimate = q.scopedReserved[c.quotaScope]
+	}
 	quotaState, warning := q.quotaState(c.cfg, st, reservedEstimate)
-	return admission{OK: true, Status: http.StatusOK, QuotaState: quotaState, KeyState: q.keyState(c.cfg, st, reservedEstimate), WarningText: warning, Reservation: res}
+	return admission{OK: true, Status: http.StatusOK, QuotaState: quotaState, KeyState: q.keyState(c.cfg, keySt, c.inFlightReservedTokens), WarningText: warning, Reservation: res}
 }
 
 func (q *quotaStore) RecordTokens(c *callerRuntime, reservation *quotaReservation, usage Usage) (string, string, error) {
@@ -468,15 +487,17 @@ func (q *quotaStore) RecordTokens(c *callerRuntime, reservation *quotaReservatio
 	defer q.mu.Unlock()
 	q.releaseReservationLocked(c, reservation)
 	now := time.Now().UTC()
-	st := q.stateFor(c.cfg.ID, now)
+	st := q.stateFor(c.quotaStateID(), now)
+	keySt := q.stateFor(c.cfg.ID, now)
 	q.resetWindows(st, now)
+	q.resetWindows(keySt, now)
 	st.DayTokens += int64(total)
 	st.MonthTokens += int64(total)
-	st.LifetimeTokens += int64(total)
+	keySt.LifetimeTokens += int64(total)
 	c.tokenTimes = append(c.tokenTimes, tokenEvent{At: now, Tokens: total})
-	keyState := q.keyState(c.cfg, st, 0)
+	keyState := q.keyState(c.cfg, keySt, 0)
 	if keyState == "exhausted" {
-		st.Disabled = true
+		keySt.Disabled = true
 	}
 	// Consumed upstream work remains an outstanding liability even when the
 	// durable write fails. Keep counters, latch persistence health, and refuse
@@ -546,6 +567,12 @@ func (q *quotaStore) releaseReservationLocked(c *callerRuntime, reservation *quo
 	if c.inFlightReservedTokens < 0 {
 		c.inFlightReservedTokens = 0
 	}
+	if c.quotaScope != "" {
+		q.scopedReserved[c.quotaScope] -= int64(reservation.tokens)
+		if q.scopedReserved[c.quotaScope] < 0 {
+			q.scopedReserved[c.quotaScope] = 0
+		}
+	}
 	reservation.active = false
 }
 
@@ -554,20 +581,32 @@ func (q *quotaStore) reserveTokensLocked(c *callerRuntime, st *callerState, estT
 		return nil, admission{OK: true, Status: http.StatusOK}
 	}
 	reservedBefore := c.inFlightReservedTokens
-	keyState := q.keyState(c.cfg, st, reservedBefore)
+	keySt := q.stateFor(c.cfg.ID, now)
+	q.resetWindows(keySt, now)
+	keyState := q.keyState(c.cfg, keySt, reservedBefore)
 	c.tokenTimes = pruneTokens(c.tokenTimes, now.Add(-time.Minute))
 	if limit := c.effectiveRateLimit(c.cfg.Rate.TPM); limit > 0 && int64(sumTokenEvents(c.tokenTimes)+estTokens)+reservedBefore > int64(limit) {
 		return nil, admission{Status: http.StatusTooManyRequests, Reason: "tpm-exceeded", RetryAfter: "60", QuotaState: "ok", KeyState: keyState}
 	}
-	reservedEstimate := reservedBefore + int64(estTokens)
+	quotaReservedBefore := reservedBefore
+	if c.quotaScope != "" {
+		quotaReservedBefore = q.scopedReserved[c.quotaScope]
+	}
+	reservedEstimate := quotaReservedBefore + int64(estTokens)
 	if exceedsBudget(c.cfg.Quota.Day.Tokens, st.DayTokens+reservedEstimate) ||
 		exceedsBudget(c.cfg.Quota.Month.Tokens, st.MonthTokens+reservedEstimate) {
 		return nil, admission{Status: http.StatusTooManyRequests, Reason: "quota-exhausted", RetryAfter: "3600", QuotaState: "reject", KeyState: keyState}
 	}
-	if c.cfg.Key.LifetimeTokens > 0 && st.LifetimeTokens+reservedEstimate > c.cfg.Key.LifetimeTokens {
+	if c.cfg.Key.LifetimeTokens > 0 && keySt.LifetimeTokens+reservedBefore+int64(estTokens) > c.cfg.Key.LifetimeTokens {
 		return nil, admission{Status: http.StatusForbidden, Reason: "key-exhausted", QuotaState: "ok", KeyState: "exhausted"}
 	}
 	c.inFlightReservedTokens += int64(estTokens)
+	if c.quotaScope != "" {
+		if q.scopedReserved == nil {
+			q.scopedReserved = make(map[string]int64)
+		}
+		q.scopedReserved[c.quotaScope] += int64(estTokens)
+	}
 	return &quotaReservation{tokens: estTokens, active: true}, admission{OK: true, Status: http.StatusOK}
 }
 
@@ -575,8 +614,10 @@ func (q *quotaStore) Usage(c *callerRuntime) map[string]any {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	now := time.Now().UTC()
-	st := q.stateFor(c.cfg.ID, now)
+	st := q.stateFor(c.quotaStateID(), now)
+	keySt := q.stateFor(c.cfg.ID, now)
 	q.resetWindows(st, now)
+	q.resetWindows(keySt, now)
 	return map[string]any{
 		"caller_id":          c.cfg.ID,
 		"caller_user":        callerUser(c.cfg),
@@ -591,9 +632,9 @@ func (q *quotaStore) Usage(c *callerRuntime) map[string]any {
 			"tokens":   st.MonthTokens,
 		},
 		"key": map[string]any{
-			"lifetime_tokens":   st.LifetimeTokens,
-			"remaining_tokens":  remaining(c.cfg.Key.LifetimeTokens, st.LifetimeTokens),
-			"exhausted":         st.Disabled,
+			"lifetime_tokens":   keySt.LifetimeTokens,
+			"remaining_tokens":  remaining(c.cfg.Key.LifetimeTokens, keySt.LifetimeTokens),
+			"exhausted":         keySt.Disabled,
 			"configured_budget": c.cfg.Key.LifetimeTokens,
 		},
 	}
@@ -606,6 +647,62 @@ func (q *quotaStore) stateFor(id string, now time.Time) *callerState {
 		q.state.Callers[id] = st
 	}
 	return st
+}
+
+func (c *callerRuntime) quotaStateID() string {
+	if c != nil && c.quotaScope != "" {
+		return c.quotaScope
+	}
+	if c == nil {
+		return ""
+	}
+	return c.cfg.ID
+}
+
+func ensureHierarchyQuotaStates(state map[string]*callerState, callers, previous map[string]*callerRuntime, now time.Time) {
+	if state == nil {
+		return
+	}
+	for _, caller := range callers {
+		if caller.quotaScope == "" || state[caller.quotaScope] != nil {
+			continue
+		}
+		shared := &callerState{DayStart: dayStart(now), MonthStart: monthStart(now)}
+		seenPreviousScopes := make(map[string]bool)
+		for id, member := range callers {
+			if member.quotaScope != caller.quotaScope {
+				continue
+			}
+			stateID := id
+			if previousCaller := previous[id]; previousCaller != nil && previousCaller.quotaScope != "" {
+				stateID = previousCaller.quotaScope
+				if seenPreviousScopes[stateID] {
+					continue
+				}
+				seenPreviousScopes[stateID] = true
+			}
+			if prior := state[stateID]; prior != nil {
+				if prior.DayStart.Equal(shared.DayStart) {
+					shared.DayRequests += prior.DayRequests
+					shared.DayTokens += prior.DayTokens
+				}
+				if prior.MonthStart.Equal(shared.MonthStart) {
+					shared.MonthRequests += prior.MonthRequests
+					shared.MonthTokens += prior.MonthTokens
+				}
+			}
+		}
+		state[caller.quotaScope] = shared
+	}
+}
+
+func hierarchyQuotaScopeReferenced(id string, callers map[string]*callerRuntime) bool {
+	for _, caller := range callers {
+		if caller.quotaScope == id {
+			return true
+		}
+	}
+	return false
 }
 
 func (q *quotaStore) resetWindows(st *callerState, now time.Time) {
