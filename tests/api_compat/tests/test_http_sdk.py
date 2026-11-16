@@ -34,10 +34,9 @@ def test_openai_sdk_lists_models_and_chat_unary(router):
 
 
 def test_anthropic_sdk_messages_unary(router):
-    # auth_token pins Bearer so ambient ANTHROPIC_AUTH_TOKEN cannot win over x-api-key.
+    # auth_token selects the Bearer skin without supplying a second credential.
     client = Anthropic(
         base_url=router["base"] + "/anthropic",
-        api_key=CALLER,
         auth_token=CALLER,
         max_retries=0,
     )
