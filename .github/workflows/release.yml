@@ -19,11 +19,13 @@ permissions:
 jobs:
   # Every hierarchy compatibility cell must pass before release packaging.
   hierarchy-matrix:
+    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'
     uses: ./.github/workflows/hierarchy-matrix.yml
     permissions:
       contents: read
 
   resolve:
+    if: github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'
     needs: hierarchy-matrix
     runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     outputs:

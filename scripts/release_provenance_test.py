@@ -23,6 +23,9 @@ SUBJECTS = {
 
 def validate(workflow):
     jobs = workflow["jobs"]
+    dispatch_guard = "github.event_name != 'workflow_dispatch' || github.ref == 'refs/heads/main'"
+    assert jobs["hierarchy-matrix"].get("if") == dispatch_guard
+    assert jobs["resolve"].get("if") == dispatch_guard
     publish = jobs["publish-release"]
     assert publish.get("environment") == "release"
     assert publish.get("if", "").startswith("always() && startsWith(github.ref, 'refs/tags/')")
@@ -106,6 +109,12 @@ class ProvenanceWorkflowTest(unittest.TestCase):
         doc = copy.deepcopy(self.workflow)
         publish = doc["jobs"]["publish-release"]
         publish["needs"].remove("upgrade-and-rollback")
+        with self.assertRaises(AssertionError):
+            validate(doc)
+
+    def test_manual_release_dispatch_is_restricted_to_main(self):
+        doc = copy.deepcopy(self.workflow)
+        del doc["jobs"]["resolve"]["if"]
         with self.assertRaises(AssertionError):
             validate(doc)
 
