@@ -140,14 +140,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=9100)
-    parser.add_argument("--echo-model", default="")
     args = parser.parse_args()
     server = ThreadingHTTPServer((args.host, args.port), Handler)
-    if args.echo_model:
-        original = Handler.do_POST
-        def set_echo_model(self):
-            original(self)
-        Handler.do_POST = set_echo_model
     server.daemon_threads = True
     print(f"frontier demo fixture on {args.host}:{args.port}", flush=True)
     server.serve_forever()

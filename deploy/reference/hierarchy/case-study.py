@@ -98,20 +98,20 @@ def summarize(rows: list[dict]) -> dict:
             targets[name] = {
                 "requests": len(sample),
                 "quality_accuracy": round(sum(r["correct"] for r in sample) / len(sample), 4),
-                "latency_ms_p50": percentile([r["latency_ms"] for r in sample], 0.50),
-                "latency_ms_p95": percentile([r["latency_ms"] for r in sample], 0.95),
-                "ttfb_ms_p50": percentile([r["ttfb_ms"] for r in sample if r["ttfb_ms"] is not None], 0.50),
-                "ttfb_ms_p95": percentile([r["ttfb_ms"] for r in sample if r["ttfb_ms"] is not None], 0.95),
+                "client_latency_ms_p50": percentile([r["client_latency_ms"] for r in sample], 0.50),
+                "client_latency_ms_p95": percentile([r["client_latency_ms"] for r in sample], 0.95),
+                "client_ttfb_ms_p50": percentile([r["client_ttfb_ms"] for r in sample], 0.50),
+                "client_ttfb_ms_p95": percentile([r["client_ttfb_ms"] for r in sample], 0.95),
             }
     count = len(rows)
     return {
         "requests": count,
         "cpu_traffic_share": round(sum(r["target"] == "cpu" for r in rows) / count, 4) if count else 0,
         "quality_accuracy": round(sum(r["correct"] for r in rows) / count, 4) if count else 0,
-        "latency_ms_p50": percentile([r["latency_ms"] for r in rows], 0.50),
-        "latency_ms_p95": percentile([r["latency_ms"] for r in rows], 0.95),
-        "ttfb_ms_p50": percentile([r["ttfb_ms"] for r in rows if r["ttfb_ms"] is not None], 0.50),
-        "ttfb_ms_p95": percentile([r["ttfb_ms"] for r in rows if r["ttfb_ms"] is not None], 0.95),
+        "client_latency_ms_p50": percentile([r["client_latency_ms"] for r in rows], 0.50),
+        "client_latency_ms_p95": percentile([r["client_latency_ms"] for r in rows], 0.95),
+        "client_ttfb_ms_p50": percentile([r["client_ttfb_ms"] for r in rows], 0.50),
+        "client_ttfb_ms_p95": percentile([r["client_ttfb_ms"] for r in rows], 0.95),
         "by_target": targets,
     }
 
@@ -152,8 +152,16 @@ def main() -> int:
     if not os.environ.get("ANTHROPIC_API_KEY"):
         parser.error("ANTHROPIC_API_KEY must be available in the process environment")
     parsed = urlparse(args.cpu_url)
-    if parsed.scheme != "http" or parsed.hostname != "127.0.0.1" or parsed.path != "/v1" or parsed.query or parsed.fragment:
-        parser.error("--cpu-url must use the local SSM port-forwarded /v1 endpoint")
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path != "/v1"
+        or parsed.query
+        or parsed.fragment
+    ):
+        parser.error("--cpu-url must be an HTTP(S) OpenAI-compatible /v1 endpoint")
     if not 20 <= args.samples <= 120:
         parser.error("--samples must be between 20 and 120 to bound the case study")
 
@@ -256,11 +264,13 @@ def main() -> int:
             for index in range(args.samples):
                 task_id, expected, prompt = make_task(index)
                 max_tokens = 160 if index % 5 == 0 else 16
-                response, client_ttfb_ms, _, request_id = request_json(
+                response, client_ttfb_ms, client_latency_ms, request_id = request_json(
                     base + "/v1/chat/completions",
                     {"model": "agent-small", "max_tokens": max_tokens,
                      "messages": [{"role": "user", "content": prompt}]}, token,
                 )
+                if client_ttfb_ms is not None and client_ttfb_ms > client_latency_ms:
+                    raise RuntimeError("client TTFB exceeded total response time")
                 if not request_id:
                     raise RuntimeError("router response omitted X-Request-Id")
                 result_text = response.get("choices", [{}])[0].get("message", {}).get("content", "")
@@ -270,7 +280,7 @@ def main() -> int:
                 rows.append({
                     "task_id": task_id, "expected": expected, "predicted": classify(result_text),
                     "correct": classify(result_text) == expected, "target": target, "status": int(usage[1]),
-                    "latency_ms": int(usage[2] or 0), "ttfb_ms": int(usage[3]) if usage[3] is not None else client_ttfb_ms,
+                    "client_latency_ms": client_latency_ms, "client_ttfb_ms": client_ttfb_ms,
                 })
 
             report = {
@@ -281,11 +291,10 @@ def main() -> int:
             }
             args.output.parent.mkdir(parents=True, exist_ok=True)
             args.output.write_text(json.dumps(report, indent=2) + "\n")
-            # Costs come from usage rows at the configured Anthropic rates and are
-            # intentionally stdout-only so they can be recorded in STATUS, not git.
+            # Costs come from usage rows at the configured Anthropic rates.
             with sqlite3.connect(state / "usage.sqlite") as db:
                 cost = db.execute("select coalesce(sum(total_cost_usd),0),count(*) from request_usage").fetchone()
-            print(json.dumps({"summary": report["router_summary"], "usage_rows": cost[1], "actual_usage_cost_usd_for_STATUS_only": round(cost[0], 8)}, indent=2))
+            print(json.dumps({"summary": report["router_summary"], "usage_rows": cost[1], "actual_usage_cost_usd": round(cost[0], 8)}, indent=2))
         finally:
             process.terminate()
             try:

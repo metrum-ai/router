@@ -18,8 +18,9 @@ are measured load points, not a capacity guarantee.
 | 8 | 1.0 | 16 | 25.782 | 162 ms | 450 ms |
 | 16 | 2.0 | 32 | 45.291 | 237 ms | 344 ms |
 
-The 16-agent step had the highest observed throughput in this small sweep, but
-the non-monotonic results and short run do not establish saturation behavior.
+At the one-agent step, p95 is the maximum of two samples. The 16-agent step had
+the highest observed throughput, so this sweep did not reach saturation. The
+small sample count and non-monotonic latency do not establish capacity behavior.
 Use this table to size a pilot only; repeat with the deployment's prompts,
 output lengths, latency budget, and quality floor before setting a production
 capacity.

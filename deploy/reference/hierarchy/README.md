@@ -199,18 +199,20 @@ The 2026-11-16 case study ran 60 synthetic invoice/receipt classifications
 through the same `agent-small` group, using native vLLM
 `Qwen/Qwen2.5-0.5B-Instruct` on an 8-physical-core Intel Xeon Platinum 8488C
 host and direct Anthropic `claude-haiku-5-5` for escalation. CPU served 48/60
-requests (80%); overall accuracy was 63.33% (CPU 54.17%, frontier 100%). End to
-end latency p50/p95 was 68/666 ms and client-observed TTFB p50/p95 was 69/682
-ms. CPU latency p50/p95 was 68/95 ms; frontier latency was 619/1762 ms. The
-small CPU model's measured quality is low for this task; this is routing and
-sizing evidence, not a recommendation to serve these classifications from that
-model. Sanitized per-request outputs are in
+requests (80%); overall accuracy was 63.33% (CPU 54.17%, frontier 100%). The
+committed report records router usage latency p50/p95 of 68/666 ms; CPU latency
+was 68/95 ms and frontier latency was 619/1762 ms. The historical run did not
+persist client-side TTFB and total duration from the same clock, so the report
+does not compare those measurements. The harness now records both client-side
+values from one request timer. The small CPU model's measured quality is low for
+this task; this is routing and sizing evidence, not a recommendation to serve
+these classifications from that model. Sanitized per-request outputs are in
 [`evidence/case-study-2026-11-16.json`](./evidence/case-study-2026-11-16.json).
 Reproduce with `uv run --with pyyaml python deploy/reference/hierarchy/case-study.py
 --router bin/metrum-ai-router --routerctl bin/metrum-ai-routerctl --samples 60
---output /tmp/case-study.json`, with the CPU endpoint reachable through an SSM
-local port forward and `ANTHROPIC_API_KEY` set in the environment. The harness
-uses only synthetic prompts and stores no prompt text or credentials. The
+--output /tmp/case-study.json --cpu-url https://cpu-endpoint.example/v1`, with
+the CPU OpenAI-compatible endpoint reachable and `ANTHROPIC_API_KEY` set in the
+environment. The harness uses only synthetic prompts and stores no prompt text or credentials. The
 measured concurrency sizing table is in [CPU tier sizing evidence](./CPU-SIZING.md).
 
 The reference config has been run with real inference backends, both on

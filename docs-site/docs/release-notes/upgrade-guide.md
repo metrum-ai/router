@@ -116,7 +116,9 @@ existing caller behavior are unchanged.
 
 This is reference configuration only. Operators should establish workload
 quality and saturation limits on their own CPU hardware before granting callers
-access to `agent-small`.
+access to `agent-small`. The edge and datacenter hierarchy reference configs set
+`admin.enabled: false` because each router uses one listener; deployments that
+need the authenticated admin listener should enable and configure it explicitly.
 
 
 ## v5.0.0 caller-token hygiene

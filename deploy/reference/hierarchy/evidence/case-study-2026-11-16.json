@@ -8,28 +8,22 @@
     "requests": 60,
     "cpu_traffic_share": 0.8,
     "quality_accuracy": 0.6333,
-    "latency_ms_p50": 68,
-    "latency_ms_p95": 666,
-    "ttfb_ms_p50": 69,
-    "ttfb_ms_p95": 682,
     "by_target": {
       "cpu": {
         "requests": 48,
         "quality_accuracy": 0.5417,
-        "latency_ms_p50": 68,
-        "latency_ms_p95": 95,
-        "ttfb_ms_p50": 69,
-        "ttfb_ms_p95": 96
+        "router_latency_ms_p50": 68,
+        "router_latency_ms_p95": 95
       },
       "anthropic": {
         "requests": 12,
         "quality_accuracy": 1.0,
-        "latency_ms_p50": 619,
-        "latency_ms_p95": 1762,
-        "ttfb_ms_p50": 620,
-        "ttfb_ms_p95": 1765
+        "router_latency_ms_p50": 619,
+        "router_latency_ms_p95": 1762
       }
-    }
+    },
+    "router_latency_ms_p50": 68,
+    "router_latency_ms_p95": 666
   },
   "router_rows": [
     {
@@ -39,8 +33,7 @@
       "correct": true,
       "target": "anthropic",
       "status": 200,
-      "latency_ms": 1762,
-      "ttfb_ms": 1765
+      "router_latency_ms": 1762
     },
     {
       "task_id": "case-0001",
@@ -49,8 +42,7 @@
       "correct": false,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 91,
-      "ttfb_ms": 94
+      "router_latency_ms": 91
     },
     {
       "task_id": "case-0002",
@@ -59,8 +51,7 @@
       "correct": true,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 67,
-      "ttfb_ms": 68
+      "router_latency_ms": 67
     },
     {
       "task_id": "case-0003",
@@ -69,8 +60,7 @@
       "correct": false,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 66,
-      "ttfb_ms": 68
+      "router_latency_ms": 66
     },
     {
       "task_id": "case-0004",
@@ -79,8 +69,7 @@
       "correct": false,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 155,
-      "ttfb_ms": 156
+      "router_latency_ms": 155
     },
     {
       "task_id": "case-0005",
@@ -89,8 +78,7 @@
       "correct": true,
       "target": "anthropic",
       "status": 200,
-      "latency_ms": 682,
-      "ttfb_ms": 683
+      "router_latency_ms": 682
     },
     {
       "task_id": "case-0006",
@@ -99,8 +87,7 @@
       "correct": true,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 68,
-      "ttfb_ms": 69
+      "router_latency_ms": 68
     },
     {
       "task_id": "case-0007",
@@ -109,8 +96,7 @@
       "correct": false,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 95,
-      "ttfb_ms": 96
+      "router_latency_ms": 95
     },
     {
       "task_id": "case-0008",
@@ -119,8 +105,7 @@
       "correct": true,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 68,
-      "ttfb_ms": 69
+      "router_latency_ms": 68
     },
     {
       "task_id": "case-0009",
@@ -129,8 +114,7 @@
       "correct": false,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 66,
-      "ttfb_ms": 74
+      "router_latency_ms": 66
     },
     {
       "task_id": "case-0010",
@@ -139,8 +123,7 @@
       "correct": true,
       "target": "anthropic",
       "status": 200,
-      "latency_ms": 588,
-      "ttfb_ms": 589
+      "router_latency_ms": 588
     },
     {
       "task_id": "case-0011",
@@ -149,8 +132,7 @@
       "correct": false,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 67,
-      "ttfb_ms": 68
+      "router_latency_ms": 67
     },
     {
       "task_id": "case-0012",
@@ -159,8 +141,7 @@
       "correct": true,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 68,
-      "ttfb_ms": 69
+      "router_latency_ms": 68
     },
     {
       "task_id": "case-0013",
@@ -169,8 +150,7 @@
       "correct": false,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 65,
-      "ttfb_ms": 67
+      "router_latency_ms": 65
     },
     {
       "task_id": "case-0014",
@@ -179,8 +159,7 @@
       "correct": false,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 367,
-      "ttfb_ms": 368
+      "router_latency_ms": 367
     },
     {
       "task_id": "case-0015",
@@ -189,8 +168,7 @@
       "correct": true,
       "target": "anthropic",
       "status": 200,
-      "latency_ms": 593,
-      "ttfb_ms": 595
+      "router_latency_ms": 593
     },
     {
       "task_id": "case-0016",
@@ -199,8 +177,7 @@
       "correct": true,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 69,
-      "ttfb_ms": 70
+      "router_latency_ms": 69
     },
     {
       "task_id": "case-0017",
@@ -209,8 +186,7 @@
       "correct": false,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 64,
-      "ttfb_ms": 66
+      "router_latency_ms": 64
     },
     {
       "task_id": "case-0018",
@@ -219,8 +195,7 @@
       "correct": true,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 68,
-      "ttfb_ms": 69
+      "router_latency_ms": 68
     },
     {
       "task_id": "case-0019",
@@ -229,8 +204,7 @@
       "correct": true,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 66,
-      "ttfb_ms": 67
+      "router_latency_ms": 66
     },
     {
       "task_id": "case-0020",
@@ -239,8 +213,7 @@
       "correct": true,
       "target": "anthropic",
       "status": 200,
-      "latency_ms": 551,
-      "ttfb_ms": 553
+      "router_latency_ms": 551
     },
     {
       "task_id": "case-0021",
@@ -249,8 +222,7 @@
       "correct": true,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 68,
-      "ttfb_ms": 69
+      "router_latency_ms": 68
     },
     {
       "task_id": "case-0022",
@@ -259,8 +231,7 @@
       "correct": true,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 69,
-      "ttfb_ms": 70
+      "router_latency_ms": 69
     },
     {
       "task_id": "case-0023",
@@ -269,8 +240,7 @@
       "correct": true,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 66,
-      "ttfb_ms": 67
+      "router_latency_ms": 66
     },
     {
       "task_id": "case-0024",
@@ -279,8 +249,7 @@
       "correct": true,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 68,
-      "ttfb_ms": 69
+      "router_latency_ms": 68
     },
     {
       "task_id": "case-0025",
@@ -289,8 +258,7 @@
       "correct": true,
       "target": "anthropic",
       "status": 200,
-      "latency_ms": 666,
-      "ttfb_ms": 682
+      "router_latency_ms": 666
     },
     {
       "task_id": "case-0026",
@@ -299,8 +267,7 @@
       "correct": true,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 68,
-      "ttfb_ms": 69
+      "router_latency_ms": 68
     },
     {
       "task_id": "case-0027",
@@ -309,8 +276,7 @@
       "correct": false,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 66,
-      "ttfb_ms": 67
+      "router_latency_ms": 66
     },
     {
       "task_id": "case-0028",
@@ -319,8 +285,7 @@
       "correct": true,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 67,
-      "ttfb_ms": 68
+      "router_latency_ms": 67
     },
     {
       "task_id": "case-0029",
@@ -329,8 +294,7 @@
       "correct": false,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 65,
-      "ttfb_ms": 66
+      "router_latency_ms": 65
     },
     {
       "task_id": "case-0030",
@@ -339,8 +303,7 @@
       "correct": true,
       "target": "anthropic",
       "status": 200,
-      "latency_ms": 612,
-      "ttfb_ms": 614
+      "router_latency_ms": 612
     },
     {
       "task_id": "case-0031",
@@ -349,8 +312,7 @@
       "correct": false,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 68,
-      "ttfb_ms": 69
+      "router_latency_ms": 68
     },
     {
       "task_id": "case-0032",
@@ -359,8 +321,7 @@
       "correct": false,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 90,
-      "ttfb_ms": 93
+      "router_latency_ms": 90
     },
     {
       "task_id": "case-0033",
@@ -369,8 +330,7 @@
       "correct": false,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 87,
-      "ttfb_ms": 88
+      "router_latency_ms": 87
     },
     {
       "task_id": "case-0034",
@@ -379,8 +339,7 @@
       "correct": true,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 68,
-      "ttfb_ms": 69
+      "router_latency_ms": 68
     },
     {
       "task_id": "case-0035",
@@ -389,8 +348,7 @@
       "correct": true,
       "target": "anthropic",
       "status": 200,
-      "latency_ms": 1786,
-      "ttfb_ms": 1788
+      "router_latency_ms": 1786
     },
     {
       "task_id": "case-0036",
@@ -399,8 +357,7 @@
       "correct": true,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 70,
-      "ttfb_ms": 71
+      "router_latency_ms": 70
     },
     {
       "task_id": "case-0037",
@@ -409,8 +366,7 @@
       "correct": false,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 88,
-      "ttfb_ms": 90
+      "router_latency_ms": 88
     },
     {
       "task_id": "case-0038",
@@ -419,8 +375,7 @@
       "correct": true,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 68,
-      "ttfb_ms": 70
+      "router_latency_ms": 68
     },
     {
       "task_id": "case-0039",
@@ -429,8 +384,7 @@
       "correct": true,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 66,
-      "ttfb_ms": 67
+      "router_latency_ms": 66
     },
     {
       "task_id": "case-0040",
@@ -439,8 +393,7 @@
       "correct": true,
       "target": "anthropic",
       "status": 200,
-      "latency_ms": 644,
-      "ttfb_ms": 645
+      "router_latency_ms": 644
     },
     {
       "task_id": "case-0041",
@@ -449,8 +402,7 @@
       "correct": false,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 89,
-      "ttfb_ms": 90
+      "router_latency_ms": 89
     },
     {
       "task_id": "case-0042",
@@ -459,8 +411,7 @@
       "correct": true,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 67,
-      "ttfb_ms": 83
+      "router_latency_ms": 67
     },
     {
       "task_id": "case-0043",
@@ -469,8 +420,7 @@
       "correct": false,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 68,
-      "ttfb_ms": 69
+      "router_latency_ms": 68
     },
     {
       "task_id": "case-0044",
@@ -479,8 +429,7 @@
       "correct": true,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 66,
-      "ttfb_ms": 68
+      "router_latency_ms": 66
     },
     {
       "task_id": "case-0045",
@@ -489,8 +438,7 @@
       "correct": true,
       "target": "anthropic",
       "status": 200,
-      "latency_ms": 619,
-      "ttfb_ms": 620
+      "router_latency_ms": 619
     },
     {
       "task_id": "case-0046",
@@ -499,8 +447,7 @@
       "correct": true,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 68,
-      "ttfb_ms": 69
+      "router_latency_ms": 68
     },
     {
       "task_id": "case-0047",
@@ -509,8 +456,7 @@
       "correct": false,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 65,
-      "ttfb_ms": 66
+      "router_latency_ms": 65
     },
     {
       "task_id": "case-0048",
@@ -519,8 +465,7 @@
       "correct": true,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 67,
-      "ttfb_ms": 68
+      "router_latency_ms": 67
     },
     {
       "task_id": "case-0049",
@@ -529,8 +474,7 @@
       "correct": false,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 65,
-      "ttfb_ms": 67
+      "router_latency_ms": 65
     },
     {
       "task_id": "case-0050",
@@ -539,8 +483,7 @@
       "correct": true,
       "target": "anthropic",
       "status": 200,
-      "latency_ms": 637,
-      "ttfb_ms": 638
+      "router_latency_ms": 637
     },
     {
       "task_id": "case-0051",
@@ -549,8 +492,7 @@
       "correct": false,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 88,
-      "ttfb_ms": 90
+      "router_latency_ms": 88
     },
     {
       "task_id": "case-0052",
@@ -559,8 +501,7 @@
       "correct": true,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 67,
-      "ttfb_ms": 68
+      "router_latency_ms": 67
     },
     {
       "task_id": "case-0053",
@@ -569,8 +510,7 @@
       "correct": true,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 66,
-      "ttfb_ms": 67
+      "router_latency_ms": 66
     },
     {
       "task_id": "case-0054",
@@ -579,8 +519,7 @@
       "correct": true,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 68,
-      "ttfb_ms": 69
+      "router_latency_ms": 68
     },
     {
       "task_id": "case-0055",
@@ -589,8 +528,7 @@
       "correct": true,
       "target": "anthropic",
       "status": 200,
-      "latency_ms": 618,
-      "ttfb_ms": 620
+      "router_latency_ms": 618
     },
     {
       "task_id": "case-0056",
@@ -599,8 +537,7 @@
       "correct": true,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 371,
-      "ttfb_ms": 372
+      "router_latency_ms": 371
     },
     {
       "task_id": "case-0057",
@@ -609,8 +546,7 @@
       "correct": false,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 66,
-      "ttfb_ms": 68
+      "router_latency_ms": 66
     },
     {
       "task_id": "case-0058",
@@ -619,8 +555,7 @@
       "correct": true,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 67,
-      "ttfb_ms": 68
+      "router_latency_ms": 67
     },
     {
       "task_id": "case-0059",
@@ -629,8 +564,7 @@
       "correct": false,
       "target": "cpu",
       "status": 200,
-      "latency_ms": 66,
-      "ttfb_ms": 67
+      "router_latency_ms": 66
     }
   ],
   "cpu_sizing": [
@@ -679,5 +613,6 @@
       "latency_ms_p50": 237.0,
       "latency_ms_p95": 344.0
     }
-  ]
+  ],
+  "latency_measurement": "router usage records; client-side TTFB and total duration were not persisted by this historical run"
 }
