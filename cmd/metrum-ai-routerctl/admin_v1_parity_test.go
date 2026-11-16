@@ -101,6 +101,16 @@ func TestOnlineCommandsUseAdminV1WithoutDatabaseCredentials(t *testing.T) {
 			t.Errorf("request %d = %q, want %q", i, requests[i], want[i])
 		}
 	}
+	requestCount := len(requests)
+	offline := exec.Command(binary, "config", "export", "--offline", "--db", filepath.Join(dir, "offline.sqlite"), "--set-id", "missing", "--router-url", server.URL)
+	offline.Dir = dir
+	offline.Env = envWithoutDatabaseCredentials(token)
+	if output, err := offline.CombinedOutput(); err == nil {
+		t.Fatalf("offline export unexpectedly succeeded: %s", output)
+	}
+	if len(requests) != requestCount {
+		t.Fatalf("offline export made an API request: %v", requests[requestCount:])
+	}
 }
 
 func loadAdminV1Contract(t *testing.T) map[string]map[string]json.RawMessage {
