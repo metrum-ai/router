@@ -7,9 +7,13 @@ doc_type: reference
 
 For v5.0.0, `metrum-ai-router-migrate --json` writes one JSON document to stdout. Database diagnostics are sent to stderr.
 
-OpenAI groups now keep targets that declare both reasoning support and a compatible effort control when a caller supplies `reasoning_effort`. Mixed weighted and failover groups can route to those targets; an all-incapable group returns HTTP 400 `unsupported_capability` with the established `param: reasoning`.
+OpenAI groups keep targets that declare both reasoning support and a compatible effort control when a caller supplies `reasoning_effort`. Mixed weighted and failover groups route to those targets; if all targets reject reasoning, the router returns HTTP 400 `unsupported_capability` with `param: reasoning` when removing reasoning leaves an otherwise eligible target. For Anthropic output, reasoning requires `control: token_budget` or active default thinking.
 
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
+
+## Security dependency update
+
+The v5.0.0 build pins `golang.org/x/crypto` to the upstream fix for GO-2026-5932. The fix removes the unused OpenPGP packages from the module; router configuration and runtime behavior do not change. When the next tagged `x/crypto` release includes this fix, routine dependency maintenance should replace the temporary pseudo-version.
 
 ## v5.0.0 provider spend breaker
 
@@ -681,3 +685,24 @@ v2.0.0 cutover, that is **v1.4.4** (`metrum-router-*` artifact and image names).
 Restore the prior service unit / Compose / Kubernetes references and any
 pre-upgrade config or usage DB backup required by the migration contract.
 Re-check `/readyz` and `/version` before closing the change.
+
+## v5.0.0 caller containment
+
+The new caller containment endpoints require the `admin:containment` / `contain`
+Casbin grant in the global `*` domain. Add that narrow grant to the SecOps identity that needs to suspend
+or resume keys. Supply a short reason code, not free text. Do not combine this
+grant with caller issue, rotation, or revoke unless
+the same identity needs those separate operations. The optional signed webhook
+is off by default and requires `admin.enabled: true` with
+`server.config_source.mode: database`. To enable it, configure
+`server.containment_webhook.enabled` and `secret_env`, then provide a 32-byte-or-longer secret through the named
+environment variable. See [Admin Authentication](/docs/configuration/admin-authentication)
+for headers, signing input, timestamp bounds, and CLI examples. A suspended
+caller with a TTL becomes active when the TTL expires; no database migration is
+required.
+The containment role can resume only keys it suspended; keys suspended by an
+administrator or by legacy configuration require all caller write permissions
+(issue, rotate, and revoke) to resume.
+Signed webhook callers do not need an ETag or idempotency header. Their nonce
+reservation is durable for at least twice the configured timestamp window and
+expired reservations are pruned hourly.

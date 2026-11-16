@@ -2673,9 +2673,15 @@ func (c *callerRuntime) authPolicyError() error {
 	if c == nil {
 		return authPolicyError{status: http.StatusUnauthorized, code: "unauthorized"}
 	}
+	keyStatus := normalizeStatusDefault(c.keyStatus)
+	if keyStatus == accountStatusSuspended && strings.TrimSpace(c.cfg.ContainmentExpiresAt) != "" {
+		if expiresAt, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(c.cfg.ContainmentExpiresAt)); err == nil && !time.Now().UTC().Before(expiresAt) {
+			keyStatus = accountStatusActive
+		}
+	}
 	switch {
-	case normalizeStatusDefault(c.keyStatus) != accountStatusActive:
-		return authPolicyError{status: http.StatusForbidden, code: statusAuthCode("key", normalizeStatusDefault(c.keyStatus))}
+	case keyStatus != accountStatusActive:
+		return authPolicyError{status: http.StatusForbidden, code: statusAuthCode("key", keyStatus)}
 	case normalizeStatusDefault(c.ownerUserStatus) != accountStatusActive:
 		return authPolicyError{status: http.StatusForbidden, code: statusAuthCode("user", normalizeStatusDefault(c.ownerUserStatus))}
 	case normalizeStatusDefault(c.projectStatus) != accountStatusActive:
@@ -2818,7 +2824,7 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 					}
 				}
 				if len(s.targetsForRequest(rc, group.Targets, &withoutReasoning, callerDialect)) > 0 &&
-					(err.MismatchCode == "" || (err.MismatchCode == "unsupported_capability" && err.MismatchParam == "reasoning")) {
+					(err.MismatchCode == "" || (err.MismatchCode == "unsupported_capability" && (err.MismatchParam == "" || err.MismatchParam == "reasoning"))) {
 					err.MismatchCode = "unsupported_capability"
 					err.MismatchParam = "reasoning"
 				}
