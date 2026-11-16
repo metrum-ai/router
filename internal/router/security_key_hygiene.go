@@ -9,12 +9,12 @@ import (
 )
 
 func (s *Service) handleLeakedKeySelfRevoke(w http.ResponseWriter, r *http.Request) {
-	rc, ok := s.begin(w, r, "security")
-	if !ok {
+	if r.Context().Err() != nil {
+		s.writeError(w, nil, http.StatusServiceUnavailable, "revocation-unavailable")
 		return
 	}
-	if r.Context().Err() != nil {
-		s.writeError(w, rc, http.StatusServiceUnavailable, "revocation-unavailable")
+	rc, ok := s.begin(w, r, "security")
+	if !ok {
 		return
 	}
 	if err := s.quota.disableCaller(rc.caller); err != nil {
