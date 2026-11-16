@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Added
+
+- Add virtual model groups whose eligible targets are selected from per-family
+  capability vectors imported from reproducible eval reports. The config Admin
+  API and `routerctl groups` show vectors, membership and exclusion reasons.
+
 ### Fixed
 
 - `router-migrate --json` keeps stdout valid JSON by directing GORM diagnostics
