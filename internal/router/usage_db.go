@@ -1666,6 +1666,10 @@ func OpenUsageStorePath(path string) (*usageStore, error) {
 		_ = store.Close()
 		return nil, err
 	}
+	if err := applyTraceCorrelationMigration(db); err != nil {
+		_ = store.Close()
+		return nil, err
+	}
 	return store, nil
 }
 
