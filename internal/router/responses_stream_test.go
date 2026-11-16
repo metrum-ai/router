@@ -67,6 +67,49 @@ func TestResponsesProxyFaults(t *testing.T) {
 	}
 }
 
+func TestRunResponsesStreamBridgeFinishReleasesHeldToolFrames(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		translator stream.StreamTranslator
+		want       string
+	}{
+		{name: "chat to anthropic", translator: &stream.ChatUpstreamToAnthropicCaller{ResponseID: "msg_hold", Model: "m"}, want: "tool_use"},
+		{name: "chat to responses", translator: &stream.ChatUpstreamToResponsesCaller{ResponseID: "resp_hold", Model: "m"}, want: "function_call"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			budget := newLineBufferBudget(1<<20, nil)
+			rc := &requestContext{start: time.Now()}
+			rc.streamToolCallHold = newStreamToolCallHold(ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20}, nil, toolValidationOptions{}, budget)
+			upstream := "data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_hold\",\"type\":\"function\",\"function\":{\"name\":\"lookup\",\"arguments\":\"{}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n"
+			rr := httptest.NewRecorder()
+			_, err := runResponsesStream(context.Background(), rr, strings.NewReader(upstream), "m", 0, rc, tc.translator)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(rr.Body.String(), tc.want) {
+				t.Fatalf("Finish tool output missing: %s", rr.Body.String())
+			}
+			if got := budget.Used(); got != 0 {
+				t.Fatalf("budget after bridge Finish=%d, want 0", got)
+			}
+		})
+	}
+}
+
+func TestRunResponsesStreamBridgeFinishWriteErrorReleasesHeldBudget(t *testing.T) {
+	budget := newLineBufferBudget(1<<20, nil)
+	rc := &requestContext{start: time.Now()}
+	rc.streamToolCallHold = newStreamToolCallHold(ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20}, nil, toolValidationOptions{}, budget)
+	upstream := "data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_hold\",\"type\":\"function\",\"function\":{\"name\":\"lookup\",\"arguments\":\"{}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n"
+	_, err := runResponsesStream(context.Background(), brokenWriter{http.Header{}}, strings.NewReader(upstream), "m", 0, rc, &stream.ChatUpstreamToAnthropicCaller{ResponseID: "msg_hold", Model: "m"})
+	if err == nil {
+		t.Fatal("expected downstream write error")
+	}
+	if got := budget.Used(); got != 0 {
+		t.Fatalf("budget after failed Finish write=%d, want 0", got)
+	}
+}
+
 type lifecycleTranslator struct {
 	panicAt  string
 	finishes int

@@ -232,6 +232,17 @@ func rewriteHeldToolCalls(events []stream.Event, calls []IRToolCall) ([]stream.E
 				for _, raw := range choices {
 					choice, _ := raw.(map[string]any)
 					delta, _ := choice["delta"].(map[string]any)
+					if function, ok := delta["function_call"].(map[string]any); ok {
+						if replacement, exists := arguments[0]; exists {
+							if !first[0] {
+								function["arguments"] = replacement
+								first[0] = true
+							} else {
+								function["arguments"] = ""
+							}
+							changed = true
+						}
+					}
 					calls, _ := delta["tool_calls"].([]any)
 					for _, rawCall := range calls {
 						call, _ := rawCall.(map[string]any)

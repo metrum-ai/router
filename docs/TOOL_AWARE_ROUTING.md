@@ -47,9 +47,11 @@ Rules the router enforces at startup:
 Set `tool_routing.streaming.hold_until_validated: true`, `hold_timeout_ms` (1–60000), and
 `hold_max_bytes` (1–33554432) to keep streamed tool-call frames from reaching the client until
 the complete call has arrived and passed validation. Text deltas continue to stream immediately.
-The hold applies to OpenAI Chat Completions, OpenAI Responses, and Anthropic Messages streams,
-including Responses function-call, custom-tool-call, and local-shell-call items and their argument
-events. Unrecognized tool-bearing Responses item/event types fail closed. A completed Responses
+The hold applies to OpenAI Chat Completions (including legacy `function_call` deltas), OpenAI
+Responses, and Anthropic Messages streams, including Responses function-call, custom-tool-call, and
+local-shell-call items and their argument events. Unrecognized tool-bearing delta/item types fail
+closed. Streams whose call count or per-call arguments exceed inspection limits fail closed rather
+than releasing a partially inspected call. A completed Responses
 snapshot is rewritten from the inspected call set; failed or incomplete snapshots have tool inputs
 stripped before forwarding. For Anthropic,
 held `tool_use` start/delta/stop frames are emitted in their original order before a terminal

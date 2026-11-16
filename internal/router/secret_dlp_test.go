@@ -710,7 +710,8 @@ func TestSecretDLPRedactsHeldResponsesAndAnthropicToolCalls(t *testing.T) {
 			name: "responses", dialect: "openai-responses", path: "/v1/responses",
 			frames: []string{
 				`event: response.output_item.added` + "\n" + `data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"lookup","arguments":""}}`,
-				`event: response.function_call_arguments.delta` + "\n" + `data: {"type":"response.function_call_arguments.delta","output_index":0,"delta":"{\"token\":\"` + secret + `\"}"}`,
+				`event: response.function_call_arguments.delta` + "\n" + `data: {"type":"response.function_call_arguments.delta","output_index":0,"delta":"{\"token\":\"` + secret[:len(secret)/2] + `"}`,
+				`event: response.function_call_arguments.delta` + "\n" + `data: {"type":"response.function_call_arguments.delta","output_index":0,"delta":"` + secret[len(secret)/2:] + `\"}"}`,
 				`event: response.output_item.done` + "\n" + `data: {"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"lookup","arguments":"{\"token\":\"` + secret + `\"}"}}`,
 				`event: response.completed` + "\n" + `data: {"type":"response.completed","response":{"id":"resp_1","status":"completed","output":[{"type":"function_call","id":"fc_1","call_id":"call_1","name":"lookup","arguments":"{\"token\":\"` + secret + `\"}"}]}}`,
 			},

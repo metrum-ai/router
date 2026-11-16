@@ -3892,7 +3892,7 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		// body after stream_idle_timeout_ms without a read, which ends the
 		// response with a clear attempt error instead of a silent stall.
 		streamBody := httpResp.Body
-		if group, ok := s.cfg.Models[groupName]; ok && group.ToolRouting.Streaming.HoldUntilValidated {
+		if group, ok := s.cfg.Models[groupName]; ok && group.ToolRouting.Streaming.HoldUntilValidated && len(req.Tools) > 0 {
 			rc.streamToolCallHold = newStreamToolCallHold(group.ToolRouting.Streaming, req.Tools, group.ToolRouting.validationOptions(), s.lineBufferBudget)
 			if rc.secretStreamDLP != nil {
 				rc.streamToolCallHold.inspectors = append(rc.streamToolCallHold.inspectors, secretDLPToolCallInspector{dlp: rc.secretStreamDLP})

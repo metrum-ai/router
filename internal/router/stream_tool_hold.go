@@ -173,6 +173,9 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 		return []stream.Event{event}, nil
 	case "content_block_start":
 		block, _ := payload["content_block"].(map[string]any)
+		if block != nil && stringValue(block["type"]) != "tool_use" && strings.Contains(stringValue(block["type"]), "tool") {
+			return h.failClosedUnsupportedTool(stringValue(block["type"]))
+		}
 		if block != nil && stringValue(block["type"]) == "tool_use" {
 			idx := streamToolIndex(payload["index"])
 			initialArgs := ""
@@ -225,8 +228,30 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 					terminal, terminalReason = true, finish
 				}
 				delta, _ := choice["delta"].(map[string]any)
+				if rawLegacy, exists := delta["function_call"]; exists {
+					legacy, ok := rawLegacy.(map[string]any)
+					if !ok {
+						return h.failClosedUnsupportedTool("function_call")
+					}
+					toolEvent = true
+					heldChoice := map[string]any{"delta": map[string]any{"function_call": legacy}, "finish_reason": nil}
+					if index, ok := choice["index"]; ok {
+						heldChoice["index"] = index
+					}
+					heldChoices = append(heldChoices, heldChoice)
+					h.calls.addDelta("openai-chat", 0, "", stringValue(legacy["name"]), stringValue(legacy["arguments"]))
+					delete(delta, "function_call")
+				}
 				rawCalls, _ := delta["tool_calls"].([]any)
 				if len(rawCalls) == 0 {
+					if len(delta) != 0 && hasUnknownToolCallDelta(delta) {
+						return h.failClosedUnsupportedTool("unknown_chat_tool_delta")
+					}
+					if len(heldChoices) > 0 {
+						if len(delta) == 0 {
+							choice["delta"] = map[string]any{}
+						}
+					}
 					continue
 				}
 				toolEvent = true
@@ -256,7 +281,7 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 			if toolEvent {
 				heldPayload := make(map[string]any, len(payload))
 				for key, value := range payload {
-					if key != "choices" {
+					if key != "choices" && key != "usage" {
 						heldPayload[key] = value
 					}
 				}
@@ -278,6 +303,10 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 				}
 			}
 		}
+	}
+	if h.calls.truncated() {
+		h.reset()
+		return nil, upstreamError{Class: "tool_call_hold_data_truncated", Message: "streamed tool-call data exceeded inspection limits", Committed: true, Fallbackable: false}
 	}
 	if toolEvent {
 		if h.started.IsZero() {
@@ -351,6 +380,15 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 func (h *streamToolCallHold) failClosedUnsupportedTool(kind string) ([]stream.Event, error) {
 	h.reset()
 	return nil, upstreamError{Class: "tool_call_hold_unsupported_type", Message: fmt.Sprintf("streamed tool item type %q cannot be inspected safely", kind), Committed: true, Fallbackable: false}
+}
+
+func hasUnknownToolCallDelta(delta map[string]any) bool {
+	for key := range delta {
+		if strings.Contains(key, "tool_call") || strings.Contains(key, "function_call") || strings.Contains(key, "tool") {
+			return true
+		}
+	}
+	return false
 }
 
 func (h *streamToolCallHold) pending() bool {

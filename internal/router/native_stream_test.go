@@ -306,6 +306,32 @@ func TestST3ResponsesToChatBridgeSynthesizedRemainsUnary(t *testing.T) {
 	}
 }
 
+func TestResponsesCallerChatBridgeReleasesHeldToolsAtFinish(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(w, "data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_bridge\",\"type\":\"function\",\"function\":{\"name\":\"lookup\",\"arguments\":\"{}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n")
+	}))
+	defer upstream.Close()
+	target := Target{Provider: "native", Model: "chat-bridge", ToolSupport: ToolSupport{OpenAIChat: []string{"tools", "tool_choice"}}, ResponsesToChat: ResponsesToChatBridge{Enabled: true, Text: true, Streaming: true, FunctionTools: true, ToolChoice: true}}
+	svc := nativeStreamTestService(t, upstream.URL, "openai-chat", []Target{target}, func(cfg *Config) {
+		group := cfg.Models["native-stream"]
+		group.Strategy = "tool_aware"
+		group.ToolRouting = ToolRoutingConfig{Mode: "observe", Streaming: ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20}}
+		cfg.Models["native-stream"] = group
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"native-stream","stream":true,"input":"lookup","tools":[{"type":"function","name":"lookup","parameters":{"type":"object"}}]}`))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	rr := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(rr, req)
+	body := rr.Body.String()
+	if rr.Code != http.StatusOK || !strings.Contains(body, "response.function_call_arguments.delta") || !strings.Contains(body, "response.completed") {
+		t.Fatalf("bridge tool call missing after Finish: status=%d body=%s", rr.Code, body)
+	}
+	if used := svc.lineBufferBudget.Used(); used != 0 {
+		t.Fatalf("budget after bridge handler=%d, want 0", used)
+	}
+}
+
 func TestST4ClientCancelStopsNativeUpstream(t *testing.T) {
 	upstreamCanceled := make(chan struct{})
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

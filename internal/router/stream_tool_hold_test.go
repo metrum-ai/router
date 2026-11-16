@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -59,6 +60,63 @@ func TestStreamToolCallHoldPassesTextAndReleasesValidatedCall(t *testing.T) {
 	hold.releaseEmitted()
 	if used := budget.Used(); used != 0 {
 		t.Fatalf("aggregate budget after emission=%d, want 0", used)
+	}
+}
+
+func TestStreamToolCallHoldFailsClosedOnAccumulatorTruncation(t *testing.T) {
+	t.Run("65th call", func(t *testing.T) {
+		hold := newStreamToolCallHold(ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20}, nil, toolValidationOptions{})
+		calls := make([]any, 0, maxToolCallsPerResponse+1)
+		for i := 0; i <= maxToolCallsPerResponse; i++ {
+			args := `{}`
+			if i == maxToolCallsPerResponse {
+				args = `{"secret":"` + fakeGitHubToken() + `"}`
+			}
+			calls = append(calls, map[string]any{"index": i, "id": fmt.Sprintf("call_%d", i), "type": "function", "function": map[string]any{"name": "lookup", "arguments": args}})
+		}
+		data, _ := json.Marshal(map[string]any{"choices": []any{map[string]any{"delta": map[string]any{"tool_calls": calls}, "finish_reason": nil}}})
+		if out, err := hold.apply(stream.Event{Data: data}); err == nil || len(out) != 0 {
+			t.Fatalf("truncated calls escaped: out=%v err=%v", out, err)
+		} else {
+			var ue upstreamError
+			if !errors.As(err, &ue) || ue.Class != "tool_call_hold_data_truncated" {
+				t.Fatalf("error=%v", err)
+			}
+		}
+	})
+	t.Run("oversized arguments", func(t *testing.T) {
+		budget := newLineBufferBudget(2<<20, nil)
+		hold := newStreamToolCallHold(ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 2 << 20}, nil, toolValidationOptions{}, budget)
+		large := strings.Repeat("x", maxToolCallArgumentBytes+1)
+		first := stream.Event{Type: "response.output_item.added", Data: []byte(`{"type":"response.output_item.added","output_index":0,"item":{"type":"custom_tool_call","id":"c","name":"shell","input":""}}`)}
+		if _, err := hold.apply(first); err != nil {
+			t.Fatal(err)
+		}
+		data, _ := json.Marshal(map[string]any{"type": "response.custom_tool_call_input.delta", "output_index": 0, "delta": large})
+		if out, err := hold.apply(stream.Event{Type: "response.custom_tool_call_input.delta", Data: data}); err == nil || len(out) != 0 {
+			t.Fatalf("oversized arguments escaped: out=%v err=%v", out, err)
+		} else {
+			var ue upstreamError
+			if !errors.As(err, &ue) || ue.Class != "tool_call_hold_data_truncated" {
+				t.Fatalf("error=%v", err)
+			}
+		}
+		if got := budget.Used(); got != 0 {
+			t.Fatalf("budget=%d, want 0", got)
+		}
+	})
+}
+
+func TestStreamToolCallHoldLegacyChatFunctionCallAndUnknownDelta(t *testing.T) {
+	hold := newStreamToolCallHold(ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20}, nil, toolValidationOptions{})
+	legacy := stream.Event{Data: []byte(`{"choices":[{"index":0,"delta":{"role":"assistant","function_call":{"name":"lookup","arguments":"{}"}},"finish_reason":null}]}`)}
+	out, err := hold.apply(legacy)
+	if err != nil || len(out) != 1 || strings.Contains(string(out[0].Data), `"function_call"`) || !strings.Contains(string(out[0].Data), `"role"`) {
+		t.Fatalf("legacy function call data escaped or role metadata was lost: out=%s err=%v", mustJSON(t, out), err)
+	}
+	unknown := stream.Event{Data: []byte(`{"choices":[{"delta":{"tool_call_future":{"arguments":"secret"}},"finish_reason":null}]}`)}
+	if out, err = hold.apply(unknown); err == nil || len(out) != 0 {
+		t.Fatalf("unknown tool delta escaped: out=%v err=%v", out, err)
 	}
 }
 

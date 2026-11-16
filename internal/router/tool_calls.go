@@ -212,9 +212,12 @@ func (a *toolCallAccumulator) addDelta(dialect string, index int, id, name, argu
 		if a.args[index] == nil {
 			a.args[index] = &strings.Builder{}
 		}
-		if a.args[index].Len() < maxToolCallArgumentBytes {
-			_, _ = a.args[index].WriteString(arguments)
+		remaining := maxToolCallArgumentBytes - a.args[index].Len()
+		if len(arguments) > remaining {
+			a.truncatedC = true
+			arguments = arguments[:max(remaining, 0)]
 		}
+		_, _ = a.args[index].WriteString(arguments)
 	}
 }
 

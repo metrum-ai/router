@@ -107,9 +107,6 @@ func runResponsesStream(ctx context.Context, w http.ResponseWriter, body io.Read
 		return nil
 	}
 	defer func() {
-		if rc != nil && rc.streamToolCallHold != nil {
-			rc.streamToolCallHold.reset()
-		}
 		if recover() != nil {
 			retErr = upstreamError{Class: "stream_translator_error", Message: "stream translator panicked", Committed: result.Committed}
 		}
@@ -130,6 +127,9 @@ func runResponsesStream(ctx context.Context, w http.ResponseWriter, body io.Read
 		if finishErr == nil && ctx.Err() == nil {
 			finishErr = emit(events)
 		}
+		if finishErr == nil && rc != nil && rc.streamToolCallHold != nil && rc.streamToolCallHold.pending() {
+			finishErr = upstreamError{Class: "tool_call_hold_incomplete", Message: "stream translator finished with an incomplete held tool call", Committed: result.Committed, Fallbackable: false}
+		}
 		if retErr == nil {
 			retErr = finishErr
 		}
@@ -145,6 +145,12 @@ func runResponsesStream(ctx context.Context, w http.ResponseWriter, body io.Read
 		if rc != nil && !started.IsZero() {
 			ms := durationMillis(time.Since(started))
 			rc.rec.DownstreamMS = &ms
+		}
+		// Finish may emit the terminal tool-use event that releases a held call.
+		// Keep reservations through that write; reset also releases reservations
+		// when that final write fails or the translator leaves data held.
+		if rc != nil && rc.streamToolCallHold != nil {
+			rc.streamToolCallHold.reset()
 		}
 	}()
 	estimate := stream.TokenEstimate{}
