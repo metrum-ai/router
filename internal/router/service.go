@@ -3248,6 +3248,7 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		}
 		if field == "temperature" {
 			copyReq.Temperature = nil
+			delete(copyReq.Raw, field)
 		} else {
 			copyReq.TopP = nil
 			delete(copyReq.Raw, field)
@@ -3558,6 +3559,9 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		}
 		upErr.Details = s.extractUpstreamErrorDetails(raw, httpResp.StatusCode, upErr.Class, attemptIndex, attempt.TS)
 		upErr.Details = append(upErr.Details, attempt.ErrorDetails...)
+		for i := range upErr.Details {
+			upErr.Details[i].Seq = i + 1
+		}
 		attempt.DurationMS = durationMillis(time.Since(start))
 		attempt.ResponseBytes = int64(len(raw))
 		attempt.ErrorClass = upErr.Class
@@ -3577,6 +3581,9 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		upErr.RetryAfter = parseRetryAfterHeader(httpResp.Header.Get("Retry-After"), time.Now().UTC())
 		upErr.Details = s.extractUpstreamErrorDetails(raw, httpResp.StatusCode, upErr.Class, attemptIndex, attempt.TS)
 		upErr.Details = append(upErr.Details, attempt.ErrorDetails...)
+		for i := range upErr.Details {
+			upErr.Details[i].Seq = i + 1
+		}
 		attempt.DurationMS = durationMillis(time.Since(start))
 		attempt.ResponseBytes = int64(len(raw))
 		attempt.ErrorClass = upErr.Class
@@ -4016,7 +4023,7 @@ func statusErrorClass(status int, raw []byte) string {
 		return "upstream_model_access_denied"
 	case upstreamBodyIndicatesEntitlementFailure(status, raw):
 		return "upstream_entitlement_failed"
-	case status >= 400 && status < 500 && upstreamBodyIndicatesUnsupportedField(raw):
+	case (status == http.StatusBadRequest || status == http.StatusUnprocessableEntity) && upstreamBodyIndicatesUnsupportedSamplingField(raw):
 		return "upstream_unsupported_field"
 	case status == http.StatusUnauthorized:
 		return "upstream_auth_failed"
@@ -4037,14 +4044,25 @@ func statusErrorClass(status int, raw []byte) string {
 	}
 }
 
-func upstreamBodyIndicatesUnsupportedField(raw []byte) bool {
-	text := strings.ToLower(strings.TrimSpace(string(raw)))
-	for _, marker := range []string{"unsupported_field", "unsupported field"} {
-		if strings.Contains(text, marker) {
-			return true
-		}
+func upstreamBodyIndicatesUnsupportedSamplingField(raw []byte) bool {
+	var payload map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return false
 	}
-	return false
+	var providerErr map[string]json.RawMessage
+	if err := json.Unmarshal(payload["error"], &providerErr); err != nil {
+		// Some OpenAI-compatible providers put the error fields at the root.
+		providerErr = payload
+	}
+	var param, code string
+	_ = json.Unmarshal(providerErr["param"], &param)
+	_ = json.Unmarshal(providerErr["code"], &code)
+	param = strings.ToLower(strings.TrimSpace(param))
+	if param != "temperature" && param != "top_p" {
+		return false
+	}
+	code = strings.ToLower(strings.TrimSpace(code))
+	return code == "" || code == "unsupported_value" || code == "unsupported_parameter" || code == "unsupported_field" || code == "unknown_parameter"
 }
 
 func upstreamAccessFailureFallbackable(class string) bool {

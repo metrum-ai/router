@@ -12521,38 +12521,48 @@ func TestNonRetryableUpstream4xxStopsFallback(t *testing.T) {
 }
 
 func TestUnsupportedFieldUpstreamRefusalFallsBack(t *testing.T) {
-	var fallbackCalls atomic.Int64
+	var upstreamCalls atomic.Int64
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			t.Fatal(err)
 		}
-		switch stringValue(body["model"]) {
-		case "refusing-model":
-			if body["temperature"] != float64(0.7) {
-				t.Errorf("first target missing temperature: %#v", body)
-			}
-			writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{"code": "unsupported_field", "message": "Unsupported field temperature"}})
-		case "fallback-model":
-			fallbackCalls.Add(1)
-			if body["stream"] == true {
-				w.Header().Set("Content-Type", "text/event-stream")
-				_, _ = io.WriteString(w, "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ok\"}}]}\n\ndata: [DONE]\n\n")
+		if _, ok := body["temperature"]; ok {
+			t.Errorf("target-declared unsupported temperature was forwarded: %#v", body)
+		}
+		if body["top_p"] != float64(0.8) {
+			t.Errorf("top_p missing from upstream request: %#v", body)
+		}
+		if upstreamCalls.Add(1)%2 == 1 {
+			if body["stream"] != true {
+				writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{
+					"message": "Unsupported value for parameter top_p", "type": "invalid_request_error", "code": "unsupported_value", "param": "top_p",
+				}})
 				return
 			}
-			writeJSON(w, http.StatusOK, map[string]any{"id": "ok", "choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": "ok"}}}})
-		default:
-			t.Fatalf("unexpected model %v", body["model"])
+			// OpenAI-compatible unknown-parameter response. Classification must
+			// use the structured param field, never this free-form message.
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{
+				"message": "Unrecognized request argument supplied: top_p", "type": "invalid_request_error", "param": "top_p",
+			}})
+			return
 		}
+		if body["stream"] == true {
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = io.WriteString(w, "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"ok\"}}]}\n\ndata: [DONE]\n\n")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"id": "ok", "choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": "ok"}}}})
 	}))
 	defer upstream.Close()
 
 	dir := t.TempDir()
 	cfg := testConfig(t, upstream.URL, "provider-key", dir)
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
-	cfg.Models["default"] = ModelGroup{Strategy: "static", Targets: []Target{
-		{Provider: "mock", Model: "refusing-model"},
-		{Provider: "mock", Model: "fallback-model"},
+	cfg.Server.Diagnostics.StoreSanitizedUpstreamError = boolPtr(true)
+	cfg.Models["default"] = ModelGroup{Strategy: "weighted", Targets: []Target{
+		{Provider: "mock", Model: "weighted-a", Weight: 1, RequestShapeSupport: RequestShapeSupport{UnsupportedRequestFeatures: []string{"temperature"}}},
+		{Provider: "mock", Model: "weighted-b", Weight: 1, RequestShapeSupport: RequestShapeSupport{UnsupportedRequestFeatures: []string{"temperature"}}},
 	}}
 	svc, err := newServiceWithVerifiedFixture(cfg)
 	if err != nil {
@@ -12560,23 +12570,23 @@ func TestUnsupportedFieldUpstreamRefusalFallsBack(t *testing.T) {
 	}
 	defer svc.Close()
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"default","messages":[{"role":"user","content":"hello"}],"temperature":0.7}`))
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"default","messages":[{"role":"user","content":"hello"}],"temperature":0.7,"top_p":0.8}`))
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	rr := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(rr, req)
-	if rr.Code != http.StatusOK || fallbackCalls.Load() != 1 {
-		t.Fatalf("status=%d fallback calls=%d body=%s", rr.Code, fallbackCalls.Load(), rr.Body.String())
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"content":"ok"`) || upstreamCalls.Load() != 2 {
+		t.Fatalf("status=%d upstream calls=%d body=%s", rr.Code, upstreamCalls.Load(), rr.Body.String())
 	}
-	streamReq := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"default","messages":[{"role":"user","content":"hello"}],"temperature":0.7,"stream":true}`))
+	streamReq := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"default","messages":[{"role":"user","content":"hello"}],"temperature":0.7,"top_p":0.8,"stream":true}`))
 	streamReq.Header.Set("Authorization", "Bearer "+testToken)
 	streamRR := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(streamRR, streamReq)
-	if streamRR.Code != http.StatusOK || fallbackCalls.Load() != 2 {
-		t.Fatalf("stream status=%d fallback calls=%d body=%s", streamRR.Code, fallbackCalls.Load(), streamRR.Body.String())
+	if streamRR.Code != http.StatusOK || upstreamCalls.Load() != 4 || !strings.Contains(streamRR.Body.String(), `"content":"ok"`) || !strings.Contains(streamRR.Body.String(), "[DONE]") {
+		t.Fatalf("stream status=%d upstream calls=%d body=%s", streamRR.Code, upstreamCalls.Load(), streamRR.Body.String())
 	}
 	var attempts []requestAttemptRecord
 	flushUsageForTest(t, svc)
-	if err := svc.usage.db.Order("attempt_index").Find(&attempts).Error; err != nil {
+	if err := svc.usage.db.Order("request_id, attempt_index").Find(&attempts).Error; err != nil {
 		t.Fatal(err)
 	}
 	if len(attempts) != 4 {
@@ -12593,6 +12603,95 @@ func TestUnsupportedFieldUpstreamRefusalFallsBack(t *testing.T) {
 	}
 	if refusals != 2 {
 		t.Fatalf("unsupported-field refusal attempts=%d; rows=%#v", refusals, attempts)
+	}
+	var details []requestUpstreamErrorDetailRecord
+	flushUsageForTest(t, svc)
+	if err := svc.usage.db.Order("request_id, attempt_index, seq").Find(&details).Error; err != nil {
+		t.Fatal(err)
+	}
+	seenSeq := map[string]bool{}
+	streamAttemptHasDropAndRefusal := false
+	var usageRows []usageRecord
+	flushUsageForTest(t, svc)
+	if err := svc.usage.db.Find(&usageRows).Error; err != nil {
+		t.Fatal(err)
+	}
+	streamRequests := map[string]bool{}
+	for _, row := range usageRows {
+		streamRequests[row.RequestID] = row.Stream
+	}
+	streamRefusalAttemptRecord := false
+	for _, detail := range details {
+		key := fmt.Sprintf("%s/%d/%d", detail.RequestID, detail.AttemptIndex, detail.Seq)
+		if seenSeq[key] {
+			t.Fatalf("duplicate persisted detail sequence %s: %#v", key, details)
+		}
+		seenSeq[key] = true
+		if streamRequests[detail.RequestID] && detail.AttemptIndex == 1 && detail.FieldName == "dropped_field" && detail.FieldValue == "temperature" {
+			for _, attempt := range attempts {
+				if attempt.RequestID == detail.RequestID && attempt.AttemptIndex == 1 && attempt.ErrorClass == "upstream_unsupported_field" {
+					streamRefusalAttemptRecord = true
+				}
+			}
+			for _, other := range details {
+				if other.RequestID == detail.RequestID && other.AttemptIndex == 1 && other.FieldName == "param" && other.FieldValue == "top_p" {
+					streamAttemptHasDropAndRefusal = true
+				}
+			}
+		}
+	}
+	if !streamAttemptHasDropAndRefusal || !streamRefusalAttemptRecord {
+		t.Fatalf("persisted details lack same-attempt dropped temperature and top_p refusal: %#v", details)
+	}
+}
+
+func TestUnsupportedSamplingRefusalUsesStructuredProviderFields(t *testing.T) {
+	tests := []struct {
+		name   string
+		status int
+		body   string
+		want   bool
+	}{
+		{
+			name:   "OpenAI unsupported temperature value",
+			status: http.StatusBadRequest,
+			body:   `{"error":{"message":"Unsupported value for parameter temperature","type":"invalid_request_error","code":"unsupported_value","param":"temperature"}}`,
+			want:   true,
+		},
+		{
+			name:   "OpenAI compatible unknown top_p parameter",
+			status: http.StatusBadRequest,
+			body:   `{"error":{"message":"Unrecognized request argument supplied: top_p","type":"invalid_request_error","param":"top_p"}}`,
+			want:   true,
+		},
+		{
+			name:   "unsupported wording without structured param",
+			status: http.StatusBadRequest,
+			body:   `{"error":{"message":"unsupported_field temperature; echoed prompt: temperature","type":"invalid_request_error"}}`,
+		},
+		{
+			name:   "unrelated structured parameter",
+			status: http.StatusBadRequest,
+			body:   `{"error":{"message":"Unknown field store","code":"unsupported_value","param":"store"}}`,
+		},
+		{
+			name:   "recognized code with ordinary 404",
+			status: http.StatusNotFound,
+			body:   `{"error":{"code":"unsupported_parameter","param":"temperature"}}`,
+		},
+		{
+			name:   "unrecognized code",
+			status: http.StatusUnprocessableEntity,
+			body:   `{"error":{"code":"invalid_request_error","param":"temperature"}}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := statusErrorClass(tt.status, []byte(tt.body)) == "upstream_unsupported_field"
+			if got != tt.want {
+				t.Fatalf("unsupported-field classification=%v, want %v", got, tt.want)
+			}
+		})
 	}
 }
 
@@ -13940,11 +14039,13 @@ func TestSanitizedUpstreamErrorDetailsPersistAllowlistedFields(t *testing.T) {
 
 	scenarios := []struct {
 		name     string
+		class    string
 		body     map[string]any
 		expected map[string]string
 	}{
 		{
-			name: "openai-compatible",
+			name:  "openai-compatible",
+			class: "upstream_unsupported_field",
 			body: map[string]any{
 				"error": map[string]any{
 					"message": "Unsupported value for parameter temperature",
@@ -14152,6 +14253,10 @@ func TestSanitizedUpstreamErrorDetailsPersistAllowlistedFields(t *testing.T) {
 
 	for _, scenario := range scenarios {
 		t.Run(scenario.name, func(t *testing.T) {
+			wantClass := scenario.class
+			if wantClass == "" {
+				wantClass = "upstream_bad_request"
+			}
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				w.WriteHeader(http.StatusBadRequest)
@@ -14181,7 +14286,7 @@ func TestSanitizedUpstreamErrorDetailsPersistAllowlistedFields(t *testing.T) {
 			if err := svc.usage.db.Find(&attempts).Error; err != nil {
 				t.Fatal(err)
 			}
-			if len(attempts) != 1 || attempts[0].ErrorClass != "upstream_bad_request" || attempts[0].Retryable {
+			if len(attempts) != 1 || attempts[0].ErrorClass != wantClass || attempts[0].Retryable {
 				t.Fatalf("unexpected attempt: %#v", attempts)
 			}
 			var details []requestUpstreamErrorDetailRecord
@@ -14197,7 +14302,7 @@ func TestSanitizedUpstreamErrorDetailsPersistAllowlistedFields(t *testing.T) {
 			for _, detail := range details {
 				got[detail.FieldName] = detail.FieldValue
 				allText += detail.FieldName + "=" + detail.FieldValue + " source=" + detail.Source + "\n"
-				if detail.RequestID == "" || detail.AttemptIndex != 1 || detail.StatusCode != http.StatusBadRequest || detail.ErrorClass != "upstream_bad_request" {
+				if detail.RequestID == "" || detail.AttemptIndex != 1 || detail.StatusCode != http.StatusBadRequest || detail.ErrorClass != wantClass {
 					t.Fatalf("bad detail row: %#v", detail)
 				}
 			}
