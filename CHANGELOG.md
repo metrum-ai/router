@@ -2,10 +2,6 @@
 
 ## Unreleased
 
-### Added
-
-- Add a protected main-only nightly evaluation canary with a $1 per-run and per-night spend ceiling, sanitized reports and sample-aware rolling aggregates; Docker-dependent Humaneval and Harbor live rows remain explicitly uncovered.
-
 ### Fixed
 
 - Migrate the API compatibility suite to Anthropic Python SDK 2.3.0 and test API-key and bearer authentication with separate clients.
