@@ -66,6 +66,7 @@ type Service struct {
 	imageURLDNSTimeout time.Duration
 	callerAuth         *callerAuthState
 	cacheSaltKey       []byte
+	tokenExchange      *tokenExchangeRuntime
 	adminBasic         map[string]adminBasicRuntime
 	adminAPIKeys       map[string]*adminAPIKeyRuntime
 	adminOIDC          *adminOIDCRuntime
@@ -210,6 +211,7 @@ func (e routingEligibilityError) Error() string {
 }
 
 type requestContext struct {
+	s           *Service
 	id          string
 	start       time.Time
 	correlation requestTraceContext
@@ -219,6 +221,11 @@ type requestContext struct {
 	receiveAt              time.Time
 	ctx                    context.Context
 	caller                 *callerRuntime
+	mission                *missionTokenClaims
+	missionAdmitted        bool
+	missionSettled         bool
+	missionReservedTokens  int
+	missionReservedSpend   float64
 	dialect                string
 	client                 string
 	clientIP               clientIPInfo
@@ -381,16 +388,30 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		_ = usage.Close()
 		return nil, err
 	}
+	httpClient := newUpstreamHTTPClient(cfg.Server.Upstream)
+	tokenExchange, err := newTokenExchangeRuntime(cfg.Security.TokenExchange, nil, os.LookupEnv, httpClient)
+	if err != nil {
+		httpClient.CloseIdleConnections()
+		_ = quota.Close()
+		_ = logger.Close()
+		_ = usage.Close()
+		bridgeSessions.Close()
+		return nil, err
+	}
+	if tokenExchange != nil {
+		tokenExchange.quota = quota
+	}
 	s := &Service{
 		identifiers:        identifiers,
 		cfg:                cfg,
 		mux:                http.NewServeMux(),
-		httpClient:         newUpstreamHTTPClient(cfg.Server.Upstream),
+		httpClient:         httpClient,
 		externalPolicies:   map[string]*externalPolicyStrategy{},
 		imageURLLookup:     defaultImageURLLookup,
 		imageURLDNSTimeout: defaultImageURLDNSTimeout,
 		callerAuth:         newCallerAuthState(),
 		cacheSaltKey:       cacheSaltKey,
+		tokenExchange:      tokenExchange,
 		adminBasic:         map[string]adminBasicRuntime{},
 		adminSession:       newAdminSessionStore(cfg.Server.AdminAuth.Sessions),
 		quota:              quota,
@@ -582,6 +603,7 @@ func (s *Service) Handler() http.Handler {
 	// Event streams get a progress deadline instead of the server's absolute
 	// write deadline; unary responses are untouched (#759).
 	var h http.Handler = s.withStreamProgressDeadline(s.mux)
+	h = s.withMissionTokenRouteAllowList(h)
 	return h
 }
 
@@ -911,6 +933,9 @@ func (s *Service) routes() {
 		info := buildinfo.Current()
 		writeJSON(w, http.StatusOK, info)
 	})
+	if s.tokenExchange != nil {
+		s.mux.HandleFunc("POST /oauth/token", s.handleTokenExchange)
+	}
 	s.mux.HandleFunc("GET /v1/models", s.handleModels)
 	s.mux.HandleFunc("GET /v1/models/{model...}", s.handleModelGet)
 	s.mux.HandleFunc("GET /v1/codex/models.json", s.handleCodexModels)
@@ -1080,7 +1105,7 @@ func (s *Service) handleModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer s.finish(rc, http.StatusOK, nil)
-	data := s.callerModelMetadata(rc.caller)
+	data := rc.filterMissionModelMetadata(s.callerModelMetadata(rc.caller))
 	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "mode": "default", "data": data, "models": data})
 }
 
@@ -1090,7 +1115,7 @@ func (s *Service) handleModelGet(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	for _, model := range s.callerModelMetadata(rc.caller) {
+	for _, model := range rc.filterMissionModelMetadata(s.callerModelMetadata(rc.caller)) {
 		if model["id"] == r.PathValue("model") {
 			defer s.finish(rc, http.StatusOK, nil)
 			if isAnthropicModelRequest(r) {
@@ -1126,7 +1151,7 @@ func (s *Service) handleCodexModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer s.finish(rc, http.StatusOK, nil)
-	writeJSON(w, http.StatusOK, map[string]any{"models": s.codexModelMetadata(rc.caller)})
+	writeJSON(w, http.StatusOK, map[string]any{"models": rc.filterMissionModelMetadata(s.codexModelMetadata(rc.caller))})
 }
 
 func (s *Service) callerModelMetadata(caller *callerRuntime) []map[string]any {
@@ -1671,7 +1696,7 @@ func (s *Service) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, rc, http.StatusBadRequest, "missing-model")
 		return
 	}
-	if _, exists := s.cfg.Models[req.Model]; !exists || !rc.caller.allow[req.Model] {
+	if _, exists := s.cfg.Models[req.Model]; !exists || !rc.callerCanUseGroup(req.Model) {
 		reason := "unknown-model"
 		if exists {
 			reason = "model-not-allowed"
@@ -1793,7 +1818,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	}
 
 	group, exists := s.cfg.Models[req.Model]
-	if !exists || !rc.caller.allow[req.Model] {
+	if !exists || !rc.callerCanUseGroup(req.Model) {
 		reason := "unknown-model"
 		if exists {
 			reason = "model-not-allowed"
@@ -1806,6 +1831,11 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		} else {
 			s.writeError(w, rc, http.StatusForbidden, reason)
 		}
+		return
+	}
+	inputEstimate := estimateTokens(req)
+	if !missionTokenLimit(rc, req) || !missionToolsAllowed(rc, req) || !s.admitMissionRequest(rc, inputEstimate+req.MaxTokens, missionRequestSpendEstimate(group, inputEstimate, req.MaxTokens)) {
+		s.writeError(w, rc, http.StatusForbidden, "mission-scope-exceeded")
 		return
 	}
 	if invalidReasoningEffort(dialect, req.Raw) {
@@ -2513,6 +2543,7 @@ func adminPlaneAuthorized(r *http.Request) bool {
 // begin() adds the caller; beginAdminPlane() adds the machine admin principal.
 func (s *Service) newRequestContext(r *http.Request, dialect, id string, receiveAt time.Time, ipInfo clientIPInfo) *requestContext {
 	return &requestContext{
+		s:                    s,
 		id:                   id,
 		start:                receiveAt,
 		receiveAt:            receiveAt,
@@ -2574,7 +2605,7 @@ func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) 
 	if dialect == "anthropic" {
 		w.Header().Set("Request-Id", id)
 	}
-	caller, tokenID, err := s.authenticate(r.Header.Get("Authorization"), r.Header.Get("X-API-Key"))
+	caller, tokenID, mission, err := s.authenticateWithMission(r.Header.Get("Authorization"), r.Header.Get("X-API-Key"))
 	ipInfo := resolveClientIP(r, s.cfg.Server.ClientIP)
 	securityReason := ""
 	if err == nil {
@@ -2591,6 +2622,7 @@ func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) 
 	rc := s.newRequestContext(r, dialect, id, receiveAt, ipInfo)
 	rc.securityReason = securityReason
 	rc.caller = caller
+	rc.mission = mission
 	rc.correlation = traceparentFromRequest(r, caller, err == nil, s.cfg.Server.Trace)
 	rc.rec.TraceID = rc.correlation.traceID
 	rc.rec.SpanID = rc.correlation.spanID
@@ -2610,6 +2642,10 @@ func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) 
 		rc.rec.CallerUser = callerUser(caller.cfg)
 		rc.rec.CallerProject = callerProject(caller.cfg)
 		rc.rec.CallerEnvironment = callerEnvironment(caller.cfg)
+	}
+	if mission != nil {
+		rc.rec.TaskID = mission.TaskID
+		rc.rec.HumanOwner = mission.HumanOwner
 	}
 	rc.trace("router_receive", "router request receive", Target{}, 0, 0, "", false, 0)
 	if err != nil {
@@ -2663,6 +2699,11 @@ func (s *Service) finish(rc *requestContext, status int, code *string) {
 	s.recordCacheStats(rc)
 	populateThroughput(&rc.rec)
 	populateCosts(&rc.rec)
+	if rc.missionAdmitted && !rc.missionSettled && s.tokenExchange != nil {
+		s.tokenExchange.settleMission(rc.mission, rc.missionReservedTokens, rc.missionReservedSpend, rc.rec.Usage, rc.rec.TotalCostUSD)
+		rc.missionAdmitted = false
+		rc.missionSettled = true
+	}
 	s.providerSpend.add(rc.rec.TargetProvider, s.cfg.Provider[rc.rec.TargetProvider].SpendBreaker, rc.rec.TotalCostUSD)
 	if rc.caller != nil {
 		if budget, ok := s.projectBudgetConfig(rc.caller.project); ok {
@@ -2841,6 +2882,11 @@ func (s *Service) recordCacheStats(rc *requestContext) {
 }
 
 func (s *Service) authenticate(header, apiKey string) (*callerRuntime, string, error) {
+	caller, tokenID, _, err := s.authenticateWithMission(header, apiKey)
+	return caller, tokenID, err
+}
+
+func (s *Service) authenticateWithMission(header, apiKey string) (*callerRuntime, string, *missionTokenClaims, error) {
 	const prefix = "Bearer "
 	var token string
 	if strings.HasPrefix(header, prefix) {
@@ -2849,16 +2895,25 @@ func (s *Service) authenticate(header, apiKey string) (*callerRuntime, string, e
 		token = strings.TrimSpace(apiKey)
 	}
 	if token == "" {
-		return nil, "missing-token", errors.New("missing bearer token")
+		return nil, "missing-token", nil, errors.New("missing bearer token")
+	}
+	if s.tokenExchange != nil && strings.HasPrefix(token, "eyJ") {
+		caller, tokenID, claims, err := s.tokenExchange.verifyAccessToken(token)
+		if err == nil {
+			return caller, tokenID, claims, nil
+		}
 	}
 	caller, tokenID := s.callerAuth.lookup(token)
 	if caller == nil {
-		return nil, "invalid-token", errors.New("unknown token")
+		return nil, "invalid-token", nil, errors.New("unknown token")
 	}
 	if err := caller.authPolicyError(); err != nil {
-		return caller, tokenID, err
+		return caller, tokenID, nil, err
 	}
-	return caller, tokenID, nil
+	if projectForbidsLongLivedKeys(s.cfg, callerProject(caller.cfg)) {
+		return caller, tokenID, nil, authPolicyError{status: http.StatusForbidden, code: "long-lived-key-forbidden"}
+	}
+	return caller, tokenID, nil, nil
 }
 
 type authPolicyError struct {
@@ -3001,6 +3056,9 @@ func adminBasicDummyHash() []byte {
 func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, req *IRRequest, callerDialect string, caller *callerRuntime, tokenID string) (decision, error) {
 	targets := append([]Target(nil), group.Targets...)
 	targets, rejectedReasons := s.filterTargetsForRequest(rc, targets, req, callerDialect)
+	if ceiling := missionSpendCeiling(rc); ceiling.configured() {
+		targets, _ = filterTargetsBySpendCeiling(targets, req, ceiling)
+	}
 	if len(targets) == 0 {
 		err := routingEligibilityError{Model: groupName, Dialect: callerDialect, Requirements: routingRequirements(req, callerDialect)}
 		if hasFilterReason(rejectedReasons, "provider-spend-breaker") {

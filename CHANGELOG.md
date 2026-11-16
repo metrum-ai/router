@@ -48,6 +48,8 @@
 
 - Partition response-cache entries and vLLM prefix-cache salts by caller and project by default, add opt-in sharing inside a project, and forward stable salts only to explicitly configured vLLM providers. SGLang prefix-cache isolation is not supported in v5.0.0.
 
+- Add opt-in RFC 8693 workload token exchange with short-lived caller-scoped tokens, optional task attribution from an issuer claim or grant-pinned value, task/owner usage attribution, atomic per-process cumulative budget reservations (including embeddings), and per-project long-lived-key rejection. Grant budgets persist across token expiry and are pruned when the grant is removed on reload. Mission tokens are accepted only on the explicit inference route allow-list; all other serving routes, including `/mcp` and parent-key revocation, return 401.
+
 ### Fixed
 
 - Disable the unused admin listener on API compatibility test routers to avoid collisions when tests start several routers, and make plain `make` compile binaries without running the full test suite during CodeQL autobuild.

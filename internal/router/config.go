@@ -30,6 +30,35 @@ type EligibilityConfig struct {
 	ImplicitOpenAIToAnthropic *bool `yaml:"implicit_openai_to_anthropic"`
 }
 
+type TokenExchangeConfig struct {
+	Enabled       bool                        `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	SigningKeyEnv string                      `yaml:"signing_key_env,omitempty" json:"signingKeyEnv,omitempty"`
+	DefaultTTL    string                      `yaml:"default_ttl,omitempty" json:"defaultTtl,omitempty"`
+	Issuers       []TokenExchangeIssuerConfig `yaml:"issuers,omitempty" json:"issuers,omitempty"`
+}
+
+type TokenExchangeIssuerConfig struct {
+	IssuerURL           string                      `yaml:"issuer" json:"issuer"`
+	Audience            string                      `yaml:"audience" json:"audience"`
+	TaskClaim           string                      `yaml:"task_claim,omitempty" json:"taskClaim,omitempty"`
+	Algorithms          []string                    `yaml:"algorithms,omitempty" json:"algorithms,omitempty"`
+	AllowedJWKSHosts    []string                    `yaml:"allowed_jwks_hosts,omitempty" json:"allowedJwksHosts,omitempty"`
+	AllowPrivateNetwork bool                        `yaml:"allow_private_network,omitempty" json:"allowPrivateNetwork,omitempty"`
+	Subjects            []TokenExchangeSubjectGrant `yaml:"subjects" json:"subjects"`
+}
+
+type TokenExchangeSubjectGrant struct {
+	Claim         string   `yaml:"claim" json:"claim"`
+	Value         string   `yaml:"value" json:"value"`
+	CallerID      string   `yaml:"caller_id" json:"callerId"`
+	HumanOwner    string   `yaml:"human_owner" json:"humanOwner"`
+	AllowedGroups []string `yaml:"allowed_groups" json:"allowedGroups"`
+	MaxSpendUSD   float64  `yaml:"max_spend_usd" json:"maxSpendUsd"`
+	MaxTokens     int      `yaml:"max_tokens" json:"maxTokens"`
+	AllowedTools  []string `yaml:"allowed_tools,omitempty" json:"allowedTools,omitempty"`
+	TaskID        string   `yaml:"task_id,omitempty" json:"taskId,omitempty"`
+}
+
 func (c EligibilityConfig) implicitEnabled() bool {
 	return c.ImplicitOpenAIToAnthropic == nil || *c.ImplicitOpenAIToAnthropic
 }
@@ -98,7 +127,8 @@ type MCPToolLimitConfig struct {
 }
 
 type RouterSecurityConfig struct {
-	KeyHygiene KeyHygieneConfig `yaml:"key_hygiene" json:"keyHygiene,omitempty"`
+	KeyHygiene    KeyHygieneConfig    `yaml:"key_hygiene" json:"keyHygiene,omitempty"`
+	TokenExchange TokenExchangeConfig `yaml:"token_exchange,omitempty" json:"tokenExchange,omitempty"`
 }
 
 type KeyHygieneConfig struct {
@@ -1384,6 +1414,7 @@ type ProjectConfig struct {
 	Environments            []ProjectEnvironmentConfig `yaml:"environments,omitempty" json:"environments,omitempty"`
 	Budget                  ProjectBudgetConfig        `yaml:"budget,omitempty" json:"budget,omitempty"`
 	ShareCacheWithinProject bool                       `yaml:"share_cache_within_project,omitempty" json:"shareCacheWithinProject,omitempty"`
+	ForbidLongLivedKeys     bool                       `yaml:"forbid_long_lived_keys,omitempty" json:"forbidLongLivedKeys,omitempty"`
 }
 
 type ProjectBudgetConfig struct {
@@ -1858,6 +1889,9 @@ func (c *Config) setDefaults() {
 	}
 	if c.Server.Streaming.Translator == "" {
 		c.Server.Streaming.Translator = "incremental"
+	}
+	if c.Security.TokenExchange.DefaultTTL == "" {
+		c.Security.TokenExchange.DefaultTTL = "15m"
 	}
 	if c.Server.Responses.ModelIdentity == "" {
 		c.Server.Responses.ModelIdentity = ModelIdentityUpstream
@@ -2697,6 +2731,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		if err := validateSpendCeiling("caller "+caller.ID+" spend_ceiling", caller.SpendCeiling, knownTiers); err != nil {
 			return err
 		}
+	}
+	if err := validateTokenExchange(c); err != nil {
+		return err
 	}
 	return nil
 }

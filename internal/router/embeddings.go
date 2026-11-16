@@ -367,7 +367,7 @@ func (s *Service) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	group, exists := s.cfg.Models[req.Model]
-	if !exists || !rc.caller.allow[req.Model] {
+	if !exists || !rc.callerCanUseGroup(req.Model) {
 		s.writeError(w, rc, http.StatusNotFound, "model_not_found")
 		return
 	}
@@ -466,6 +466,14 @@ func (s *Service) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	target := compatible[0]
+	if rc.mission != nil {
+		estimatedTokens := req.inputTokenEstimate()
+		estimatedSpend := missionRequestSpendEstimate(ModelGroup{Targets: compatible}, estimatedTokens, 0)
+		if !s.admitMissionRequest(rc, estimatedTokens, estimatedSpend) {
+			s.writeError(w, rc, http.StatusForbidden, "mission-scope-exceeded")
+			return
+		}
+	}
 	rc.rec.ResolvedGroup = req.Model
 	rc.rec.Strategy = group.Strategy
 	s.applyServingTargetRecord(rc, target)

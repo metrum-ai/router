@@ -64,7 +64,7 @@ func (s *Service) handleResponsesInputTokens(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	group, exists := s.cfg.Models[req.Model]
-	if !exists || !rc.caller.allow[req.Model] {
+	if !exists || !rc.callerCanUseGroup(req.Model) {
 		reason := "unknown-model"
 		if exists {
 			reason = "model-not-allowed"

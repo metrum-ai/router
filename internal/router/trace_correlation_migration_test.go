@@ -21,6 +21,19 @@ func clearTraceCorrelationMigrationLedger(t *testing.T, db *gorm.DB) {
 	}
 }
 
+func clearMissionAttributionMigrationLedger(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	// These additive columns remain valid on the schema 17 shape; only remove
+	// their ledger entries so this test can exercise the intervening schema 18
+	// migration on the real current model.
+	if err := db.Where("scope = ? AND migration_id = ?", usageMigrationScope, usageMissionAttributionMigrationID).Delete(&migrationAttemptRecord{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Where("scope = ? AND migration_id = ?", usageMigrationScope, usageMissionAttributionMigrationID).Delete(&migrationLedgerRecord{}).Error; err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestTraceCorrelationSchema18SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) {
 	cfg := uncachedSQLiteUsageDBConfigForTest(filepath.Join(t.TempDir(), "usage.sqlite"))
 	store, err := OpenUsageStore(cfg)
@@ -30,6 +43,7 @@ func TestTraceCorrelationSchema18SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) 
 	if err := store.db.Create(recordFromRow(rowFromRecord(logRecord{RequestID: "legacy-trace-row", TS: time.Now().UTC().Format(time.RFC3339)}))).Error; err != nil {
 		t.Fatal(err)
 	}
+	clearMissionAttributionMigrationLedger(t, store.db)
 	if err := revertTraceCorrelationMigration(store.db); err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +71,7 @@ func TestTraceCorrelationSchema18SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) 
 		t.Fatal(err)
 	}
 	status, err := runner.Status()
-	if err != nil || status.SchemaVersion != 18 || !status.Compatible {
+	if err != nil || status.SchemaVersion != currentUsageSchemaVersion() || !status.Compatible {
 		t.Fatalf("after: %+v err=%v", status, err)
 	}
 	var legacy usageRecord
@@ -75,7 +89,7 @@ func TestTraceCorrelationSchema18SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) 
 
 	previousDefinitions := make([]MigrationDefinition, 0, len(usageMigrationDefinitions)-1)
 	for _, definition := range usageMigrationDefinitions {
-		if definition.ID != usageTraceCorrelationMigrationID {
+		if definition.SchemaVersion <= 17 {
 			previousDefinitions = append(previousDefinitions, definition)
 		}
 	}
@@ -85,8 +99,9 @@ func TestTraceCorrelationSchema18SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) 
 	}
 	oldStatus, err := old.Status()
 	if err != nil || oldStatus.Compatible || oldStatus.State != "incompatible" {
-		t.Fatalf("schema 17 binary should reject schema 18: %+v err=%v", oldStatus, err)
+		t.Fatalf("schema 17 binary should reject the upgraded schema: %+v err=%v", oldStatus, err)
 	}
+	clearMissionAttributionMigrationLedger(t, runner.db)
 	if err := revertTraceCorrelationMigration(runner.db); err != nil {
 		t.Fatal(err)
 	}

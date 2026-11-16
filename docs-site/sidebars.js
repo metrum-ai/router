@@ -123,6 +123,7 @@ const sidebars = {
         "security-governance/compromise-runbook",
         "security-governance/detectors",
         "security-governance/cache-isolation",
+        "security-governance/token-exchange",
         "evaluation/overview",
         "evaluation/performance-overhead",
         "evaluation/tool-call-proof",

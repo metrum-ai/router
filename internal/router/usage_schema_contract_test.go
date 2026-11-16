@@ -525,7 +525,7 @@ func TestUsageSchemaContractPostgresIndexes(t *testing.T) {
 		if err := stmt.Parse(model); err != nil {
 			t.Fatal(err)
 		}
-		if err := verifyUsageIndexesPostgres(db, stmt.Schema); err != nil {
+		if err := verifyUsageIndexesPostgres(db, stmt.Schema, nil); err != nil {
 			t.Fatalf("PostgreSQL index contract rejected %s: %v", stmt.Schema.Table, err)
 		}
 	}
