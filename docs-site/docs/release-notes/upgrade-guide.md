@@ -30,6 +30,10 @@ also enter security access events when
 `server.admin_reports.security.enabled` is true; structured log events remain
 available otherwise.
 
+## Security event stream
+
+The OCSF 1.4.0 JSON Lines stream is disabled by default. To enable it, set `server.security.events.enabled`, choose stdout or file output, and optionally configure an HTTPS webhook with a 32-byte-or-longer secret supplied through the environment. See [Security event stream](../security-governance/security-events) for signature verification and queue behavior.
+
 ## Pre-Upgrade Checklist
 
 1. Read the release notes for operator impact, database changes, license changes, and caller-visible behavior.
@@ -704,7 +708,3 @@ administrator or by legacy configuration require all caller write permissions
 Signed webhook callers do not need an ETag or idempotency header. Their nonce
 reservation is durable for at least twice the configured timestamp window and
 expired reservations are pruned hourly.
-
-## Security event stream
-
-The OCSF 1.4.0 JSON Lines stream is disabled by default. To enable it, set `server.security.events.enabled`, choose stdout or file output, and optionally configure an HTTPS webhook with a 32-byte-or-longer secret supplied through the environment. See [Security event stream](../security-governance/security-events) for signature verification and queue behavior.
