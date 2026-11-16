@@ -96,7 +96,7 @@ func TestToolRoutingUsageSchema21UpgradeDownAndRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	when := time.Now().UTC()
-	if err := db.Create(recordFromRow(usageRow{RequestID: "legacy-tool-row", TS: when})).Error; err != nil {
+	if err := db.Omit("OrganizationID", "TeamID").Create(recordFromRow(usageRow{RequestID: "legacy-tool-row", TS: when})).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := revertToolRoutingUsageMigration(db); err != nil {
@@ -132,7 +132,7 @@ func TestToolRoutingUsageSchema21UpgradeDownAndRoundTrip(t *testing.T) {
 	if row.ToolCallCount != 3 || row.ToolFirstFailureClass != toolFailureMissingRequired || row.ToolRetries != 1 || row.ToolEscalations != 1 || row.ToolReliabilityBucket != "valid" || row.ToolReliabilitySource != "live" {
 		t.Fatalf("row=%+v", row)
 	}
-	if err := db.Create(recordFromRow(row)).Error; err != nil {
+	if err := db.Omit("OrganizationID", "TeamID").Create(recordFromRow(row)).Error; err != nil {
 		t.Fatal(err)
 	}
 	var persisted usageRecord
