@@ -24,8 +24,8 @@ build_and_smoke() {
       test "$(stat -c %u /smoke/$TOKEN_FILE)" = "$HOST_UID"
       test "$(stat -c %g /smoke/$TOKEN_FILE)" = 10001
       test "$(stat -c %a /smoke/$TOKEN_FILE)" = 640
-      chown 10001:10001 /logs/verifier
-      chmod 0755 /logs/verifier
+      chown "$HOST_UID:10001" /logs/verifier
+      chmod 0770 /logs/verifier
     '
   docker run --rm --volume "$logs:/logs/verifier" \
     --volume "$token:/run/harbor-e2e/router-token:ro" \
