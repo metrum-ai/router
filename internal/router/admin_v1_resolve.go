@@ -68,7 +68,7 @@ func AdminV1CallerResourceDomain(db *gorm.DB, runtimeScope string, r *http.Reque
 			return "", err
 		}
 		return authzDomainForProjectEnvironment(normalizeAccountID(body.Project), normalizeAccountID(body.Environment)), nil
-	case r.Method == http.MethodPost || r.Method == http.MethodGet:
+	case (r.Method == http.MethodPost || r.Method == http.MethodGet) && strings.TrimSpace(r.PathValue("id")) != "":
 		callerID := strings.TrimSpace(r.PathValue("id"))
 		if callerID == "" {
 			return "", errors.New("caller id is required")
