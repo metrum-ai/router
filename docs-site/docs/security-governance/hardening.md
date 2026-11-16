@@ -27,6 +27,8 @@ Store caller tokens as `callers[].token_hash` with a unique public `token_id`; d
 
 Keep provider keys in the deployment secret store and set `providers.<name>.api_key_env` to the environment variable name. Do not store provider key values in tracked config, logs, reports, or tickets. Scope provider-side keys to the required models and permissions.
 
+Provider-usage reconciliation uses separate read-only analytics credentials. Keep their values in the deployment secret store and reference them only with `ROUTER_PROVIDER_USAGE_*` environment names. Do not reuse inference keys for organization-level usage access. See [Provider usage reconciliation](./provider-usage-reconciliation.md) and the [provider-key compromise runbook](./compromise-runbook.md) for setup and rotation guidance.
+
 ## Spend limits
 
 Set `providers.<name>.spend_breaker.hourly_usd` and/or `daily_usd` where a provider spend ceiling is required. Choose `on_trip: stop` to reject requests or `failover` to try another eligible provider. Breaker counters are per process and reset on restart; multiple replicas can spend up to their combined limits. Use provider-side billing limits for an account-wide cap.

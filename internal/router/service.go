@@ -96,6 +96,7 @@ type Service struct {
 	usage                    *usageStore
 	migrationStatusFn        func() (MigrationStatus, error)
 	metrics                  *metricsStore
+	lineBufferBudget         *lineBufferBudget
 	// Admin-plane state: its own metrics registry, the audit/observation sinks, the
 	// Idempotency-Key store and the freshness source. They are separate from the serving path.
 	adminMetricsStore    *adminMetricsStore
@@ -138,6 +139,7 @@ type Service struct {
 	autoContainmentMu     sync.Mutex
 	policySyncStop        func()
 	policyNotifyStop      func()
+	providerUsageStop     func()
 	configInstanceID      string
 	configLoaded          atomic.Value // configLoadedState
 	shadows               *shadowRuntime
@@ -228,6 +230,7 @@ type requestContext struct {
 	secretStreamDLP        *secretStreamDLP
 	pacedUpstreamStream    bool
 	maxSSELineBytes        int
+	lineBufferBudget       *lineBufferBudget
 	chatStreamIncludeUsage bool
 	detectorTinyRequest    bool
 	traceSeq               int
@@ -405,6 +408,7 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		tlsManager:         tlsManager,
 	}
 	s.configSnapshot.Store(cfg)
+	s.lineBufferBudget = newLineBufferBudget(int64(cfg.Server.Streaming.MaxInflightLineBytes), s.metrics)
 	s.policyFreshness = newPolicyFreshnessState(defaultPolicyMaxStaleness)
 	s.providerSpend.emit = s.recordProviderSpendEvent
 	// The operator's configured window applies at CONSTRUCTION, before the first
@@ -552,6 +556,9 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 	// Admin audit retention runs once per database that holds admin audit tables, and stops
 	// with the service.
 	s.StartAdminAuditJanitors()
+	if cfg.Server.ProviderUsageReconciliation.Enabled {
+		s.startProviderUsageReconciliation()
+	}
 	return s, nil
 }
 
@@ -582,6 +589,10 @@ func (s *Service) TLSManager() *tlsacme.Manager {
 }
 
 func (s *Service) Close() {
+	if s.providerUsageStop != nil {
+		s.providerUsageStop()
+		s.providerUsageStop = nil
+	}
 	if s.securityEventStream != nil {
 		s.securityEventStream.close()
 	}
@@ -3841,6 +3852,10 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 			streamBody = idleBody
 		}
 		rc.maxSSELineBytes = s.cfg.Server.Streaming.MaxSSELineBytes
+		rc.lineBufferBudget = s.lineBufferBudget
+		if rc.lineBufferBudget != nil {
+			rc.lineBufferBudget.SetLimit(int64(s.cfg.Server.Streaming.MaxInflightLineBytes))
+		}
 		streamResult, streamErr := proxy(attemptCtx, pw, streamBody, outDialect, target.Model, maxResponseBytes, rc, s.identifiers)
 		if pacer != nil && pacer.injectedMS > 0 && rc != nil {
 			rc.trace("experiment_profile_pacing", fmt.Sprintf("profile=%s hash=%s injected_ms=%.0f", pacer.name, pacer.hash, pacer.injectedMS), target, attemptIndex, 0, "", false, int64(pacer.injectedMS))
@@ -5701,7 +5716,7 @@ func upstreamFailureResponse(err upstreamError, rc *requestContext) (string, int
 	switch {
 	case err.Class == "upstream_loop_detected":
 		return "upstream-loop-detected", http.StatusLoopDetected
-	case err.Class == "upstream_protocol_error" || err.Class == "upstream_frame_too_large":
+	case err.Class == "upstream_protocol_error" || err.Class == "upstream_frame_too_large" || err.Class == "upstream_stream_buffer_limit":
 		return err.Class, http.StatusBadGateway
 	case err.Class == "response_affinity_store_failed":
 		return "response-affinity-unavailable", http.StatusServiceUnavailable

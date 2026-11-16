@@ -117,6 +117,7 @@ const sidebars = {
         "providers-models/overview",
         "usage-cost-reports/overview",
         "security-governance/overview",
+        "security-governance/provider-usage-reconciliation",
         "security-governance/threat-model-v5",
         "security-governance/hardening",
         "security-governance/compromise-runbook",

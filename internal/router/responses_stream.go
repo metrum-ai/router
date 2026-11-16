@@ -40,6 +40,7 @@ func runResponsesStream(ctx context.Context, w http.ResponseWriter, body io.Read
 		}
 	}
 	f := stream.NewFramer(body, maxBytes, rc.sseLineLimit())
+	f.SetLineBufferBudget(rc.sseLineBudget())
 	reason := stream.StopError
 	var started time.Time
 	emit := func(events []stream.Event) error {
@@ -152,6 +153,9 @@ func runResponsesStream(ctx context.Context, w http.ResponseWriter, body io.Read
 			if errors.Is(err, stream.ErrFrameTooLarge) {
 				return result, upstreamError{Class: "upstream_frame_too_large", Message: "upstream SSE line exceeds configured max_sse_line_bytes", Retryable: !result.Committed, Committed: result.Committed}
 			}
+			if errors.Is(err, stream.ErrLineBufferBudget) {
+				return result, upstreamError{Class: "upstream_stream_buffer_limit", Message: "process-wide SSE line buffer budget exhausted", Retryable: !result.Committed, Committed: result.Committed}
+			}
 			if errors.Is(err, stream.ErrLimit) {
 				return result, upstreamError{Class: "upstream_response_too_large", Message: "upstream response exceeded configured size limit"}
 			}
@@ -164,19 +168,31 @@ func runResponsesStream(ctx context.Context, w http.ResponseWriter, body io.Read
 			}
 			return result, err
 		}
-		events, err = t.Next(up)
-		if accounting, ok := t.(interface{ UsageSnapshot() stream.Usage }); ok {
-			u := accounting.UsageSnapshot()
-			mergeStreamUsage(&result.Response.Usage, Usage{InputTokens: u.InputTokens, OutputTokens: u.OutputTokens, TotalTokens: u.TotalTokens, ReasoningTokens: u.ReasoningTokens, CachedInputTokens: u.CachedInputTokens, CacheWriteInputTokens: u.CacheWriteInputTokens})
-		}
-		if err != nil && !errors.Is(err, stream.ErrTerminal) {
-			if rc != nil && rc.affinity != nil && rc.affinity.failed {
-				return result, upstreamError{Class: "response_affinity_store_failed", Message: "stored response affinity could not be persisted", Retryable: false, Fallbackable: false, Err: err}
+		var events []stream.Event
+		func() {
+			// The framer transfers its line reservation to the event. Keep it
+			// through translation and downstream emission, and release on every
+			// return path (including translator and client write errors).
+			defer up.ReleaseLineBufferBudget()
+			events, err = t.Next(up)
+			if accounting, ok := t.(interface{ UsageSnapshot() stream.Usage }); ok {
+				u := accounting.UsageSnapshot()
+				mergeStreamUsage(&result.Response.Usage, Usage{InputTokens: u.InputTokens, OutputTokens: u.OutputTokens, TotalTokens: u.TotalTokens, ReasoningTokens: u.ReasoningTokens, CachedInputTokens: u.CachedInputTokens, CacheWriteInputTokens: u.CacheWriteInputTokens})
 			}
-			return result, upstreamError{Class: "stream_translator_error", Message: "invalid upstream stream event", Err: err}
-		}
-		if writeErr := emit(events); writeErr != nil {
-			return result, writeErr
+			if err != nil && !errors.Is(err, stream.ErrTerminal) {
+				if rc != nil && rc.affinity != nil && rc.affinity.failed {
+					err = upstreamError{Class: "response_affinity_store_failed", Message: "stored response affinity could not be persisted", Retryable: false, Fallbackable: false, Err: err}
+				} else {
+					err = upstreamError{Class: "stream_translator_error", Message: "invalid upstream stream event", Err: err}
+				}
+				return
+			}
+			if writeErr := emit(events); writeErr != nil {
+				err = writeErr
+			}
+		}()
+		if err != nil && !errors.Is(err, stream.ErrTerminal) {
+			return result, err
 		}
 		if errors.Is(err, stream.ErrTerminal) {
 			result.Done = true

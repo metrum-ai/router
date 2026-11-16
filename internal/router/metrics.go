@@ -14,8 +14,24 @@ import (
 )
 
 type metricsStore struct {
-	mu     sync.Mutex
-	series map[metricLabels]*metricValues
+	mu                   sync.Mutex
+	series               map[metricLabels]*metricValues
+	lineBufferBytes      int64
+	lineBufferLimitBytes int64
+	lineBufferRejections int64
+}
+
+func (m *metricsStore) SetLineBufferBudget(inUse, limit int64, rejected bool) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	m.lineBufferBytes = inUse
+	m.lineBufferLimitBytes = limit
+	if rejected {
+		m.lineBufferRejections++
+	}
+	m.mu.Unlock()
 }
 
 type metricLabels struct {
@@ -248,6 +264,9 @@ func (m *metricsStore) Prometheus(trafficShape *trafficShapeManager, migration M
 	writeHelpType(&b, "metrum_ai_router_traffic_shape_queue_depth", "Current traffic-shaping queue depth by caller and scope.", "gauge")
 	writeHelpType(&b, "metrum_ai_router_migration_schema_version", "Current migration schema version by scope.", "gauge")
 	writeHelpType(&b, "metrum_ai_router_migration_data_version", "Current migration data version by scope.", "gauge")
+	writeHelpType(&b, "metrum_ai_router_sse_line_buffer_bytes", "Current process-wide SSE line-buffer memory reservations in bytes.", "gauge")
+	writeHelpType(&b, "metrum_ai_router_sse_line_buffer_limit_bytes", "Configured process-wide SSE line-buffer reservation limit in bytes.", "gauge")
+	writeHelp(&b, "metrum_ai_router_sse_line_buffer_rejections_total", "SSE line-buffer reservations rejected because the process-wide byte budget was exhausted.")
 	writeHelpType(&b, "metrum_ai_router_migration_status_available", "Whether a safe migration status snapshot is available by scope.", "gauge")
 	writeHelpType(&b, "metrum_ai_router_migration_compatible", "Whether the migration ledger is compatible by scope.", "gauge")
 	writeHelpType(&b, "metrum_ai_router_migration_pending", "Pending checked-in migrations by scope.", "gauge")
@@ -343,6 +362,9 @@ func (m *metricsStore) Prometheus(trafficShape *trafficShapeManager, migration M
 		writeMetric(&b, "metrum_ai_router_cache_max_bytes", labelText, values.CacheMaxBytes)
 		writeFloatMetric(&b, "metrum_ai_router_cache_occupancy_ratio", labelText, values.CacheOccupancyRatio)
 	}
+	writeMetric(&b, "metrum_ai_router_sse_line_buffer_bytes", "", m.lineBufferBytes)
+	writeMetric(&b, "metrum_ai_router_sse_line_buffer_limit_bytes", "", m.lineBufferLimitBytes)
+	writeMetric(&b, "metrum_ai_router_sse_line_buffer_rejections_total", "", m.lineBufferRejections)
 	return b.String()
 }
 
