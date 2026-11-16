@@ -174,7 +174,9 @@ func TestOfflineProvenanceConsumedAtStartup(t *testing.T) {
 	if err := store.db.Table(usageAdminAuditTable).Where("operation_id = ?", "offline_config_maintenance").Select("at").Scan(&recordedAt).Error; err != nil {
 		t.Fatal(err)
 	}
-	if recordedAt != marker.At {
+	recordedTime, recordedErr := time.Parse(time.RFC3339Nano, recordedAt)
+	markerTime, markerErr := time.Parse(time.RFC3339Nano, marker.At)
+	if recordedErr != nil || markerErr != nil || !recordedTime.Equal(markerTime) {
 		t.Fatalf("audit timestamp=%q, want marker timestamp %q", recordedAt, marker.At)
 	}
 	var markers int64

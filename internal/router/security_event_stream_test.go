@@ -486,14 +486,14 @@ func TestToolFirewallDecisionReachesOCSFStreamWithoutAdminReports(t *testing.T) 
 		t.Fatal(err)
 	}
 	svc := &Service{securityEventStream: stream}
-	rc := &requestContext{id: "firewall-request-1", method: http.MethodPost}
+	rc := &requestContext{id: "firewall-request-1", method: http.MethodPost, pathTemplate: "/mcp"}
 	svc.recordToolFirewallDecisionEvent(rc, "", "denied", "sensitive_path")
 	stream.close()
 	body, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(body), `"class_uid":2004`) || !strings.Contains(string(body), `"uid":"firewall-request-1"`) || !strings.Contains(string(body), "rule:sensitive_path") {
+	if !strings.Contains(string(body), `"class_uid":2004`) || !strings.Contains(string(body), `"uid":"firewall-request-1"`) || !strings.Contains(string(body), "rule:sensitive_path") || !strings.Contains(string(body), `"path_template":"/mcp"`) {
 		t.Fatalf("firewall decision missing from OCSF stream: %s", body)
 	}
 	if strings.Contains(string(body), "tool arguments") || strings.Contains(string(body), "prompt text") {

@@ -22,3 +22,32 @@ mcp:
       deny_by_default: true
       tools:
         - knowledge/search
+        - knowledge/send
+
+# Model-group PII rules also govern MCP tool arguments and results. Enable the
+# built-in secret pack to mask known credential formats.
+models:
+  default:
+    pii_filter:
+      enabled: true
+      secrets_enabled: true
+      mode: redact_only
+      apply_to:
+        messages: true
+        tool_results: true
+
+# Firewall hold rules use the same qualified MCP tool names and approval API as
+# other tool calls. MCP sequence state is scoped to the authenticated caller.
+admin:
+  enabled: true
+
+server:
+  tool_firewall:
+    mode: enforce
+    approval_timeout_ms: 60000
+    sequences:
+      - first_tool: knowledge/search
+        first_args_regex: "sensitive"
+        then_tool: knowledge/send
+        within_turns: 3
+        action: hold

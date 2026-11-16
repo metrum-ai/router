@@ -285,7 +285,7 @@ func TestHierarchyMCPFiltersToolsAndBlocksInheritedPII(t *testing.T) {
 		t.Fatalf("MCP inherited tool denial=%d calls=%d body=%s", denied.Code, toolCalls.Load(), denied.Body.String())
 	}
 	pii := call("tools/call", "demo/read", "alice@example.test")
-	if pii.Code != http.StatusOK || !strings.Contains(pii.Body.String(), "PII policy") || toolCalls.Load() != 0 {
+	if pii.Code != http.StatusOK || !strings.Contains(pii.Body.String(), "tool call blocked by router policy") || toolCalls.Load() != 0 {
 		t.Fatalf("MCP inherited PII denial=%d calls=%d body=%s", pii.Code, toolCalls.Load(), pii.Body.String())
 	}
 }

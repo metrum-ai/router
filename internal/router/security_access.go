@@ -139,7 +139,7 @@ func (s *Service) recordToolFirewallDecisionEvent(rc *requestContext, approvalID
 	s.recordSecurityAccessEvent(securityAccessEvent{
 		TS: time.Now().UTC(), RequestID: rc.id,
 		EventType: eventType, Surface: "tool_firewall",
-		HTTPMethod: rc.method, PathTemplate: "/v1/{endpoint}", StatusCode: http.StatusOK,
+		HTTPMethod: rc.method, PathTemplate: defaultString(rc.pathTemplate, "/v1/{endpoint}"), StatusCode: http.StatusOK,
 		Outcome: action, ReasonCode: reason,
 	})
 }

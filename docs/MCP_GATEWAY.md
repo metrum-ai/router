@@ -62,6 +62,23 @@ estimate charged for each call against `hourly_usd` and `daily_usd`; it is not a
 provider-reported charge. Caller-wide and per-tool limits both apply when
 configured. Rate and spend counters persist with quota state.
 
+When a caller selects a model group with `pii_filter.enabled: true`, MCP call
+arguments use the group's `apply_to.messages` setting and returned tool results
+use `apply_to.tool_results`. Set `secrets_enabled: true` to include the built-in
+secret matcher. `redact_only` masks matching values before they reach the
+upstream server and before results reach the caller; `fail_on_match` denies a
+matching call or withholds a matching result. Invalid filters and bounded
+inspection-limit failures fail closed. No raw arguments or results are saved.
+
+MCP calls also pass through `server.tool_firewall` when it is enabled. Firewall
+rules use the qualified `server/tool` name. A held call returns a portable text
+result with an opaque approval ID and asks the client to retry after approval;
+the gateway forwards the retry only after the approval is released. Configure
+`admin:tool_approvals:resolve` only for principals allowed to release holds.
+Firewall approvals and sequence state are process-local. MCP sequence state is
+scoped to the authenticated caller, and approval retries must reach the same
+replica. Expired or denied approvals fail closed.
+
 Each tool call has a durable audit row with the caller, qualified tool name, a
 keyed HMAC-SHA-256 digest of canonicalized arguments, result status, and
 latency. Raw arguments, tool results, and credentials are not stored. The audit
@@ -70,5 +87,6 @@ before forwarding; an unavailable audit store prevents the call from reaching
 the upstream server. Tool sessions are closed after use, and `tools/list`
 queries servers in parallel with per-server error isolation.
 
-Masking, approval holds, and audit export are a separate follow-up after issues
-#890, #891, and #821 merge.
+Completed invocation outcomes are also written to the hash-chained admin audit
+store and included in `/admin/v1/audit-events/export`. Export rows contain the
+caller, tool name, result status, and keyed argument digest, but no raw payload.

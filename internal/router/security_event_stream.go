@@ -331,8 +331,12 @@ func marshalOCSFSecurityEvent(event securityAccessEvent) ([]byte, error) {
 				obj["evidences"] = []any{evidence}
 			}
 		}
-		if event.Object != "" || event.OperationID != "" {
-			obj["unmapped"] = map[string]any{"provider": safeOCSFValue(event.Object), "window": safeOCSFValue(event.OperationID), "action": safeOCSFValue(event.Action)}
+		if event.Object != "" || event.OperationID != "" || event.PathTemplate != "" {
+			unmapped := map[string]any{"provider": safeOCSFValue(event.Object), "window": safeOCSFValue(event.OperationID), "action": safeOCSFValue(event.Action)}
+			if path := safeOCSFValue(event.PathTemplate); path != "" {
+				unmapped["path_template"] = path
+			}
+			obj["unmapped"] = unmapped
 		}
 	} else if classUID == 3001 || classUID == 3002 {
 		actorUser := map[string]any{"name": "Metrum AI Router"}

@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -66,21 +67,44 @@ func (s *Service) finishMCPToolAudit(id string, started time.Time, status string
 	if s == nil || s.usage == nil || s.usage.db == nil || id == "" {
 		return errors.New("MCP audit store unavailable")
 	}
-	if status != "success" && status != "error" && status != "denied" && status != "limited" {
+	if status != "success" && status != "error" && status != "denied" && status != "limited" && status != "approval_pending" {
 		status = "error"
 	}
 	latency := time.Since(started).Milliseconds()
 	if latency < 0 {
 		latency = 0
 	}
-	result := s.usage.db.Model(&mcpToolAuditEventRecord{}).Where("id = ?", id).Updates(map[string]any{"result_status": status, "latency_ms": latency})
-	if result.Error != nil {
-		return fmt.Errorf("write MCP audit result: %w", result.Error)
-	}
-	if result.RowsAffected != 1 {
-		return errors.New("MCP audit event disappeared")
-	}
-	return nil
+	return s.usage.db.Transaction(func(tx *gorm.DB) error {
+		var row mcpToolAuditEventRecord
+		if err := tx.Where("id = ?", id).First(&row).Error; err != nil {
+			return fmt.Errorf("read MCP audit start: %w", err)
+		}
+		result := tx.Model(&mcpToolAuditEventRecord{}).Where("id = ?", id).Updates(map[string]any{"result_status": status, "latency_ms": latency})
+		if result.Error != nil {
+			return fmt.Errorf("write MCP audit result: %w", result.Error)
+		}
+		if result.RowsAffected != 1 {
+			return errors.New("MCP audit event disappeared")
+		}
+		// Mirror only identifiers, outcome, and the keyed argument digest into the
+		// existing hash-chained audit export. Raw arguments and results stay out.
+		eventID := "mcp-audit-" + strings.TrimPrefix(row.ID, "mcp-")
+		detail, _ := json.Marshal(struct {
+			Tool      string `json:"tool"`
+			LatencyMS int64  `json:"latency_ms"`
+		}{Tool: row.Tool, LatencyMS: latency})
+		audit := AdminAuditRecord{
+			EventID: eventID, At: time.Now().UTC(), PrincipalSubject: row.CallerID,
+			PrincipalKind: "router-caller", Domain: string(AdminDomainCredential),
+			Object: "mcp:tool", Action: "call", OperationID: "mcp.tools.call",
+			RequestID: row.ID, Outcome: status, ReasonCode: "mcp-tool-invocation",
+			RequestHash: row.ArgumentsSHA256, Detail: "mcp:v1:" + string(detail),
+		}
+		if err := insertAdminAuditUsageTx(tx, audit); err != nil {
+			return fmt.Errorf("export MCP audit result: %w", err)
+		}
+		return nil
+	})
 }
 
 const mcpToolAuditMigrationID = 2026110705

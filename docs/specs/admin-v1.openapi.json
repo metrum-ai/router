@@ -1030,6 +1030,10 @@
           "kind": {
             "type": "string"
           },
+          "latency_ms": {
+            "format": "int64",
+            "type": "integer"
+          },
           "lifecycle": {
             "type": "string"
           },

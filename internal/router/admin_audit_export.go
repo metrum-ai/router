@@ -47,6 +47,7 @@ type adminAuditExportRow struct {
 	IdempotencyKey   string `json:"idempotency_key"`
 	RequestHash      string `json:"request_hash"`
 	Detail           string `json:"detail"`
+	LatencyMS        *int64 `json:"latency_ms,omitempty"`
 	Kind             string `json:"kind,omitempty"`
 	Subject          string `json:"subject,omitempty"`
 	ClientIPHash     string `json:"client_ip_hash,omitempty"`
@@ -285,7 +286,24 @@ func setAdminAuditChainStart(tx *gorm.DB, source, domain, start string) error {
 }
 
 func adminAuditRowFromRecord(record AdminAuditRecord, source string) adminAuditExportRow {
-	return adminAuditExportRow{Source: source, EventID: record.EventID, At: adminAuditFormatTime(record.At), PrincipalSubject: record.PrincipalSubject, PrincipalKind: record.PrincipalKind, CredentialID: record.CredentialID, Domain: record.Domain, Object: record.Object, Action: record.Action, OperationID: record.OperationID, RequestID: record.RequestID, Outcome: record.Outcome, ReasonCode: record.ReasonCode, ConfigRevision: record.ConfigRevision, BeforeHash: record.BeforeHash, AfterHash: record.AfterHash, RuntimeScope: record.RuntimeScope, Issuer: record.Issuer, Ticket: record.Ticket, ConfigSetID: record.ConfigSetID, PrevConfigSetID: record.PrevConfigSetID, IdempotencyKey: record.IdempotencyKey, RequestHash: record.RequestHash, Detail: record.Detail}
+	row := adminAuditExportRow{Source: source, EventID: record.EventID, At: adminAuditFormatTime(record.At), PrincipalSubject: record.PrincipalSubject, PrincipalKind: record.PrincipalKind, CredentialID: record.CredentialID, Domain: record.Domain, Object: record.Object, Action: record.Action, OperationID: record.OperationID, RequestID: record.RequestID, Outcome: record.Outcome, ReasonCode: record.ReasonCode, ConfigRevision: record.ConfigRevision, BeforeHash: record.BeforeHash, AfterHash: record.AfterHash, RuntimeScope: record.RuntimeScope, Issuer: record.Issuer, Ticket: record.Ticket, ConfigSetID: record.ConfigSetID, PrevConfigSetID: record.PrevConfigSetID, IdempotencyKey: record.IdempotencyKey, RequestHash: record.RequestHash, Detail: record.Detail}
+	applyMCPAuditExportDetails(&row)
+	return row
+}
+
+func applyMCPAuditExportDetails(row *adminAuditExportRow) {
+	if row == nil || !strings.HasPrefix(row.Detail, "mcp:v1:") {
+		return
+	}
+	var detail struct {
+		Tool      string `json:"tool"`
+		LatencyMS int64  `json:"latency_ms"`
+	}
+	if json.Unmarshal([]byte(strings.TrimPrefix(row.Detail, "mcp:v1:")), &detail) != nil || detail.Tool == "" || detail.LatencyMS < 0 {
+		return
+	}
+	row.Detail = detail.Tool
+	row.LatencyMS = &detail.LatencyMS
 }
 
 // VerifyAdminAuditExport verifies the stored row hashes and inter-row links in an export.
@@ -592,6 +610,7 @@ func (h *adminAuditExportRequest) export(w http.ResponseWriter, r *http.Request)
 		}
 		lastBySource[record.Source] = record.RowHash
 		row := adminAuditExportRow{Source: record.Source, EventID: record.EventID, At: record.At, PrincipalSubject: record.PrincipalSubject, PrincipalKind: record.PrincipalKind, CredentialID: record.CredentialID, ClientID: record.ClientID, Actor: record.Actor, Domain: record.Domain, Object: record.Object, Action: record.Action, OperationID: record.OperationID, RequestID: record.RequestID, Outcome: record.Outcome, ReasonCode: record.ReasonCode, ConfigRevision: record.ConfigRevision, BeforeHash: record.BeforeHash, AfterHash: record.AfterHash, RuntimeScope: record.RuntimeScope, Issuer: record.Issuer, Ticket: record.Ticket, ConfigSetID: record.ConfigSetID, PrevConfigSetID: record.PrevConfigSetID, IdempotencyKey: record.IdempotencyKey, RequestHash: record.RequestHash, Detail: record.Detail, ControlAction: record.ControlAction, GroupName: record.GroupName, Forced: record.Forced}
+		applyMCPAuditExportDetails(&row)
 		if record.Source == "credential" {
 			row.Kind = record.PrincipalKind
 			row.ClientID = record.ClientID
