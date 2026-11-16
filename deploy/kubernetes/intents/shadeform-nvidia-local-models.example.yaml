@@ -25,7 +25,7 @@ serving_models:
   - name: vllm-tiny
     served_model_id: local-tiny
     huggingface_id: Qwen/Qwen3-1.7B
-    image: vllm/vllm-openai:v0.11.0
+    image: vllm/vllm-openai:v0.33.0@sha256:d825baf9ce4b1b6bfc5ecc7b79880c7e6748c65a72d697ce3d47607aafa84c6e
     gpu_count: 1
     port: 8000
     # Avoid reserving a 262k-token KV cache for a tiny smoke workload.
@@ -36,7 +36,7 @@ serving_models:
   - name: vllm-chat
     served_model_id: local-small-chat
     huggingface_id: Qwen/Qwen3-4B-Instruct-2507
-    image: vllm/vllm-openai:v0.11.0
+    image: vllm/vllm-openai:v0.33.0@sha256:d825baf9ce4b1b6bfc5ecc7b79880c7e6748c65a72d697ce3d47607aafa84c6e
     gpu_count: 1
     port: 8000
     # Avoid reserving a 262k-token KV cache for a tiny smoke workload.
@@ -48,7 +48,7 @@ serving_models:
     served_model_id: local-small-coder
     # No official Qwen3-Coder <=9B; use a current Qwen3 instruct as the small coder slot.
     huggingface_id: Qwen/Qwen3-8B
-    image: vllm/vllm-openai:v0.11.0
+    image: vllm/vllm-openai:v0.33.0@sha256:d825baf9ce4b1b6bfc5ecc7b79880c7e6748c65a72d697ce3d47607aafa84c6e
     gpu_count: 1
     port: 8000
     # Avoid reserving a 262k-token KV cache for a tiny smoke workload.

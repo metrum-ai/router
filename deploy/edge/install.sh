@@ -291,9 +291,8 @@ create_directories() {
   chmod 0750 "$STATE_DIR" "$LOG_DIR"
 }
 
-# detect_gpu_group_ids fills RENDER_GID and VIDEO_GID for the AMD overlay. The pinned
-# ROCm image has no `render` group in its /etc/group, so passing group names cannot
-# work; the numeric host GIDs of the device nodes are what the container needs.
+# detect_gpu_group_ids fills RENDER_GID and VIDEO_GID for the AMD overlay. Numeric
+# host GIDs keep device access aligned with the host device-node owners.
 # EDGE_RENDER_GID/EDGE_VIDEO_GID are an explicit override for hosts where the nodes
 # are not visible to the installer (containers, VMs) and for the install test.
 detect_gpu_group_ids() {

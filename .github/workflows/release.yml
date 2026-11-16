@@ -104,6 +104,38 @@ jobs:
           # Docker packages on a Docker-capable host with `make package-docker`.
           export VERSION="${RELEASE_TAG}"
           make package
+      - name: Test package upgrade and rollback
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if [ "$(id -u)" -eq 0 ]; then
+            useradd --system --home-dir /nonexistent --shell /usr/sbin/nologin router-release-check
+            SERVICE_USER=router-release-check
+          else
+            SERVICE_USER="$(id -un)"
+          fi
+          PREVIOUS_TAG="$(gh release list --repo metrum-ai/router --limit 100 --json tagName,isPrerelease,isDraft,publishedAt --jq '[.[] | select(.isPrerelease == false and .isDraft == false)] | sort_by(.publishedAt) | last | .tagName')"
+          if [ -z "${PREVIOUS_TAG}" ] || [ "${PREVIOUS_TAG}" = "${RELEASE_TAG}" ]; then
+            echo "could not resolve a prior production release" >&2
+            exit 2
+          fi
+          mkdir -p "${RUNNER_TEMP}/previous"
+          gh release download "${PREVIOUS_TAG}" --repo metrum-ai/router \
+            --pattern "metrum-ai-router-${PREVIOUS_TAG}-linux-amd64.tar.gz" \
+            --pattern SHA256SUMS --dir "${RUNNER_TEMP}/previous"
+          PREVIOUS_ARCHIVE="${RUNNER_TEMP}/previous/metrum-ai-router-${PREVIOUS_TAG}-linux-amd64.tar.gz"
+          (cd "${RUNNER_TEMP}/previous" && grep -F "  $(basename "${PREVIOUS_ARCHIVE}")" SHA256SUMS | sha256sum --check -)
+          python3 scripts/release_upgrade_rollback.py \
+            --previous-archive "${PREVIOUS_ARCHIVE}" \
+            --candidate-archive "dist/metrum-ai-router-${RELEASE_TAG}-linux-amd64.tar.gz" \
+            --previous-version "${PREVIOUS_TAG}" \
+            --candidate-version "${RELEASE_TAG}" \
+            --candidate-commit "$(git rev-parse --short HEAD)" \
+            --service-user "$SERVICE_USER" \
+            --report dist/upgrade-rollback-results.json
       - name: Inventory and checksums
         env:
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
@@ -114,6 +146,9 @@ jobs:
             --commit "$(git rev-parse HEAD)" \
             --build-date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --set binary
+      - name: Add upgrade evidence checksum
+        if: startsWith(github.ref, 'refs/tags/')
+        run: sha256sum dist/upgrade-rollback-results.json >> dist/SHA256SUMS
       # Attest the exact set published below, after packaging and inventory.
       # A dispatch on a non-tag ref remains a build-only dry run.
       - name: Attest release asset provenance
@@ -125,6 +160,7 @@ jobs:
             dist/metrum-ai-router-*.zip
             dist/SHA256SUMS
             dist/release-artifacts.json
+            dist/upgrade-rollback-results.json
       - name: Upload inventory-validated release assets
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
@@ -134,6 +170,13 @@ jobs:
             dist/metrum-ai-router-*.zip
             dist/SHA256SUMS
             dist/release-artifacts.json
+          if-no-files-found: error
+      - name: Upload upgrade and rollback evidence
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: release-upgrade-rollback-${{ steps.version.outputs.tag }}
+          path: dist/upgrade-rollback-results.json
           if-no-files-found: error
       - name: Publish GitHub Release with assets
         if: startsWith(github.ref, 'refs/tags/')
@@ -156,7 +199,7 @@ jobs:
           mapfile -t ASSETS < <(
             {
               find dist -maxdepth 1 -type f \( -name 'metrum-ai-router-*.tar.gz' -o -name 'metrum-ai-router-*.zip' \)
-              printf '%s\n' dist/SHA256SUMS dist/release-artifacts.json
+              printf '%s\n' dist/SHA256SUMS dist/release-artifacts.json dist/upgrade-rollback-results.json
             } | sort -u
           )
           if [ "${#ASSETS[@]}" -eq 0 ]; then

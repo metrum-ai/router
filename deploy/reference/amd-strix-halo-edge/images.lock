@@ -2,14 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Pinned inputs for reference tier: amd-strix-halo-edge.
-# Resolved on 2026-11-02 against the AMD-published ROCm vLLM tag list:
-#   docker buildx imagetools inspect \
-#     rocm/vllm:rocm7.13.0_gfx1151_ubuntu24.04_py3.13_pytorch_2.10.0_vllm_0.19.1
-# The tag names the architecture the image is built for (gfx1151 = RDNA 3.5,
-# Strix Halo), so it cannot resolve to a build for a different GPU family.
+# Resolved on 2026-11-16 against the official vLLM ROCm image tag:
+#   docker buildx imagetools inspect vllm/vllm-openai-rocm:v0.33.0
+# Upstream vLLM documents support for gfx950 (MI350) and gfx1151 (Ryzen AI MAX).
 schema: metrum.ai/reference-images/v1
 tier: amd-strix-halo-edge
-updated: "2026-11-02"
+updated: "2026-11-16"
 
 router:
   reference: metrum-ai-router:<version>-linux-amd64
@@ -19,11 +17,11 @@ router:
 images:
   - name: vllm-rocm
     role: model-server
-    image: rocm/vllm:rocm7.13.0_gfx1151_ubuntu24.04_py3.13_pytorch_2.10.0_vllm_0.19.1
-    digest: sha256:394194d36edcf9b36bcb563e143b21b80e64e7d04f33a447b448c0c0c00c04a8
-    source: https://hub.docker.com/r/rocm/vllm
+    image: vllm/vllm-openai-rocm:v0.33.0
+    digest: sha256:4fcd39b758b660c4e9c345c021e2ea8f0ccdb31e3c32507d676cc3005ae83fba
+    source: https://hub.docker.com/r/vllm/vllm-openai-rocm
     platforms: [linux/amd64]
-    note: Official AMD ROCm vLLM image built for gfx1151 (Strix Halo); the arch is in the tag.
+    note: Official upstream vLLM ROCm image; upstream supports gfx1151 (Ryzen AI MAX).
 
 models:
   - id: Qwen/Qwen3-1.7B
