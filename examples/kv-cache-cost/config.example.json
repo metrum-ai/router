@@ -1,9 +1,14 @@
 {
   "prompt_repetitions": 1200,
-  "input_price_per_million_usd": 0.30,
+  "input_price_per_million_usd": 0.3,
   "cached_input_price_per_million_usd": 0.006,
-  "output_price_per_million_usd": 1.20,
+  "output_price_per_million_usd": 1.2,
   "price_source_a": "https://fireworks.ai/models/deepseek-ai/deepseek-v4p1-flash-1017",
   "price_source_b": "https://fireworks.ai/models/deepseek-ai/deepseek-v4p1-flash",
-  "price_date": "2026-10-28"
+  "price_date": "2026-11-16",
+  "openrouter_model": "deepseek/deepseek-v4.1-flash-1017",
+  "openrouter_input_price_per_million_usd": 0.036,
+  "openrouter_cached_input_price_per_million_usd": 0.01,
+  "openrouter_output_price_per_million_usd": 0.5,
+  "openrouter_price_source": "https://openrouter.ai/deepseek/deepseek-v4.1-flash-1017"
 }

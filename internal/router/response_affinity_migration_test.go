@@ -130,7 +130,7 @@ func TestResponseAffinitySchema12SQLiteUpgradeAndDown(t *testing.T) {
 
 	// Earlier binaries must fail closed on the future schema instead of
 	// ignoring the table.
-	old, err := NewMigrationRunnerWithDataJobs(runner.db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 11, MinData: 0, MaxData: 1}, usageMigrationDefinitions[:len(usageMigrationDefinitions)-1], usageDataJobDefinitions)
+	old, err := NewMigrationRunnerWithDataJobs(runner.db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 11, MinData: 0, MaxData: 1}, usageMigrationDefinitionsBeforeResponseAffinity(), usageDataJobDefinitions)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -319,7 +319,7 @@ func TestResponseAffinitySchema12PostgresUpgradeAndDown(t *testing.T) {
 	if err != nil || afterDown.SchemaVersion != 11 {
 		t.Fatalf("after down: %+v err=%v", afterDown, err)
 	}
-	old, err := NewMigrationRunnerWithDataJobs(runner.db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 11, MinData: 0, MaxData: 1}, usageMigrationDefinitions[:len(usageMigrationDefinitions)-1], usageDataJobDefinitions)
+	old, err := NewMigrationRunnerWithDataJobs(runner.db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 11, MinData: 0, MaxData: 1}, usageMigrationDefinitionsBeforeResponseAffinity(), usageDataJobDefinitions)
 	if err != nil {
 		t.Fatal(err)
 	}
