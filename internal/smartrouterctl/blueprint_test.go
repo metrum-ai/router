@@ -232,6 +232,13 @@ callers:
 	if err != nil {
 		t.Fatal(err)
 	}
+	usageStore, err := router.OpenUsageStore(cfg.Server.UsageDB)
+	if err != nil {
+		t.Fatalf("initialize migrated usage store: %v", err)
+	}
+	if err := usageStore.Close(); err != nil {
+		t.Fatal(err)
+	}
 	backup := filepath.Join(dir, "usage-backup.sqlite")
 	if _, err := smartrouterctl.BackupSQLiteUsage(cfg, backup, false); err == nil {
 		t.Fatal("backup without confirm must fail")

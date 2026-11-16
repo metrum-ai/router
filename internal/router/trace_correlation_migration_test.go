@@ -34,6 +34,16 @@ func clearMissionAttributionMigrationLedger(t *testing.T, db *gorm.DB) {
 	}
 }
 
+func clearOfflineOperationMarkerMigrationLedger(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	if err := db.Where("scope = ? AND migration_id = ?", usageMigrationScope, offlineOperationMarkerMigrationID).Delete(&migrationAttemptRecord{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Where("scope = ? AND migration_id = ?", usageMigrationScope, offlineOperationMarkerMigrationID).Delete(&migrationLedgerRecord{}).Error; err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestTraceCorrelationSchema18SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) {
 	cfg := uncachedSQLiteUsageDBConfigForTest(filepath.Join(t.TempDir(), "usage.sqlite"))
 	store, err := OpenUsageStore(cfg)
@@ -43,6 +53,7 @@ func TestTraceCorrelationSchema18SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) 
 	if err := store.db.Create(recordFromRow(rowFromRecord(logRecord{RequestID: "legacy-trace-row", TS: time.Now().UTC().Format(time.RFC3339)}))).Error; err != nil {
 		t.Fatal(err)
 	}
+	clearOfflineOperationMarkerMigrationLedger(t, store.db)
 	clearMissionAttributionMigrationLedger(t, store.db)
 	if err := revertTraceCorrelationMigration(store.db); err != nil {
 		t.Fatal(err)
@@ -101,6 +112,7 @@ func TestTraceCorrelationSchema18SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) 
 	if err != nil || oldStatus.Compatible || oldStatus.State != "incompatible" {
 		t.Fatalf("schema 17 binary should reject the upgraded schema: %+v err=%v", oldStatus, err)
 	}
+	clearOfflineOperationMarkerMigrationLedger(t, runner.db)
 	clearMissionAttributionMigrationLedger(t, runner.db)
 	if err := revertTraceCorrelationMigration(runner.db); err != nil {
 		t.Fatal(err)

@@ -108,6 +108,13 @@ func TestConfigControlPlaneHoneytokenMigrationUpgradesSchema17(t *testing.T) {
 		t.Fatalf("honeytoken columns missing: %v", err)
 	}
 }
+
+func TestOfflineOperationMarkerMigrationFollowsLatestConfigSchema(t *testing.T) {
+	definition := offlineOperationMarkerControlMigrationDefinition()
+	if definition.ID != 2026111616 || definition.SchemaVersion != 19 || len(definition.Dependencies) != 1 || definition.Dependencies[0] != 2026111611 {
+		t.Fatalf("offline marker migration identity/dependency = id %d, schema %d, deps %v", definition.ID, definition.SchemaVersion, definition.Dependencies)
+	}
+}
 func TestConfigControlPlanePhase1MigratesRelationalSchema(t *testing.T) {
 	r, closeDB, err := ConfigControlPlaneMigrationRunner(UsageDBConfig{Driver: "sqlite", Path: filepath.Join(t.TempDir(), "config.sqlite")})
 	if err != nil {

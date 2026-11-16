@@ -12,6 +12,29 @@ The control plane is machine-to-machine only: no HTTP Basic, no cookies, no brow
 HTML. The human browser reports UI is not part of the control plane; it stays on the serving port
 with its current login and is unaffected by this guide.
 
+## Configuration apply modes and offline recovery
+
+`GET /admin/v1/config/status` includes `apply_modes`, an inventory of canonical YAML paths with
+`hot_reload` or `restart_required` and a reason. Map keys and repeated list entries use `*` in the
+path. Restart-required entries cover listener, database, authentication, trust and secret-reference
+settings initialized at process startup. Other canonical settings take effect through active-config
+reload. Review this inventory before activating a configuration set.
+
+Offline config export uses a shared SQLite lock and may run while the router serves. Offline config
+mutations, emergency commands, and `usage backup`/`usage restore` require an exclusive sidecar lock
+and fail promptly while a router or another maintenance command is active. Usage backup/restore also
+require `--confirm-offline`.
+Successful offline changes leave a secret-free provenance marker, which the next router start writes
+to the admin audit and consumes. PostgreSQL runtime locks are session advisory locks; they require
+session pooling and are not effective through PgBouncer transaction-pooling mode. Stop every router sharing the database, perform the
+operation, then run the documented `router-migrate --action=verify-serving` check before restarting.
+Offline SQLite mutation is disabled on platforms without the shared file-lock primitive; the router
+can still serve there.
+
+Before offline config import, activate, rollback or emergency maintenance, apply migration
+`2026111616` to the router-config database (schema 19). Usage backup and restore also require it in
+the usage database (schema 20). Use the non-serving migration job in [Data Migrations](DATA_MIGRATIONS.md).
+
 ## 1. What v4.8.0 changes
 
 | Area | v4.7 | v4.8.0 |
@@ -144,7 +167,7 @@ without waiting for the next UTC window. `routerctl admin-resource` provides
 HTTP access to the versioned resource endpoints.
 
 Before enabling asynchronous operations, backups, or restores, apply the
-non-serving usage and router-config migrations through schema 18 using the
+non-serving usage and router-config migrations through schema 20 and schema 19, respectively, using the
 two-scope Job in [DATA_MIGRATIONS.md](DATA_MIGRATIONS.md). The restore API
 requires the separate `admin:restore:write` grant. It updates the configuration
 and usage databases sequentially; it is not an atomic cross-database operation.
@@ -195,9 +218,9 @@ configuration database first and follow the v5.0.0 section of the `docs-site/doc
 ## 6. API and CLI parity
 
 `metrum-ai-routerctl` online commands use `/admin/v1` in v5.0.0. Config import, export, activate,
-and rollback use the Admin API by default; add `--offline` only when the router is stopped and the
-operator intentionally accesses the control-plane database. Other online operations use the Admin
-API directly. The default endpoint is `http://127.0.0.1:8081`; set `--router-url` or `ROUTER_URL`
+and rollback use the Admin API by default; add `--offline` for direct control-plane database access.
+Offline export is read-only and can run with the router serving; offline mutations require it stopped.
+Other online operations use the Admin API directly. The default endpoint is `http://127.0.0.1:8081`; set `--router-url` or `ROUTER_URL`
 when the listener is elsewhere. Plain HTTP is accepted only on loopback; remote endpoints require
 HTTPS. Admin credentials come from `ROUTER_ADMIN_KEY`, `ROUTER_ADMIN_KEY_FILE`, or
 `--admin-key-file`.

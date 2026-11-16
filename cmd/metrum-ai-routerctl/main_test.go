@@ -20,6 +20,79 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const offlineLockTestPathEnv = "ROUTERCTL_OFFLINE_LOCK_TEST_DB"
+const offlineLockTestCommandEnv = "ROUTERCTL_OFFLINE_LOCK_TEST_COMMAND"
+
+func TestRouterctlOfflineConfigLockChild(t *testing.T) {
+	path := os.Getenv(offlineLockTestPathEnv)
+	if path == "" {
+		return
+	}
+	args, _ := os.LookupEnv(offlineLockTestCommandEnv)
+	commandArgs := strings.Fields(args)
+	if len(commandArgs) == 0 {
+		commandArgs = []string{"export"}
+	}
+	configCommand(append(commandArgs, "--offline", "--driver", "sqlite", "--db", path))
+}
+
+func TestRouterctlOfflineImportAndActivateRefuseLiveWriter(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.sqlite")
+	shared, err := router.AcquireUsageRuntimeLock(path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer shared.Close()
+	yamlPath := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(yamlPath, []byte("{}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range []string{"import --yaml " + yamlPath + " --name test", "activate --set-id test"} {
+		cmd := exec.Command(os.Args[0], "-test.run=^TestRouterctlOfflineConfigLockChild$")
+		cmd.Env = append(os.Environ(), offlineLockTestPathEnv+"="+path, offlineLockTestCommandEnv+"="+args)
+		output, err := cmd.CombinedOutput()
+		if err == nil || !offlineRefusal(strings.ToLower(string(output))) {
+			t.Fatalf("offline %s did not refuse the live writer: err=%v output=%s", args, err, output)
+		}
+	}
+}
+
+func TestRouterctlOfflineConfigExportRefusesLiveWriter(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.sqlite")
+	db, closeDB, err := router.OpenConfigControlPlaneDB(router.UsageDBConfig{Driver: "sqlite", Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const setID = "live-lock-export"
+	if err := db.Exec(`CREATE TABLE router_config_documents (config_set_id TEXT PRIMARY KEY, canonical_yaml TEXT NOT NULL, content_sha256 TEXT NOT NULL, updated_at TEXT NOT NULL)`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO router_config_documents (config_set_id, canonical_yaml, content_sha256, updated_at) VALUES (?, ?, ?, ?)`, setID, "server:\n  listen: \":8080\"\n", "fixture", "2026-01-01T00:00:00Z").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := closeDB(); err != nil {
+		t.Fatal(err)
+	}
+	shared, err := router.AcquireUsageRuntimeLock(path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer shared.Close()
+	cmd := exec.Command(os.Args[0], "-test.run=^TestRouterctlOfflineConfigLockChild$")
+	cmd.Env = append(os.Environ(), offlineLockTestPathEnv+"="+path, offlineLockTestCommandEnv+"=export --set-id "+setID)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("read-only export should work with the router's shared runtime lock held: %v: %s", err, output)
+	}
+	if !strings.Contains(string(output), "listen:") {
+		t.Fatalf("export did not return the selected config set: %s", output)
+	}
+}
+
+func offlineRefusal(message string) bool {
+	return strings.Contains(message, "holds the runtime lock") || strings.Contains(message, "resource temporarily unavailable") || strings.Contains(message, "shared file locks") || strings.Contains(message, "unavailable on windows")
+}
+
 // assertV48CallerValidation ports the caller-verifier branch of v4.8.0's
 // Config.Validate so migration tests prove rollback compatibility without
 // claiming to have run the v4.8 release binary.

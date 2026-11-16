@@ -35,6 +35,7 @@ import (
 type usageStore struct {
 	db               *gorm.DB
 	writer           *usageWriter
+	runtimeLock      *os.File
 	policyMutationMu sync.Mutex
 }
 
@@ -1532,13 +1533,35 @@ func newUsageStoreWithOpener(cfg UsageDBConfig, openStore func(UsageDBConfig) (*
 	if driver == "sqlite" && cfg.Path == "" {
 		return nil, nil
 	}
+	var runtimeLock *os.File
+	if driver == "sqlite" {
+		var err error
+		runtimeLock, err = AcquireUsageRuntimeLock(cfg.Path, false)
+		if err != nil {
+			return nil, fmt.Errorf("acquire shared SQLite usage lock: %w", err)
+		}
+	}
 	store, err := openStore(cfg)
 	if err != nil {
+		if runtimeLock != nil {
+			_ = runtimeLock.Close()
+		}
 		return nil, err
 	}
+	if store == nil {
+		if runtimeLock != nil {
+			_ = runtimeLock.Close()
+		}
+		return nil, nil
+	}
+	store.runtimeLock = runtimeLock
 	store.writer = newUsageWriter(store)
 	if cfg.DrainTimeoutMS > 0 {
 		store.writer.drainTimeout = time.Duration(cfg.DrainTimeoutMS) * time.Millisecond
+	}
+	if err := consumeOfflineUsageMaintenance(store.db); err != nil {
+		_ = store.Close()
+		return nil, fmt.Errorf("audit offline usage database maintenance: %w", err)
 	}
 	return store, nil
 }
@@ -1774,8 +1797,19 @@ func chmodSQLiteFiles(path string) error {
 }
 
 func (s *usageStore) Close() error {
-	if s == nil || s.db == nil {
+	if s == nil {
 		return nil
+	}
+	closeRuntimeLock := func() error {
+		if s.runtimeLock == nil {
+			return nil
+		}
+		err := s.runtimeLock.Close()
+		s.runtimeLock = nil
+		return err
+	}
+	if s.db == nil {
+		return closeRuntimeLock()
 	}
 	var drainErr error
 	if s.writer != nil {
@@ -1783,15 +1817,25 @@ func (s *usageStore) Close() error {
 	}
 	sqlDB, err := s.db.DB()
 	if err != nil {
+		_ = closeRuntimeLock()
 		return err
 	}
 	if drainErr != nil {
 		// Closing a driver with an in-flight write can itself block. Cleanup runs
 		// after the canceled writer exits, without extending the drain deadline.
-		go func() { <-s.writer.done; _ = sqlDB.Close() }()
+		go func() {
+			<-s.writer.done
+			_ = sqlDB.Close()
+			_ = closeRuntimeLock()
+		}()
 		return drainErr
 	}
-	return sqlDB.Close()
+	closeErr := sqlDB.Close()
+	lockErr := closeRuntimeLock()
+	if closeErr != nil {
+		return closeErr
+	}
+	return lockErr
 }
 
 func ensureUsageRelationalSchema(db *gorm.DB) error {

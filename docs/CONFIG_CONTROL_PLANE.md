@@ -171,6 +171,10 @@ planted label and planting timestamp to database-backed caller records. It
 depends on the schema-17 admin client migration and runs through the same
 non-serving migration CLI before enabling database-mode honeytokens.
 
+Migration `2026111616` advances the router-config ledger to schema 19 and adds
+the bounded offline-operation provenance marker table. The next serving startup
+consumes those markers into the admin audit under the runtime lock.
+
 ## Phase 6: DB-backed serving source of truth
 
 Phase 6 raises the `router_config` compatibility window to `MaxSchema: 6` and
