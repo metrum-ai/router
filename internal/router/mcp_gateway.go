@@ -444,7 +444,58 @@ func (s *Service) handleMCP(w http.ResponseWriter, r *http.Request) {
 			writeMCPAdmissionError(w, request.ID, limitAdmission.Status, message)
 			return
 		}
-		result, err = s.mcpCallTool(r.Context(), cfg, callParams.Name, callParams.Arguments)
+		if firewallResult, handled := s.mcpFirewallDecision(cfg, caller, modelGroup, callParams.Name, callParams.Arguments); handled {
+			result = firewallResult
+			resultStatus := "approval_pending"
+			if mcpToolResultIsError(result) {
+				resultStatus = "denied"
+			}
+			if auditErr := s.finishMCPToolAudit(auditID, started, resultStatus); auditErr != nil {
+				writeMCPError(w, request.ID, -32000, "MCP audit store unavailable")
+				return
+			}
+			break
+		}
+		arguments, redactErr := mcpRedactMCPToolInput(cfg, modelGroup, callParams.Arguments)
+		if redactErr != nil {
+			resultStatus := "error"
+			var blocked piiFilterBlockedError
+			if errors.As(redactErr, &blocked) || errors.Is(redactErr, errMCPRedactionBounds) {
+				resultStatus = "denied"
+			}
+			if auditErr := s.finishMCPToolAudit(auditID, started, resultStatus); auditErr != nil {
+				writeMCPError(w, request.ID, -32000, "MCP audit store unavailable")
+				return
+			}
+			if resultStatus == "denied" {
+				writeMCPError(w, request.ID, -32003, "tool call blocked by router policy")
+			} else {
+				writeMCPError(w, request.ID, -32000, "tool call could not be safely processed")
+			}
+			return
+		}
+		result, err = s.mcpCallTool(r.Context(), cfg, callParams.Name, arguments)
+		if err == nil {
+			filteredResult, redactErr := mcpRedactToolResult(cfg, modelGroup, result)
+			if redactErr != nil {
+				resultStatus := "error"
+				var blocked piiFilterBlockedError
+				if errors.As(redactErr, &blocked) || errors.Is(redactErr, errMCPRedactionBounds) {
+					resultStatus = "denied"
+				}
+				if auditErr := s.finishMCPToolAudit(auditID, started, resultStatus); auditErr != nil {
+					writeMCPError(w, request.ID, -32000, "MCP audit store unavailable")
+					return
+				}
+				if resultStatus == "denied" {
+					writeMCPError(w, request.ID, -32003, "tool result blocked by router policy")
+				} else {
+					writeMCPError(w, request.ID, -32000, "tool result could not be safely processed")
+				}
+				return
+			}
+			result = filteredResult
+		}
 		resultStatus := "success"
 		if err != nil || mcpToolResultIsError(result) {
 			resultStatus = "error"

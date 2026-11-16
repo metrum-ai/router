@@ -796,7 +796,7 @@ type toolFirewallDisposition struct {
 	ruleCode   string
 }
 
-func (s *Service) resolveToolFirewallDecision(rc *requestContext, callerID, fingerprint, approvalID, approvalState string, outcome toolFirewallOutcome) toolFirewallDisposition {
+func (s *Service) resolveToolFirewallDecision(rc *requestContext, callerID, fingerprint, approvalID, approvalState string, outcome toolFirewallOutcome, policies ...ToolFirewallConfig) toolFirewallDisposition {
 	disposition := toolFirewallDisposition{approvalID: approvalID, ruleCode: outcome.RuleCode}
 	if outcome.Mode == toolFirewallShadow && outcome.Action != "" {
 		rc.trace("tool_firewall_decision", "", Target{}, 0, http.StatusOK, outcome.RuleCode, false, 0)
@@ -836,7 +836,13 @@ func (s *Service) resolveToolFirewallDecision(rc *requestContext, callerID, fing
 			}
 			newID := "approval_" + strings.TrimPrefix(requestID(), "req_")
 			var created bool
-			disposition.approvalID, approvalState, created = s.toolApprovals.request(newID, fingerprint, approvalTTL(s.cfg.Server.ToolFirewall))
+			policy := ToolFirewallConfig{}
+			if len(policies) > 0 {
+				policy = policies[0]
+			} else if s != nil && s.cfg != nil {
+				policy = s.cfg.Server.ToolFirewall
+			}
+			disposition.approvalID, approvalState, created = s.toolApprovals.request(newID, fingerprint, approvalTTL(policy))
 			if disposition.approvalID == "" {
 				disposition.approvalID = newID
 			}

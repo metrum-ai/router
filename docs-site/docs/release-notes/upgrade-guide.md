@@ -203,6 +203,25 @@ using 30-second and 1 MiB per-stream bounds when the model group does not set
 explicit bounds. Schema validation still runs only when the group opts in to
 `streaming.hold_until_validated`.
 
+## v5.0.0 MCP tool governance integration
+
+The `/mcp` gateway now applies the selected model group's PII configuration to
+tool arguments (`apply_to.messages`) and results (`apply_to.tool_results`). Set
+`pii_filter.enabled: true` and, for built-in credential detection,
+`pii_filter.secrets_enabled: true`. `redact_only` masks matches; `fail_on_match`
+rejects a matching input or withholds a matching result. These paths fail closed
+on invalid filters or replacement-limit exhaustion. No new configuration
+fields or database migrations are required.
+
+When `server.tool_firewall.mode: enforce` is enabled, MCP tool names use the
+qualified `server/tool` form. A held call returns an approval-pending tool
+result; after the hold is released through the existing admin approval endpoint,
+the client retries the same call. Approval and sequence state remain
+process-local, so route calls in one sequence and retries to the same replica.
+Completed MCP invocation outcomes are included in the hash-chained
+`/admin/v1/audit-events/export`; export records contain caller/tool identifiers,
+status, and a keyed argument digest, never payload contents.
+
 
 ## v5.0.0 caller-token hygiene
 
