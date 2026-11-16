@@ -4,6 +4,8 @@
 
 ### Added
 
+- Add release-only OpenAI Chat, OpenAI Responses, and Anthropic Messages SDK client cells to the bounded tool-call workflow. A manual `cell_set=release` dispatch on `main` attaches the sanitized report to release checks.
+
 - Define trusted W3C `traceparent` correlation across router chains, with a new
   span and request ID per hop and safe scalar usage fields for joining requests.
   Trust is opt-in through `server.trace.trusted_parent_cidrs` or an authenticated
