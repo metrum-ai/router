@@ -25,6 +25,7 @@ type IRToolCall struct {
 	Arguments string
 	Index     int
 	Dialect   string
+	Kind      string
 }
 
 // IRToolCallTruncated reports whether extraction hit maxToolCallsPerResponse.
@@ -173,6 +174,7 @@ type toolCallAccumulator struct {
 	names      map[int]string
 	args       map[int]*strings.Builder
 	dialects   map[int]string
+	kinds      map[int]string
 	truncatedC bool
 }
 
@@ -183,6 +185,7 @@ func newToolCallAccumulator() *toolCallAccumulator {
 		names:    map[int]string{},
 		args:     map[int]*strings.Builder{},
 		dialects: map[int]string{},
+		kinds:    map[int]string{},
 	}
 }
 
@@ -209,10 +212,40 @@ func (a *toolCallAccumulator) addDelta(dialect string, index int, id, name, argu
 		if a.args[index] == nil {
 			a.args[index] = &strings.Builder{}
 		}
-		if a.args[index].Len() < maxToolCallArgumentBytes {
-			_, _ = a.args[index].WriteString(arguments)
+		remaining := maxToolCallArgumentBytes - a.args[index].Len()
+		if len(arguments) > remaining {
+			a.truncatedC = true
+			arguments = arguments[:max(remaining, 0)]
 		}
+		_, _ = a.args[index].WriteString(arguments)
 	}
+}
+
+// setArguments replaces accumulated argument fragments with a provider's
+// authoritative complete-arguments event, as in OpenAI Responses `.done`.
+func (a *toolCallAccumulator) setArguments(index int, arguments string) {
+	if a == nil {
+		return
+	}
+	if _, ok := a.calls[index]; !ok {
+		return
+	}
+	if a.args[index] == nil {
+		a.args[index] = &strings.Builder{}
+	}
+	a.args[index].Reset()
+	if len(arguments) > maxToolCallArgumentBytes {
+		arguments = arguments[:maxToolCallArgumentBytes]
+		a.truncatedC = true
+	}
+	_, _ = a.args[index].WriteString(arguments)
+}
+
+func (a *toolCallAccumulator) setKind(index int, kind string) {
+	if a == nil || a.calls[index] == nil {
+		return
+	}
+	a.kinds[index] = kind
 }
 
 // snapshot returns the calls assembled so far, in first-seen order.
@@ -221,7 +254,7 @@ func (a *toolCallAccumulator) snapshot() []IRToolCall {
 		return nil
 	}
 	out := make([]IRToolCall, 0, len(a.order))
-	for position, index := range a.order {
+	for _, index := range a.order {
 		arguments := ""
 		if a.args[index] != nil {
 			arguments = a.args[index].String()
@@ -230,8 +263,9 @@ func (a *toolCallAccumulator) snapshot() []IRToolCall {
 			ID:        a.ids[index],
 			Name:      a.names[index],
 			Arguments: arguments,
-			Index:     position,
+			Index:     index,
 			Dialect:   a.dialects[index],
+			Kind:      a.kinds[index],
 		})
 	}
 	return out

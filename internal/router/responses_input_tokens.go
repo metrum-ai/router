@@ -19,12 +19,12 @@ import (
 // Responses input counting is a free upstream operation, but remains subject
 // to caller authentication, model authorization, request rate and concurrency.
 func (s *Service) handleResponsesInputTokens(w http.ResponseWriter, r *http.Request) {
-	if !s.identifiersAvailable() {
-		s.writeUnavailableIdentifiers(w, "openai-responses")
-		return
-	}
 	rc, ok := s.begin(w, r, "openai-responses")
 	if !ok {
+		return
+	}
+	if !s.identifiersAvailable() {
+		s.writeUnavailableIdentifiers(w, "openai-responses")
 		return
 	}
 	if !s.prepareRouterVia(w, r, rc) {
@@ -63,13 +63,49 @@ func (s *Service) handleResponsesInputTokens(w http.ResponseWriter, r *http.Requ
 		s.writeError(w, rc, http.StatusBadRequest, "missing-model")
 		return
 	}
+	if rc.caller.cfg.Honeytoken != nil {
+		if group, exists := s.cfg.Models[req.Model]; exists && group.Canary != nil {
+			s.recordCanaryUse(rc, req.Model)
+		}
+		s.quota.Release(rc.caller)
+		held = false
+		if !s.admitSinkhole(w, rc) {
+			return
+		}
+		defer s.quota.Release(rc.caller)
+		rc.rec.RequestedModel, rc.rec.ResolvedGroup = req.Model, "honeytoken"
+		_, usage := honeytokenSinkholeProfile(rc.id)
+		rc.rec.Usage = usage
+		rc.rec.UsageSource = "estimated"
+		writeJSON(w, http.StatusOK, map[string]any{"input_tokens": usage.InputTokens})
+		s.finish(rc, http.StatusOK, nil)
+		return
+	}
 	group, exists := s.cfg.Models[req.Model]
 	if !exists || !rc.callerCanUseGroup(req.Model) {
+		if exists && group.Canary != nil {
+			s.recordCanaryUse(rc, req.Model)
+		}
 		reason := "unknown-model"
 		if exists {
 			reason = "model-not-allowed"
 		}
 		s.writeModelNotFound(w, rc, req.Model, reason)
+		return
+	}
+	if group.Canary != nil {
+		s.recordCanaryUse(rc, req.Model)
+		s.quota.Release(rc.caller)
+		held = false
+		if !s.admitSinkhole(w, rc) {
+			return
+		}
+		defer s.quota.Release(rc.caller)
+		rc.rec.RequestedModel, rc.rec.ResolvedGroup = req.Model, req.Model
+		rc.rec.Usage = Usage{InputTokens: 1, TotalTokens: 1}
+		rc.rec.UsageSource = "estimated"
+		writeJSON(w, http.StatusOK, map[string]any{"input_tokens": 1})
+		s.finish(rc, http.StatusOK, nil)
 		return
 	}
 	policy, policyErr := s.effectiveHierarchyPolicy(r.Context(), rc.caller)

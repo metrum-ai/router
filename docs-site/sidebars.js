@@ -125,6 +125,7 @@ const sidebars = {
         "security-governance/detectors",
         "security-governance/cache-isolation",
         "security-governance/token-exchange",
+        "security-governance/honeytokens",
         "evaluation/overview",
         "evaluation/performance-overhead",
         "evaluation/tool-call-proof",

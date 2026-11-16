@@ -29,7 +29,7 @@ Version-check the same packaged runner before this gate. Complete every data job
 [`deploy/kubernetes/examples/postgres-migration-plan-job.yaml`](../deploy/kubernetes/examples/postgres-migration-plan-job.yaml)
 is a non-serving Job that runs the packaged migration CLI against both the
 usage and router-config database DSNs from a Kubernetes Secret. It applies both
-scopes by default, including router-config schema 17, and requires an approved
+scopes by default, including router-config schema 18, and requires an approved
 backup evidence reference for the maintenance step. Set its image to the exact
 release digest and configure the Secret and evidence ConfigMap before applying:
 
@@ -201,17 +201,20 @@ authentication phases 12 and 13, which use the same control-plane scope.
   when it exists: a deployment without this step starts normally and answers `503`
   on the key lifecycle routes rather than advertising a store it does not have.
 
-The v5.0.0 `router-config` migration ledger reaches schema version 17 and includes
+The v5.0.0 `router-config` migration ledger reaches schema version 18 and includes
 `2026111606` (durable asynchronous admin operations; schema 16), followed by
-`2026111610` (admin client identities; schema 17). The operations migration creates
+`2026111610` (admin client identities; schema 17), then `2026111611` (honeytoken
+caller metadata; schema 18). The operations migration creates
 `router_admin_operations`; it stores only operation kind/state, structured result,
 stable safe error code, and timestamps. It retains at most 500 rows, seven days,
 and 64 MiB of results. The client migration adds the shared client and credential
-descriptor tables. Apply the
+descriptor tables. The honeytoken migration adds planted-label and planting-time
+columns to database-backed callers and depends on `2026111610`. Apply the
 router-config scope with the non-serving migration CLI before enabling the new
-operation and backup API routes; serving startup and read-only migration status
-never create or upgrade the table. The packaged Kubernetes Job example plans
-or applies both scopes and verifies both resulting ledgers, including schema 17.
+operation, backup, machine-client, or honeytoken database features; serving
+startup and read-only migration status never create or upgrade the tables. The
+packaged Kubernetes Job example plans or applies both scopes and verifies both
+resulting ledgers, including schema 18.
 
 ### Upgrading with `migration_policy: deployment-job`
 

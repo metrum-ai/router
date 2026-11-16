@@ -77,6 +77,22 @@ func TestAutoContainmentConfigValidation(t *testing.T) {
 	}
 }
 
+func TestAutoContainmentSkipsHoneytokenCallers(t *testing.T) {
+	db := openAutomaticContainmentTestDB(t, "containment-honeytoken.sqlite")
+	svc := &Service{
+		cfg: &Config{Callers: []CallerConfig{{ID: "decoy", Honeytoken: &HoneytokenConfig{Label: "plant"}}}, Server: ServerConfig{AutoContainment: AutoContainmentConfig{
+			Mode: "enforce", MaxActionsPerMinute: 5,
+			Rules: []AutoContainmentRuleConfig{{DetectorID: "honeytoken", Severity: "critical", Action: "suspend", TTLMS: 60000}},
+		}}},
+		usage: &usageStore{db: db},
+	}
+	svc.applyAutomaticContainmentResult(detect.Result{DetectorID: "honeytoken", CallerID: "decoy", Enforce: true, Mode: "enforce", Signals: []detector.Signal{{SchemaVersion: detector.SchemaVersion, DetectorID: "honeytoken", Severity: "critical", Score: 1}}})
+	var count int64
+	if err := db.Model(&automaticContainmentActionRecord{}).Where("caller_id = ?", "decoy").Count(&count).Error; err != nil || count != 0 {
+		t.Fatalf("automatic containment actions for honeytoken=%d err=%v", count, err)
+	}
+}
+
 func TestAutoContainmentEnforceFiltersCapsAndThrottlesUnlimitedCallers(t *testing.T) {
 	db, err := gorm.Open(sqliteDriver.Open(filepath.Join(t.TempDir(), "containment-filter.sqlite")), &gorm.Config{})
 	if err != nil {

@@ -28,7 +28,7 @@ models:
         max_escalations: 1           # hard cap: eligible targets - 1
         on_exhausted: deliver_last   # the only implemented value
       streaming:
-        hold_until_validated: false  # must stay false: the hold buffer is not implemented
+        hold_until_validated: false # opt in only after setting both bounds below
     targets:
       - {provider: openai, model_ref: gpt-5.4-nano, weight: 100}
       - {provider: openai, model_ref: gpt-5.4-mini, weight: 1}
@@ -40,7 +40,36 @@ Rules the router enforces at startup:
 - `mode: enforce` requires a non-zero recovery budget; recovery fields in `observe` mode are rejected.
 - `max_retries_same_target` is 0-2 and `max_escalations` is at most the eligible target count minus one.
 - `on_exhausted` accepts `deliver_last` only. The router never fabricates a corrected tool call.
-- `streaming.hold_until_validated: true` is refused while streaming recovery is unimplemented.
+- `streaming.hold_until_validated: true` requires positive `hold_timeout_ms` and `hold_max_bytes` bounds.
+
+## Streaming tool-call inspection hold
+
+Set `tool_routing.streaming.hold_until_validated: true`, `hold_timeout_ms` (1–60000), and
+`hold_max_bytes` (1–33554432) to keep streamed tool-call frames from reaching the client until
+the complete call has arrived and passed validation. Text deltas continue to stream immediately.
+The hold applies to OpenAI Chat Completions (including legacy `function_call` deltas), OpenAI
+Responses, and Anthropic Messages streams, including Responses function-call, custom-tool-call, and
+local-shell-call items and their argument events. Unrecognized tool-bearing delta/item types fail
+closed. Streams whose call count or per-call arguments exceed inspection limits fail closed rather
+than releasing a partially inspected call. A completed Responses
+snapshot is rewritten from the inspected call set; failed or incomplete snapshots have tool inputs
+stripped before forwarding. For Anthropic,
+held `tool_use` start/delta/stop frames are emitted in their original order before a terminal
+`message_delta` with `stop_reason: tool_use`.
+The hold uses an ordered inspector chain: schema validation runs first, followed by the request-scoped
+#890 secret-DLP inspector when enabled; the #891 tool firewall registers through the same hook.
+Inspectors may allow, block, or return redacted arguments; redaction is applied to the held provider
+frames before release. Inspection failures discard the hold. The absolute
+`hold_timeout_ms` deadline begins with the first held tool event and is not extended by continued
+upstream byte activity. Client disconnect, upstream error, timeout, overflow, block, and cancellation
+all discard retained events and release their shared memory reservations.
+For a tool-using client, the first tool-call frame arrives after upstream generation completes the
+call and the router finishes inspection. This adds the remaining tool-call generation time plus
+inspection time before the client can act on the tool call. Ordinary text time-to-first-token is
+unchanged. Held bytes count against both `hold_max_bytes` per stream and the shared, process-wide
+`server.streaming.max_inflight_line_bytes` budget used by native and Responses SSE parsing. Configure
+the process cap for expected concurrent tool holds on each replica. This is process-local state; each
+replica enforces its own hold and aggregate memory bounds.
 
 ## Rollout order
 
@@ -96,8 +125,8 @@ schema nodes and depth 16.
 
 ## Current limits
 
-- **Streaming recovery is not implemented.** Streamed responses cannot be retried; the flag that
-  would buffer tool-call deltas is refused by config validation.
+- **Streaming retry recovery is not implemented.** Streamed responses cannot be retried. The separate
+  inspection hold delays tool-call frames until validation and does not retry a stream.
 - **No seed ingestion yet.** Reliability comes only from live observations in this process; the
   compatibility-matrix seed block from #572's results is not wired.
 - **No usage-row columns yet.** Per-request tool counts live in the request log and metrics; the

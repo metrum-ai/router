@@ -10,6 +10,7 @@
   datasets.
 - Add release-only OpenAI Chat, OpenAI Responses, and Anthropic Messages SDK client cells to the bounded tool-call workflow. A manual `cell_set=release` dispatch on `main` attaches the sanitized report to release checks.
 
+- Add `routerctl honeytoken issue` and `routerctl honeytoken report`, plus caller-scoped canary model groups. Issued decoy keys return a canned local completion and canary use raises a security event without contacting an upstream. Database-backed callers use router-config migration `2026111611` (schema 18).
 - Define trusted W3C `traceparent` correlation across router chains, with a new
   span and request ID per hop and safe scalar usage fields for joining requests.
   Trust is opt-in through `server.trace.trusted_parent_cidrs` or an authenticated
@@ -70,7 +71,7 @@
 - Drop target-declared unsupported `temperature` and `top_p` fields before dispatch; classify structured 400/422 sampling-parameter refusals for pre-commit fallback; and forward `top_p` when translating to OpenAI Chat Completions.
 
 - Keep the admin migration-status API read-only: it now refuses unavailable or pre-ledger databases without bootstrapping or upgrading migration tables.
-- Add a non-serving PostgreSQL Kubernetes migration Job example that plans or applies both scopes through router-config schema 16.
+- Add a non-serving PostgreSQL Kubernetes migration Job example that plans or applies both scopes through router-config schema 18.
 
 - Generate OpenAPI concurrency and idempotency metadata from normalized runtime operations so the published contract omits `If-Match`, `Idempotency-Key`, and conflict responses for routes that do not enforce them.
 - Bind client credential metadata to configured identities; enforce client status, expiry and revocation across replicas; refuse lifecycle writes that remove the last policy administrator; exclude expired and revoked bindings from access-review grants.
@@ -159,6 +160,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Admit honeytoken and canary sinkhole requests through caller rate limits, validate honeytoken groups on relational config writes, and bound repeated security-event writes with a 10,000-entry LRU and Prometheus suppression counter.
+- Record canary-group use from embeddings and count-token routes, include canary usage in honeytoken reports, and prevent stale honeytoken config from reaching a real upstream.
 - Re-evaluate project budget trips against current ceilings on every admission, preserve provider spend-breaker settings during admin updates, normalize project/environment identifiers before authorization, and require retention force for every change that can purge additional data.
 
 - Remove the in-process TypeScript routing strategy and its goja/esbuild dependencies. Configurations using `strategy: script`, `script`, `script_max_concurrent`, or `script_http` now fail at load with migration guidance to `strategy: external`. Port request-shape and PII-aware policy examples to standalone services.
@@ -166,16 +169,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Raise the default upstream SSE line limit to a bounded 8 MiB and expose `server.streaming.max_sse_line_bytes` with validated 64 KiB–32 MiB bounds.
 - Allow oversized upstream lines to fall back before downstream commitment; retain reported usage from discarded attempts with explicit audit provenance.
 - Cover large streaming tool calls, repeated Responses completion payloads, limit errors, fallback boundaries, and tool-result continuation.
+- Add an opt-in bounded stream hold for tool-call frames, with an absolute deadline, an ordered allow/block/redact inspector hook, and per-stream byte limits charged to the process-wide SSE buffer budget. Hold OpenAI Chat (including legacy `function_call`) and Responses argument events through inspection, fail closed when call-count or argument limits truncate inspection, and release Anthropic tool-use frames before terminal `message_delta`; ordinary text frames continue immediately.
 
 ### Changed
 
 - Online `metrum-ai-routerctl` operations now use `/admin/v1`; offline bootstrap commands remain
   local.
+- Authenticate caller credentials before returning identifier-rewrite unavailability, preserving 401 for invalid credentials and recording honeytoken use before account-policy rejection on caller-authenticated router routes.
 
 ### Security
 
 - Generate checksummed v2 caller tokens, reject malformed checksums before lookup, add database-backed leaked-key self-revocation enforced by every authenticated route and propagated to replicas, and warn or enforce caller-token hygiene. Revoked verifiers live in a sticky denylist independent of config sets, so rollback and YAML import cannot restore a leaked key; rotation installs a new verifier.
-- Add an opt-in `pii_filter.secrets_enabled` detector pack for common provider/router credentials, JWTs, bearer authorization values, private-key blocks, and credential assignments in inbound, buffered response, and built-in-only streamed text. Stream filtering tracks unresolved JWT and PEM candidates from their start, checks every PEM BEGIN marker through its END marker (capped at 64 KiB), and keeps a 512-byte ordinary rolling tail; unary responses fail closed when the shared replacement limit is exceeded. Tool-bearing streams on DLP-enabled groups fail closed with HTTP 400 as an interim limit until the #929 bounded tool-call inspection integration lands; custom-rule streams remain fail-closed.
+- Add an opt-in `pii_filter.secrets_enabled` detector pack for common provider/router credentials, JWTs, bearer authorization values, private-key blocks, and credential assignments in inbound, buffered response, and built-in-only streamed text. Stream filtering tracks unresolved JWT and PEM candidates from their start, checks every PEM BEGIN marker through its END marker (capped at 64 KiB), and keeps a 512-byte ordinary rolling tail; unary responses fail closed when the shared replacement limit is exceeded. With #929 bounded tool-call inspection enabled, streamed tool arguments are inspected before release and redacted or blocked by the configured policy; custom-rule-enabled streams remain fail-closed.
 - Pin `golang.org/x/crypto` to the upstream fix commit for GO-2026-5932, removing the unused `openpgp` packages from the dependency graph.
 - Add optional per-provider hourly and daily spend breakers. Breaker state uses estimated costs in memory, emits structured trip/reset events, and returns `503 provider_spend_breaker` when configured to stop.
 - Raise the Go patch floor to 1.27.4 for GO-2026-6859 (CVE-2026-97054), an HTTP/1

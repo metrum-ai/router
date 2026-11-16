@@ -8,8 +8,11 @@
   "devDependencies": {"promptfoo": "0.124.1"},
   "overrides": {
     "@azure/identity": {"@azure/msal-node": "7.1.1"},
-    "@hono/node-server": "2.1.5",
-    "basic-ftp": "6.2.1",
+    "@hono/node-server": "2.1.6",
+    "basic-ftp": "6.2.4",
+    "hono": "4.13.16",
+    "mongoose": "9.11.4",
+    "node-forge": "1.4.3",
     "glob": "14.0.2",
     "minimatch": "11.0.1"
   }

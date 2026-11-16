@@ -20,6 +20,7 @@ func TestBuiltinsSignalOnlyForTheirEvents(t *testing.T) {
 		want           string
 	}{
 		{"honeytoken", HoneytokenDetector{}, EventHoneytokenUsed, "honeytoken"},
+		{"canary group", HoneytokenDetector{}, EventCanaryGroupUsed, "honeytoken"},
 		{"spend breaker", SpendBreakerDetector{}, EventSpendBreakerTripped, "spend_breaker"},
 	} {
 		t.Run(test.name, func(t *testing.T) {

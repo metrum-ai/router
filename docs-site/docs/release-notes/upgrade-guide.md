@@ -69,6 +69,26 @@ Apply usage migration 2026111602 (usage schema version 17) first. Grant `admin:s
 only to the self-test operator; read and export grants do not include write.
 
 
+## Honeytokens and canary groups (v5.0.0)
+
+Honeytoken caller metadata and canary group allowlists are optional. Existing
+configurations need no changes. A honeytoken caller's `allow` list can contain
+only canary groups; config validation rejects real model groups, so decoy keys
+cannot inherit production access. New canary groups must use a targetless
+`static` strategy and explicitly list selected callers. Authenticated use emits
+a metadata-only critical event before dispatch; it contains no token, prompt,
+or user message. Known allowed canary completions return a canned response,
+while unknown/disallowed models and unsupported features retain ordinary
+caller errors. The config-control-plane migration advances schema 17 → 18
+with ID `2026111611`, depending on admin-client migration `2026111610`, to
+persist honeytoken label and planting time. Database-mode issuance and canary
+group grants use the active canonical config store. See
+[Honeytokens and canary groups](/docs/security-governance/honeytokens) for
+setup, reporting, and key handling.
+
+Caller routes authenticate before returning an identifier-rewrite availability
+error. Invalid credentials therefore receive 401, while authenticated
+honeytoken use is recorded before the route returns the unavailable response.
 
 ## Detector service boundary (v5.0.0)
 
@@ -108,6 +128,19 @@ Usage schema version 20 adds `organization_id` and `team_id` for hierarchy audit
 
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
 
+## v5.0.0 bounded tool-call streaming hold
+
+Tool-aware model groups can opt in to `tool_routing.streaming.hold_until_validated` with
+`hold_timeout_ms` (1–60000) and `hold_max_bytes` (1–33554432). Tool-call frames are withheld until
+the complete call has passed inspection; ordinary text frames still stream immediately. For
+OpenAI Chat Completions, OpenAI Responses, and Anthropic Messages, the first tool-call frame incurs
+the remaining upstream tool-call generation time plus router inspection time. The hold limit applies per stream, and held bytes also count against the process-wide
+`server.streaming.max_inflight_line_bytes` budget shared with native and Responses SSE parsing. This
+budget is per router process, so configure each replica to cover its expected concurrent streams.
+The timeout is an absolute deadline from the first held tool event; upstream byte activity does not
+extend it. Responses argument delta/done events remain private through inspection, and Anthropic
+tool-use frames are released before the terminal `message_delta`.
+
 ## Virtual models
 
 The optional `virtual_model` block adds capability thresholds to a model
@@ -118,7 +151,6 @@ group list/show API now reports each target's measured vector, membership and
 exclusion reason. Missing or ambiguous report data fails without changing the
 active config. Reported context tokens are the maximum observed in the eval
 workload, not a model's theoretical context limit.
-
 
 ## v5.0.0 caller-token hygiene
 
@@ -221,11 +253,12 @@ replacement-limit exhaustion also fails closed. Response redaction requires
 `secrets_enabled` and `apply_to.messages`; custom-only PII configurations keep
 their prior response behavior.
 
-As an interim limit until the #929 bounded tool-call inspection integration
-lands, streams with advertised tools on a group with `secrets_enabled: true`
-fail with HTTP 400 `secret-dlp-stream-inspection-required`. Use non-streaming
-requests or omit tools until that integration is available. This gate does not
-apply to groups without secret DLP enabled.
+When tool routing enables `streaming.hold_until_validated`, streamed tool-call
+arguments are held until inspection completes. Secret matches are redacted in
+`redact_only` mode and block the held call in `fail_on_match` mode. Without the
+bounded hold, tool-bearing streams on a DLP-enabled group fail with HTTP 400
+`secret-dlp-stream-inspection-required`. Streams with custom rules remain
+fail-closed because the rolling text filter cannot infer a safe match bound.
 
 ## v5.0.0 trusted proxy client IP resolution
 

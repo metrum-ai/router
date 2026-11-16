@@ -660,6 +660,7 @@ type ModelGroup struct {
 	VirtualModel   *VirtualModelConfig  `yaml:"virtual_model" json:"virtualModel,omitempty"`
 	PIIFilter      PIIFilterConfig      `yaml:"pii_filter"`
 	ContentCapture ContentCaptureConfig `yaml:"content_capture"`
+	Canary         *CanaryGroupConfig   `yaml:"canary,omitempty" json:"canary,omitempty"`
 	// SpendCeiling optionally caps semantic/dynamic_score escalation for this group.
 	// Weighted and other strategies ignore it. Merge with caller spend_ceiling when both set.
 	SpendCeiling     SpendCeilingConfig `yaml:"spend_ceiling" json:"spend_ceiling,omitempty"`
@@ -745,6 +746,11 @@ func validCapabilityLabel(value string, limit int) bool {
 		return false
 	}
 	return true
+}
+
+// CanaryGroup makes a targetless model name visible to selected callers.
+type CanaryGroupConfig struct {
+	Callers []string `yaml:"callers" json:"callers"`
 }
 
 // SpendCeilingConfig limits which tiers/costs semantic and dynamic_score may select.
@@ -1041,11 +1047,10 @@ type ToolRoutingRecoveryConfig struct {
 	OnExhausted          string `yaml:"on_exhausted" json:"onExhausted,omitempty"`
 }
 
-// ToolRoutingStreamingConfig is not implemented yet: hold_until_validated must
-// stay false so a streamed response is delivered exactly as the upstream sent
-// it and recovery cannot claim something it does not do.
 type ToolRoutingStreamingConfig struct {
 	HoldUntilValidated bool `yaml:"hold_until_validated" json:"holdUntilValidated,omitempty"`
+	HoldTimeoutMS      int  `yaml:"hold_timeout_ms" json:"holdTimeoutMs,omitempty"`
+	HoldMaxBytes       int  `yaml:"hold_max_bytes" json:"holdMaxBytes,omitempty"`
 }
 
 // ToolRoutingValidateConfig selects which checks run on a decoded response.
@@ -1070,7 +1075,7 @@ func toolRoutingEmpty(c ToolRoutingConfig) bool {
 	return c.Mode == "" && c.ColdStart == "" && c.MinSamples == 0 && c.WindowSeconds == 0 &&
 		c.Validate.ArgumentsJSON == nil && c.Validate.Schema == "" && c.Validate.NameMustBeOffered == nil &&
 		c.Recovery.MaxRetriesSameTarget == 0 && c.Recovery.MaxEscalations == 0 &&
-		c.Recovery.OnExhausted == "" && !c.Streaming.HoldUntilValidated
+		c.Recovery.OnExhausted == "" && !c.Streaming.HoldUntilValidated && c.Streaming.HoldTimeoutMS == 0 && c.Streaming.HoldMaxBytes == 0
 }
 
 const (
@@ -1162,7 +1167,14 @@ func validateToolRouting(name, strategy string, c ToolRoutingConfig, targetCount
 		return fmt.Errorf("model group %s tool_routing recovery.on_exhausted must be %s", name, toolRoutingOnExhaustedDeliverLast)
 	}
 	if c.Streaming.HoldUntilValidated {
-		return fmt.Errorf("model group %s tool_routing streaming.hold_until_validated is not available yet", name)
+		if c.Streaming.HoldTimeoutMS <= 0 || c.Streaming.HoldTimeoutMS > 60000 {
+			return fmt.Errorf("model group %s tool_routing streaming.hold_timeout_ms must be between 1 and 60000 when hold_until_validated is enabled", name)
+		}
+		if c.Streaming.HoldMaxBytes <= 0 || c.Streaming.HoldMaxBytes > 32<<20 {
+			return fmt.Errorf("model group %s tool_routing streaming.hold_max_bytes must be between 1 and 33554432 when hold_until_validated is enabled", name)
+		}
+	} else if c.Streaming.HoldTimeoutMS != 0 || c.Streaming.HoldMaxBytes != 0 {
+		return fmt.Errorf("model group %s tool_routing streaming hold limits require hold_until_validated", name)
 	}
 	switch strings.ToLower(strings.TrimSpace(c.ColdStart)) {
 	case "", toolRoutingColdStart:
@@ -1395,7 +1407,14 @@ type CallerConfig struct {
 	Key          KeyConfig           `yaml:"key" json:"key"`
 	Binding      CallerBindingConfig `yaml:"binding,omitempty" json:"binding,omitempty"`
 	// TokenIssuedAt is the UTC RFC3339 issuance time used by posture checks.
-	TokenIssuedAt string `yaml:"token_issued_at,omitempty" json:"token_issued_at,omitempty"`
+	TokenIssuedAt string            `yaml:"token_issued_at,omitempty" json:"token_issued_at,omitempty"`
+	Honeytoken    *HoneytokenConfig `yaml:"honeytoken,omitempty" json:"honeytoken,omitempty"`
+}
+
+// HoneytokenConfig marks a decoy caller key. Label records where operators planted it.
+type HoneytokenConfig struct {
+	Label     string `yaml:"label" json:"label"`
+	PlantedAt string `yaml:"planted_at,omitempty" json:"planted_at,omitempty"`
 }
 
 type UserConfig struct {
@@ -2431,6 +2450,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		}
 	}
 	for name, m := range c.Models {
+		if m.Canary != nil && (strings.TrimSpace(m.Strategy) != "static" || len(m.Targets) != 0 || len(m.Canary.Callers) == 0) {
+			return fmt.Errorf("model group %s canary must use static strategy, have no targets, and list callers", name)
+		}
 		if m.Strategy == "" {
 			return fmt.Errorf("model group %s missing strategy", name)
 		}
@@ -2523,7 +2545,7 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		if err := validateContentCapture("model group "+name+" content_capture", m.ContentCapture); err != nil {
 			return err
 		}
-		if len(m.Targets) == 0 {
+		if len(m.Targets) == 0 && m.Canary == nil {
 			return fmt.Errorf("model group %s has no targets", name)
 		}
 		for i, t := range m.Targets {
@@ -2673,6 +2695,22 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		if caller.Project != "" && slugify(caller.Project) == "" {
 			return fmt.Errorf("caller %s has invalid project", caller.ID)
 		}
+		if caller.Honeytoken != nil {
+			if !safeHoneytokenLabel(caller.Honeytoken.Label) {
+				return fmt.Errorf("caller %s has invalid honeytoken label", caller.ID)
+			}
+			if caller.Honeytoken.PlantedAt != "" {
+				if _, err := time.Parse(time.RFC3339, caller.Honeytoken.PlantedAt); err != nil {
+					return fmt.Errorf("caller %s has invalid honeytoken planted_at", caller.ID)
+				}
+			}
+			if caller.MetricsAdmin || caller.ContentAdmin {
+				return fmt.Errorf("caller %s honeytoken cannot have admin permissions", caller.ID)
+			}
+			if err := validateHoneytokenAllowedGroups([]CallerConfig{caller}, c.Models); err != nil {
+				return err
+			}
+		}
 		if caller.Environment != "" && slugify(caller.Environment) == "" {
 			return fmt.Errorf("caller %s has invalid environment", caller.ID)
 		}
@@ -2738,6 +2776,33 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 	}
 	if err := validateTokenExchange(c); err != nil {
 		return err
+	}
+	for name, group := range c.Models {
+		if group.Canary == nil {
+			continue
+		}
+		if c.Server.DefaultModelGroup == name {
+			return fmt.Errorf("canary model group %s cannot be the default model group", name)
+		}
+		seen := map[string]bool{}
+		for _, callerID := range group.Canary.Callers {
+			if seen[callerID] {
+				return fmt.Errorf("model group %s canary has duplicate caller %s", name, callerID)
+			}
+			seen[callerID] = true
+			found := false
+			for _, caller := range c.Callers {
+				if caller.ID == callerID {
+					found = true
+					if !stringSliceContains(caller.Allow, name) {
+						return fmt.Errorf("caller %s must allow canary model group %s", caller.ID, name)
+					}
+				}
+			}
+			if !found {
+				return fmt.Errorf("model group %s canary references unknown caller %s", name, callerID)
+			}
+		}
 	}
 	if err := validateHierarchyCallers(c.Server.Hierarchy, c.Callers); err != nil {
 		return err
@@ -2851,6 +2916,34 @@ func safeDetectorID(id string) bool {
 	}
 	for _, r := range id {
 		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("_.:-", r)) {
+			return false
+		}
+	}
+	return true
+}
+
+func validateHoneytokenAllowedGroups(callers []CallerConfig, models map[string]ModelGroup) error {
+	for _, caller := range callers {
+		if caller.Honeytoken == nil {
+			continue
+		}
+		for _, groupName := range caller.Allow {
+			group, ok := models[groupName]
+			if !ok || group.Canary == nil {
+				return fmt.Errorf("honeytoken caller %s may only allow canary model groups (got %s)", caller.ID, groupName)
+			}
+		}
+	}
+	return nil
+}
+
+func safeHoneytokenLabel(label string) bool {
+	label = strings.TrimSpace(label)
+	if label == "" || len(label) > 128 {
+		return false
+	}
+	for _, r := range label {
+		if r < 0x20 || r > 0x7e {
 			return false
 		}
 	}
