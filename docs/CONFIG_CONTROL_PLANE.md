@@ -166,6 +166,11 @@ unregistered credentials for it are refused from that point onward, including
 before disable, revoke, or expiry. Ensure registration leaves at least one usable
 global administrator.
 
+The honeytoken caller metadata migration (`2026111611`, schema 18) adds the
+planted label and planting timestamp to database-backed caller records. It
+depends on the schema-17 admin client migration and runs through the same
+non-serving migration CLI before enabling database-mode honeytokens.
+
 ## Phase 6: DB-backed serving source of truth
 
 Phase 6 raises the `router_config` compatibility window to `MaxSchema: 6` and

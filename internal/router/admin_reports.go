@@ -1505,7 +1505,10 @@ func (s *Service) adminReportBearerForbidden(w http.ResponseWriter, r *http.Requ
 	if !hasBearer && !hasAPIKey {
 		return false
 	}
-	caller, _, err := s.authenticate(r.Header.Get("Authorization"), r.Header.Get("X-API-Key"))
+	caller, tokenID, err := s.authenticate(r.Header.Get("Authorization"), r.Header.Get("X-API-Key"))
+	if caller != nil && caller.cfg.Honeytoken != nil {
+		s.recordHoneytokenRequest(caller, tokenID, r, "admin-reports")
+	}
 	if err != nil || caller == nil {
 		return false
 	}

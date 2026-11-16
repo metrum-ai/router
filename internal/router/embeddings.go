@@ -29,6 +29,10 @@ const maxEmbeddingInputs = 2048
 // maxEmbeddingInputBytes bounds each individual input string.
 const maxEmbeddingInputBytes = 1 << 16
 
+// honeytokenDefaultEmbeddingDimensions matches a common embedding model's
+// output shape when a decoy request omits the optional dimensions field.
+const honeytokenDefaultEmbeddingDimensions = 1536
+
 var (
 	errEmbeddingInput                 = errors.New("invalid embedding input")
 	errEmbeddingDimensions            = errors.New("invalid embedding dimensions")
@@ -366,12 +370,52 @@ func (s *Service) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, rc, http.StatusBadRequest, "missing-model")
 		return
 	}
+	if rc.caller.cfg.Honeytoken != nil {
+		if group, exists := s.cfg.Models[req.Model]; exists && group.Canary != nil {
+			s.recordCanaryUse(rc, req.Model)
+		}
+		s.quota.Release(rc.caller)
+		bodyHeld = false
+		if !s.admitSinkhole(w, rc) {
+			return
+		}
+		defer s.quota.Release(rc.caller)
+		rc.rec.RequestedModel, rc.rec.ResolvedGroup = req.Model, "honeytoken"
+		_, usage := honeytokenSinkholeProfile(rc.id)
+		rc.rec.Usage = usage
+		rc.rec.UsageSource = "estimated"
+		writeJSON(w, http.StatusOK, map[string]any{"object": "list", "model": req.Model, "data": []any{map[string]any{"object": "embedding", "index": 0, "embedding": honeytokenEmbeddingVector(req.Dimensions)}}, "usage": map[string]int{"prompt_tokens": usage.InputTokens, "total_tokens": usage.TotalTokens}})
+		s.finish(rc, http.StatusOK, nil)
+		return
+	}
 	group, exists := s.cfg.Models[req.Model]
 	if !exists || !rc.callerCanUseGroup(req.Model) {
+		if exists && group.Canary != nil {
+			s.recordCanaryUse(rc, req.Model)
+		}
 		s.writeError(w, rc, http.StatusNotFound, "model_not_found")
 		return
 	}
 	rc.rec.RequestedModel = req.Model
+	if group.Canary != nil && !canaryAllowsCaller(group.Canary, rc.caller.cfg.ID) {
+		s.recordCanaryUse(rc, req.Model)
+		s.writeError(w, rc, http.StatusNotFound, "model_not_found")
+		return
+	}
+	sinkhole := rc.caller.cfg.Honeytoken != nil || group.Canary != nil
+	if group.Canary != nil {
+		s.recordCanaryUse(rc, req.Model)
+	}
+	if sinkhole {
+		s.quota.Release(rc.caller)
+		bodyHeld = false
+		if !s.admitSinkhole(w, rc) {
+			return
+		}
+		defer s.quota.Release(rc.caller)
+		s.writeError(w, rc, http.StatusBadRequest, "unsupported_capability")
+		return
+	}
 	targets, dimensions, err := embeddingGroupTargets(group, req.Dimensions)
 	if err != nil {
 		reason := "embedding-group-mismatch"
@@ -504,6 +548,17 @@ func (s *Service) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
 	s.finish(rc, http.StatusOK, nil)
+}
+
+func honeytokenEmbeddingVector(requestedDimensions int) []float64 {
+	switch requestedDimensions {
+	case 768:
+		return make([]float64, 768)
+	case 3072:
+		return make([]float64, 3072)
+	default:
+		return make([]float64, honeytokenDefaultEmbeddingDimensions)
+	}
 }
 
 // callEmbeddingsUpstream issues one bounded attempt and validates the vector

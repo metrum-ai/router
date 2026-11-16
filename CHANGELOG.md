@@ -10,6 +10,7 @@
   datasets.
 - Add release-only OpenAI Chat, OpenAI Responses, and Anthropic Messages SDK client cells to the bounded tool-call workflow. A manual `cell_set=release` dispatch on `main` attaches the sanitized report to release checks.
 
+- Add `routerctl honeytoken issue` and `routerctl honeytoken report`, plus caller-scoped canary model groups. Issued decoy keys return a canned local completion and canary use raises a security event without contacting an upstream. Database-backed callers use router-config migration `2026111611` (schema 18).
 - Define trusted W3C `traceparent` correlation across router chains, with a new
   span and request ID per hop and safe scalar usage fields for joining requests.
   Trust is opt-in through `server.trace.trusted_parent_cidrs` or an authenticated
@@ -70,7 +71,7 @@
 - Drop target-declared unsupported `temperature` and `top_p` fields before dispatch; classify structured 400/422 sampling-parameter refusals for pre-commit fallback; and forward `top_p` when translating to OpenAI Chat Completions.
 
 - Keep the admin migration-status API read-only: it now refuses unavailable or pre-ledger databases without bootstrapping or upgrading migration tables.
-- Add a non-serving PostgreSQL Kubernetes migration Job example that plans or applies both scopes through router-config schema 16.
+- Add a non-serving PostgreSQL Kubernetes migration Job example that plans or applies both scopes through router-config schema 18.
 
 - Generate OpenAPI concurrency and idempotency metadata from normalized runtime operations so the published contract omits `If-Match`, `Idempotency-Key`, and conflict responses for routes that do not enforce them.
 - Bind client credential metadata to configured identities; enforce client status, expiry and revocation across replicas; refuse lifecycle writes that remove the last policy administrator; exclude expired and revoked bindings from access-review grants.
@@ -158,6 +159,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Admit honeytoken and canary sinkhole requests through caller rate limits, validate honeytoken groups on relational config writes, and bound repeated security-event writes with a 10,000-entry LRU and Prometheus suppression counter.
+- Record canary-group use from embeddings and count-token routes, include canary usage in honeytoken reports, and prevent stale honeytoken config from reaching a real upstream.
 - Re-evaluate project budget trips against current ceilings on every admission, preserve provider spend-breaker settings during admin updates, normalize project/environment identifiers before authorization, and require retention force for every change that can purge additional data.
 
 - Remove the in-process TypeScript routing strategy and its goja/esbuild dependencies. Configurations using `strategy: script`, `script`, `script_max_concurrent`, or `script_http` now fail at load with migration guidance to `strategy: external`. Port request-shape and PII-aware policy examples to standalone services.
@@ -170,6 +173,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Online `metrum-ai-routerctl` operations now use `/admin/v1`; offline bootstrap commands remain
   local.
+- Authenticate caller credentials before returning identifier-rewrite unavailability, preserving 401 for invalid credentials and recording honeytoken use before account-policy rejection on caller-authenticated router routes.
 
 ### Security
 

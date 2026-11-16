@@ -17,17 +17,20 @@ import (
 const tokenPrefixName = "rtr_metrum"
 const tokenV2Marker = "_v2_"
 
-const TokenHashFormatPBKDF2SHA3 = CallerTokenHashScheme
+const (
+	TokenHashFormatPBKDF2SHA3 = CallerTokenHashScheme
+)
 
 type TokenGenerateOptions struct {
-	User        string
-	OwnerUser   string
-	Project     string
-	Environment string
-	KeySlug     string
-	Allow       []string
-	Reader      io.Reader
-	Now         time.Time
+	User            string
+	OwnerUser       string
+	Project         string
+	Environment     string
+	KeySlug         string
+	Allow           []string
+	HoneytokenLabel string
+	Reader          io.Reader
+	Now             time.Time
 	// HashIterations overrides the token_hash PBKDF2 iteration count.
 	HashIterations int
 }
@@ -77,8 +80,11 @@ func GenerateCallerToken(opts TokenGenerateOptions) (GeneratedToken, error) {
 	body := tokenID + "_" + secret
 	token := body + tokenV2Marker + fmt.Sprintf("%08x", crc32.ChecksumIEEE([]byte(body)))
 	allow := append([]string(nil), opts.Allow...)
-	if len(allow) == 0 {
+	if len(allow) == 0 && strings.TrimSpace(opts.HoneytokenLabel) == "" {
 		return GeneratedToken{}, fmt.Errorf("at least one allowed model group is required")
+	}
+	if label := strings.TrimSpace(opts.HoneytokenLabel); label != "" && !safeHoneytokenLabel(label) {
+		return GeneratedToken{}, fmt.Errorf("honeytoken label is invalid")
 	}
 	callerID := strings.Join([]string{user, project, environment}, "-")
 	caller := CallerConfig{
@@ -96,6 +102,9 @@ func GenerateCallerToken(opts TokenGenerateOptions) (GeneratedToken, error) {
 		Key:                KeyConfig{LifetimeTokens: 2000000000, SoftPct: 90, OnExhaust: "disable"},
 	}
 	caller.TokenIssuedAt = now.Format(time.RFC3339)
+	if label := strings.TrimSpace(opts.HoneytokenLabel); label != "" {
+		caller.Honeytoken = &HoneytokenConfig{Label: label, PlantedAt: now.Format(time.RFC3339)}
+	}
 	tokenHash, err := HashCallerToken(token, reader, opts.HashIterations)
 	if err != nil {
 		return GeneratedToken{}, err

@@ -119,6 +119,11 @@ func (s *Service) applyAutomaticContainmentResult(result detect.Result) {
 	if cfgSource == nil {
 		return
 	}
+	for _, caller := range cfgSource.Callers {
+		if caller.ID == result.CallerID && caller.Honeytoken != nil {
+			return
+		}
+	}
 	cfg := cfgSource.Server.AutoContainment
 	if cfg.Mode == "" || cfg.Mode == "off" {
 		return

@@ -55,6 +55,7 @@ type CallerAdminDeps struct {
 	Now                   func() time.Time
 	ClaimWebhookNonce     func(*gorm.DB, Principal) error
 	CallerWriteAuthorized func(r *http.Request, domain string) bool
+	HoneytokenLastSeen    func() (map[string]string, error)
 }
 
 // RegisterCallerDirectoryAdmin registers the admin caller directory endpoints on the
@@ -165,6 +166,9 @@ func (h *callerAdminHandler) handleContainment(w http.ResponseWriter, r *http.Re
 		if h.deps.AuthorizeDomain != nil && !h.deps.AuthorizeDomain(r, callerDomain, authzObjectAdminContainment, authzActionContain) {
 			return errCallerAdminForbidden
 		}
+		if rows[0].HoneytokenLabel != "" {
+			return errCallerAdminHoneytoken
+		}
 		fullCallerWrite := h.deps.CallerWriteAuthorized != nil && h.deps.CallerWriteAuthorized(r, callerDomain)
 		source = "containment"
 		if fullCallerWrite {
@@ -260,6 +264,10 @@ func (h *callerAdminHandler) handleContainment(w http.ResponseWriter, r *http.Re
 			writeCallerAdminError(w, http.StatusForbidden, "containment-forbidden")
 			return
 		}
+		if errors.Is(err, errCallerAdminHoneytoken) {
+			writeCallerAdminError(w, http.StatusForbidden, "containment-honeytoken-forbidden")
+			return
+		}
 		if errors.Is(err, errCallerAdminConflict) {
 			writeCallerAdminError(w, http.StatusConflict, "containment-state-conflict")
 			return
@@ -323,6 +331,7 @@ type callerAdminHandler struct {
 var errCallerAdminConflict = errors.New("caller already exists")
 var errCallerAdminNotFound = errors.New("caller not found")
 var errCallerAdminForbidden = errors.New("caller operation forbidden")
+var errCallerAdminHoneytoken = errors.New("honeytoken caller cannot be contained")
 var errContainmentNonceReplay = errors.New("containment nonce replay")
 var errContainmentNonceStore = errors.New("containment nonce store unavailable")
 
@@ -391,17 +400,20 @@ func (h *callerAdminHandler) activeConfigSet() (configSetRow, error) {
 }
 
 type callerAdminCallerView struct {
-	ID           string     `json:"id"`
-	OwnerUser    string     `json:"owner_user"`
-	Project      string     `json:"project"`
-	Environment  string     `json:"environment"`
-	Status       string     `json:"status"`
-	TokenID      string     `json:"token_id"`
-	TokenHash    string     `json:"token_hash,omitempty"`
-	Allow        []string   `json:"allow"`
-	MetricsAdmin bool       `json:"metrics_admin"`
-	ContentAdmin bool       `json:"content_admin"`
-	Rate         RateConfig `json:"rate"`
+	ID                  string     `json:"id"`
+	OwnerUser           string     `json:"owner_user"`
+	Project             string     `json:"project"`
+	Environment         string     `json:"environment"`
+	Status              string     `json:"status"`
+	TokenID             string     `json:"token_id"`
+	TokenHash           string     `json:"token_hash,omitempty"`
+	Allow               []string   `json:"allow"`
+	MetricsAdmin        bool       `json:"metrics_admin"`
+	ContentAdmin        bool       `json:"content_admin"`
+	Rate                RateConfig `json:"rate"`
+	HoneytokenLabel     string     `json:"honeytoken_label,omitempty"`
+	HoneytokenPlantedAt string     `json:"honeytoken_planted_at,omitempty"`
+	HoneytokenLastSeen  string     `json:"honeytoken_last_seen,omitempty"`
 }
 
 type callerAdminListResponse struct {
@@ -423,6 +435,14 @@ func (h *callerAdminHandler) handleList(w http.ResponseWriter, r *http.Request) 
 	if err := h.deps.DB.Where("config_set_id = ?", set.ID).Order("caller_id ASC").Find(&rows).Error; err != nil {
 		writeCallerAdminError(w, http.StatusInternalServerError, "callers-query-failed")
 		return
+	}
+	lastSeen := map[string]string{}
+	if h.deps.HoneytokenLastSeen != nil {
+		lastSeen, err = h.deps.HoneytokenLastSeen()
+		if err != nil {
+			writeCallerAdminError(w, http.StatusInternalServerError, "callers-query-failed")
+			return
+		}
 	}
 	resp := callerAdminListResponse{
 		GeneratedUTC: h.now().Format(time.RFC3339Nano),
@@ -454,31 +474,35 @@ func (h *callerAdminHandler) handleList(w http.ResponseWriter, r *http.Request) 
 			tokenHash = ""
 		}
 		resp.Callers = append(resp.Callers, callerAdminCallerView{
-			ID:           row.CallerID,
-			OwnerUser:    row.OwnerUser,
-			Project:      row.Project,
-			Environment:  row.Environment,
-			Status:       row.Status,
-			TokenID:      row.TokenID,
-			TokenHash:    tokenHash,
-			Allow:        allow,
-			MetricsAdmin: row.MetricsAdmin,
-			ContentAdmin: row.ContentAdmin,
-			Rate:         RateConfig{RPM: row.RPM, TPM: row.TPM, Concurrent: row.Concurrent},
+			ID:                  row.CallerID,
+			OwnerUser:           row.OwnerUser,
+			Project:             row.Project,
+			Environment:         row.Environment,
+			Status:              row.Status,
+			TokenID:             row.TokenID,
+			TokenHash:           tokenHash,
+			Allow:               allow,
+			MetricsAdmin:        row.MetricsAdmin,
+			ContentAdmin:        row.ContentAdmin,
+			Rate:                RateConfig{RPM: row.RPM, TPM: row.TPM, Concurrent: row.Concurrent},
+			HoneytokenLabel:     row.HoneytokenLabel,
+			HoneytokenPlantedAt: row.HoneytokenPlantedAt,
+			HoneytokenLastSeen:  lastSeen[row.CallerID],
 		})
 	}
 	writeJSON(w, http.StatusOK, resp)
 }
 
 type callerAdminIssueRequest struct {
-	OwnerUser    string     `json:"owner_user"`
-	Project      string     `json:"project"`
-	Environment  string     `json:"environment"`
-	KeySlug      string     `json:"key_slug"`
-	Allow        []string   `json:"allow"`
-	MetricsAdmin bool       `json:"metrics_admin"`
-	ContentAdmin bool       `json:"content_admin"`
-	Rate         RateConfig `json:"rate"`
+	OwnerUser       string     `json:"owner_user"`
+	Project         string     `json:"project"`
+	Environment     string     `json:"environment"`
+	KeySlug         string     `json:"key_slug"`
+	Allow           []string   `json:"allow"`
+	MetricsAdmin    bool       `json:"metrics_admin"`
+	ContentAdmin    bool       `json:"content_admin"`
+	Rate            RateConfig `json:"rate"`
+	HoneytokenLabel string     `json:"honeytoken_label,omitempty"`
 }
 
 type callerAdminIssueResponse struct {
@@ -496,41 +520,64 @@ func (h *callerAdminHandler) handleIssue(w http.ResponseWriter, r *http.Request)
 		writeCallerAdminError(w, http.StatusBadRequest, "callers-invalid-request")
 		return
 	}
+	if strings.TrimSpace(req.HoneytokenLabel) != "" && (req.MetricsAdmin || req.ContentAdmin) {
+		// Honeytokens may be granted only configured canary groups, and never
+		// administrative privileges.
+		writeCallerAdminError(w, http.StatusBadRequest, "callers-invalid-request")
+		return
+	}
 	set, err := h.activeConfigSet()
 	if err != nil {
 		writeCallerAdminError(w, http.StatusServiceUnavailable, "callers-config-set-unavailable")
 		return
 	}
 	generated, err := GenerateCallerToken(TokenGenerateOptions{
-		OwnerUser:   req.OwnerUser,
-		Project:     req.Project,
-		Environment: req.Environment,
-		KeySlug:     req.KeySlug,
-		Allow:       req.Allow,
-		Now:         h.now(),
+		OwnerUser:       req.OwnerUser,
+		Project:         req.Project,
+		Environment:     req.Environment,
+		KeySlug:         req.KeySlug,
+		Allow:           req.Allow,
+		HoneytokenLabel: req.HoneytokenLabel,
+		Now:             h.now(),
 	})
 	if err != nil {
 		writeCallerAdminError(w, http.StatusBadRequest, "callers-invalid-request")
 		return
 	}
 	caller := generated.Caller
+	if caller.Honeytoken != nil {
+		var document configControlPlaneDocumentRow
+		if err := h.deps.DB.Where("config_set_id = ?", set.ID).First(&document).Error; err != nil {
+			writeCallerAdminError(w, http.StatusServiceUnavailable, "callers-config-set-unavailable")
+			return
+		}
+		_, validationErr := PatchCanonicalCallersYAML([]byte(document.CanonicalYAML), func(callers []CallerConfig) ([]CallerConfig, error) {
+			return append(callers, caller), nil
+		})
+		if validationErr != nil {
+			writeCallerAdminError(w, http.StatusBadRequest, "callers-invalid-request")
+			return
+		}
+	}
 	rate := caller.Rate
 	if req.Rate.RPM > 0 || req.Rate.TPM > 0 || req.Rate.Concurrent > 0 {
 		rate = req.Rate
 	}
 	row := callerRow{
-		CallerID:      caller.ID,
-		OwnerUser:     caller.OwnerUser,
-		Project:       caller.Project,
-		Environment:   caller.Environment,
-		Status:        accountStatusActive,
-		TokenVerifier: storedCallerTokenVerifier(caller),
-		TokenID:       generated.TokenID,
-		MetricsAdmin:  req.MetricsAdmin,
-		ContentAdmin:  req.ContentAdmin,
-		RPM:           rate.RPM,
-		TPM:           rate.TPM,
-		Concurrent:    rate.Concurrent,
+		CallerID:            caller.ID,
+		OwnerUser:           caller.OwnerUser,
+		Project:             caller.Project,
+		Environment:         caller.Environment,
+		Status:              accountStatusActive,
+		TokenVerifier:       storedCallerTokenVerifier(caller),
+		TokenID:             generated.TokenID,
+		MetricsAdmin:        req.MetricsAdmin,
+		ContentAdmin:        req.ContentAdmin,
+		RPM:                 rate.RPM,
+		TPM:                 rate.TPM,
+		Concurrent:          rate.Concurrent,
+		HoneytokenLabel:     honeytokenLabel(caller),
+		HoneytokenPlantedAt: honeytokenPlantedAt(caller),
 	}
 	err = h.deps.DB.Transaction(func(tx *gorm.DB) error {
 		if err := ensureConfigControlPlaneRuntimeTables(tx); err != nil {
@@ -543,9 +590,9 @@ func (h *callerAdminHandler) handleIssue(w http.ResponseWriter, r *http.Request)
 		if existing > 0 {
 			return errCallerAdminConflict
 		}
-		insertSQL := `INSERT INTO router_config_callers (config_set_id, caller_id, owner_user, project, environment, status, token_sha256, token_id, metrics_admin, content_admin, rpm, tpm, concurrent, token_format_version, token_entropy_bits, revoked_token_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '')`
+		insertSQL := `INSERT INTO router_config_callers (config_set_id, caller_id, owner_user, project, environment, status, token_sha256, token_id, metrics_admin, content_admin, rpm, tpm, concurrent, token_format_version, token_entropy_bits, revoked_token_hash, honeytoken_label, honeytoken_planted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?)`
 		if err := tx.Exec(insertSQL,
-			set.ID, row.CallerID, row.OwnerUser, row.Project, row.Environment, row.Status, row.TokenVerifier, row.TokenID, row.MetricsAdmin, row.ContentAdmin, row.RPM, row.TPM, row.Concurrent, caller.TokenFormatVersion, caller.TokenEntropyBits).Error; err != nil {
+			set.ID, row.CallerID, row.OwnerUser, row.Project, row.Environment, row.Status, row.TokenVerifier, row.TokenID, row.MetricsAdmin, row.ContentAdmin, row.RPM, row.TPM, row.Concurrent, caller.TokenFormatVersion, caller.TokenEntropyBits, row.HoneytokenLabel, row.HoneytokenPlantedAt).Error; err != nil {
 			return err
 		}
 		for _, group := range caller.Allow {
@@ -569,11 +616,17 @@ func (h *callerAdminHandler) handleIssue(w http.ResponseWriter, r *http.Request)
 				MetricsAdmin:       row.MetricsAdmin,
 				ContentAdmin:       row.ContentAdmin,
 				Rate:               rate,
+				Honeytoken:         caller.Honeytoken,
 			}
 			newCaller.TokenIssuedAt = caller.TokenIssuedAt
 			return append(callers, newCaller), nil
 		}); err != nil {
 			return err
+		}
+		if caller.Honeytoken != nil && len(caller.Allow) > 0 {
+			if err := h.syncHoneytokenCanaryGroups(tx, set.ID, caller.ID, caller.Allow); err != nil {
+				return err
+			}
 		}
 		// Bump revision and append change event.
 		meta, metaErr := adminAuditMetaForWrite(r, adminAuthSubject{subject: h.actor(r)}, authzObjectAdminCallers, authzActionIssue)
@@ -603,21 +656,68 @@ func (h *callerAdminHandler) handleIssue(w http.ResponseWriter, r *http.Request)
 	// the non-secret token identifier were persisted above.
 	writeJSON(w, http.StatusCreated, callerAdminIssueResponse{
 		Caller: callerAdminCallerView{
-			ID:           row.CallerID,
-			OwnerUser:    row.OwnerUser,
-			Project:      row.Project,
-			Environment:  row.Environment,
-			Status:       row.Status,
-			TokenID:      row.TokenID,
-			TokenHash:    caller.TokenHash,
-			Allow:        append([]string(nil), caller.Allow...),
-			MetricsAdmin: row.MetricsAdmin,
-			ContentAdmin: row.ContentAdmin,
-			Rate:         rate,
+			ID:              row.CallerID,
+			OwnerUser:       row.OwnerUser,
+			Project:         row.Project,
+			Environment:     row.Environment,
+			Status:          row.Status,
+			TokenID:         row.TokenID,
+			TokenHash:       caller.TokenHash,
+			Allow:           append([]string(nil), caller.Allow...),
+			MetricsAdmin:    row.MetricsAdmin,
+			ContentAdmin:    row.ContentAdmin,
+			Rate:            rate,
+			HoneytokenLabel: row.HoneytokenLabel,
 		},
 		Token:   generated.Token,
 		TokenID: generated.TokenID,
 	})
+}
+
+func (h *callerAdminHandler) syncHoneytokenCanaryGroups(tx *gorm.DB, configSetID, callerID string, groups []string) error {
+	var row configControlPlaneDocumentRow
+	if err := tx.Where("config_set_id = ?", configSetID).First(&row).Error; err != nil {
+		return fmt.Errorf("load canonical document for canary grant: %w", err)
+	}
+	var doc map[string]any
+	if err := yaml.Unmarshal([]byte(row.CanonicalYAML), &doc); err != nil {
+		return fmt.Errorf("parse canonical config for canary grant: %w", err)
+	}
+	encodedModels, err := yaml.Marshal(doc["models"])
+	if err != nil {
+		return fmt.Errorf("encode model groups for canary grant: %w", err)
+	}
+	var models map[string]ModelGroup
+	if err := yaml.Unmarshal(encodedModels, &models); err != nil {
+		return fmt.Errorf("decode model groups for canary grant: %w", err)
+	}
+	for _, name := range groups {
+		model, ok := models[name]
+		if !ok || model.Canary == nil {
+			return fmt.Errorf("honeytoken group %q is not a configured canary", name)
+		}
+		alreadyListed := false
+		for _, existingCallerID := range model.Canary.Callers {
+			if existingCallerID == callerID {
+				alreadyListed = true
+				break
+			}
+		}
+		if !alreadyListed {
+			model.Canary.Callers = append(model.Canary.Callers, callerID)
+		}
+		models[name] = model
+	}
+	doc["models"] = models
+	patched, err := yaml.Marshal(doc)
+	if err != nil {
+		return fmt.Errorf("marshal canonical canary grants: %w", err)
+	}
+	hash := sha256.Sum256(patched)
+	if err := tx.Exec(`UPDATE router_config_documents SET canonical_yaml = ?, content_sha256 = ?, updated_at = ? WHERE config_set_id = ?`, string(patched), hex.EncodeToString(hash[:]), h.now().Format(time.RFC3339Nano), configSetID).Error; err != nil {
+		return fmt.Errorf("write canonical canary grants: %w", err)
+	}
+	return nil
 }
 
 type callerAdminTokenResponse struct {
@@ -898,10 +998,37 @@ func PatchCanonicalCallersYAML(raw []byte, mutate func(callers []CallerConfig) (
 	if patched == nil {
 		patched = []CallerConfig{}
 	}
+	var models map[string]ModelGroup
+	if rawModels, ok := doc["models"]; ok && rawModels != nil {
+		encoded, err := yaml.Marshal(rawModels)
+		if err != nil {
+			return nil, fmt.Errorf("re-encode models mapping: %w", err)
+		}
+		if err := yaml.Unmarshal(encoded, &models); err != nil {
+			return nil, fmt.Errorf("decode models mapping: %w", err)
+		}
+	}
+	if err := validateHoneytokenAllowedGroups(patched, models); err != nil {
+		return nil, err
+	}
 	doc["callers"] = patched
 	out, err := yaml.Marshal(doc)
 	if err != nil {
 		return nil, fmt.Errorf("marshal canonical config YAML: %w", err)
 	}
 	return out, nil
+}
+
+func honeytokenLabel(caller CallerConfig) string {
+	if caller.Honeytoken == nil {
+		return ""
+	}
+	return caller.Honeytoken.Label
+}
+
+func honeytokenPlantedAt(caller CallerConfig) string {
+	if caller.Honeytoken == nil {
+		return ""
+	}
+	return caller.Honeytoken.PlantedAt
 }

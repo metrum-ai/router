@@ -96,8 +96,10 @@ func (a *adminClientBindingAuthenticator) Authenticate(ctx context.Context, r *h
 	return principal, nil
 }
 
+const adminClientMigrationID = 2026111610
+
 func adminClientMigrationDefinition(previous, schemaVersion int) MigrationDefinition {
-	return FinalizeMigrationDefinition(MigrationDefinition{ID: 2026111610, Scope: configControlPlaneScope,
+	return FinalizeMigrationDefinition(MigrationDefinition{ID: adminClientMigrationID, Scope: configControlPlaneScope,
 		Name: "admin client identities and credential metadata", Release: "v5.0.0",
 		Checksum: MigrationChecksum("router-config.phase17.admin-clients.v1"), SchemaVersion: schemaVersion,
 		Transactional: true, MaintenanceMode: "online", RollbackClass: "restore-required",

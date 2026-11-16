@@ -219,6 +219,12 @@ func (s *Service) adminV1HandlerSet(registry *AdminV1Registry) map[string]http.H
 		AdminV1CallerAdminDeps(CallerAdminDeps{
 			DB:           s.configControlPlane,
 			RuntimeScope: s.cfg.Server.ConfigSource.RuntimeScope,
+			HoneytokenLastSeen: func() (map[string]string, error) {
+				if s.usage == nil {
+					return map[string]string{}, nil
+				}
+				return s.usage.honeytokenLastSeen()
+			},
 			ClaimWebhookNonce: func(tx *gorm.DB, principal Principal) error {
 				err := s.claimContainmentNonce(tx, principal.containmentNonce, principal.containmentBodyHash, principal.containmentRetention, s.adminNow())
 				if err != nil && strings.Contains(err.Error(), "already claimed") {

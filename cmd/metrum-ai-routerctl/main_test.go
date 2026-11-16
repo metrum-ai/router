@@ -7,6 +7,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -633,5 +636,159 @@ func TestRedactURLCredentialsAndEnvReference(t *testing.T) {
 		if got := redactEnvReference(in); got != want {
 			t.Errorf("redactEnvReference(%q)=%q want %q", in, got, want)
 		}
+	}
+}
+
+func TestHoneytokenIssueWritesPrivateTokenWithoutPrintingIt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds and runs the CLI")
+	}
+	tokenPath := filepath.Join(t.TempDir(), "honeytoken")
+	output, err := exec.Command("go", "run", ".", "honeytoken", "issue", "--label", "old config example", "--owner-user", "security", "--project", "decoys", "--token-out", tokenPath).CombinedOutput()
+	if err != nil {
+		t.Fatalf("issue: %v: %s", err, output)
+	}
+	raw, err := os.ReadFile(tokenPath)
+	if err != nil || !strings.HasPrefix(string(raw), "rtr_metrum_security_decoys_dev_honeytoken_") {
+		t.Fatalf("token file: %v", err)
+	}
+	info, err := os.Stat(tokenPath)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("token mode=%v err=%v, want 0600", info, err)
+	}
+	if strings.Contains(string(output), strings.TrimSpace(string(raw))) || !strings.Contains(string(output), "old config example") {
+		t.Fatalf("unsafe or incomplete output: %s", output)
+	}
+	var result struct {
+		CallerRecord struct {
+			TokenHash   string `json:"token_hash"`
+			TokenSHA256 string `json:"token_sha256"`
+		} `json:"caller_record"`
+	}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("issue output is not JSON: %v: %s", err, output)
+	}
+	if result.CallerRecord.TokenHash == "" || result.CallerRecord.TokenSHA256 != "" {
+		t.Fatalf("issue output must include only the verifier record: %+v", result.CallerRecord)
+	}
+}
+
+func TestHoneytokenIssueUsesDatabaseCallerAPI(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds and runs the CLI")
+	}
+	const token = "rtr_metrum_security_decoys_prod_honeytoken_dbsecret"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/admin/v1/callers/issue" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer admin-test" || r.Header.Get("Idempotency-Key") == "" {
+			t.Errorf("missing admin authorization or idempotency key")
+		}
+		var request map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Errorf("decode issue request: %v", err)
+		}
+		if request["honeytoken_label"] != "db planted key" {
+			t.Errorf("request omitted honeytoken metadata: %+v", request)
+		}
+		allow, _ := request["allow"].([]any)
+		if len(allow) != 1 || allow[0] != "canary" {
+			t.Errorf("database issue omitted canary group grants: %+v", request)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"caller":{"id":"security-decoys-prod","token_hash":"pbkdf2-sha3-512$1$ab$cd","honeytoken_label":"db planted key"},"token":%q,"token_id":"rtr_metrum_security_decoys_prod_honeytoken"}`, token)
+	}))
+	defer server.Close()
+	dir := t.TempDir()
+	keyFile := filepath.Join(dir, "admin.key")
+	if err := os.WriteFile(keyFile, []byte("admin-test\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tokenPath := filepath.Join(dir, "honeytoken")
+	output, err := exec.Command("go", "run", ".", "honeytoken", "issue", "--label", "db planted key", "--owner-user", "security", "--project", "decoys", "--env", "prod", "--canary-groups", "canary", "--token-out", tokenPath, "--router-url", server.URL, "--admin-key-file", keyFile).CombinedOutput()
+	if err != nil {
+		t.Fatalf("database issue: %v: %s", err, output)
+	}
+	contents, err := os.ReadFile(tokenPath)
+	if err != nil || string(contents) != token+"\n" {
+		t.Fatalf("database token file=%q err=%v", contents, err)
+	}
+	if strings.Contains(string(output), token) || !strings.Contains(string(output), "token_hash") {
+		t.Fatalf("unsafe or incomplete database issue output: %s", output)
+	}
+}
+
+func TestHoneytokenReportUsesDatabaseCallerAPI(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds and runs the CLI")
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/admin/v1/callers" {
+			t.Errorf("unexpected database report request %s %s", r.Method, r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer admin-test" {
+			t.Errorf("missing database report authorization")
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"callers": []any{
+			map[string]any{"id": "decoy-a", "honeytoken_label": "db planted", "honeytoken_planted_at": "2026-11-16T00:00:00Z", "honeytoken_last_seen": "2026-11-16T01:00:00Z"},
+			map[string]any{"id": "real-caller"},
+		}})
+	}))
+	defer server.Close()
+	t.Setenv("ROUTER_ADMIN_KEY", "admin-test")
+	output, err := exec.Command("go", "run", ".", "honeytoken", "report", "--router-url", server.URL).CombinedOutput()
+	if err != nil {
+		t.Fatalf("database report: %v: %s", err, output)
+	}
+	var result struct {
+		Schema string `json:"schema"`
+		Data   []struct {
+			CallerID  string `json:"caller_id"`
+			Label     string `json:"label"`
+			PlantedAt string `json:"planted_at"`
+			LastSeen  string `json:"last_seen"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(output, &result); err != nil {
+		t.Fatalf("database report output is not JSON: %v: %s", err, output)
+	}
+	if result.Schema != "metrum.ai/router-honeytoken-report/v1" || len(result.Data) != 1 || result.Data[0].CallerID != "decoy-a" || result.Data[0].Label != "db planted" || result.Data[0].LastSeen == "" {
+		t.Fatalf("incomplete database honeytoken report: %+v", result)
+	}
+}
+
+func TestHoneytokenIssueDoesNotWriteTokenWhenConfigMergeFails(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds and runs the CLI")
+	}
+	configPath := filepath.Join(t.TempDir(), "router.yaml")
+	config := `server:
+  listen: ':8080'
+  default_model_group: default
+models:
+  canary:
+    strategy: static
+    canary:
+      callers: [security-decoys-prod]
+callers:
+  - id: security-decoys-prod
+    owner_user: security
+    project: decoys
+    environment: prod
+    token_sha256: ` + strings.Repeat("a", 64) + `
+    token_id: rtr_metrum_security_decoys_prod_existing
+    allow: [canary]
+`
+	if err := os.WriteFile(configPath, []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tokenPath := filepath.Join(t.TempDir(), "honeytoken")
+	output, err := exec.Command("go", "run", ".", "honeytoken", "issue", "--label", "config merge failure", "--owner-user", "security", "--project", "decoys", "--env", "prod", "--canary-groups", "canary", "--config", configPath, "--write", "--token-out", tokenPath).CombinedOutput()
+	if err == nil {
+		t.Fatalf("duplicate caller merge unexpectedly succeeded: %s", output)
+	}
+	if _, statErr := os.Stat(tokenPath); !os.IsNotExist(statErr) {
+		t.Fatalf("token output exists after failed config merge (err=%v): %s", statErr, output)
 	}
 }

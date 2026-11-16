@@ -28,6 +28,7 @@ func TestUnavailableIdentifierTransformUsesCallerDialectError(t *testing.T) {
 		{"/v1/chat/completions", `"code":"identifier-transform-unavailable"`, false},
 	} {
 		req := httptest.NewRequest("POST", tc.path, strings.NewReader(`{}`))
+		req.Header.Set("Authorization", "Bearer "+testToken)
 		rr := httptest.NewRecorder()
 		svc.Handler().ServeHTTP(rr, req)
 		if rr.Code != http.StatusServiceUnavailable || !strings.Contains(rr.Body.String(), tc.want) || rr.Header().Get("X-Request-Id") == "" || (tc.anthropic && rr.Header().Get("Request-Id") == "") {

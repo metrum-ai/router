@@ -38,7 +38,7 @@ func main() {
 		return
 	}
 	if len(os.Args) < 2 {
-		die("usage: metrum-ai-routerctl <version|config|callers|contain|release|adminkeys|policies|groups|providers|models|admin-resource|control-plane|status|usage|reports|blueprint|emergency> [flags]")
+		die("usage: metrum-ai-routerctl <version|config|callers|contain|release|honeytoken|adminkeys|policies|groups|providers|models|admin-resource|control-plane|status|usage|reports|blueprint|emergency> [flags]")
 	}
 	switch os.Args[1] {
 	case "version":
@@ -53,6 +53,8 @@ func main() {
 		containmentCommand("suspend", os.Args[2:])
 	case "release":
 		containmentCommand("resume", os.Args[2:])
+	case "honeytoken":
+		honeytokenCommand(os.Args[2:])
 	case "adminkeys":
 		adminkeysCommand(os.Args[2:])
 	case "policies":
