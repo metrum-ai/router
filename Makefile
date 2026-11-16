@@ -100,7 +100,7 @@ export VERSION COMMIT BUILD_DATE SOURCE_DATE_EPOCH DIST_DIR PKG_NAME GOOS GOARCH
 export COPYFILE_DISABLE
 TAR_ENV := COPYFILE_DISABLE=1
 
-BUILD_LDFLAGS = -X github.com/metrum-ai/router/internal/buildinfo.Version=$${VERSION} -X github.com/metrum-ai/router/internal/buildinfo.Commit=$${COMMIT} -X github.com/metrum-ai/router/internal/buildinfo.BuildDate=$${BUILD_DATE}
+BUILD_LDFLAGS = -buildid= -X github.com/metrum-ai/router/internal/buildinfo.Version=$${VERSION} -X github.com/metrum-ai/router/internal/buildinfo.Commit=$${COMMIT} -X github.com/metrum-ai/router/internal/buildinfo.BuildDate=$${BUILD_DATE}
 
 LOCAL_ROUTER_OUT ?= tmp/local-pi
 LOCAL_ROUTER_LISTEN ?= 0.0.0.0:18081

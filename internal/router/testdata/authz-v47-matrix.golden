@@ -80,6 +80,62 @@
       "Decisions": ""
     },
     {
+      "Fixture": "../../config/cache-isolation.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../config/cache-isolation.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../config/cache-isolation.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../config/cache-isolation.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config/cache-isolation.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config/cache-isolation.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config/cache-isolation.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config/cache-isolation.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
       "Fixture": "../../config/usage-postgres.example.yaml",
       "Credential": "oauth::unknown",
       "Domain": "foreign/prod",

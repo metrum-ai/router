@@ -20,16 +20,18 @@ The console only displays signals returned by the selected time range and report
 `metrum-ai-routerctl doctor --security --config config.yaml` reads the existing
 configuration and makes no config changes. Use `--format json` and `--fail-on`
 to gate CI. Plain HTTP `--target` values must be loopback. The check reports caller
-key format, recorded entropy, and key age against a 90-day maximum. Caller entries now accept optional
+key format, recorded entropy, and key age against a configurable maximum (90 days by default). Set
+`security.key_hygiene.max_age_days` from 1 to 3650; `0` selects the default. Caller entries now accept optional
 `token_issued_at` UTC RFC3339 timestamps; token generation and admin issue or
 rotation write this field automatically. Add original issue times to manually
 managed caller keys. Existing configs remain valid; keys without a timestamp
-warn until updated or rotated, and keys older than 90 days fail.
+warn until updated or rotated, and keys older than the configured maximum fail.
 
 The `/metrics` endpoint remains on the serving port and requires an active
 caller configured with `metrics_admin: true`. The doctor checks this setting;
 it does not suggest moving metrics to the admin listener. DB-backed config mode
-reports that database-stored caller keys were not inspected. Engine image pins
+marks caller limit, format, environment, and age checks `not checked` because canonical callers
+and issuance metadata are stored in the database. Engine image pins
 are compared with the release's `engine-advisories.json` snapshot; use
 `--advisories <file>` to select one explicitly. Without a snapshot, the
 advisory result is informational `not checked` and makes no network request.
@@ -66,6 +68,9 @@ The NVIDIA and AMD reference pins moved to the official `vllm/vllm-openai:v0.33.
 NVIDIA and AMD Kubernetes deployment examples and provisioning intents use the
 digest-pinned official vLLM v0.33.0 images, matching the reference
 configurations. Update copied examples from older releases before deploying them.
+### Tenant cache isolation
+
+Response-cache entries and vLLM prefix-cache salts remain isolated by caller and project by default. Project-level sharing is opt-in with `projects[].share_cache_within_project`; enabling it lets callers in that project share response entries and vLLM prefix-cache entries. Self-hosted vLLM providers receive salts when `providers[].upstream_kind: vllm` and `server.cache.upstream_salt_key_env` are configured; provide the environment key through the deployment secret manager on every router replica. SGLang prefix-cache isolation is not supported in v5.0.0. See [Tenant cache isolation](/docs/security-governance/cache-isolation) for the config example, compatibility behavior and key requirements.
 
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
 

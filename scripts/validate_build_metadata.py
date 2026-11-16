@@ -28,10 +28,15 @@ RULES: dict[str, re.Pattern[str]] = {
 def main() -> int:
     errors: list[str] = []
     makefile = Path(__file__).resolve().parents[1] / "Makefile"
-    for line in makefile.read_text().splitlines():
+    makefile_text = makefile.read_text()
+    if "BUILD_LDFLAGS = -buildid=" not in makefile_text:
+        errors.append("BUILD_LDFLAGS must disable Go build IDs for reproducible release binaries")
+    for line in makefile_text.splitlines():
         if "go build" in line and ("./cmd/" in line):
             if '$(BUILD_LDFLAGS)' not in line or '-buildvcs=false' not in line:
                 errors.append("Makefile go build must use BUILD_LDFLAGS and -buildvcs=false")
+        if "go build" in line and "$$pkg_dir/bin/$$bin" in line and "-trimpath" not in line:
+            errors.append("packaged Go binaries must use -trimpath")
     for name, pattern in RULES.items():
         value = os.environ.get(name, "")
         if not value:

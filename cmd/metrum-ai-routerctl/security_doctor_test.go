@@ -5,6 +5,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -158,12 +159,30 @@ func TestSecurityDoctorCallerKeyAge(t *testing.T) {
 		{name: "future timestamp", issued: now.Add(time.Hour).Format(time.RFC3339), want: "warn", contain: "future"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			finding := callerKeyAgeFinding([]router.CallerConfig{{ID: "caller", TokenHash: "verifier", TokenIssuedAt: tc.issued}}, now)
+			finding := callerKeyAgeFinding([]router.CallerConfig{{ID: "caller", TokenHash: "verifier", TokenIssuedAt: tc.issued}}, now, defaultCallerKeyMaxAgeDays)
 			if finding.Status != tc.want || !strings.Contains(finding.Detail, tc.contain) {
 				t.Fatalf("finding=%+v, want status %q containing %q", finding, tc.want, tc.contain)
 			}
 		})
 	}
+}
+
+func TestSecurityDoctorCallerKeyAgeConfigurable(t *testing.T) {
+	now := time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC)
+	cfg := &router.Config{
+		Callers:  []router.CallerConfig{{ID: "caller", Status: "active", TokenHash: "verifier", TokenIssuedAt: now.Add(-45 * 24 * time.Hour).Format(time.RFC3339)}},
+		Security: router.RouterSecurityConfig{KeyHygiene: router.KeyHygieneConfig{MaxAgeDays: 30}},
+	}
+	findings := securityDoctorConfigFindings(cfg)
+	for _, finding := range findings {
+		if finding.Check == "caller-key-age" {
+			if finding.Status != "fail" || !strings.Contains(finding.Detail, "exceed the 30-day") {
+				t.Fatalf("configurable caller age finding=%+v", finding)
+			}
+			return
+		}
+	}
+	t.Fatal("caller-key-age finding missing")
 }
 
 func TestSecurityDoctorCallerKeyFormatStrengthAndInactiveCallers(t *testing.T) {
@@ -201,12 +220,21 @@ func TestSecurityDoctorMetricsAuthAndDatabaseCallerWarning(t *testing.T) {
 	if finding := metricsAuthConfigFinding([]router.CallerConfig{{Status: "active", MetricsAdmin: true, TokenHash: "verifier"}}); finding.Status != "pass" {
 		t.Fatalf("active metrics caller should pass: %+v", finding)
 	}
-	cfg := &router.Config{Server: router.ServerConfig{ConfigSource: router.ConfigSourceConfig{Mode: "database"}}}
+	cfg := &router.Config{
+		Server: router.ServerConfig{ConfigSource: router.ConfigSourceConfig{Mode: "database"}},
+		Callers: []router.CallerConfig{{
+			ID: "bootstrap-only", Status: "active", TokenHash: "verifier", TokenFormatVersion: 2,
+			TokenEntropyBits: 256, TokenIssuedAt: time.Now().UTC().Format(time.RFC3339),
+			Rate: router.RateConfig{RPM: 10},
+		}},
+	}
 	checks := map[string]string{}
 	for _, finding := range securityDoctorConfigFindings(cfg) {
 		checks[finding.Check] = finding.Status
 	}
-	if checks["db-stored-callers"] != "warn" || checks["metrics-auth-config"] != "not checked" {
+	if checks["db-stored-callers"] != "warn" || checks["metrics-auth-config"] != "not checked" ||
+		checks["caller-limits"] != "not checked" || checks["caller-key-format"] != "not checked" ||
+		checks["caller-key-environment"] != "not checked" || checks["caller-key-age"] != "not checked" {
 		t.Fatalf("database-config checks=%v", checks)
 	}
 }
@@ -314,11 +342,20 @@ func TestSecurityDoctorReferenceConfigs(t *testing.T) {
 			if err != nil {
 				t.Fatalf("parse reference YAML: %v", err)
 			}
-			var cfg router.Config
-			if err := yaml.Unmarshal(normalized, &cfg); err != nil {
-				t.Fatalf("unmarshal reference config: %v", err)
+			normalized, err = addReferenceIdentifierTestKey(normalized)
+			if err != nil {
+				t.Fatalf("prepare reference config secrets: %v", err)
 			}
-			for _, finding := range securityDoctorConfigFindings(&cfg) {
+			setReferencePasswordHashEnvs(t, normalized)
+			configPath := filepath.Join(t.TempDir(), "config.yaml")
+			if err := os.WriteFile(configPath, normalized, 0600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := router.LoadConfig(configPath)
+			if err != nil {
+				t.Fatalf("load reference config: %v", err)
+			}
+			for _, finding := range securityDoctorConfigFindings(cfg) {
 				if finding.Status == "fail" && !acceptedFailures[name][finding.Check] {
 					t.Errorf("reference config has unaccepted failing finding %s: %s", finding.Check, finding.Detail)
 				}
@@ -328,6 +365,110 @@ func TestSecurityDoctorReferenceConfigs(t *testing.T) {
 			}
 		})
 	}
+}
+
+func addReferenceIdentifierTestKey(raw []byte) ([]byte, error) {
+	var config map[string]any
+	if err := yaml.Unmarshal(raw, &config); err != nil {
+		return nil, err
+	}
+	server, _ := config["server"].(map[string]any)
+	if server == nil {
+		server = map[string]any{}
+		config["server"] = server
+	}
+	identifiers, _ := server["identifiers"].(map[string]any)
+	if identifiers == nil {
+		identifiers = map[string]any{}
+		server["identifiers"] = identifiers
+	}
+	transform, _ := identifiers["transform"].(map[string]any)
+	if transform == nil {
+		transform = map[string]any{}
+		identifiers["transform"] = transform
+	}
+	current, _ := transform["current"].(map[string]any)
+	if current == nil {
+		current = map[string]any{}
+		transform["current"] = current
+	}
+	// Reference examples require a deployment-specific identifier transform key.
+	// Substitute a deterministic test-only key so LoadConfig can validate the
+	// same config structure without importing deployment secrets.
+	current["key_id"] = "reference-doctor-test"
+	current["key"] = strings.Repeat("ab", 64)
+	if callers, ok := config["callers"].([]any); ok {
+		for index, value := range callers {
+			caller, ok := value.(map[string]any)
+			if !ok {
+				continue
+			}
+			if caller["id"] == "reference-placeholder" || strings.TrimSpace(fmt.Sprint(caller["id"])) == "" {
+				caller["id"] = fmt.Sprintf("reference-caller-%d", index)
+			}
+			if caller["token_hash"] != nil {
+				caller["token_hash"] = referenceTokenHash(index)
+				caller["token_id"] = fmt.Sprintf("reference-token-%d", index)
+			}
+		}
+	}
+	providers, _ := config["providers"].(map[string]any)
+	if len(providers) == 0 {
+		// The admin-plane overlay documents only the control-plane pod. Add a
+		// harmless provider to satisfy the serving router's full-config loader.
+		config["providers"] = map[string]any{
+			"reference-doctor-test": map[string]any{
+				"base_url": "http://127.0.0.1:1/v1",
+				"dialect":  "openai-chat",
+			},
+		}
+	}
+	models, _ := config["models"].(map[string]any)
+	if len(models) == 0 {
+		config["models"] = map[string]any{
+			"reference-doctor-test": map[string]any{
+				"strategy": "static",
+				"targets": []any{map[string]any{
+					"provider": "reference-doctor-test",
+					"model":    "reference-doctor-test",
+				}},
+			},
+		}
+		server["default_model_group"] = "reference-doctor-test"
+	}
+	return yaml.Marshal(config)
+}
+
+func setReferencePasswordHashEnvs(t *testing.T, raw []byte) {
+	t.Helper()
+	var config any
+	if err := yaml.Unmarshal(raw, &config); err != nil {
+		t.Fatal(err)
+	}
+	var visit func(any)
+	visit = func(value any) {
+		switch typed := value.(type) {
+		case map[string]any:
+			for key, child := range typed {
+				if key == "password_hash_env" {
+					if name, ok := child.(string); ok && name != "" {
+						t.Setenv(name, "$2a$10$PEWHfUFcvCRVUkh/hggt6eUYdDlrFr0cfzXvIXtLDKpS5uTtYq65i")
+					}
+				}
+				visit(child)
+			}
+		case []any:
+			for _, child := range typed {
+				visit(child)
+			}
+		}
+	}
+	visit(config)
+}
+
+func referenceTokenHash(index int) string {
+	salt := fmt.Sprintf("%s-%d", strings.Repeat("s", 32), index)
+	return "pbkdf2-sha3-512:i=20000:" + base64.RawURLEncoding.EncodeToString([]byte(salt)) + ":" + base64.RawURLEncoding.EncodeToString([]byte(strings.Repeat("k", 64)))
 }
 
 var referencePlaceholder = regexp.MustCompile(`\$\{[^}]+\}|@@[A-Z0-9_]+@@|reference-placeholder`)
@@ -348,6 +489,7 @@ func normalizeReferenceConfig(raw []byte) ([]byte, error) {
 		}
 		if node.Kind == yaml.MappingNode {
 			for index := 0; index+1 < len(node.Content); index += 2 {
+				walk(node.Content[index], key)
 				walk(node.Content[index+1], node.Content[index].Value)
 			}
 			return
@@ -358,7 +500,10 @@ func normalizeReferenceConfig(raw []byte) ([]byte, error) {
 			}
 			return
 		}
-		if node.Kind != yaml.ScalarNode || !referencePlaceholder.MatchString(node.Value) {
+		if node.Kind != yaml.ScalarNode {
+			return
+		}
+		if !referencePlaceholder.MatchString(node.Value) {
 			return
 		}
 		if referenceNumericKey(key) {
