@@ -5,8 +5,6 @@
 ### Added
 
 - Add nightly evaluation aggregation across the previous 30 runs, with expected-missing cells reported separately from gate failures.
-- Label direct-provider nightly spend as a list-rate estimate, retain measured Router usage as its own basis, and report gate violations from runs older than 30 days as historical.
-- Align Harbor's provider-free Docker preflight with the live OpenAI Responses adapter and retain its sanitized summary on failure.
 - Added a release checklist and a bounded package upgrade-and-rollback check.
 - Retain AI review findings by exact commit range and artifact digest, scope the review credential to the tag-only review environment, and attest the release manifests and review evidence.
 
@@ -40,6 +38,9 @@
 - Partition response-cache entries and vLLM prefix-cache salts by caller and project by default, add opt-in sharing inside a project, and forward stable salts only to explicitly configured vLLM providers. SGLang prefix-cache isolation is not supported in v5.0.0.
 
 ### Fixed
+
+- Label direct-provider nightly spend as a list-rate estimate, retain measured Router usage as its own basis, and report gate violations from runs older than 30 days as historical.
+- Align Harbor's provider-free Docker preflight with the live OpenAI Responses adapter and retain its sanitized summary on failure.
 
 - Roll back failed automatic suspensions so they release their action-cap slot; exempting a caller during config refresh releases an active automatic throttle before its TTL.
 - Migrate the API compatibility suite to Anthropic Python SDK 2.3.0 and test API-key and bearer authentication with separate clients.
