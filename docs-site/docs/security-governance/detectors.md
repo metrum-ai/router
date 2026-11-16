@@ -1,6 +1,11 @@
 <!-- Copyright 2026 Metrum AI -->
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
+---
+title: External Detectors
+doc_type: howto
+---
+
 # External detectors
 
 Router detector strategies use the versioned `metrum.detector.v1` contract at
