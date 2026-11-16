@@ -24,7 +24,7 @@ llmd:
   model_server:
     name: vllm-llmd-backend
     huggingface_id: Qwen/Qwen3-1.7B
-    image: vllm/vllm-openai:v0.11.0
+    image: vllm/vllm-openai:v0.33.0@sha256:d825baf9ce4b1b6bfc5ecc7b79880c7e6748c65a72d697ce3d47607aafa84c6e
     gpu_count: 1
     port: 8000
     max_model_len: 8192

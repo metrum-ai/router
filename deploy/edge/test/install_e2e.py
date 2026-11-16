@@ -255,8 +255,8 @@ class EdgeBundleInstallTest(unittest.TestCase):
             "--port", "8099"], env={"EDGE_RENDER_GID": "992", "EDGE_VIDEO_GID": "44", "EDGE_TEST_HANDOVER": "1"})
         self.assertEqual(amd.returncode, 0, amd.stdout + amd.stderr)
         amd_overlay = (amd_dir / "compose" / "compose.amd.yaml").read_text(encoding="utf-8")
-        self.assertIn("rocm/vllm:", amd_overlay)
-        # The ROCm image's default CMD is a wheel-pin helper, not the server.
+        self.assertIn("vllm/vllm-openai-rocm:v0.33.0@sha256:", amd_overlay)
+        # Keep serving behavior explicit across upstream image revisions.
         self.assertIn('entrypoint: ["vllm", "serve"]', amd_overlay)
         validate = run([str(self.bin_dir / "metrum-ai-routerctl"), "config", "validate", "--config", str(config)],
                        env=self.secret_env_of(docker_dir))
@@ -817,9 +817,8 @@ class _FakeDockerHarness(unittest.TestCase):
 class AmdGroupIdTest(_FakeDockerHarness):
     """AMD compose files must name numeric host GIDs, and install.sh must produce them.
 
-    The pinned ROCm image has no `render` entry in its /etc/group, so
-    `group_add: [video, render]` fails with "Unable to find group render" - on Docker
-    as well as Podman, because both resolve group names inside the container.
+    Numeric host GIDs keep access aligned with the device nodes on both Docker and
+    Podman, regardless of group names inside the container.
     """
 
     AMD_COMPOSE = (

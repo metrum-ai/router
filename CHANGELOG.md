@@ -10,6 +10,17 @@
   to stderr.
 - Drop target-declared unsupported `temperature` and `top_p` fields before dispatch; classify structured 400/422 sampling-parameter refusals for pre-commit fallback; and forward `top_p` when translating to OpenAI Chat Completions.
 
+### Security
+
+- Add a required pull request and merge-group CI gate that checks every pinned
+  vLLM and SGLang image in deployment YAML and lock files against GitHub
+  Advisories and OSV, with tier-local documented exceptions and fail-closed
+  behavior when advisory services are unavailable.
+- Update NVIDIA and ROCm Kubernetes deployment and provisioning examples to
+  digest-pinned official vLLM v0.33.0 images after scanning the full deployment tree.
+- Move the AMD reference and edge images to the digest-pinned upstream vLLM
+  ROCm 10.0 image at v0.33.0, which is outside the affected range of GHSA-v97p-wpxp-px84.
+
 All notable changes to Metrum AI Router are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
