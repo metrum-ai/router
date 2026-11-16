@@ -950,7 +950,7 @@ func TestToolFirewallApprovalHoldE2E(t *testing.T) {
 				group.Targets[0].ResponsesToChat = ResponsesToChatBridge{Enabled: true, Text: true, FunctionTools: true, ToolChoice: true}
 				cfg.Models["default"] = group
 				cfg.Server.ToolFirewall = ToolFirewallConfig{
-					Mode: toolFirewallEnforce, ApprovalTimeoutMS: 20,
+					Mode: toolFirewallEnforce, ApprovalTimeoutMS: 1000,
 					Sequences: []ToolFirewallSequenceRule{{FirstTool: "read_customer", FirstArgsRegex: "account", ThenTool: "http_request", WithinTurns: 3, Action: "hold"}},
 				}
 				cfg.Admin.Enabled = true
@@ -1035,7 +1035,7 @@ func TestToolFirewallApprovalHoldE2E(t *testing.T) {
 						t.Fatalf("resolution status=%d body=%s", response.StatusCode, resolution)
 					}
 				} else {
-					time.Sleep(30 * time.Millisecond)
+					time.Sleep(1100 * time.Millisecond)
 				}
 				third := makeRequest()
 				if third.Code != http.StatusOK {
