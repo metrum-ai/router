@@ -268,7 +268,7 @@ and account; cross-provider and cross-account replay is unsupported.
 
 ## v5.0.0 hierarchy governance
 
-Usage schema version 22 adds `organization_id` and `team_id` for hierarchy audit attribution after schema 21 tool-routing usage. Migration `2026111624` depends on tool-routing migration `2026111623`. The migration is restore-required for rollback; keep a database restore available.
+Usage schema version 22 adds `organization_id` and `team_id` for hierarchy audit attribution after schema 21 tool-routing usage. Migration `2026111626` depends on tool-routing migration `2026111623`. The migration is restore-required for rollback; keep a database restore available.
 
 Hierarchy governance is opt-in. Existing configurations without
 `server.hierarchy` retain their current behavior. Configure a parent with a

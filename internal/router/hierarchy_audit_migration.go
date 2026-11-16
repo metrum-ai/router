@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const usageHierarchyAuditMigrationID = 2026111624
+const usageHierarchyAuditMigrationID = 2026111626
 const usageHierarchyAuditIndexName = "idx_request_usage_hierarchy_audit"
 
 var usageHierarchyAuditColumns = map[string]map[string]struct{}{
