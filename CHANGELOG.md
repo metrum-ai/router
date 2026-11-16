@@ -10,6 +10,7 @@
   caller's `trust_traceparent`; malformed, duplicate, or untrusted input starts
   a new trace. Outbound trace headers are on by default and can be disabled per
   provider; inbound `tracestate` is deliberately dropped.
+- Forward Anthropic `thinking` settings to supported Bedrock Claude models and preserve `thinking` and `redacted_thinking` history, signatures, ordering, and streamed reasoning blocks through Converse tool continuations. Malformed blocks fail before AWS dispatch.
 - Add nightly evaluation aggregation across the previous 30 runs, with expected-missing cells reported separately from gate failures.
 - Add virtual model groups whose eligible targets are selected from per-family
   capability vectors imported from reproducible eval reports. The config Admin

@@ -4,6 +4,7 @@
 package router
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 )
@@ -16,7 +17,8 @@ func anthropicToolsBridgeEnabled(target Target, out string) bool {
 		targetSupportsClientTools(target, "anthropic", false) && targetSupportsTools(target, out)
 }
 
-func encodeAnthropicToolsBridge(model string, req *IRRequest, target Target, out string) ([]byte, error) {
+func encodeAnthropicToolsBridge(model string, req *IRRequest, target Target, out string, provider ProviderConfig) ([]byte, error) {
+	preserveBedrockReasoning := isBedrock(provider) && isBedrockClaudeModel(model) && out == "openai-chat"
 	chat := *req
 	chat.Raw = map[string]any{}
 	// These caller controls are needed for eligibility checks and translated
@@ -39,15 +41,20 @@ func encodeAnthropicToolsBridge(model string, req *IRRequest, target Target, out
 		}
 		var content []any
 		var calls []any
+		var bedrockContent []any
 		flush := func() {
-			if len(content) > 0 || len(calls) > 0 {
+			if len(content) > 0 || len(calls) > 0 || len(bedrockContent) > 0 {
 				msg := map[string]any{"role": role, "content": content}
+				if role == "assistant" && preserveBedrockReasoning && len(bedrockContent) > 0 {
+					msg["bedrock_content"] = bedrockContent
+				}
 				if len(calls) > 0 {
 					msg["tool_calls"] = calls
 				}
 				messages = append(messages, msg)
 				content = nil
 				calls = nil
+				bedrockContent = nil
 			}
 		}
 		for _, b := range valueAsSlice(m["content"]) {
@@ -58,6 +65,9 @@ func encodeAnthropicToolsBridge(model string, req *IRRequest, target Target, out
 			switch stringValue(block["type"]) {
 			case "text":
 				content = append(content, map[string]any{"type": "text", "text": block["text"]})
+				if preserveBedrockReasoning && role == "assistant" {
+					bedrockContent = append(bedrockContent, map[string]any{"type": "text", "text": block["text"]})
+				}
 			case "image":
 				part := decodeContentPart(block)
 				if part.FileID != "" && out == "openai-responses" {
@@ -77,6 +87,9 @@ func encodeAnthropicToolsBridge(model string, req *IRRequest, target Target, out
 					return nil, err
 				}
 				calls = append(calls, map[string]any{"id": block["id"], "type": "function", "function": map[string]any{"name": block["name"], "arguments": string(args)}})
+				if preserveBedrockReasoning && role == "assistant" {
+					bedrockContent = append(bedrockContent, map[string]any{"type": "tool_use", "id": block["id"], "name": block["name"], "input": block["input"]})
+				}
 			case "tool_result":
 				flush()
 				text := contentToText(block["content"])
@@ -84,7 +97,13 @@ func encodeAnthropicToolsBridge(model string, req *IRRequest, target Target, out
 					text = exact
 				}
 				messages = append(messages, map[string]any{"role": "tool", "tool_call_id": block["tool_use_id"], "content": encodeOpenAIChatContent(IRMessage{Content: text, Parts: decodeContentParts(block["content"])})})
-			case "thinking", "redacted_thinking": // Provider-private thinking is not portable.
+			case "thinking", "redacted_thinking":
+				if preserveBedrockReasoning {
+					if role != "assistant" {
+						return nil, fmt.Errorf("Bedrock reasoning blocks are supported only in assistant history")
+					}
+					bedrockContent = append(bedrockContent, block)
+				}
 			default:
 				return nil, fmt.Errorf("unsupported Anthropic tool bridge content type")
 			}
@@ -124,6 +143,14 @@ func encodeAnthropicToolsBridge(model string, req *IRRequest, target Target, out
 		return encodeChatToResponsesBridge(model, &chat, bridgeTarget, "")
 	}
 	body := map[string]any{"model": model, "messages": messages, "stream": req.Stream, "tools": chat.Tools}
+	if preserveBedrockReasoning {
+		body["bedrock_reasoning"] = true
+	}
+	if isBedrock(provider) && isBedrockClaudeModel(model) && req.Reasoning.Requested {
+		if thinking, ok := req.Raw["thinking"].(map[string]any); ok {
+			body["thinking"] = thinking
+		}
+	}
 	applyAnthropicFormat(body, req, out)
 	if req.System != "" {
 		body["messages"] = append([]any{map[string]any{"role": "system", "content": req.System}}, messages...)
@@ -163,30 +190,62 @@ func decodeAnthropicToolsBridge(out string, raw []byte, model string, ids Identi
 		return nil, err
 	}
 	var content []any
-	if resp.Text != "" {
-		content = append(content, map[string]any{"type": "text", "text": resp.Text})
-	}
 	choices := valueAsSlice(resp.Raw["choices"])
 	if len(choices) > 0 {
 		ch, _ := choices[0].(map[string]any)
 		msg, _ := ch["message"].(map[string]any)
-		for _, v := range valueAsSlice(msg["tool_calls"]) {
-			call, _ := v.(map[string]any)
-			fn, _ := call["function"].(map[string]any)
-			var input map[string]any
-			if err := json.Unmarshal([]byte(stringValue(fn["arguments"])), &input); err != nil {
-				return nil, err
+		ordered, hasOrdered := msg["bedrock_content"].([]any)
+		if hasOrdered {
+			for _, value := range ordered {
+				block, _ := value.(map[string]any)
+				switch stringValue(block["type"]) {
+				case "text":
+					content = append(content, map[string]any{"type": "text", "text": block["text"]})
+				case "thinking":
+					if stringValue(block["thinking"]) == "" || stringValue(block["signature"]) == "" {
+						return nil, fmt.Errorf("invalid upstream Bedrock reasoning block")
+					}
+					content = append(content, map[string]any{"type": "thinking", "thinking": block["thinking"], "signature": block["signature"]})
+				case "redacted_thinking":
+					data := stringValue(block["data"])
+					if _, err := base64.StdEncoding.DecodeString(data); err != nil || data == "" {
+						return nil, fmt.Errorf("invalid upstream Bedrock redacted reasoning block")
+					}
+					content = append(content, map[string]any{"type": "redacted_thinking", "data": data})
+				case "tool_use":
+					id := stringValue(block["id"])
+					if id == "" || stringValue(block["name"]) == "" {
+						return nil, fmt.Errorf("invalid upstream tool call")
+					}
+					if ids != nil {
+						id = ids.Encode(id)
+					}
+					content = append(content, map[string]any{"type": "tool_use", "id": id, "name": block["name"], "input": block["input"]})
+				}
 			}
-			id := stringValue(call["id"])
-			if id == "" || stringValue(fn["name"]) == "" || input == nil {
-				return nil, fmt.Errorf("invalid upstream tool call")
+		} else if resp.Text != "" {
+			content = append(content, map[string]any{"type": "text", "text": resp.Text})
+		}
+		if !hasOrdered {
+			for _, v := range valueAsSlice(msg["tool_calls"]) {
+				call, _ := v.(map[string]any)
+				fn, _ := call["function"].(map[string]any)
+				var input map[string]any
+				if err := json.Unmarshal([]byte(stringValue(fn["arguments"])), &input); err != nil {
+					return nil, err
+				}
+				id := stringValue(call["id"])
+				if id == "" || stringValue(fn["name"]) == "" || input == nil {
+					return nil, fmt.Errorf("invalid upstream tool call")
+				}
+				if ids != nil {
+					id = ids.Encode(id)
+				}
+				content = append(content, map[string]any{"type": "tool_use", "id": id, "name": fn["name"], "input": input})
 			}
-			if ids != nil {
-				id = ids.Encode(id)
-			}
-			content = append(content, map[string]any{"type": "tool_use", "id": id, "name": fn["name"], "input": input})
 		}
 	}
+
 	stop := "end_turn"
 	if resp.StopReason == "tool_calls" {
 		stop = "tool_use"
