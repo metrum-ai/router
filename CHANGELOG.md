@@ -70,6 +70,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Allow oversized upstream lines to fall back before downstream commitment; retain reported usage from discarded attempts with explicit audit provenance.
 - Cover large streaming tool calls, repeated Responses completion payloads, limit errors, fallback boundaries, and tool-result continuation.
 
+### Changed
+
+- Online `metrum-ai-routerctl` operations now use `/admin/v1`; offline bootstrap commands remain
+  local.
+
 ### Security
 
 - Pin `golang.org/x/crypto` to the upstream fix commit for GO-2026-5932, removing the unused `openpgp` packages from the dependency graph.

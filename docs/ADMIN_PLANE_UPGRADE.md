@@ -168,7 +168,9 @@ configuration database first and follow the v5.0.0 section of the `docs-site/doc
 
 ## 6. API and CLI parity
 
-`metrum-ai-routerctl` online commands use `/admin/v1` in v5.0.0. Use this table for the API paths used by automation.
+`metrum-ai-routerctl` online commands use `/admin/v1` in v5.0.0 and no longer open the
+control-plane database directly. Local bootstrap commands remain offline. Use this table for the
+API paths used by automation.
 
 | Operation | Versioned API | Router CLI | Notes |
 | --- | --- | --- | --- |
