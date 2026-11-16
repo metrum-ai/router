@@ -5,6 +5,7 @@ package router
 
 import (
 	"fmt"
+	"math"
 	"regexp"
 	"sort"
 	"strings"
@@ -24,12 +25,14 @@ type piiFilterResult struct {
 	Placeholders  []piiPlaceholder
 	RuleCounts    map[string]int
 	Warnings      []string
+	state         *piiRedactionState
 }
 
 type compiledPIIRule struct {
-	name   string
-	prefix string
-	re     *regexp.Regexp
+	name    string
+	prefix  string
+	re      *regexp.Regexp
+	entropy bool
 }
 
 func applyPIIFilter(req *IRRequest, cfg PIIFilterConfig, caller ...string) (piiFilterResult, error) {
@@ -39,7 +42,11 @@ func applyPIIFilter(req *IRRequest, cfg PIIFilterConfig, caller ...string) (piiF
 	}
 	mode := normalizePIIFilterMode(cfg)
 	result.Mode = mode
-	rules, err := compilePIIRules(cfg.Rules)
+	configured := append([]PIIFilterRule(nil), cfg.Rules...)
+	if cfg.SecretsEnabled {
+		configured = append(configured, builtinSecretRules()...)
+	}
+	rules, err := compilePIIRules(configured)
 	if err != nil {
 		return result, err
 	}
@@ -53,6 +60,7 @@ func applyPIIFilter(req *IRRequest, cfg PIIFilterConfig, caller ...string) (piiF
 		result:         &result,
 		placeholderFor: map[string]string{},
 	}
+	result.state = state
 	apply := normalizePIIApplyTo(cfg.ApplyTo)
 	// Snapshot and redact every instruction text this caller can transmit before
 	// the individual raw values are filtered: a match may span parts or messages
@@ -208,6 +216,49 @@ func compilePIIRules(rules []PIIFilterRule) ([]compiledPIIRule, error) {
 	return out, nil
 }
 
+// builtinSecretRules is deliberately small and bounded. Go's RE2 engine keeps
+// every expression linear in the size of the request.
+func builtinSecretRules() []PIIFilterRule {
+	return []PIIFilterRule{
+		{Name: "private_key", Expression: `-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----`, PlaceholderPrefix: "SECRET_PRIVATE_KEY"},
+		{Name: "aws_access_key", Expression: `\b(?:AKIA|ASIA)[A-Z0-9]{16}\b`, PlaceholderPrefix: "SECRET_AWS"},
+		{Name: "github_token", Expression: `\b(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})\b`, PlaceholderPrefix: "SECRET_GITHUB"},
+		{Name: "slack_token", Expression: `\bxox[baprs]-[A-Za-z0-9-]{20,}\b`, PlaceholderPrefix: "SECRET_SLACK"},
+		{Name: "stripe_secret", Expression: `\bsk_(?:live|test)_[A-Za-z0-9]{16,}\b`, PlaceholderPrefix: "SECRET_STRIPE"},
+		{Name: "credential_assignment", Expression: `(?i)\b(?:api[_-]?key|access[_-]?token|client[_-]?secret|password)\s*[:=]\s*["']?[A-Za-z0-9_./+=-]{12,}`, PlaceholderPrefix: "SECRET_CREDENTIAL"},
+		{Name: "high_entropy_token", Expression: `\b[A-Za-z0-9_+/=-]{32,256}\b`, PlaceholderPrefix: "SECRET_TOKEN"},
+	}
+}
+
+func highEntropySecretCandidate(value string) bool {
+	if len(value) < 32 || len(value) > 256 {
+		return false
+	}
+	counts := [256]int{}
+	for i := 0; i < len(value); i++ {
+		counts[value[i]]++
+	}
+	entropy := 0.0
+	for _, count := range counts {
+		if count == 0 {
+			continue
+		}
+		p := float64(count) / float64(len(value))
+		entropy -= p * math.Log2(p)
+	}
+	return entropy >= 4.0
+}
+
+func redactPIIResponse(resp *IRResponse, state *piiRedactionState) {
+	if resp == nil || state == nil {
+		return
+	}
+	resp.Text = state.redact(resp.Text)
+	if resp.Raw != nil {
+		resp.Raw = redactRawPayload(resp.Raw, state, normalizedPIIApplyTo{system: true, messages: true, responsesInput: true, toolResults: true, imageURLs: true})
+	}
+}
+
 type normalizedPIIApplyTo struct {
 	system         bool
 	messages       bool
@@ -250,6 +301,9 @@ func (s *piiRedactionState) redact(text string) string {
 		}
 		text = rule.re.ReplaceAllStringFunc(text, func(match string) string {
 			if match == "" {
+				return match
+			}
+			if rule.name == "high_entropy_token" && !highEntropySecretCandidate(match) {
 				return match
 			}
 			placeholderKey := rule.name + "\x00" + match
@@ -320,6 +374,13 @@ func redactRawValue(v any, ctx rawPIIContext, state *piiRedactionState, apply no
 			out[i] = redactRawValue(item, child, state, apply)
 		}
 		return out
+	case []map[string]any:
+		out := make([]map[string]any, len(x))
+		for i, item := range x {
+			redacted, _ := redactRawValue(item, ctx, state, apply).(map[string]any)
+			out[i] = redacted
+		}
+		return out
 	case map[string]any:
 		role := strings.ToLower(strings.TrimSpace(stringValue(x["role"])))
 		childToolResult := ctx.inToolResult || role == "tool"
@@ -351,7 +412,7 @@ func shouldRedactRawString(ctx rawPIIContext, apply normalizedPIIApplyTo) bool {
 		return apply.system
 	case "input":
 		return apply.responsesInput
-	case "text":
+	case "text", "output_text":
 		return apply.messages || apply.responsesInput || (apply.toolResults && ctx.inToolResult) ||
 			(apply.system && ctx.inInstruction) || (apply.responsesInput && ctx.inInput)
 	case "content":
@@ -391,6 +452,12 @@ func restorePIIRaw(v any, placeholders []piiPlaceholder) any {
 		out := make([]any, len(x))
 		for i, item := range x {
 			out[i] = restorePIIRaw(item, placeholders)
+		}
+		return out
+	case []map[string]any:
+		out := make([]map[string]any, len(x))
+		for i, item := range x {
+			out[i], _ = restorePIIRaw(item, placeholders).(map[string]any)
 		}
 		return out
 	case map[string]any:

@@ -32,8 +32,9 @@ const (
 )
 
 type contentCaptureDecision struct {
-	cfg   ContentCaptureConfig
-	group string
+	cfg            ContentCaptureConfig
+	group          string
+	secretsEnabled bool
 }
 
 type contentCaptureRecord struct {
@@ -213,7 +214,7 @@ func (s *Service) contentCaptureFor(caller *callerRuntime, groupName string, gro
 	if group.ContentCapture.Enabled {
 		cfg = mergeContentCaptureConfig(cfg, group.ContentCapture)
 	}
-	return contentCaptureDecision{cfg: cfg, group: groupName}
+	return contentCaptureDecision{cfg: cfg, group: groupName, secretsEnabled: group.PIIFilter.Enabled && group.PIIFilter.SecretsEnabled}
 }
 
 func mergeContentCaptureConfig(base, override ContentCaptureConfig) ContentCaptureConfig {
@@ -300,6 +301,11 @@ func (s *Service) captureContent(rc *requestContext, decision contentCaptureDeci
 		raw, _ = json.Marshal(map[string]string{"error": "content capture marshal failed"})
 	}
 	text, redactions := redactContentCaptureText(string(raw), decision.cfg)
+	if decision.secretsEnabled {
+		var count int
+		text, count = redactBuiltInSecrets(text)
+		redactions += count
+	}
 	text, truncated := truncateContentCaptureText(text, decision.cfg.MaxCaptureBytes)
 	plainBytes := len(text)
 	ciphertext, nonce, err := encryptContentCaptureValue(s.contentCaptureKeys, decision.cfg.Encryption.LocalKeyID, text)
@@ -340,6 +346,16 @@ func (s *Service) captureContent(rc *requestContext, decision contentCaptureDeci
 		return
 	}
 	_ = s.usage.writeUsageJobs(context.Background(), []any{job})
+}
+
+func redactBuiltInSecrets(text string) (string, int) {
+	rules, err := compilePIIRules(builtinSecretRules())
+	if err != nil {
+		return text, 0
+	}
+	result := &piiFilterResult{RuleCounts: map[string]int{}}
+	state := &piiRedactionState{rules: rules, limit: 10000, result: result, placeholderFor: map[string]string{}}
+	return state.redact(text), result.Replacements
 }
 
 func (s *Service) contentCaptureHeaders(requestID, scope string, header http.Header, cfg ContentCaptureConfig) []*contentCaptureHeaderRecord {

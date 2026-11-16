@@ -1862,6 +1862,11 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		rc.rec.Warnings = append(rc.rec.Warnings, ad.WarningText)
 	}
 	piiResult, err := applyPIIFilter(req, group.PIIFilter, dialect)
+	if piiResult.state != nil {
+		// Rebind after the result struct is returned by value so outbound matches
+		// update the metadata observed by this request lifecycle.
+		piiResult.state.result = &piiResult
+	}
 	if err != nil {
 		var blocked piiFilterBlockedError
 		if errors.As(err, &blocked) {
@@ -1894,6 +1899,14 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		rc.rec.Warnings = appendWarning(rc.rec.Warnings, "pii-filter-applied")
 		rc.rec.Warnings = append(rc.rec.Warnings, piiResult.Warnings...)
 		rc.trace("pii_filter_applied", fmt.Sprintf("replacements=%d rules=%d", piiResult.Replacements, piiRuleCount(piiResult)), Target{}, 0, 0, "", false, 0)
+	}
+	if group.PIIFilter.Enabled && group.PIIFilter.SecretsEnabled && req.Stream {
+		// Never forward a stream whose output cannot yet be inspected across
+		// chunk boundaries. The #929 stream gate replaces this fail-closed guard.
+		code := "secret-dlp-stream-inspection-required"
+		rc.trace("secret_dlp_stream_blocked", "", Target{}, 0, http.StatusBadRequest, code, false, 0)
+		s.writeError(w, rc, http.StatusBadRequest, code)
+		return
 	}
 	captureDecision := s.contentCaptureFor(rc.caller, req.Model, group)
 	s.captureRequestContent(rc, req, r.Header, captureDecision)
@@ -2149,6 +2162,17 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		return
 	}
 	if resp != nil {
+		if group.PIIFilter.Enabled && !resp.Streamed {
+			before := piiResult.Replacements
+			redactPIIResponse(resp, piiResult.state)
+			if piiResult.Replacements > before && (normalizePIIFilterMode(group.PIIFilter) == "fail_on_match" || group.PIIFilter.FailOnMatch) {
+				code := "pii-filter-blocked"
+				rc.trace("pii_filter_blocked", "pii_filter matched response content", dec.Target, 0, http.StatusBadGateway, code, false, 0)
+				s.writeError(w, rc, http.StatusBadGateway, code)
+				s.finish(rc, http.StatusBadGateway, &code)
+				return
+			}
+		}
 		ensureResponseID(resp)
 		if totalTokens(resp.Usage) == 0 && reservationTokens > 0 {
 			resp.Usage = estimatedUsageForReservation(req, dialect, reservationTokens)

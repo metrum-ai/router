@@ -7,7 +7,17 @@ doc_type: howto
 
 Model groups can redact configured text patterns before the router sends a request to an upstream model. This is useful when a deployment needs central privacy controls for LLM and agent traffic without changing every client.
 
-PII filtering is deployment-defined. Group names, rules, and placeholder names below are examples.
+PII filtering is deployment-defined. Group names, rules, and placeholder names below are examples. Set `secrets_enabled: true` to add the bounded built-in detector pack for private-key blocks, common AWS/GitHub/Slack/Stripe credentials, credential assignments, and high-entropy tokens. Built-in matches use the same `mode`, `apply_to`, and replacement limit as configured rules. This pack is heuristic and does not replace a full DLP product.
+
+The local deterministic matcher benchmark measured about 0.30 ms per 2.7 KiB
+benign request (`BenchmarkSecretMatcher`, Go benchmark, one run). This is a
+microbenchmark, not an end-to-end latency guarantee; actual cost depends on
+request size and the configured custom rules.
+
+With `secrets_enabled`, streamed requests fail closed with
+`secret-dlp-stream-inspection-required` until the bounded streaming inspection
+gate is integrated. This prevents uninspected response chunks from reaching
+the caller.
 
 ## Model Group Configuration
 
@@ -17,6 +27,7 @@ models:
     strategy: weighted
     pii_filter:
       enabled: true
+      secrets_enabled: true
       mode: redact_only
       max_replacements_per_request: 200
       apply_to:
