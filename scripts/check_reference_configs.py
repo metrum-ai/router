@@ -33,7 +33,7 @@ REQUIRED_FILES = (
 )
 OPTIONAL_DIRS = {"kubernetes", "results"}
 
-UPSTREAM_MODEL_SERVER_REPOS = frozenset({"vllm/vllm-openai", "rocm/vllm"})
+UPSTREAM_MODEL_SERVER_REPOS = frozenset({"vllm/vllm-openai", "vllm/vllm-openai-rocm", "rocm/vllm"})
 
 README_SECTIONS = (
     "## Hardware",
@@ -226,11 +226,10 @@ def check_compose(tier: Path, locked: dict[str, str], problems: Problems) -> set
 
 
 def check_rocm_entrypoint(tier: Path, problems: Problems) -> None:
-    """A rocm/vllm service must start the server itself.
+    """A ROCm vLLM service must start the server itself.
 
-    The official ROCm image carries no entrypoint and its default CMD only pins
-    the matching wheel, so a service that relies on the image defaults never
-    serves a model.
+    Keep the serving command explicit across AMD's legacy and upstream ROCm
+    images, so deployment behavior does not depend on image defaults.
     """
     compose = load_yaml(tier / "compose.yaml", Problems())
     if not isinstance(compose, dict):
@@ -242,12 +241,12 @@ def check_rocm_entrypoint(tier: Path, problems: Problems) -> None:
         if not isinstance(service, dict):
             continue
         image = str(service.get("image", ""))
-        if not image.startswith("rocm/vllm:"):
+        if not image.startswith(("rocm/vllm:", "vllm/vllm-openai-rocm:")):
             continue
         entrypoint = service.get("entrypoint")
         rendered = entrypoint if isinstance(entrypoint, str) else " ".join(str(part) for part in entrypoint or [])
         if "vllm" not in rendered or "serve" not in rendered:
-            problems.add(tier.name, f"service {name} uses rocm/vllm but does not set an explicit vllm serve entrypoint")
+            problems.add(tier.name, f"service {name} uses a ROCm vLLM image but does not set an explicit vllm serve entrypoint")
 
 
 def check_config(tier: Path, problems: Problems) -> set[str]:

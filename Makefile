@@ -468,6 +468,7 @@ ci-python: secret-contract capability-smoke-contracts
 	python3 scripts/hierarchy_release_gate_test.py
 	uv run --with pyyaml python scripts/release_provenance_test.py
 	python3 scripts/ci_topology_test.py
+	uv run --with pyyaml python -m unittest scripts/engine_advisory_gate_test.py -q
 	python3 scripts/harbor_promotion_test.py
 	uv run --with pyyaml python scripts/eval_infra_test.py
 	uv run --with pyyaml python scripts/direct_provider_canary_test.py
@@ -850,7 +851,7 @@ package-one-no-docs: capability-smoke-unit
 	pkg_name="$${PKG_NAME}-$${VERSION}-$${GOOS}-$${GOARCH}"; \
 	pkg_dir="$${DIST_DIR}/pkg/$$pkg_name"; \
 	rm -rf "$$pkg_dir"; \
-	mkdir -p "$$pkg_dir/bin" "$$pkg_dir/config/scripts" "$$pkg_dir/docs" "$$pkg_dir/caddy"; \
+	mkdir -p "$$pkg_dir/bin" "$$pkg_dir/config" "$$pkg_dir/docs" "$$pkg_dir/caddy"; \
 	set -e; \
 	for bin in $(PACKAGE_BINARIES); do \
 		echo "packaging $$bin for $${GOOS}/$${GOARCH}"; \
@@ -858,7 +859,6 @@ package-one-no-docs: capability-smoke-unit
 	done; \
 	cp config.example.yaml "$$pkg_dir/config/config.example.yaml"; \
 	cp env.example.json "$$pkg_dir/config/env.example.json"; \
-	cp scripts/router.ts "$$pkg_dir/config/scripts/router.ts"; \
 	cp deploy/Caddyfile "$$pkg_dir/caddy/Caddyfile"; \
 	for legal in LICENSE NOTICE THIRD_PARTY_NOTICES.md MODEL_LICENSES.md; do \
 		cp "$$legal" "$$pkg_dir/$$legal"; \
@@ -900,7 +900,7 @@ package-docker-one-no-docs: capability-smoke-unit
 	$(MAKE) validate-build-metadata
 	docker_pkg_dir="$${DIST_DIR}/docker/$${PKG_NAME}-$${VERSION}-docker-$${GOOS}-$${GOARCH}"; \
 	rm -rf "$${docker_pkg_dir}"; \
-	mkdir -p "$${docker_pkg_dir}/images" "$${docker_pkg_dir}/compose" "$${docker_pkg_dir}/config/scripts" "$${docker_pkg_dir}/docs"
+	mkdir -p "$${docker_pkg_dir}/images" "$${docker_pkg_dir}/compose" "$${docker_pkg_dir}/config" "$${docker_pkg_dir}/docs"
 	GOOS="$${GOOS}" GOARCH="$${GOARCH}" DOCKER_PLATFORM="linux/$${GOARCH}" IMAGE_TAG="$${VERSION}-$${GOOS}-$${GOARCH}" $(MAKE) docker-image-no-docs
 	docker_pkg_dir="$${DIST_DIR}/docker/$${PKG_NAME}-$${VERSION}-docker-$${GOOS}-$${GOARCH}"; \
 	$(DOCKER) save "$${IMAGE_NAME}:$${VERSION}-$${GOOS}-$${GOARCH}" -o "$${docker_pkg_dir}/images/$${IMAGE_NAME}-$${VERSION}-$${GOOS}-$${GOARCH}.tar"; \
@@ -911,7 +911,6 @@ package-docker-one-no-docs: capability-smoke-unit
 	sed "s/^METRUM_AI_ROUTER_VERSION=.*/METRUM_AI_ROUTER_VERSION=$${VERSION}-$${GOOS}-$${GOARCH}/" deploy/compose.env.example > "$${docker_pkg_dir}/compose/.env"; \
 	cp config.example.yaml "$${docker_pkg_dir}/config/config.example.yaml"; \
 	cp env.example.json "$${docker_pkg_dir}/config/env.example.json"; \
-	cp scripts/router.ts "$${docker_pkg_dir}/config/scripts/router.ts"; \
 	for legal in LICENSE NOTICE THIRD_PARTY_NOTICES.md MODEL_LICENSES.md; do \
 		cp "$$legal" "$${docker_pkg_dir}/$$legal"; \
 	done; \

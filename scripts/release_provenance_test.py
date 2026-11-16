@@ -21,7 +21,9 @@ SUBJECTS = {
     "dist/metrum-ai-router-*.zip",
     "dist/SHA256SUMS",
     "dist/release-artifacts.json",
+    "dist/upgrade-rollback-results.json",
 }
+UPLOAD_SUBJECTS = SUBJECTS - {"dist/upgrade-rollback-results.json"}
 
 
 def validate(workflow):
@@ -43,7 +45,10 @@ def validate(workflow):
     assert not step.get("continue-on-error", False)
     subjects = set(step["with"]["subject-path"].splitlines())
     assert subjects == SUBJECTS
-    assert set(steps[upload]["with"]["path"].splitlines()) == subjects
+    assert set(steps[upload]["with"]["path"].splitlines()) == UPLOAD_SUBJECTS
+    evidence = next(step for step in steps if step.get("name") == "Upload upgrade and rollback evidence")
+    assert evidence.get("if") == step["if"]
+    assert evidence["with"]["path"] == "dist/upgrade-rollback-results.json"
     release_script = steps[publish]["run"]
     assert steps[publish].get("if") == step["if"]
     # The publisher selects archives via find and two metadata files via
@@ -55,7 +60,7 @@ def validate(workflow):
     assert selection_lines == [
         "{",
         "find dist -maxdepth 1 -type f \\( -name 'metrum-ai-router-*.tar.gz' -o -name 'metrum-ai-router-*.zip' \\)",
-        "printf '%s\\n' dist/SHA256SUMS dist/release-artifacts.json",
+        "printf '%s\\n' dist/SHA256SUMS dist/release-artifacts.json dist/upgrade-rollback-results.json",
     ]
     assert '"${ASSETS[@]}"' in release_script
     assert "gh release create" in release_script
@@ -83,7 +88,7 @@ class ProvenanceWorkflowTest(unittest.TestCase):
                 "metrum-ai-router-v1.2.3-linux-arm64.tar.gz",
                 "metrum-ai-router-v1.2.3-windows-amd64.zip",
                 "metrum-ai-router-v1.2.3-windows-arm64.zip",
-                "SHA256SUMS", "release-artifacts.json", "unrelated.txt",
+                "SHA256SUMS", "release-artifacts.json", "upgrade-rollback-results.json", "unrelated.txt",
             ):
                 (dist / name).write_text("fixture", encoding="utf-8")
             # Execute only the checked, fixed selection block; no gh invocation.
@@ -93,7 +98,7 @@ class ProvenanceWorkflowTest(unittest.TestCase):
             for pattern in attest["with"]["subject-path"].splitlines():
                 attested.update(glob.glob(pattern, root_dir=root))
             self.assertEqual(published, attested)
-            self.assertEqual(len(published), 6)
+            self.assertEqual(len(published), 7)
 
     def test_missing_zip_attestation_is_rejected(self):
         doc = copy.deepcopy(self.workflow)

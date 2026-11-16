@@ -5,11 +5,27 @@ doc_type: reference
 
 # Upgrade Guide
 
-## Security hardening
+## Detector service boundary (v5.0.0)
 
-Review the [Router Hardening Guide](../security-governance/hardening), [Threat Summary](../security-governance/threat-model-v5), and [Compromise Runbook](../security-governance/compromise-runbook) before production rollout. These docs use existing v5.0.0 settings; no config migration is required.
+Custom detector strategies run as separate services behind the versioned
+`metrum.detector.v1` HTTPS contract. Detector transports require an exact
+allowlisted hostname and a bounded timeout. The router rejects unlisted
+redirects, URL userinfo, and malformed or oversized responses. Detector events
+carry metadata by default. Text segments are sent only when an operator opts in
+per detector with `include_segments`; prompts and user messages are never sent.
+See [External detectors](/docs/security-governance/detectors).
 
 For v5.0.0, `metrum-ai-router-migrate --json` writes one JSON document to stdout. Database diagnostics are sent to stderr.
+
+Release candidate validation includes the package upgrade-and-rollback procedure in the [release checks](https://github.com/metrum-ai/router/blob/main/docs/RELEASE_CHECKS.md).
+
+Targets that ignore caller sampling controls can declare `temperature` or `top_p` in `request_shape_support.unsupported_request_features`; the router omits each declared field from both the translated request and its raw field map, and records the omission on the attempt. OpenAI Chat Completions translations now forward `top_p`. Pre-commit HTTP 400/422 refusals fall back only when the structured provider error identifies `temperature` or `top_p` with a supported unsupported-value/parameter code (or no code). Free-form message text and other 4xx responses do not trigger this fallback.
+
+The NVIDIA and AMD reference pins moved to the official `vllm/vllm-openai:v0.33.0` and `vllm/vllm-openai-rocm:v0.33.0` images, respectively, for security advisories. AMD tiers were hardware-validated on the previous v0.25.0 image; revalidation on v0.33.0 is pending. Confirm the host's AMDGPU kernel driver supports the container runtime before deploying.
+
+NVIDIA and AMD Kubernetes deployment examples and provisioning intents use the
+digest-pinned official vLLM v0.33.0 images, matching the reference
+configurations. Update copied examples from older releases before deploying them.
 
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
 
@@ -34,6 +50,21 @@ also enter security access events when
 `server.admin_reports.security.enabled` is true; structured log events remain
 available otherwise.
 
+## v5.0.0 trusted proxy client IP resolution
+
+When `server.client_ip.trusted_proxy_cidrs` is configured, the router now walks
+`X-Forwarded-For` from the socket peer toward the client and chooses the first
+untrusted hop. A client-supplied leftmost value no longer overrides the address
+appended by a trusted proxy. If the socket peer is not in a trusted CIDR, the
+router ignores `X-Forwarded-For` and uses the socket peer. If every forwarded
+hop is trusted, the router uses the leftmost address. `X-Real-IP` keeps its
+existing single-value behavior.
+
+This can change client addresses recorded in security access events and used by
+admin OIDC rate limiting for proxied deployments. Review the trusted proxy
+CIDRs and verify that each proxy appends its connecting peer to
+`X-Forwarded-For`; do not trust client-controlled forwarding headers directly.
+
 ## Pre-Upgrade Checklist
 
 1. Read the release notes for operator impact, database changes, license changes, and caller-visible behavior.
@@ -46,6 +77,39 @@ available otherwise.
 8. For v2.0.0+, inventory every install path, systemd unit, Compose service,
    Kubernetes image, and client `model_provider` that still names `metrum-router*`
    or `metrum-genai-smartrouter-*` CLIs.
+
+## v5.0.0 Configuration Changes
+
+### TypeScript Routing Policy Removal
+
+The in-process `strategy: script` policy and its non-empty `script`,
+`script_max_concurrent`, and `script_http` settings are removed. User code
+never runs inside the router process. Configurations selecting `strategy:
+script` or setting non-empty legacy values fail during configuration loading
+with guidance to migrate to `strategy: external`. Empty legacy fields written
+by v4.8 are ignored and removed from canonical documents on import.
+
+Move the policy to a standalone service and configure `external_policy.url`,
+`allow_hosts`, and a bounded `timeout_ms`. The service receives safe derived
+request context by default. Enable `external_policy.include_request: true` only
+when the service is trusted to receive request content. The request-shape and
+PII-aware examples under `examples/typescript-request-shape/` and
+`examples/typescript-pii-policy/` show the external policy contract. Use
+`pii_filter` when request redaction is required before upstream calls.
+
+## v5.0.0 caller binding
+
+Caller binding is opt-in; existing callers keep `binding.mode: off`. To enable
+enforcement, add `callers[].binding` and validate client network paths first.
+CIDR and ASN allow lists can be enforced behind an ingress. ASN checks require
+an operator-maintained `server.client_ip.asn_prefixes` map. For mTLS identity,
+terminate TLS at the router or pass TLS through unchanged, then configure
+`server.tls.client_auth: optional` (or `require`) and `server.tls.client_ca_file`. The router
+does not accept forwarded certificate headers. Config validation rejects
+enforced mTLS binding without verified client-certificate TLS or the client-auth
+extended key usage. Enforced binding failures return the same generic HTTP 401
+response as invalid tokens; the security event retains the specific failure
+reason.
 
 ## Compatibility and operations (v4.6.0)
 

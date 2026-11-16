@@ -61,13 +61,13 @@ Questions and bugs follow [SUPPORT.md](SUPPORT.md); suspected vulnerabilities
 must use the private reporting path in [SECURITY.md](SECURITY.md).
 Trademark use is governed by [TRADEMARKS.md](TRADEMARKS.md).
 
-Hosted docs: [overview](https://llm-api.apps.metrum.ai/docs/overview) and `/docs/`
+Hosted docs: the `/docs/overview` page and `/docs/` route
 on a running router. Technical brief: [docs/solution-brief.md](docs/solution-brief.md).
 Doc ownership map: [docs/DOCS_MAINTENANCE.md](docs/DOCS_MAINTENANCE.md).
 
 ## Quick Start From Source
 
-Hosted product docs: [overview](https://llm-api.apps.metrum.ai/docs/overview)
+Hosted product docs: `/docs/overview`
 (also served from a running router at `/docs/`).
 
 Prerequisites are Go as declared in `go.mod` and Python 3 for the local
@@ -440,14 +440,14 @@ non-retryable 4xx is not replayed to another provider.
 
 ### Secrets and content never leak into policy
 
-Shipping provider keys or raw prompts into a routing script creates a second
+Shipping provider keys or raw prompts into a policy component creates a second
 secret surface. Illustrative: one leaked key forces rotation across every
 caller that shared it, often a multi-day outage window. Scripts and external
 policies receive safe identifiers only. Provider keys are injected server-side.
 Optional `pii_filter` runs before cache key, routing input, and upstream call
 (`redact_only`, `fail_on_match`; restoration is rejected by validation). Content capture is
 opt-in, redacted, and AES-256-GCM encrypted.
-([TypeScript Routing](#typescript-routing), [PII Filtering](#pii-filtering),
+([External Routing Policy Service](#external-routing-policy-service), [PII Filtering](#pii-filtering),
 `internal/router/content_capture.go`)
 
 ### Every decision is evidence
@@ -518,8 +518,8 @@ configured target instead.
 ([docs/LEARNED_ROUTING_POLICY.md](docs/LEARNED_ROUTING_POLICY.md))
 
 **Can I run without LRP?**
-Yes. Use `static`, `weighted`, `failover`, `dynamic_score`, or TypeScript
-`script` strategies. LRP is optional behind `strategy: external`.
+Yes. Use `static`, `weighted`, `failover`, or `dynamic_score`. LRP is optional
+behind `strategy: external`.
 
 **How is this different from LiteLLM?**
 LiteLLM Server manages a unified interface to 100+ LLMs in OpenAI
@@ -637,7 +637,6 @@ Former README headings remain reachable below or from this index.
 - [Provider Model Catalogs](#provider-model-catalogs)
 - [Dynamic Score Routing](#dynamic-score-routing)
 - [Model Group Contracts](#model-group-contracts)
-- [TypeScript Routing](#typescript-routing)
 - [External Routing Policy Service](#external-routing-policy-service)
 - [PII Filtering](#pii-filtering)
 - [Usage Reports](#usage-reports)
@@ -692,7 +691,6 @@ bin/metrum-ai-router-migrate
 bin/metrum-ai-routerctl
 config/config.example.yaml
 config/env.example.json
-config/scripts/router.ts
 docs/PACKAGE_README.md
 docs/BINARY_INSTALL.md
 docs/DOCKER_COMPOSE_INSTALL.md
@@ -739,7 +737,6 @@ compose/.env
 compose/.env.example
 config/config.example.yaml
 config/env.example.json
-config/scripts/router.ts
 docs/PACKAGE_README.md
 docs/BINARY_INSTALL.md
 docs/DOCKER_COMPOSE_INSTALL.md
@@ -748,7 +745,6 @@ docs/PACKAGE_VALIDATION.md
 docs/solution-brief.md
 ```
 
-The packaged config expects the routing script at `config/scripts/router.ts`, so the standard packaged run command is:
 
 ```bash
 bin/metrum-ai-router --config config/config.yaml
@@ -845,7 +841,7 @@ Admin reports and `router-usage-report --traffic-tuning-advisor` can turn those 
 
 Set realistic output caps for each client workflow. Very large caps can be rejected near a token budget even when the prompt is small, because the router admits based on the maximum output the caller asked the upstream to generate. Request-count quotas are unchanged and still count admitted requests independently from token usage.
 
-Raw caller tokens, caller token hashes, and raw provider API keys are not exposed to TypeScript routing scripts, logs, metrics, or responses. Scripts get safe identifiers only: caller `id`, legacy-compatible `user`, canonical `ownerUser`/`username`, `project`, `environment`, public `tokenId`, membership role, key status, and target `keyId`, `apiKeyEnv`, and `keyConfigured`. This is enough to route by validated owner/project metadata or by the configured provider key name without making secrets available to script code.
+External routing policies run as separate services; the router never executes user code in its process.
 
 ## Provider Model Catalogs
 
@@ -1011,7 +1007,7 @@ Use whichever deployment-defined model group the caller token allows. If a reque
 
 ### Model Group Contracts
 
-Model groups may declare an optional `contract` that makes the group’s workload, API surfaces, hard capability requirements, validation quality floor, and operational thresholds first-class config. Existing groups without a contract behave as before. Contract enforcement is strictly group-local: after authentication and caller allow-list checks, the router filters only the requested group’s already eligible targets, then runs `static`, `weighted`, `failover`, `dynamic_score`, `script`, or `external` on the remaining targets.
+Model groups may declare an optional `contract` that makes the group’s workload, API surfaces, hard capability requirements, validation quality floor, and operational thresholds first-class config. Existing groups without a contract behave as before. Contract enforcement is strictly group-local: after authentication and caller allow-list checks, the router filters only the requested group’s already eligible targets, then runs `static`, `weighted`, `failover`, `dynamic_score`, `intelligent`, or `external` on the remaining targets.
 
 ```yaml
 models:
@@ -1066,7 +1062,7 @@ models:
 
 Startup validation rejects unsupported API shapes, invalid modalities, impossible validation status values, bad dates, out-of-range quality scores/pass rates, negative thresholds, required tags that no target has, declared API shapes that no target serves, and contracts no target can satisfy. Runtime contract failures return the existing `502 no-eligible-target` style response with safe buckets such as `contract-required-api-shape`, `contract-required-modality`, `contract-quality-floor`, `contract-validation-expired`, or `contract-no-validated-target`.
 
-`dynamic_score` can use target `tags` and `validation.quality_score`/`validation.pass_rate` as evaluation hints. TypeScript and external policy strategies receive the same safe contract and target validation metadata after contract filtering, and returned decisions are validated against the filtered target list. Usage rows store only scalar contract buckets, optional workload labels, and target validation status/workload/age buckets.
+`dynamic_score` can use target `tags` and `validation.quality_score`/`validation.pass_rate` as evaluation hints. External policy services receive safe contract and target validation metadata after contract filtering, and returned decisions are validated against the filtered target list. Usage rows store only scalar contract buckets, optional workload labels, and target validation status/workload/age buckets.
 
 Roll out contracts on a deployment-defined test group first. Add validation metadata to each intended target, run text/tool/image/structured-output smokes that match the declared contract, confirm no-eligible failures use safe reason buckets, and verify reports show only safe scalar buckets. Roll back by removing or relaxing the `contract` block, removing a too-strict quality floor, or switching the group back to its previous strategy/weights.
 
@@ -1099,64 +1095,34 @@ providers:
     models:
 ```
 
-## TypeScript Routing
+## Custom Routing Policies
 
-Use `strategy: script` on a model group and point `script` at a TypeScript file:
+The in-process TypeScript strategy (`strategy: script`) was removed in v5.0.0.
+Configurations using `strategy: script` or non-empty legacy script settings
+fail at load with a migration message; empty v4 compatibility fields are
+ignored. Move custom routing logic into a standalone
+policy service using `strategy: external`. User code never runs inside the
+router process.
 
-```yaml
-models:
-  default:
-    strategy: script
-    script: scripts/router.ts
-    targets:
-      - { provider: baseten, model_ref: gpt-oss-120b, weight: 60 }
-      - { provider: minimax, model_ref: m3, weight: 30 }
-      - { provider: kimi, model_ref: kimi-k2.7-code, weight: 10 }
-```
-
-The script must export `route(ctx)` and return one configured target by index or by `{ provider, model }`. Proxy users still request a deployment-defined model group name; the script chooses one backing target from that group's configured `targets`.
-
-The script context uses top-level `ctx.text` for normalized request text, plus `ctx.group`, `ctx.request`, `ctx.caller`, and `ctx.targets`. Caller metadata includes `id`, legacy-compatible `user`, canonical `ownerUser`/`username`, `project`, `environment`, public `tokenId`, `membershipRole`, `keyStatus`, and the key allow list. Target metadata includes provider, model, modelRef, baseUrl, dialect, weight, keyId, apiKeyEnv, and keyConfigured. For groups with `pii_filter`, `ctx.text`, normalized request fields, and `ctx.request.raw` are redacted before the script runs, and placeholder mappings are not exposed. Raw provider API keys, raw caller tokens, and caller token hashes are never passed to scripts; returned targets are validated against the configured list. Scripts run synchronously inside the router process, so keep policy local and fast; unrestricted network calls and file access are not part of the script runtime.
-
-Relative TypeScript imports are bundled at router startup, so a script can use local helpers such as `import { scorePrompt } from "./policy"`. Keep deployment-owned helpers next to the script, for example `config/scripts/router.ts`, `config/scripts/policy.ts`, and `config/scripts/scoring.ts`.
-
-Third-party dependencies must be installed, locked, and packaged before deployment. The router bundles from the deployment filesystem at startup; it does not run `npm install`, download packages, or resolve network dependencies at runtime. For npm-based policy helpers, manage dependencies under the script directory, package `package.json`, the lockfile, and the resolved dependency tree or a pre-bundled script artifact, and keep that tree free of provider keys, router tokens, and private host credentials. For large dependencies or native modules, prefer pre-bundling during release and deploying the generated entrypoint.
-
-External policy calls are opt-in per model group through deployment config:
-
-```yaml
-models:
-  default:
-    strategy: script
-    script: scripts/router.ts
-    script_http:
-      enabled: true
-      allow_hosts: [routing-policy.internal.example]
-      timeout_ms: 200
-      max_response_bytes: 65536
-      headers:
-        Authorization: ${ROUTING_POLICY_AUTH_HEADER}
-    targets:
-      - { provider: baseten, model_ref: gpt-oss-120b, tier: cheap, weight: 70 }
-      - { provider: minimax, model_ref: m3, tier: heavy, weight: 30 }
-```
-
-Scripts call external policy with `router.fetchJSON(url, options)`, not browser `fetch`. The helper supports `GET` and `POST`, JSON request bodies, JSON responses, script-supplied headers limited to `Accept`, `Content-Type`, and `X-*`, and only hosts in the model group's `script_http.allow_hosts`. HTTPS is required by default. Plain HTTP is accepted only for loopback hosts such as `localhost`, `127.0.0.1`, and `::1`, or when `script_http.allow_http: true` is set for a trusted non-local policy service. Redirects are followed only when each hop keeps an allowed `http`/`https` scheme and an exact allowlisted hostname. Put policy-service auth in deployment config with `script_http.headers`, for example `Authorization: ${ROUTING_POLICY_AUTH_HEADER}`, rather than in script source. `timeout_ms` is capped at `5000`; use smaller values for routing policy because it runs before the upstream model request.
-
-A demo PII-aware routing policy lives in `examples/typescript-pii-policy/`. It detects common PII-like patterns in `ctx.text`, sends matching requests only to configured targets marked `sensitive` or `private`, restricts retry fallbacks to those same sensitive/private targets, sends non-matching requests to a normal target, and returns only safe class labels such as `pii-detected:sensitive-route` or `pii-detected:none`. If PII is detected and no sensitive/private target is eligible, the demo fails closed with `pii-detected:no-sensitive-target`. This is routing only: TypeScript scripts do not redact outbound request content. Use model-group `pii_filter` when the router must redact, restore, or fail requests before upstream calls.
+The former request-shape and PII-aware TypeScript examples are now standalone
+external policy services in `examples/typescript-request-shape/` and
+`examples/typescript-pii-policy/`. The PII-aware example requires
+`external_policy.include_request: true`; without it the service receives no
+request text and treats each request as no-PII. Use `pii_filter` when the
+router must redact request content before upstream calls.
 
 ## External Routing Policy Service
 
 See [Learned Routing Policy](#learned-routing-policy) for the outcome-trained
-service. Use `strategy: external` when routing policy should live in a standalone web service instead of in TypeScript. The router sends safe derived request context, safe caller metadata, safe contract metadata when configured, eligible target metadata, validation metadata, pricing, tool capability metadata, and modalities to the configured policy URL, then validates the returned target against the model group's eligible targets. By default the policy payload does not include prompt text, message bodies, image URLs/data, tool schemas, tool outputs, or `request.raw`; route on fields such as `context.textChars`, `context.estimatedTokens`, `context.imageCount`, and `context.toolCount`. Set `external_policy.include_request: true` only for a trusted policy service that is allowed to receive request content. With `pii_filter`, that opt-in request mirror is redacted before dispatch and placeholder mappings are not sent. Raw router tokens, token hashes, and provider API keys are never sent.
+service. Use `strategy: external` when routing policy should live in a standalone web service. The router sends safe derived request context, safe caller metadata, safe contract metadata when configured, eligible target metadata, validation metadata, pricing, tool capability metadata, and modalities to the configured policy URL, then validates the returned target against the model group's eligible targets. By default the policy payload does not include prompt text, message bodies, image URLs/data, tool schemas, tool outputs, or `request.raw`; route on fields such as `context.textChars`, `context.estimatedTokens`, `context.imageCount`, and `context.toolCount`. Set `external_policy.include_request: true` only for a trusted policy service that is allowed to receive request content. With `pii_filter`, that opt-in request mirror is redacted before dispatch and placeholder mappings are not sent. Raw router tokens, token hashes, and provider API keys are never sent.
 
 ```yaml
 models:
   adaptive:
     strategy: external
     external_policy:
-      url: https://routing-policy.internal.example/route
-      allow_hosts: [routing-policy.internal.example]
+      url: https://policy.example.com/route
+      allow_hosts: [policy.example.com]
       timeout_ms: 500
       max_response_bytes: 65536
       headers:
@@ -1168,7 +1134,7 @@ models:
       - { provider: minimax, model_ref: m3, tier: heavy, weight: 30 }
 ```
 
-Policy responses use the same selector shape as TypeScript: `targetIndex` or `target`, optional `fallbackIndexes`/`fallbacks`, and optional `classLabel`. Class labels are telemetry labels, not content fields: keep them to short tokens using letters, numbers, `_`, `-`, `.`, and `:`. Unsafe, long, or content-like labels are stored as `unsafe_class_label` before logs or usage rows are written. When a TypeScript script omits `fallbackIndexes` and `fallbacks`, remaining eligible targets are used as retries; when either field is present, the supplied entries are the complete retry set. The default `on_error` behavior is `fail_closed`, returning `502 routing-policy-error`; `fallback` can be configured when the target order is an acceptable default. A runnable demo service lives at `examples/external-routing-policy/prompt_size_policy.py`.
+Policy responses use `targetIndex` or `target`, optional `fallbackIndexes`/`fallbacks`, and optional `classLabel`. Class labels are telemetry labels, not content fields: keep them to short tokens using letters, numbers, `_`, `-`, `.`, and `:`. Unsafe, long, or content-like labels are stored as `unsafe_class_label` before logs or usage rows are written. The default `on_error` behavior is `fail_closed`, returning `502 routing-policy-error`; `fallback` can be configured when the target order is an acceptable default. A runnable demo service lives at `examples/external-routing-policy/prompt_size_policy.py`.
 
 `examples/external-routing-policy/outcome_calibrated_policy.py` is a separate
 tested reference for outcome-calibrated routing. It uses deployment-owned
@@ -1179,97 +1145,24 @@ deployment-designated strong default. The reference requires
 `external_policy.include_request: true` and therefore belongs only in trusted
 infrastructure, with redacted input when the model group uses `pii_filter`.
 
-External policy URLs use the same egress rules as `router.fetchJSON`: HTTPS by default, plaintext HTTP only for loopback hosts or with `external_policy.allow_http: true`, exact-host allowlisting, and redirect revalidation on every hop. A redirect to a host outside `allow_hosts`, including a loopback address that was not explicitly allowed, fails before the redirected service is reached.
+External policy URLs use bounded HTTP clients with these egress rules: HTTPS by default, plaintext HTTP only for loopback hosts or with `external_policy.allow_http: true`, exact-host allowlisting, and redirect revalidation on every hop. A redirect to a host outside `allow_hosts`, including a loopback address that was not explicitly allowed, fails before the redirected service is reached.
 
 Non-loopback private/link-local IPs and nondefault nonlocal ports are also denied.
 Private policy sidecars use loopback in the router's network namespace.
 
-The default `scripts/router.ts` does three things:
-
-- Removes targets whose provider key is not configured or whose target weight is zero.
-- Applies named regex rules against safe caller-key metadata and safe target-key metadata.
-- Falls back to weighted random routing across eligible targets, using group target weights as relative probabilities.
 
 For checked-in request-shape routing (prompt size, tools, images, structured
 outputs, and reasoning signals), use
-`examples/typescript-request-shape/router.ts` instead of assuming
-`scripts/router.ts` implements that policy.
+`examples/typescript-request-shape/request_shape_policy.py` as a standalone
+external policy service.
 
 ## PII Filtering
 
-Model groups can configure `pii_filter` rules to replace matched text with typed placeholders before target selection, cache-key generation, routing-policy inputs, and upstream provider calls. The redacted request object is the source of truth for TypeScript script `ctx.request.raw` and for external policy `request`/`text` only when `external_policy.include_request: true` is explicitly enabled; external policy services otherwise receive safe derived context without raw request mirrors. The configurable modes are `redact_only` and `fail_on_match`, and `fail_on_match: true` can be combined with `redact_only`. Response restoration is rejected at startup: `mode: redact_and_restore` and any explicit `restore_response` value fail with `F-011: pii-filter-redact-and-restore-unsupported`, so placeholders are caller-visible on unary and streaming paths alike; the router does not buffer streams to restore mappings that may span arbitrary SSE chunks. If a request exceeds `max_replacements_per_request`, the router fails closed with `pii-filter-blocked` before any upstream call. Usage logs and the usage database store only safe scalar metadata such as applied flag, mode, replacement count, and matched-rule count; raw matched values and placeholder mappings remain in memory for the request lifecycle by default.
+Model groups can configure `pii_filter` rules to replace matched text with typed placeholders before target selection, cache-key generation, routing-policy inputs, and upstream provider calls. External policy services receive request `request`/`text` mirrors only when `external_policy.include_request: true` is explicitly enabled; external policy services otherwise receive safe derived context without raw request mirrors. The configurable modes are `redact_only` and `fail_on_match`, and `fail_on_match: true` can be combined with `redact_only`. Response restoration is rejected at startup: `mode: redact_and_restore` and any explicit `restore_response` value fail with `F-011: pii-filter-redact-and-restore-unsupported`, so placeholders are caller-visible on unary and streaming paths alike; the router does not buffer streams to restore mappings that may span arbitrary SSE chunks. If a request exceeds `max_replacements_per_request`, the router fails closed with `pii-filter-blocked` before any upstream call. Usage logs and the usage database store only safe scalar metadata such as applied flag, mode, replacement count, and matched-rule count; raw matched values and placeholder mappings remain in memory for the request lifecycle by default.
 
 See `docs/PII_FILTERING.md` and the Docusaurus PII Filtering page for configuration examples and smoke-test guidance.
 
-Prompt-size / request-shape routing example (`examples/typescript-request-shape/router.ts`):
-
-```ts
-type Target = {
-  provider: string;
-  model: string;
-  tier?: string;
-  weight: number;
-  keyConfigured: boolean;
-};
-
-type RouteContext = {
-  text: string;
-  targets: Target[];
-};
-
-export function route(ctx: RouteContext) {
-  const eligible = ctx.targets
-    .map((target, index) => ({ target, index }))
-    .filter((entry) => entry.target.keyConfigured && entry.target.weight > 0);
-
-  if (eligible.length === 0) {
-    return { targetIndex: 0, classLabel: "prompt-size:no-eligible-targets" };
-  }
-
-  const preferredTier = ctx.text.length > 8000 ? "heavy" : "cheap";
-  const preferred = eligible.find((entry) => entry.target.tier === preferredTier) || eligible[0];
-
-  return {
-    targetIndex: preferred.index,
-    fallbackIndexes: eligible
-      .filter((entry) => entry.index !== preferred.index)
-      .map((entry) => entry.index),
-    classLabel: `prompt-size:${preferredTier}`,
-  };
-}
-```
-
-Caller metadata enables owner-, project-, environment-, or key-class routing without exposing secrets. Target metadata also lets the script route to targets backed by a specific configured provider key identifier or environment variable name:
-
-```ts
-export function route(ctx) {
-  if (
-    /^alice$/.test(ctx.caller?.ownerUser || ctx.caller?.username || "") &&
-    /^example-project$/.test(ctx.caller?.project || "")
-  ) {
-    const heavyIndex = ctx.targets.findIndex((target) =>
-      target.tier === "heavy" &&
-      (
-        (/^openrouter-default$/.test(target.keyId || "") &&
-          /^OPENROUTER_API_KEY$/.test(target.apiKeyEnv || "")) ||
-        (/^openai-default$/.test(target.keyId || "") &&
-          /^OPENAI_API_KEY$/.test(target.apiKeyEnv || ""))
-      ) &&
-      target.keyConfigured
-    );
-    if (heavyIndex >= 0) {
-      return { targetIndex: heavyIndex, classLabel: "key-regex:prod-heavy" };
-    }
-  }
-  return { targetIndex: 0, classLabel: "default" };
-}
-```
-
-`ctx.caller.ownerUser` and `ctx.caller.project` come from validated config references. `ctx.caller.tokenId` is the generated public token id without the secret suffix, for example `rtr_metrum_alice_example-project_prod_key1`; use it for traceable key classes, not identity. Do not route on raw token secrets; the router never passes them to scripts.
-
-Check which names are present without printing secret values:
-
-```bash
+bash
 env | grep -E '^(ANTHROPIC|OPENAI|MOONSHOT|KIMI|QWEN|MINIMAX|OPENROUTER|REPLICATE|XAI)_.*=' | sed 's/=.*/=***REDACTED***/'
 ```
 
@@ -1753,13 +1646,10 @@ Current MVP capabilities:
 
 ### Routing
 
-- Config-driven model groups with decision-making strategies first: `dynamic_score`, TypeScript `script`, and `external` policy services (including Learned Routing Policy). Optional model-group `contract` gates and request-shape eligibility filtering run before strategy selection. Fallback stays inside the requested group.
+- Config-driven model groups with decision-making strategies first: `dynamic_score` and `external` policy services (including Learned Routing Policy). Optional model-group `contract` gates and request-shape eligibility filtering run before strategy selection. Fallback stays inside the requested group.
 - External policy `shadow`, `enforce`, and `baseline` modes provide explicit promotion and rollback while selection remains limited to post-eligibility targets.
 - Dynamic-score conversation affinity is enabled by default, caller-isolated,
   process-local, TTL-bounded, and subordinate to current eligibility.
-- TypeScript routing scripts for custom model-selection logic inside the Go
-  router, with fresh per-decision VMs, a bounded per-group concurrency cap, and
-  cancellation-aware admission.
 - External routing policy services for standalone web-service target selection
   with safe request, caller, target, pricing, tool, and modality context,
   connection reuse, bounded timeouts, and reversible baseline/shadow/enforce

@@ -22,7 +22,7 @@ serving_models:
   - name: vllm-primary
     served_model_id: local-qwen38
     huggingface_id: Qwen/Qwen3.8-27B
-    image: vllm/vllm-openai:v0.11.0
+    image: vllm/vllm-openai:v0.33.0@sha256:d825baf9ce4b1b6bfc5ecc7b79880c7e6748c65a72d697ce3d47607aafa84c6e
     gpu_count: 1
     port: 8000
     max_model_len: 8192
@@ -32,7 +32,7 @@ serving_models:
   - name: vllm-chat
     served_model_id: local-small-chat
     huggingface_id: Qwen/Qwen3.5-4B
-    image: vllm/vllm-openai:v0.11.0
+    image: vllm/vllm-openai:v0.33.0@sha256:d825baf9ce4b1b6bfc5ecc7b79880c7e6748c65a72d697ce3d47607aafa84c6e
     gpu_count: 1
     port: 8000
     max_model_len: 8192
@@ -42,7 +42,7 @@ serving_models:
   - name: vllm-coder
     served_model_id: local-small-coder
     huggingface_id: Qwen/Qwen3-8B
-    image: vllm/vllm-openai:v0.11.0
+    image: vllm/vllm-openai:v0.33.0@sha256:d825baf9ce4b1b6bfc5ecc7b79880c7e6748c65a72d697ce3d47607aafa84c6e
     gpu_count: 1
     port: 8000
     max_model_len: 8192
