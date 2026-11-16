@@ -12645,6 +12645,94 @@ func TestUnsupportedFieldUpstreamRefusalFallsBack(t *testing.T) {
 	}
 }
 
+func TestUnsupportedTemperatureRefusalFallsBackInFailoverGroup(t *testing.T) {
+	var models []string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		model := stringValue(body["model"])
+		models = append(models, model)
+		if model == "first-refuses-temperature" {
+			if body["temperature"] != float64(0.2) {
+				t.Fatalf("first target did not receive caller temperature: %#v", body)
+			}
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{
+				"message": "Unsupported value for parameter temperature",
+				"type":    "invalid_request_error",
+				"code":    "unsupported_value",
+				"param":   "temperature",
+			}})
+			return
+		}
+		if model != "second-drops-temperature" {
+			t.Fatalf("unexpected model %q", model)
+		}
+		if _, ok := body["temperature"]; ok {
+			t.Fatalf("second target should drop its declared unsupported temperature: %#v", body)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"id": "fallback-ok", "choices": []any{
+			map[string]any{"message": map[string]any{"role": "assistant", "content": "served by fallback"}},
+		}})
+	}))
+	defer upstream.Close()
+
+	dir := t.TempDir()
+	cfg := testConfig(t, upstream.URL, "provider-key", dir)
+	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"))
+	cfg.Server.Diagnostics.StoreSanitizedUpstreamError = boolPtr(true)
+	cfg.Models["default"] = ModelGroup{Strategy: "failover", Targets: []Target{
+		{Provider: "mock", Model: "first-refuses-temperature"},
+		{Provider: "mock", Model: "second-drops-temperature", RequestShapeSupport: RequestShapeSupport{UnsupportedRequestFeatures: []string{"temperature"}}},
+	}}
+	svc, err := newServiceWithVerifiedFixture(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"default","temperature":0.2,"messages":[{"role":"user","content":"hello"}]}`))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	rr := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"content":"served by fallback"`) {
+		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	if len(models) != 2 || models[0] != "first-refuses-temperature" || models[1] != "second-drops-temperature" {
+		t.Fatalf("attempted models=%v", models)
+	}
+
+	flushUsageForTest(t, svc)
+	var attempts []requestAttemptRecord
+	if err := svc.usage.db.Order("attempt_index").Find(&attempts).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(attempts) != 2 || attempts[0].ErrorClass != "upstream_unsupported_field" || attempts[0].FallbackReason != "upstream_unsupported_field" || attempts[1].ErrorClass != "" {
+		t.Fatalf("unexpected refusal/fallback attempts: %#v", attempts)
+	}
+	var details []requestUpstreamErrorDetailRecord
+	if err := svc.usage.db.Order("attempt_index, seq").Find(&details).Error; err != nil {
+		t.Fatal(err)
+	}
+	refusalRecorded := false
+	dropRecorded := false
+	for _, detail := range details {
+		if detail.RequestID != attempts[0].RequestID {
+			continue
+		}
+		if detail.AttemptIndex == 1 && detail.FieldName == "code" && detail.FieldValue == "unsupported_value" {
+			refusalRecorded = true
+		}
+		if detail.AttemptIndex == 2 && detail.FieldName == "dropped_field" && detail.FieldValue == "temperature" {
+			dropRecorded = true
+		}
+	}
+	if !refusalRecorded || !dropRecorded {
+		t.Fatalf("refusal attempt and dropped-field detail missing: %#v", details)
+	}
+}
+
 func TestUnsupportedSamplingRefusalUsesStructuredProviderFields(t *testing.T) {
 	tests := []struct {
 		name   string
