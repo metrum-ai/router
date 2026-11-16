@@ -2504,7 +2504,7 @@ func (s *Service) recordProviderSpendEvent(provider, action, window string, ceil
 	if !s.securityReportsEnabled() {
 		return
 	}
-	reason := "provider_spend_breaker_" + action + "_" + window
+	reason := "provider_spend_breaker_" + action + "_" + window + ":" + provider
 	s.recordSecurityAccessEvent(securityAccessEvent{
 		TS:           time.Now().UTC(),
 		EventType:    "provider_spend_breaker_" + action,
@@ -2513,7 +2513,6 @@ func (s *Service) recordProviderSpendEvent(provider, action, window string, ceil
 		StatusCode:   http.StatusOK,
 		Outcome:      "success",
 		ReasonCode:   reason,
-		ModelGroup:   provider,
 	})
 }
 

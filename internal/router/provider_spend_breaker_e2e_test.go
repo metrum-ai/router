@@ -126,6 +126,14 @@ func TestProviderSpendBreakerFailoverLocalhostE2E(t *testing.T) {
 	if err := svc.usage.db.Where("event_type IN ?", []string{"provider_spend_breaker_trip", "provider_spend_breaker_reset"}).Find(&events).Error; err != nil {
 		t.Fatal(err)
 	}
+	if len(events) < 3 {
+		t.Fatalf("breaker audit events=%d, want trip and reset records", len(events))
+	}
+	for _, event := range events {
+		if event.ModelGroup != "" || !strings.HasPrefix(event.ReasonCode, "provider_spend_breaker_") || !strings.HasSuffix(event.ReasonCode, ":mock") {
+			t.Fatalf("provider mislabeled in breaker event: %+v", event)
+		}
+	}
 	serializedEvents, err := json.Marshal(events)
 	if err != nil {
 		t.Fatal(err)

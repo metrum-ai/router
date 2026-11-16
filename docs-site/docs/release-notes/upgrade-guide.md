@@ -16,9 +16,11 @@ in memory and reset on router restart, so configure ceilings with that limit
 in mind. Counters are per router process; with `N` replicas the effective
 ceiling can reach `N` times the configured value. The router records only safe
 scalar trip/reset events and does not write provider keys to logs, events or
-usage rows. `on_trip: stop` returns HTTP 503 with error code
-`provider_spend_breaker` when no alternate target can serve the request.
-Trip/reset records also enter security access events when
+usage rows. With `on_trip: stop`, a request whose group includes the tripped
+provider returns HTTP 503 with error code `provider_spend_breaker`; the router
+does not fail over to another provider until the window resets. Use
+`on_trip: failover` to reroute to another eligible provider. Trip/reset records
+also enter security access events when
 `server.admin_reports.security.enabled` is true; structured log events remain
 available otherwise.
 

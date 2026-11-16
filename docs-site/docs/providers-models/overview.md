@@ -116,11 +116,12 @@ providers:
 `spend_breaker` is optional and tracks estimated request cost per provider in
 UTC hour and day windows. A ceiling of zero disables that window. When a
 ceiling is reached, the router removes that provider from eligible targets
-until the window resets. `on_trip` accepts `failover` or `stop`; static routing
-with no remaining target stops, while a strategy with another eligible target
-can fail over. `stop` returns HTTP 503 with code `provider_spend_breaker` when
-the stopped provider is the only eligible target. Counters are in memory and
-reset on process restart. Trip and reset emit structured `key=value` log lines
+until the window resets. `on_trip` accepts `failover` or `stop`. With `stop`, a
+request whose group includes the tripped provider returns HTTP 503 with code
+`provider_spend_breaker`; the router does not fail over to another provider
+until the window resets. Use `failover` to reroute to another eligible
+provider. Counters are in memory and reset on process restart. Trip and reset
+emit structured `key=value` log lines
 and safe security events when `server.admin_reports.security.enabled` is true.
 Events contain only the provider identifier, action and window; provider keys
 are never included. Counters are per router process, so with `N` replicas the
