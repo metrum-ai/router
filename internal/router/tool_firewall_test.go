@@ -346,7 +346,13 @@ func TestToolFirewallApprovalHoldE2E(t *testing.T) {
 				cfg.Server.AdminReports = AdminReportsConfig{Enabled: true, Security: AdminSecurityReportsConfig{Enabled: true, RetentionDays: 7}}
 				t.Setenv("TOOL_FIREWALL_ADMIN_HASH", mustBcryptHash(t, "tool-firewall-admin-password"))
 				cfg.Server.AdminAuth.Basic = AdminBasicAuthConfig{Enabled: true, AllowInsecureHTTP: true, Users: []AdminBasicAuthUser{{Username: "admin", PasswordHashEnv: "TOOL_FIREWALL_ADMIN_HASH", Subject: "basic:admin", Domain: "test"}}}
-				cfg.Server.AdminAuth.Authorization = AdminAuthorizationConfig{Enabled: true, Policy: []string{"p, basic:admin, test, admin:reports, read"}}
+				cfg.Server.AdminAuth.Authorization = AdminAuthorizationConfig{Enabled: true, Policy: []string{
+					"p, basic:admin, test, admin:reports, read",
+					"p, adminkey:tool-approver, *, admin:tool_approvals, resolve",
+				}}
+				approverKey := generateTestAdminKey(t, "tool-approver")
+				t.Setenv(adminKeyTestEnvName(approverKey.KeyID), approverKey.TokenHash)
+				cfg.Server.AdminAuth.APIKeys = []AdminAPIKeyConfig{{KeyID: approverKey.KeyID, KeyHashEnv: adminKeyTestEnvName(approverKey.KeyID), Subject: "adminkey:tool-approver", Domain: AdminGlobalDomain, Permissions: []string{"admin:tool_approvals:resolve"}, Status: "active"}}
 				group := cfg.Models["default"]
 				group.Targets[0].ToolSupport = ToolSupport{OpenAIChat: []string{"tools", "tool_choice"}, AnthropicMessages: []string{"client_tools"}}
 				group.Targets[0].RequestShapeSupport = RequestShapeSupport{SupportedInboundDialects: []string{"anthropic", "openai-chat", "openai-responses"}, ValidationStatus: "passed"}
@@ -364,6 +370,8 @@ func TestToolFirewallApprovalHoldE2E(t *testing.T) {
 				defer svc.Close()
 				localRouter := httptest.NewServer(svc.Handler())
 				defer localRouter.Close()
+				localAdmin := httptest.NewServer(svc.AdminHandler())
+				defer localAdmin.Close()
 				path := "/v1/chat/completions"
 				if client == "responses" {
 					path = "/v1/responses"
@@ -434,12 +442,22 @@ func TestToolFirewallApprovalHoldE2E(t *testing.T) {
 					t.Fatal("approval hold was not registered")
 				}
 				if decision != "timeout" {
-					request := httptest.NewRequest(http.MethodPost, "/admin/v1/tool-approvals/"+approvalID, strings.NewReader(`{"decision":"`+decision+`"}`))
-					request.SetPathValue("approval_id", approvalID)
-					recorder := httptest.NewRecorder()
-					svc.handleToolApprovalResolution(recorder, request)
-					if recorder.Code != http.StatusOK {
-						t.Fatalf("resolution status=%d body=%s", recorder.Code, recorder.Body.String())
+					request, err := http.NewRequest(http.MethodPost, localAdmin.URL+"/admin/v1/tool-approvals/"+approvalID, strings.NewReader(`{"decision":"`+decision+`"}`))
+					if err != nil {
+						t.Fatal(err)
+					}
+					request.Header.Set("Authorization", "Bearer "+approverKey.Token)
+					response, err := http.DefaultClient.Do(request)
+					if err != nil {
+						t.Fatal(err)
+					}
+					resolution, err := io.ReadAll(response.Body)
+					response.Body.Close()
+					if err != nil {
+						t.Fatal(err)
+					}
+					if response.StatusCode != http.StatusOK {
+						t.Fatalf("resolution status=%d body=%s", response.StatusCode, resolution)
 					}
 				}
 				second := <-result
