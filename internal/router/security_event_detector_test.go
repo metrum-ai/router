@@ -1,0 +1,92 @@
+// Copyright 2026 Metrum AI
+// SPDX-License-Identifier: Apache-2.0
+
+package router
+
+import (
+	"context"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/metrum-ai/router/pkg/detector"
+)
+
+func TestDetectorSignalsReachOCSFStream(t *testing.T) {
+	const promptMarker = "private detector stream prompt"
+	const providerKey = "provider-secret-marker"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"upstream","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`)
+	}))
+	defer upstream.Close()
+	detected := make(chan detector.Event, 4)
+	detectorService := httptest.NewServer(detector.Handler(detectorFunc(func(_ context.Context, event detector.Event) ([]detector.Signal, error) {
+		detected <- event
+		return []detector.Signal{{SchemaVersion: detector.SchemaVersion, DetectorID: "fixture", Severity: "high", Score: 0.75, EvidenceRequestIDs: []string{event.RequestID}}}, nil
+	})))
+	defer detectorService.Close()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "security-events.jsonl")
+	cfg := testConfig(t, upstream.URL, providerKey, dir)
+	cfg.Server.Security.Events = SecurityEventStreamConfig{Enabled: true, Version: "1.4.0", Output: "file", Path: path}
+	cfg.Server.Detectors = []DetectorConfig{{ID: "capture", URL: detectorService.URL + "/v1/detect", AllowHosts: []string{"127.0.0.1"}, AllowHTTP: true, Mode: "report", TimeoutMS: 500, OnError: "fallback", SampleRate: 1}}
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	server := httptest.NewServer(svc.mux)
+	defer server.Close()
+	body := `{"model":"default","messages":[{"role":"user","content":"` + promptMarker + `"}]}`
+	req, _ := http.NewRequest(http.MethodPost, server.URL+"/v1/chat/completions", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	responseBody, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("request status=%d body=%s", resp.StatusCode, responseBody)
+	}
+	select {
+	case <-detected:
+	case <-time.After(2 * time.Second):
+		t.Fatal("detector did not receive the completed request")
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		wire, err := os.ReadFile(path)
+		if err == nil {
+			for _, line := range strings.Split(strings.TrimSpace(string(wire)), "\n") {
+				var event struct {
+					ClassUID    int            `json:"class_uid"`
+					UID         string         `json:"uid"`
+					FindingInfo map[string]any `json:"finding_info"`
+				}
+				if json.Unmarshal([]byte(line), &event) != nil || event.ClassUID != 2004 || event.FindingInfo["title"] != "fixture" {
+					continue
+				}
+				description, _ := event.FindingInfo["desc"].(string)
+				if event.UID == "" || !strings.Contains(description, "high") || !strings.Contains(description, "0.7500") {
+					t.Fatalf("detector OCSF finding missing evidence or signal details: %+v", event)
+				}
+				if strings.Contains(line, promptMarker) || strings.Contains(line, testToken) || strings.Contains(line, providerKey) {
+					t.Fatal("detector OCSF finding carried prompt or credential text")
+				}
+				return
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	wire, _ := os.ReadFile(path)
+	t.Fatalf("detector signal did not reach the OCSF event stream: %s", wire)
+}

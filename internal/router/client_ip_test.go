@@ -43,3 +43,13 @@ func TestResolveClientIPIgnoresForwardedChainWithoutTrustedProxy(t *testing.T) {
 		t.Fatalf("resolved client IP = %+v, want untrusted socket peer", got)
 	}
 }
+
+func TestCallerBindingCIDRMatchesIPv4MappedIPv6(t *testing.T) {
+	caller := &callerRuntime{cfg: CallerConfig{ID: "worker", Binding: CallerBindingConfig{
+		Mode: "enforce", AllowedCIDRs: []string{"10.0.0.0/8"},
+	}}}
+	request := httptest.NewRequest("GET", "/", nil)
+	if got := callerBindingMismatch(caller, request, clientIPInfo{Address: "::ffff:10.0.0.5"}, ClientIPConfig{}); got != "" {
+		t.Fatalf("IPv4-mapped IPv6 address rejected by IPv4 CIDR: %q", got)
+	}
+}

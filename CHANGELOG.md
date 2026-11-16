@@ -2,10 +2,6 @@
 
 ## Unreleased
 
-### Added
-
-- Add an opt-in OCSF 1.4.0 JSON Lines security-event stream for stdout, append-only files, and signed HTTPS webhooks, with bounded asynchronous delivery and Prometheus queue/failure counters. Caller quota exhaustion is emitted separately from provider spend-breaker events; asynchronous detector signals and failures are streamed as Detection Findings with bounded signal metadata.
-
 ### Fixed
 
 - Migrate the API compatibility suite to Anthropic Python SDK 2.3.0 and test API-key and bearer authentication with separate clients.
@@ -13,6 +9,17 @@
 - `router-migrate --json` keeps stdout valid JSON by directing GORM diagnostics
   to stderr.
 - Drop target-declared unsupported `temperature` and `top_p` fields before dispatch; classify structured 400/422 sampling-parameter refusals for pre-commit fallback; and forward `top_p` when translating to OpenAI Chat Completions.
+
+### Security
+
+- Add a required pull request and merge-group CI gate that checks every pinned
+  vLLM and SGLang image in deployment YAML and lock files against GitHub
+  Advisories and OSV, with tier-local documented exceptions and fail-closed
+  behavior when advisory services are unavailable.
+- Update NVIDIA and ROCm Kubernetes deployment and provisioning examples to
+  digest-pinned official vLLM v0.33.0 images after scanning the full deployment tree.
+- Move the AMD reference and edge images to the digest-pinned upstream vLLM
+  ROCm 10.0 image at v0.33.0, which is outside the affected range of GHSA-v97p-wpxp-px84.
 
 All notable changes to Metrum AI Router are documented in this file.
 
@@ -22,6 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+
+- Add an opt-in OCSF 1.4.0 JSON Lines security-event stream for stdout, append-only files, and signed HTTPS webhooks, with bounded asynchronous delivery and Prometheus queue/failure counters. Caller quota exhaustion is emitted separately from provider spend-breaker events; asynchronous detector signals and failures are streamed as Detection Findings with bounded signal metadata.
 
 - Add caller key containment through `/admin/v1/containment`, `routerctl contain` and `routerctl release`, plus an optional HMAC-SHA256 SOAR/EDR webhook. Webhook writes use signed nonce replay protection without ETag headers; containment can resume only containment-originated suspensions.
 
@@ -47,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   container images and the CI runner image are built with Go 1.27.4, and source builds
   require at least Go 1.27.4.
 - Resolve proxied client addresses from the right through trusted proxy hops, so client-supplied leftmost `X-Forwarded-For` values cannot control caller binding, admin OIDC rate limits, or security access records.
+- Add optional per-caller CIDR, ASN-prefix, and verified mTLS identity binding with off, report, and enforce modes. Enforced mismatches return the same generic 401 as invalid tokens; security events retain the specific reason.
 
 ## [4.8.0] - 2026-11-08
 

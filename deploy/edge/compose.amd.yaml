@@ -2,27 +2,25 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 # Edge bundle accelerator overlay: AMD (Strix Halo class, gfx1151).
-# The image tag names the architecture, so the pin cannot resolve to a build for
-# another GPU family. The pin matches deploy/reference/amd-strix-halo-edge/images.lock.
+# The official upstream ROCm image supports gfx1151 (Strix Halo) and matches
+# deploy/reference/amd-strix-halo-edge/images.lock.
 # The ROCm vLLM image runs as root inside its own container and needs no added
 # capabilities; the device nodes are passed in explicitly and nothing is mounted
 # from the host besides the cache volume and the run directory.
 
 services:
   vllm-tiny:
-    image: rocm/vllm:rocm7.13.0_gfx1151_ubuntu24.04_py3.13_pytorch_2.10.0_vllm_0.19.1@sha256:394194d36edcf9b36bcb563e143b21b80e64e7d04f33a447b448c0c0c00c04a8
+    image: vllm/vllm-openai-rocm:v0.33.0@sha256:4fcd39b758b660c4e9c345c021e2ea8f0ccdb31e3c32507d676cc3005ae83fba
     security_opt:
       # The base already declares no-new-privileges; Compose appends sequence
       # fields, so repeating it here fails validation with
       # "security_opt array items[0,1] must be unique".
       - seccomp:unconfined
-    # Numeric host GIDs: the pinned rocm image has no `render` entry in
-    # /etc/group, so a group name cannot be resolved inside the container.
+    # Numeric host GIDs keep device access aligned with the host device-node owners.
     group_add: ["${VIDEO_GID:?set VIDEO_GID (stat -c %g /dev/dri/card0)}",
                 "${RENDER_GID:?set RENDER_GID (stat -c %g /dev/dri/renderD128)}"]
     devices: ["/dev/kfd", "/dev/dri"]
-    # The ROCm image ships vLLM, but its default CMD is a wheel-pin helper, so the
-    # entrypoint is set explicitly here; AMD's documented form is `vllm serve ...`.
+    # Set the serving command explicitly so startup does not depend on image defaults.
     entrypoint: ["vllm", "serve"]
     environment:
       HIP_VISIBLE_DEVICES: "0"
@@ -37,19 +35,17 @@ services:
     depends_on:
       vllm-tiny:
         condition: service_healthy
-    image: rocm/vllm:rocm7.13.0_gfx1151_ubuntu24.04_py3.13_pytorch_2.10.0_vllm_0.19.1@sha256:394194d36edcf9b36bcb563e143b21b80e64e7d04f33a447b448c0c0c00c04a8
+    image: vllm/vllm-openai-rocm:v0.33.0@sha256:4fcd39b758b660c4e9c345c021e2ea8f0ccdb31e3c32507d676cc3005ae83fba
     security_opt:
       # The base already declares no-new-privileges; Compose appends sequence
       # fields, so repeating it here fails validation with
       # "security_opt array items[0,1] must be unique".
       - seccomp:unconfined
-    # Numeric host GIDs: the pinned rocm image has no `render` entry in
-    # /etc/group, so a group name cannot be resolved inside the container.
+    # Numeric host GIDs keep device access aligned with the host device-node owners.
     group_add: ["${VIDEO_GID:?set VIDEO_GID (stat -c %g /dev/dri/card0)}",
                 "${RENDER_GID:?set RENDER_GID (stat -c %g /dev/dri/renderD128)}"]
     devices: ["/dev/kfd", "/dev/dri"]
-    # The ROCm image ships vLLM, but its default CMD is a wheel-pin helper, so the
-    # entrypoint is set explicitly here; AMD's documented form is `vllm serve ...`.
+    # Set the serving command explicitly so startup does not depend on image defaults.
     entrypoint: ["vllm", "serve"]
     environment:
       HIP_VISIBLE_DEVICES: "0"

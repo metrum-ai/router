@@ -87,6 +87,12 @@ server:
   # private hosts. See docs-site/docs/configuration/tls.md for the full block.
   tls:
     mode: off
+    # For caller mTLS binding, terminate TLS here and require verified client
+    # certificates. `optional` requests and verifies presented certificates;
+    # enforced callers still need a matching certificate. Forwarded headers
+    # are never trusted.
+    # client_auth: optional
+    # client_ca_file: /etc/router/client-ca.pem
   # Optional OpenAI endpoint compatibility gates. Disabled by default so
   # `/v1/chat/completions` accepts Chat Completions bodies and rejects
   # Responses-shaped bodies clearly. Enable only for deployments that have
@@ -303,6 +309,11 @@ server:
       - X-Forwarded-For
       - X-Real-IP
     store_ip: true
+    # ASN checks use this operator-maintained longest-prefix map. Keep it
+    # current when the allowed ASN policy depends on changing address space.
+    asn_prefixes:
+      - cidr: 10.42.0.0/16
+        asn: 64500
   # Governed content capture is disabled by default. Enabling it stores redacted
   # request/response/upstream-error content in separate relational tables keyed
   # by request_id. It is not diagnostics, metrics, or usage reporting. Delete
@@ -2685,6 +2696,12 @@ callers:
   status: active
   token_hash: REPLACE_WITH_TOKEN_HASH_OF_STANDARD_ROUTER_TOKEN
   token_id: rtr_metrum_standard_example-project_dev_kreplace
+  # Caller source binding is optional; omitted mode defaults to off.
+  # binding:
+  #   mode: enforce
+  #   allowed_cidrs: [10.42.0.0/16]
+  #   allowed_asns: [64500]
+  #   mtls_spiffe_id: spiffe://corp/ns/agents/sa/build-agent
   metrics_admin: false
   content_admin: false
   allow:

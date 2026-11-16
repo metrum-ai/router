@@ -21,8 +21,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/metrum-ai/router/internal/tlsacme"
-
 	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/yaml.v3"
 )
@@ -98,7 +96,7 @@ type ServerConfig struct {
 	ContainmentWebhook  ContainmentWebhookConfig  `yaml:"containment_webhook" json:"containmentWebhook,omitempty"`
 	// TLS configures the serving listener's own certificate (#810). The zero
 	// value keeps the v4.7 plaintext listener.
-	TLS          ListenerTLSConfig    `yaml:"tls,omitempty"`
+	TLS          ServerTLSConfig      `yaml:"tls,omitempty"`
 	AdminReports AdminReportsConfig   `yaml:"admin_reports"`
 	Security     SecurityEventsConfig `yaml:"security" json:"security,omitempty"`
 	// AdminAPI is the `admin.api` block of the /admin/v1 contract. The documented defaults
@@ -232,9 +230,23 @@ type SecurityEventStreamConfig struct {
 }
 
 type ClientIPConfig struct {
-	TrustedProxyCIDRs []string `yaml:"trusted_proxy_cidrs" json:"trusted_proxy_cidrs"`
-	HeaderOrder       []string `yaml:"header_order" json:"header_order"`
-	StoreIP           *bool    `yaml:"store_ip" json:"store_ip"`
+	TrustedProxyCIDRs []string          `yaml:"trusted_proxy_cidrs" json:"trusted_proxy_cidrs"`
+	HeaderOrder       []string          `yaml:"header_order" json:"header_order"`
+	StoreIP           *bool             `yaml:"store_ip" json:"store_ip"`
+	ASNPrefixes       []ASNPrefixConfig `yaml:"asn_prefixes,omitempty" json:"asn_prefixes,omitempty"`
+}
+
+type ASNPrefixConfig struct {
+	CIDR string `yaml:"cidr" json:"cidr"`
+	ASN  uint32 `yaml:"asn" json:"asn"`
+}
+
+type CallerBindingConfig struct {
+	Mode         string   `yaml:"mode,omitempty" json:"mode,omitempty"`
+	AllowedCIDRs []string `yaml:"allowed_cidrs,omitempty" json:"allowed_cidrs,omitempty"`
+	AllowedASNs  []uint32 `yaml:"allowed_asns,omitempty" json:"allowed_asns,omitempty"`
+	MTLSSPIFFEID string   `yaml:"mtls_spiffe_id,omitempty" json:"mtls_spiffe_id,omitempty"`
+	MTLSSubject  string   `yaml:"mtls_subject,omitempty" json:"mtls_subject,omitempty"`
 }
 
 type AdminReportBaselineConfig struct {
@@ -1141,11 +1153,12 @@ type CallerConfig struct {
 	ContentAdmin   bool                 `yaml:"content_admin" json:"content_admin"`
 	ContentCapture ContentCaptureConfig `yaml:"content_capture" json:"content_capture"`
 	// SpendCeiling is the caller's opt-in entitlement for semantic/dynamic_score escalation.
-	SpendCeiling SpendCeilingConfig `yaml:"spend_ceiling" json:"spend_ceiling"`
-	Rate         RateConfig         `yaml:"rate" json:"rate"`
-	TrafficShape TrafficShapeConfig `yaml:"traffic_shape" json:"traffic_shape"`
-	Quota        QuotaConfig        `yaml:"quota" json:"quota"`
-	Key          KeyConfig          `yaml:"key" json:"key"`
+	SpendCeiling SpendCeilingConfig  `yaml:"spend_ceiling" json:"spend_ceiling"`
+	Rate         RateConfig          `yaml:"rate" json:"rate"`
+	TrafficShape TrafficShapeConfig  `yaml:"traffic_shape" json:"traffic_shape"`
+	Quota        QuotaConfig         `yaml:"quota" json:"quota"`
+	Key          KeyConfig           `yaml:"key" json:"key"`
+	Binding      CallerBindingConfig `yaml:"binding,omitempty" json:"binding,omitempty"`
 }
 
 type UserConfig struct {
@@ -1832,7 +1845,7 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 	if err := validateConfigSource(c.Server.ConfigSource); err != nil {
 		return err
 	}
-	if err := ValidateListenerTLS(c.Server.TLS, tlsacme.ListenerServing, "server.tls"); err != nil {
+	if err := validateServerTLS(c.Server.TLS); err != nil {
 		return err
 	}
 	if err := validateAdminAuthMode(c.Server.AdminAuth, c.Server.UsageDB, requireAdminKeyEnv); err != nil {
@@ -1854,6 +1867,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		return err
 	}
 	if err := validateClientIP(c.Server.ClientIP); err != nil {
+		return err
+	}
+	if err := validateASNPrefixes(c.Server.ClientIP.ASNPrefixes); err != nil {
 		return err
 	}
 	if err := validateContentCapture("server content_capture", c.Server.ContentCapture); err != nil {
@@ -2194,6 +2210,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		if caller.ID == "" {
 			return fmt.Errorf("caller missing id")
 		}
+		if err := validateCallerBinding(caller.Binding, caller.ID, c.Server.TLS, c.Server.ClientIP); err != nil {
+			return err
+		}
 		ownerUser, err := callerOwnerUser(caller)
 		if err != nil {
 			return err
@@ -2337,41 +2356,6 @@ func safeDetectorID(id string) bool {
 		}
 	}
 	return true
-}
-
-func validateSecurityEvents(cfg SecurityEventStreamConfig) error {
-	if !cfg.Enabled {
-		if cfg.Version != "" || cfg.Output != "" || cfg.Path != "" || cfg.WebhookURL != "" || cfg.WebhookSecretEnv != "" {
-			return fmt.Errorf("server.security.events settings require enabled: true")
-		}
-		return nil
-	}
-	if cfg.Version != "1.4.0" {
-		return fmt.Errorf("server.security.events.version must be 1.4.0")
-	}
-	output := strings.ToLower(strings.TrimSpace(cfg.Output))
-	if output != "stdout" && output != "file" {
-		return fmt.Errorf("server.security.events.output must be stdout or file")
-	}
-	if output == "file" && strings.TrimSpace(cfg.Path) == "" {
-		return fmt.Errorf("server.security.events.path is required for file output")
-	}
-	if output == "stdout" && strings.TrimSpace(cfg.Path) != "" {
-		return fmt.Errorf("server.security.events.path is only valid with file output")
-	}
-	if cfg.WebhookURL == "" && cfg.WebhookSecretEnv != "" {
-		return fmt.Errorf("server.security.events.webhook_secret_env requires webhook_url")
-	}
-	if cfg.WebhookURL != "" {
-		u, err := url.Parse(cfg.WebhookURL)
-		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Fragment != "" {
-			return fmt.Errorf("server.security.events.webhook_url must be an https URL without userinfo or fragment")
-		}
-		if !regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`).MatchString(cfg.WebhookSecretEnv) {
-			return fmt.Errorf("server.security.events.webhook_secret_env must name an environment variable")
-		}
-	}
-	return nil
 }
 
 func (c *Config) knownSpendCeilingTiers() map[string]bool {
@@ -4555,4 +4539,39 @@ func normalizeDialect(d string) string {
 	default:
 		return ""
 	}
+}
+
+func validateSecurityEvents(cfg SecurityEventStreamConfig) error {
+	if !cfg.Enabled {
+		if cfg.Version != "" || cfg.Output != "" || cfg.Path != "" || cfg.WebhookURL != "" || cfg.WebhookSecretEnv != "" {
+			return fmt.Errorf("server.security.events settings require enabled: true")
+		}
+		return nil
+	}
+	if cfg.Version != "1.4.0" {
+		return fmt.Errorf("server.security.events.version must be 1.4.0")
+	}
+	output := strings.ToLower(strings.TrimSpace(cfg.Output))
+	if output != "stdout" && output != "file" {
+		return fmt.Errorf("server.security.events.output must be stdout or file")
+	}
+	if output == "file" && strings.TrimSpace(cfg.Path) == "" {
+		return fmt.Errorf("server.security.events.path is required for file output")
+	}
+	if output == "stdout" && strings.TrimSpace(cfg.Path) != "" {
+		return fmt.Errorf("server.security.events.path is only valid with file output")
+	}
+	if cfg.WebhookURL == "" && cfg.WebhookSecretEnv != "" {
+		return fmt.Errorf("server.security.events.webhook_secret_env requires webhook_url")
+	}
+	if cfg.WebhookURL != "" {
+		u, err := url.Parse(cfg.WebhookURL)
+		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Fragment != "" {
+			return fmt.Errorf("server.security.events.webhook_url must be an https URL without userinfo or fragment")
+		}
+		if !regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`).MatchString(cfg.WebhookSecretEnv) {
+			return fmt.Errorf("server.security.events.webhook_secret_env must name an environment variable")
+		}
+	}
+	return nil
 }

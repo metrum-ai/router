@@ -204,8 +204,6 @@ func TestRequestRoutesOptedInSegmentsOffPathAndKeepsPrivateTextOutOfLogs(t *test
 	enabled := true
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"), &enabled)
 	cfg.Server.AdminReports.Security.Enabled = true
-	securityEventsPath := filepath.Join(dir, "security-events.jsonl")
-	cfg.Server.Security.Events = SecurityEventStreamConfig{Enabled: true, Version: "1.4.0", Output: "file", Path: securityEventsPath}
 	cfg.Server.Detectors = []DetectorConfig{{ID: "capture", URL: detectorService.URL + "/v1/detect", AllowHosts: []string{"127.0.0.1"}, AllowHTTP: true, Mode: "report", TimeoutMS: 500, OnError: "fallback", SampleRate: 1, IncludeSegments: []string{"tool_result"}}}
 	svc, err := New(cfg)
 	if err != nil {
@@ -266,7 +264,6 @@ func TestRequestRoutesOptedInSegmentsOffPathAndKeepsPrivateTextOutOfLogs(t *test
 	if strings.Contains(string(resultBytes), promptMarker) || strings.Contains(string(resultBytes), segmentMarker) || strings.Contains(string(resultBytes), testToken) || strings.Contains(string(resultBytes), providerKey) {
 		t.Fatal("detector result carried prompt, segment, or credential text")
 	}
-	stored := false
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
 		var records []securityAccessEventRecord
@@ -278,38 +275,9 @@ func TestRequestRoutesOptedInSegmentsOffPathAndKeepsPrivateTextOutOfLogs(t *test
 			if strings.Contains(string(recordBytes), promptMarker) || strings.Contains(string(recordBytes), segmentMarker) || strings.Contains(string(recordBytes), testToken) || strings.Contains(string(recordBytes), providerKey) {
 				t.Fatal("security event carried prompt, segment, or credential text")
 			}
-			stored = true
-			break
+			return
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	if !stored {
-		t.Fatal("detector signal was not stored on security event path")
-	}
-	deadline = time.Now().Add(time.Second)
-	for time.Now().Before(deadline) {
-		wire, err := os.ReadFile(securityEventsPath)
-		if err == nil {
-			for _, line := range strings.Split(strings.TrimSpace(string(wire)), "\n") {
-				var event struct {
-					ClassUID    int            `json:"class_uid"`
-					UID         string         `json:"uid"`
-					FindingInfo map[string]any `json:"finding_info"`
-				}
-				if json.Unmarshal([]byte(line), &event) != nil || event.ClassUID != 2004 || event.FindingInfo["title"] != "capture" {
-					continue
-				}
-				description, _ := event.FindingInfo["desc"].(string)
-				if event.UID != requestEvent.RequestID || !strings.Contains(description, "high") {
-					t.Fatalf("detector OCSF finding missing evidence or signal details: %+v", event)
-				}
-				if strings.Contains(line, promptMarker) || strings.Contains(line, segmentMarker) || strings.Contains(line, testToken) || strings.Contains(line, providerKey) {
-					t.Fatal("detector OCSF finding carried prompt, segment, or credential text")
-				}
-				return
-			}
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatal("detector signal did not reach the OCSF event stream")
+	t.Fatal("detector signal was not stored on security event path")
 }

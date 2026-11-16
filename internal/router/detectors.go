@@ -208,7 +208,7 @@ func (s *Service) handleDetectorResult(result detect.Result) {
 		}
 		s.recordSecurityAccessEvent(securityAccessEvent{
 			TS: time.Now().UTC(), RequestID: requestID, EventType: "security_detector_signal", Outcome: result.Mode,
-			ReasonCode: reason, CallerID: result.CallerID, RequestedModel: result.DetectorID, TokenID: signal.Key,
+			ReasonCode: reason, CallerID: result.CallerID, RequestedModel: signal.DetectorID, TokenID: signal.Key,
 		})
 	}
 	if consumer != nil {

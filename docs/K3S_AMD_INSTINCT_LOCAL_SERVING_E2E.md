@@ -93,7 +93,7 @@ Routing is **static**, not content-based. A coding prompt with
 Default overlay = three groups (issue #952 **target** matrix). Milestone 1 may
 deploy **only** `local-tiny`. `local-qwen38` is **optional stretch**, not M1.
 
-Serving image pin: `vllm/vllm-openai-rocm:v0.25.0`. `--max-model-len 8192`.
+Current serving image pin: `vllm/vllm-openai-rocm:v0.33.0`, moved for security advisories. The recorded hardware run used the previous v0.25.0 image; revalidation on v0.33.0 is pending. `--max-model-len 8192`.
 
 ### DNS and NetworkPolicy
 
@@ -503,7 +503,7 @@ A first on-prem run recorded:
 
 - Instinct **MI355X** × **8**, allocatable `amd.com/gpu=8`
 - k3s **v1.36.3+k3s1**, AMD GPU Operator **v1.5.1**, device-plugin mode
-- Serving image `vllm/vllm-openai-rocm:v0.25.0`
+- Serving image during the hardware run: `vllm/vllm-openai-rocm:v0.25.0`; current pins moved to v0.33.0 for security advisories, and revalidation is pending.
 - Direct `/v1/models`: `local-tiny`, `local-small-chat`, `local-small-coder`
 - Router Helm Ready; `/readyz` 200; unauth models 401; disallowed group 403
 - Router non-stream chat 200 on all three groups; stream 200 on `local-tiny`
