@@ -54,11 +54,13 @@ The denylist write, revision notification, and audit records commit together.
 Rotate the caller token to issue a new verifier and restore access; then update
 clients with the new bearer token. Only rotation restores access; the old
 verifier remains refused.
+## v5.0.0 streaming line-buffer budget
+
+Streaming now caps total in-flight SSE line-buffer capacity per router process with `server.streaming.max_inflight_line_bytes` (default 64 MiB). Set an explicit value from 64 KiB to 1 GiB if needed. Exhaustion fails a stream with `upstream_stream_buffer_limit`; pre-commit requests can use existing fallback. Monitor `metrum_ai_router_sse_line_buffer_bytes`, `metrum_ai_router_sse_line_buffer_limit_bytes` and `metrum_ai_router_sse_line_buffer_rejections_total`.
+
 ## Security dependency update
 
 The v5.0.0 build pins `golang.org/x/crypto` to the upstream fix for GO-2026-5932. The fix removes the unused OpenPGP packages from the module; router configuration and runtime behavior do not change. When the next tagged `x/crypto` release includes this fix, routine dependency maintenance should replace the temporary pseudo-version.
-
-Streaming now caps total in-flight SSE line-buffer capacity per router process with `server.streaming.max_inflight_line_bytes` (default 64 MiB). Set an explicit value from 64 KiB to 1 GiB if needed. Exhaustion fails a stream with `upstream_stream_buffer_limit`; pre-commit requests can use existing fallback. Monitor `metrum_ai_router_sse_line_buffer_bytes`, `metrum_ai_router_sse_line_buffer_limit_bytes` and `metrum_ai_router_sse_line_buffer_rejections_total`.
 
 ## v5.0.0 provider spend breaker
 
