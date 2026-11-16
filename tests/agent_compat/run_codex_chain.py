@@ -8,17 +8,52 @@ A denied workspace sandbox is a failed cell; never disable the sandbox. This
 runner makes no hosted calls and publishes results even when a cell fails.
 """
 import argparse
+import contextlib
+import errno
 import json
 import os
 import signal
+import shutil
 import subprocess
 import sys
+import tempfile
+import time
 from pathlib import Path
 
 from run_chat_smoke import ROOT, runtime_environment
 
 DEPTHS = (0, 1, 2, 3, 5)
 DRIVER = ROOT / "tests/agent_compat/codex_responses_smoke.py"
+TEMP_CLEANUP_TIMEOUT_SECONDS = 10
+
+
+def remove_temp_tree(path: Path) -> None:
+    """Retry transient non-empty errors from Codex's asynchronous home writes."""
+    deadline = time.monotonic() + TEMP_CLEANUP_TIMEOUT_SECONDS
+    while True:
+        try:
+            shutil.rmtree(path)
+            return
+        except FileNotFoundError:
+            return
+        except OSError as exc:
+            if exc.errno not in {errno.EBUSY, errno.ENOTEMPTY, errno.ENOENT}:
+                raise
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(0.05)
+
+
+@contextlib.contextmanager
+def retrying_temporary_directory(prefix: str):
+    directory = tempfile.TemporaryDirectory(prefix=prefix, ignore_cleanup_errors=True)
+    try:
+        yield Path(directory.name)
+    finally:
+        try:
+            remove_temp_tree(Path(directory.name))
+        finally:
+            directory.cleanup()
 
 
 def run_cell(depth):

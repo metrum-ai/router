@@ -5,10 +5,10 @@ go 1.27.4
 require (
 	github.com/aead/cmac v0.0.0-20160719120800-7af84192f0b1
 	github.com/aws/aws-sdk-go-v2 v1.48.0
-	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.24
+	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.25
 	github.com/aws/aws-sdk-go-v2/config v1.33.10
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.10
-	github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.63.7
+	github.com/aws/aws-sdk-go-v2/service/bedrockruntime v1.63.8
 	github.com/aws/aws-sdk-go-v2/service/cloudwatch v1.76.0
 	github.com/aws/aws-sdk-go-v2/service/route53 v1.70.8
 	github.com/aws/aws-sdk-go-v2/service/sts v1.51.5

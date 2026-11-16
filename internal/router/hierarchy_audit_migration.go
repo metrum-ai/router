@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const usageHierarchyAuditMigrationID = 2026111622
+const usageHierarchyAuditMigrationID = 2026111624
 const usageHierarchyAuditIndexName = "idx_request_usage_hierarchy_audit"
 
 var usageHierarchyAuditColumns = map[string]map[string]struct{}{
@@ -23,11 +23,11 @@ func HierarchyAuditMigrationDefinition() MigrationDefinition {
 	return FinalizeMigrationDefinition(MigrationDefinition{
 		ID: usageHierarchyAuditMigrationID, Scope: usageMigrationScope,
 		Name: "add hierarchy audit attribution", Release: "2026.11",
-		Checksum: MigrationChecksum("usage.hierarchy-audit.v1"), SchemaVersion: 21,
+		Checksum: MigrationChecksum("usage.hierarchy-audit.v1"), SchemaVersion: 22,
 		DataVersion: 0, Transactional: true, MaintenanceMode: "online", RollbackClass: "restore-required",
 		HandlerKey:       "usage.hierarchy-audit.apply.v1@applyHierarchyAuditMigration",
 		PostconditionKey: "usage.hierarchy-audit.schema.v1@verifyHierarchyAuditMigration",
-		Dependencies:     []int{usageRecomputedInputMigrationID}, ExecutionMode: "transactional",
+		Dependencies:     []int{toolRoutingUsageMigrationID}, ExecutionMode: "transactional",
 		LockClass: "online", TimeoutClass: "bounded",
 		Apply: applyHierarchyAuditMigration, Verify: verifyHierarchyAuditMigration,
 	})

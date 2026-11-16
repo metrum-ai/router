@@ -21,7 +21,7 @@ func clearHierarchyAuditMigrationLedger(t *testing.T, db *gorm.DB) {
 	}
 }
 
-func TestHierarchyAuditSchema21SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) {
+func TestHierarchyAuditSchema22SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) {
 	cfg := uncachedSQLiteUsageDBConfigForTest(filepath.Join(t.TempDir(), "usage.sqlite"))
 	store, err := OpenUsageStore(cfg)
 	if err != nil {
@@ -45,7 +45,7 @@ func TestHierarchyAuditSchema21SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) {
 	}
 	defer closeDB()
 	before, err := runner.Status()
-	if err != nil || before.SchemaVersion != 20 || !before.Compatible {
+	if err != nil || before.SchemaVersion != 21 || !before.Compatible {
 		t.Fatalf("before hierarchy migration: %+v err=%v", before, err)
 	}
 	if err := runner.ApplyPending("hierarchy-schema-test"); err != nil {
@@ -55,7 +55,7 @@ func TestHierarchyAuditSchema21SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	after, err := runner.Status()
-	if err != nil || after.SchemaVersion != 21 || !after.Compatible {
+	if err != nil || after.SchemaVersion != 22 || !after.Compatible {
 		t.Fatalf("after hierarchy migration: %+v err=%v", after, err)
 	}
 	var oldRow usageRecord
@@ -73,20 +73,20 @@ func TestHierarchyAuditSchema21SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) {
 		t.Fatalf("hierarchy row=%+v err=%v", roundTrip, err)
 	}
 
-	oldBinary, err := NewMigrationRunnerWithDataJobs(runner.db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 20, MinData: 0, MaxData: 1}, usageMigrationDefinitions, usageDataJobDefinitions)
+	oldBinary, err := NewMigrationRunnerWithDataJobs(runner.db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 21, MinData: 0, MaxData: 1}, usageMigrationDefinitions, usageDataJobDefinitions)
 	if err != nil {
 		t.Fatal(err)
 	}
 	oldStatus, err := oldBinary.Status()
 	if err != nil || oldStatus.Compatible || oldStatus.State != "incompatible" {
-		t.Fatalf("schema 20 binary should reject schema 21: %+v err=%v", oldStatus, err)
+		t.Fatalf("schema 21 binary should reject schema 22: %+v err=%v", oldStatus, err)
 	}
 	if err := revertHierarchyAuditMigration(runner.db); err != nil {
 		t.Fatal(err)
 	}
 	clearHierarchyAuditMigrationLedger(t, runner.db)
 	afterDown, err := runner.Status()
-	if err != nil || afterDown.SchemaVersion != 20 || !afterDown.Compatible {
+	if err != nil || afterDown.SchemaVersion != 21 || !afterDown.Compatible {
 		t.Fatalf("after down: %+v err=%v", afterDown, err)
 	}
 }

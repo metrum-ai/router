@@ -36,6 +36,23 @@ on mission-attribution migration `2026111607`. The migration is additive and is
 applied by the deployment migration job. See [router configuration](../configuration/router-config#request-trace-correlation)
 for trust boundaries and examples.
 
+## v5.0.0 tool-routing usage fields
+
+Usage schema 21 adds six scalar fields to `request_usage` for tool calls, first
+failure class, retries, escalations, per-request reliability outcome, and its
+source. Existing rows keep empty/default values. The migration is additive,
+online, and applied by the deployment migration job. Migration `2026111623` depends
+on main's recomputed-input migration `2026111614`. Raw tool arguments,
+schemas, and outputs are not stored. The reliability source records the evidence
+that affected ordering (`compat-suite` or `live`); it reports `live` for observed
+outcomes when no scored evidence changed the order. The compatibility matrix
+currently has no provider/model-attributed failure counts, so its version 1 seed
+is empty, routing starts neutral, and observed usage supplies live counts. To
+load a future seed, add provider/model-attributed failure counts and matrix cell
+links to the versioned seed manifest, then validate it with the existing seed
+loader tests. Binary rollback across this schema requires restoring a compatible
+pre-upgrade usage database backup; package rollback does not reverse the migration.
+
 ## Security hardening
 
 Review the [Router Hardening Guide](../security-governance/hardening), [Threat Summary](../security-governance/threat-model-v5), and [Compromise Runbook](../security-governance/compromise-runbook) before production rollout. These docs use existing v5.0.0 settings; no config migration is required.
@@ -152,6 +169,25 @@ group list/show API now reports each target's measured vector, membership and
 exclusion reason. Missing or ambiguous report data fails without changing the
 active config. Reported context tokens are the maximum observed in the eval
 workload, not a model's theoretical context limit.
+## CPU-first small-work reference group
+
+The hierarchy reference now includes an optional `agent-small` model group,
+backed by the official vLLM CPU image and `Qwen/Qwen2.5-0.5B-Instruct`. The
+reference caller can request this group explicitly. Its CPU candidate is
+eligible only when estimated input is at most 800 tokens and the requested
+output cap is at most 128 tokens; other requests use the configured frontier
+target. The full CPU attempt has a 15-second timeout sized for the 128-token
+output cap; `thresholds.max_ttfb_ms: 1000` supplies the dynamic latency budget,
+and CPU errors/timeouts retry the frontier before a response begins. Configure
+`CPU_BASE_URL`, `CPU_MODEL`, and the vLLM
+CPU resource settings in the hierarchy `.env` file. Existing groups and
+existing caller behavior are unchanged.
+
+This is reference configuration only. Operators should establish workload
+quality and saturation limits on their own CPU hardware before granting callers
+access to `agent-small`. The edge and datacenter hierarchy reference configs set
+`admin.enabled: false` because each router uses one listener; deployments that
+need the authenticated admin listener should enable and configure it explicitly.
 
 ## CPU-first small-work reference group
 
@@ -236,6 +272,8 @@ scoped to a provider account. Keep reasoning history on the same Bedrock target
 and account; cross-provider and cross-account replay is unsupported.
 
 ## v5.0.0 hierarchy governance
+
+Usage schema version 22 adds `organization_id` and `team_id` for hierarchy audit attribution after schema 21 tool-routing usage. Migration `2026111624` depends on tool-routing migration `2026111623`. The migration is restore-required for rollback; keep a database restore available.
 
 Hierarchy governance is opt-in. Existing configurations without
 `server.hierarchy` retain their current behavior. Configure a parent with a

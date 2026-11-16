@@ -2,4 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # JSON is a YAML subset. Every entry must name one rule, exact rendered file,
 # and a non-empty explanation; scripts/validate_trivy_k8s_ignores.py enforces it.
-{"misconfigurations": []}
+{"misconfigurations": [
+  {"id": "AVD-KSV-0125", "paths": ["admin-plane.yaml"], "statement": "Public deployment placeholder and upstream Docker Hub vLLM images cannot be classified as trusted by Trivy's static registry list. Images are digest-pinned; operators must replace the placeholder and set the optional Kyverno allowlist to registries approved for their cluster."},
+  {"id": "AVD-KSV-0125", "paths": ["example.yaml"], "statement": "Public deployment placeholder and upstream Docker Hub vLLM images cannot be classified as trusted by Trivy's static registry list. Images are digest-pinned; operators must replace the placeholder and set the optional Kyverno allowlist to registries approved for their cluster."},
+  {"id": "AVD-KSV-0125", "paths": ["k3s-amd-instinct-local-serving.yaml"], "statement": "Upstream Docker Hub vLLM images are pinned by digest but cannot be classified as trusted by Trivy's static registry list. The optional Kyverno example requires operators to define their own approved registries."},
+  {"id": "AVD-KSV-0125", "paths": ["linkerd-example.yaml"], "statement": "Public deployment placeholder and upstream Docker Hub vLLM images cannot be classified as trusted by Trivy's static registry list. Images are digest-pinned; operators must replace the placeholder and set the optional Kyverno allowlist to registries approved for their cluster."},
+  {"id": "AVD-KSV-0125", "paths": ["nvidia-local-serving.yaml"], "statement": "Public deployment placeholder and upstream Docker Hub vLLM images cannot be classified as trusted by Trivy's static registry list. Images are digest-pinned; operators must replace the placeholder and set the optional Kyverno allowlist to registries approved for their cluster."},
+  {"id": "AVD-KSV-0125", "paths": ["sqlite-bootstrap.yaml"], "statement": "Public deployment placeholder cannot be classified as trusted by Trivy's static registry list. Router images are digest-pinned; operators must replace the placeholder with their approved registry and set the optional Kyverno allowlist accordingly."}
+]}

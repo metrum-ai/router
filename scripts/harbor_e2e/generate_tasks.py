@@ -11,7 +11,7 @@ TASKS={
  'sum':('Create /app/result.txt containing the sum of 17 and 25 followed by one newline.', 'result.txt', '42\n'),
  'edit':('Fix /app/calc.py so add(a, b) returns the sum. Run python3 -m unittest test_calc.py.', 'calc.py', None),
 }
-DOCKER='FROM node:22.16.0-bookworm-slim\nRUN apt-get update -qq && apt-get install -y -qq python3 && npm install -g --ignore-scripts @earendil-works/pi-coding-agent@1.4.0 && pi --version\nWORKDIR /app\nCOPY workspace/ /app/\nCMD ["sleep", "infinity"]\n'
+DOCKER='FROM node:22.16.0-bookworm-slim\nRUN apt-get update -qq && apt-get install -y -qq python3 && npm install -g --ignore-scripts @earendil-works/pi-coding-agent@1.4.0 && pi --version\nRUN useradd --uid 10001 --user-group --create-home --home-dir /home/harbor --shell /usr/sbin/nologin harbor && install -d -o 10001 -g 10001 /app /logs/agent /logs/verifier /run/harbor-e2e\nENV HOME=/home/harbor\nWORKDIR /app\nCOPY --chown=10001:10001 workspace/ /app/\nUSER 10001:10001\nCMD ["sleep", "infinity"]\n'
 CONFIG='''version = "1.0"
 [metadata]
 author_name = "Metrum AI"

@@ -232,6 +232,11 @@ class ReleaseAIReviewTest(unittest.TestCase):
         payload = json.loads(request.data)
         self.assertEqual(payload["max_tokens"], 16000)
         self.assertNotIn("temperature", payload)
+        self.assertEqual(payload["output_config"], {
+            "format": {"type": "json_schema", "schema": review.REVIEW_OUTPUT_SCHEMA},
+        })
+        self.assertEqual(review.REVIEW_OUTPUT_SCHEMA["required"], ["summary", "findings"])
+        self.assertFalse(review.REVIEW_OUTPUT_SCHEMA["additionalProperties"])
         self.assertEqual(parsed, {"summary": "clean", "findings": []})
 
     def test_uncached_changed_range_calls_model_once(self) -> None:

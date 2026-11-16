@@ -23,7 +23,7 @@ spec:
           type: RuntimeDefault
       initContainers:
         - name: migration-version
-          image: registry.example.com/metrum-ai-router:<version>-linux-amd64
+          image: registry.example.com/metrum-ai-router:<version>-linux-amd64@sha256:<digest>
           command: ["/app/bin/metrum-ai-router-migrate", "--version"]
           securityContext:
             allowPrivilegeEscalation: false
@@ -31,7 +31,7 @@ spec:
             capabilities:
               drop: ["ALL"]
         - name: migration-plan
-          image: registry.example.com/metrum-ai-router:<version>-linux-amd64
+          image: registry.example.com/metrum-ai-router:<version>-linux-amd64@sha256:<digest>
           command: ["/app/bin/metrum-ai-router-migrate", "--action=plan", "--driver=sqlite", "--db=/app/state/usage.sqlite", "--json"]
           securityContext:
             allowPrivilegeEscalation: false
@@ -44,7 +44,7 @@ spec:
             - name: tmp
               mountPath: /tmp
         - name: migration-apply
-          image: registry.example.com/metrum-ai-router:<version>-linux-amd64
+          image: registry.example.com/metrum-ai-router:<version>-linux-amd64@sha256:<digest>
           command: ["/app/bin/metrum-ai-router-migrate", "--action=apply", "--driver=sqlite", "--db=/app/state/usage.sqlite", "--json"]
           securityContext:
             allowPrivilegeEscalation: false
@@ -57,7 +57,7 @@ spec:
             - name: tmp
               mountPath: /tmp
         - name: migration-resume
-          image: registry.example.com/metrum-ai-router:<version>-linux-amd64
+          image: registry.example.com/metrum-ai-router:<version>-linux-amd64@sha256:<digest>
           command: ["/app/bin/metrum-ai-router-migrate", "--action=resume", "--job=historical-usage-validation-v1", "--checkpoint-ordinal=0", "--driver=sqlite", "--db=/app/state/usage.sqlite", "--json"]
           securityContext:
             allowPrivilegeEscalation: false
@@ -71,7 +71,7 @@ spec:
               mountPath: /tmp
       containers:
         - name: migration-verify-serving
-          image: registry.example.com/metrum-ai-router:<version>-linux-amd64
+          image: registry.example.com/metrum-ai-router:<version>-linux-amd64@sha256:<digest>
           command: ["/app/bin/metrum-ai-router-migrate", "--action=verify-serving", "--driver=sqlite", "--db=/app/state/usage.sqlite", "--json"]
           securityContext:
             allowPrivilegeEscalation: false

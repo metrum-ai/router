@@ -1,0 +1,41 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-trusted-image-registries
+spec:
+  background: true
+  rules:
+    - name: require-trusted-registries-and-digests
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+                - Pod/ephemeralcontainers
+      validate:
+        failureAction: Enforce
+        message: Images must come from an approved registry and use an immutable digest.
+        foreach:
+          - list: request.object.spec.containers
+            deny:
+              conditions:
+                any:
+                  - key: "{{ regex_match('^((docker\\.io/)?vllm/vllm-openai(-rocm)?|registry\\.example\\.com/metrum-ai-router):[^@]+@sha256:[a-f0-9]{64}$', element.image) }}"
+                    operator: Equals
+                    value: false
+          - list: request.object.spec.initContainers || `[]`
+            deny:
+              conditions:
+                any:
+                  - key: "{{ regex_match('^((docker\\.io/)?vllm/vllm-openai(-rocm)?|registry\\.example\\.com/metrum-ai-router):[^@]+@sha256:[a-f0-9]{64}$', element.image) }}"
+                    operator: Equals
+                    value: false
+          - list: request.object.spec.ephemeralContainers || `[]`
+            deny:
+              conditions:
+                any:
+                  - key: "{{ regex_match('^((docker\\.io/)?vllm/vllm-openai(-rocm)?|registry\\.example\\.com/metrum-ai-router):[^@]+@sha256:[a-f0-9]{64}$', element.image) }}"
+                    operator: Equals
+                    value: false

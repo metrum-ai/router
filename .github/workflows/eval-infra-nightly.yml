@@ -178,7 +178,8 @@ jobs:
           PY
           export HARBOR_MAX_RESERVE_USD="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["remaining_usd"])' "$RUNNER_TEMP/harbor-budget.json")"
           printf %s "harbor-openai-responses-gpt" > "$HARBOR_E2E_CREDS/router-token"
-          chmod 600 "$HARBOR_E2E_CREDS/router-token"
+          sudo chown "$(id -u):10001" "$HARBOR_E2E_CREDS/router-token"
+          chmod 0640 "$HARBOR_E2E_CREDS/router-token"
           export PATH="$RUNNER_TEMP/harbor-venv/bin:$PATH"
           export PYTHONPATH="$HARBOR_E2E_ROOT"
           "$RUNNER_TEMP/harbor-venv/bin/python" "$HARBOR_E2E_ROOT/run_matrix.py"

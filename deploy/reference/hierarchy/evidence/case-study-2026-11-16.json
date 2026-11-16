@@ -1,0 +1,618 @@
+{
+  "date": "2026-11-16",
+  "cpu_model": "Qwen/Qwen2.5-0.5B-Instruct",
+  "frontier_model": "claude-haiku-5-5",
+  "sample_count": 60,
+  "synthetic_workload": "balanced invoice/receipt classification; 20% request caps above CPU eligibility",
+  "router_summary": {
+    "requests": 60,
+    "cpu_traffic_share": 0.8,
+    "quality_accuracy": 0.6333,
+    "by_target": {
+      "cpu": {
+        "requests": 48,
+        "quality_accuracy": 0.5417,
+        "router_latency_ms_p50": 68,
+        "router_latency_ms_p95": 95
+      },
+      "anthropic": {
+        "requests": 12,
+        "quality_accuracy": 1.0,
+        "router_latency_ms_p50": 619,
+        "router_latency_ms_p95": 1762
+      }
+    },
+    "router_latency_ms_p50": 68,
+    "router_latency_ms_p95": 666
+  },
+  "router_rows": [
+    {
+      "task_id": "case-0000",
+      "expected": "invoice",
+      "predicted": "invoice",
+      "correct": true,
+      "target": "anthropic",
+      "status": 200,
+      "router_latency_ms": 1762
+    },
+    {
+      "task_id": "case-0001",
+      "expected": "receipt",
+      "predicted": "unknown",
+      "correct": false,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 91
+    },
+    {
+      "task_id": "case-0002",
+      "expected": "invoice",
+      "predicted": "invoice",
+      "correct": true,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 67
+    },
+    {
+      "task_id": "case-0003",
+      "expected": "receipt",
+      "predicted": "invoice",
+      "correct": false,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 66
+    },
+    {
+      "task_id": "case-0004",
+      "expected": "invoice",
+      "predicted": "unknown",
+      "correct": false,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 155
+    },
+    {
+      "task_id": "case-0005",
+      "expected": "receipt",
+      "predicted": "receipt",
+      "correct": true,
+      "target": "anthropic",
+      "status": 200,
+      "router_latency_ms": 682
+    },
+    {
+      "task_id": "case-0006",
+      "expected": "invoice",
+      "predicted": "invoice",
+      "correct": true,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 68
+    },
+    {
+      "task_id": "case-0007",
+      "expected": "receipt",
+      "predicted": "unknown",
+      "correct": false,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 95
+    },
+    {
+      "task_id": "case-0008",
+      "expected": "invoice",
+      "predicted": "invoice",
+      "correct": true,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 68
+    },
+    {
+      "task_id": "case-0009",
+      "expected": "receipt",
+      "predicted": "invoice",
+      "correct": false,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 66
+    },
+    {
+      "task_id": "case-0010",
+      "expected": "invoice",
+      "predicted": "invoice",
+      "correct": true,
+      "target": "anthropic",
+      "status": 200,
+      "router_latency_ms": 588
+    },
+    {
+      "task_id": "case-0011",
+      "expected": "receipt",
+      "predicted": "invoice",
+      "correct": false,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 67
+    },
+    {
+      "task_id": "case-0012",
+      "expected": "invoice",
+      "predicted": "invoice",
+      "correct": true,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 68
+    },
+    {
+      "task_id": "case-0013",
+      "expected": "receipt",
+      "predicted": "invoice",
+      "correct": false,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 65
+    },
+    {
+      "task_id": "case-0014",
+      "expected": "invoice",
+      "predicted": "unknown",
+      "correct": false,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 367
+    },
+    {
+      "task_id": "case-0015",
+      "expected": "receipt",
+      "predicted": "receipt",
+      "correct": true,
+      "target": "anthropic",
+      "status": 200,
+      "router_latency_ms": 593
+    },
+    {
+      "task_id": "case-0016",
+      "expected": "invoice",
+      "predicted": "invoice",
+      "correct": true,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 69
+    },
+    {
+      "task_id": "case-0017",
+      "expected": "receipt",
+      "predicted": "invoice",
+      "correct": false,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 64
+    },
+    {
+      "task_id": "case-0018",
+      "expected": "invoice",
+      "predicted": "invoice",
+      "correct": true,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 68
+    },
+    {
+      "task_id": "case-0019",
+      "expected": "receipt",
+      "predicted": "receipt",
+      "correct": true,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 66
+    },
+    {
+      "task_id": "case-0020",
+      "expected": "invoice",
+      "predicted": "invoice",
+      "correct": true,
+      "target": "anthropic",
+      "status": 200,
+      "router_latency_ms": 551
+    },
+    {
+      "task_id": "case-0021",
+      "expected": "receipt",
+      "predicted": "receipt",
+      "correct": true,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 68
+    },
+    {
+      "task_id": "case-0022",
+      "expected": "invoice",
+      "predicted": "invoice",
+      "correct": true,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 69
+    },
+    {
+      "task_id": "case-0023",
+      "expected": "receipt",
+      "predicted": "receipt",
+      "correct": true,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 66
+    },
+    {
+      "task_id": "case-0024",
+      "expected": "invoice",
+      "predicted": "invoice",
+      "correct": true,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 68
+    },
+    {
+      "task_id": "case-0025",
+      "expected": "receipt",
+      "predicted": "receipt",
+      "correct": true,
+      "target": "anthropic",
+      "status": 200,
+      "router_latency_ms": 666
+    },
+    {
+      "task_id": "case-0026",
+      "expected": "invoice",
+      "predicted": "invoice",
+      "correct": true,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 68
+    },
+    {
+      "task_id": "case-0027",
+      "expected": "receipt",
+      "predicted": "invoice",
+      "correct": false,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 66
+    },
+    {
+      "task_id": "case-0028",
+      "expected": "invoice",
+      "predicted": "invoice",
+      "correct": true,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 67
+    },
+    {
+      "task_id": "case-0029",
+      "expected": "receipt",
+      "predicted": "invoice",
+      "correct": false,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 65
+    },
+    {
+      "task_id": "case-0030",
+      "expected": "invoice",
+      "predicted": "invoice",
+      "correct": true,
+      "target": "anthropic",
+      "status": 200,
+      "router_latency_ms": 612
+    },
+    {
+      "task_id": "case-0031",
+      "expected": "receipt",
+      "predicted": "invoice",
+      "correct": false,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 68
+    },
+    {
+      "task_id": "case-0032",
+      "expected": "invoice",
+      "predicted": "unknown",
+      "correct": false,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 90
+    },
+    {
+      "task_id": "case-0033",
+      "expected": "receipt",
+      "predicted": "unknown",
+      "correct": false,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 87
+    },
+    {
+      "task_id": "case-0034",
+      "expected": "invoice",
+      "predicted": "invoice",
+      "correct": true,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 68
+    },
+    {
+      "task_id": "case-0035",
+      "expected": "receipt",
+      "predicted": "receipt",
+      "correct": true,
+      "target": "anthropic",
+      "status": 200,
+      "router_latency_ms": 1786
+    },
+    {
+      "task_id": "case-0036",
+      "expected": "invoice",
+      "predicted": "invoice",
+      "correct": true,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 70
+    },
+    {
+      "task_id": "case-0037",
+      "expected": "receipt",
+      "predicted": "invoice",
+      "correct": false,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 88
+    },
+    {
+      "task_id": "case-0038",
+      "expected": "invoice",
+      "predicted": "invoice",
+      "correct": true,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 68
+    },
+    {
+      "task_id": "case-0039",
+      "expected": "receipt",
+      "predicted": "receipt",
+      "correct": true,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 66
+    },
+    {
+      "task_id": "case-0040",
+      "expected": "invoice",
+      "predicted": "invoice",
+      "correct": true,
+      "target": "anthropic",
+      "status": 200,
+      "router_latency_ms": 644
+    },
+    {
+      "task_id": "case-0041",
+      "expected": "receipt",
+      "predicted": "unknown",
+      "correct": false,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 89
+    },
+    {
+      "task_id": "case-0042",
+      "expected": "invoice",
+      "predicted": "invoice",
+      "correct": true,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 67
+    },
+    {
+      "task_id": "case-0043",
+      "expected": "receipt",
+      "predicted": "invoice",
+      "correct": false,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 68
+    },
+    {
+      "task_id": "case-0044",
+      "expected": "invoice",
+      "predicted": "invoice",
+      "correct": true,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 66
+    },
+    {
+      "task_id": "case-0045",
+      "expected": "receipt",
+      "predicted": "receipt",
+      "correct": true,
+      "target": "anthropic",
+      "status": 200,
+      "router_latency_ms": 619
+    },
+    {
+      "task_id": "case-0046",
+      "expected": "invoice",
+      "predicted": "invoice",
+      "correct": true,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 68
+    },
+    {
+      "task_id": "case-0047",
+      "expected": "receipt",
+      "predicted": "invoice",
+      "correct": false,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 65
+    },
+    {
+      "task_id": "case-0048",
+      "expected": "invoice",
+      "predicted": "invoice",
+      "correct": true,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 67
+    },
+    {
+      "task_id": "case-0049",
+      "expected": "receipt",
+      "predicted": "invoice",
+      "correct": false,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 65
+    },
+    {
+      "task_id": "case-0050",
+      "expected": "invoice",
+      "predicted": "invoice",
+      "correct": true,
+      "target": "anthropic",
+      "status": 200,
+      "router_latency_ms": 637
+    },
+    {
+      "task_id": "case-0051",
+      "expected": "receipt",
+      "predicted": "unknown",
+      "correct": false,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 88
+    },
+    {
+      "task_id": "case-0052",
+      "expected": "invoice",
+      "predicted": "invoice",
+      "correct": true,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 67
+    },
+    {
+      "task_id": "case-0053",
+      "expected": "receipt",
+      "predicted": "receipt",
+      "correct": true,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 66
+    },
+    {
+      "task_id": "case-0054",
+      "expected": "invoice",
+      "predicted": "invoice",
+      "correct": true,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 68
+    },
+    {
+      "task_id": "case-0055",
+      "expected": "receipt",
+      "predicted": "receipt",
+      "correct": true,
+      "target": "anthropic",
+      "status": 200,
+      "router_latency_ms": 618
+    },
+    {
+      "task_id": "case-0056",
+      "expected": "invoice",
+      "predicted": "invoice",
+      "correct": true,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 371
+    },
+    {
+      "task_id": "case-0057",
+      "expected": "receipt",
+      "predicted": "invoice",
+      "correct": false,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 66
+    },
+    {
+      "task_id": "case-0058",
+      "expected": "invoice",
+      "predicted": "invoice",
+      "correct": true,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 67
+    },
+    {
+      "task_id": "case-0059",
+      "expected": "receipt",
+      "predicted": "invoice",
+      "correct": false,
+      "target": "cpu",
+      "status": 200,
+      "router_latency_ms": 66
+    }
+  ],
+  "cpu_sizing": [
+    {
+      "concurrent_agents": 1,
+      "physical_cores": 8,
+      "agents_per_core": 0.12,
+      "requests": 2,
+      "requests_per_second": 4.582,
+      "latency_ms_p50": 67.0,
+      "latency_ms_p95": 67.0
+    },
+    {
+      "concurrent_agents": 2,
+      "physical_cores": 8,
+      "agents_per_core": 0.25,
+      "requests": 4,
+      "requests_per_second": 8.581,
+      "latency_ms_p50": 88.0,
+      "latency_ms_p95": 97.0
+    },
+    {
+      "concurrent_agents": 4,
+      "physical_cores": 8,
+      "agents_per_core": 0.5,
+      "requests": 8,
+      "requests_per_second": 13.892,
+      "latency_ms_p50": 123.0,
+      "latency_ms_p95": 452.0
+    },
+    {
+      "concurrent_agents": 8,
+      "physical_cores": 8,
+      "agents_per_core": 1.0,
+      "requests": 16,
+      "requests_per_second": 25.782,
+      "latency_ms_p50": 162.0,
+      "latency_ms_p95": 450.0
+    },
+    {
+      "concurrent_agents": 16,
+      "physical_cores": 8,
+      "agents_per_core": 2.0,
+      "requests": 32,
+      "requests_per_second": 45.291,
+      "latency_ms_p50": 237.0,
+      "latency_ms_p95": 344.0
+    }
+  ],
+  "latency_measurement": "router usage records; client-side TTFB and total duration were not persisted by this historical run"
+}

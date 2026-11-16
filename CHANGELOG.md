@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Security
+
+- Run Harbor task containers as UID/GID 10001 with a passwd entry, owned workspace, and writable verifier directory. Require digest-pinned image references in Kubernetes examples; add an opt-in Kyverno trusted-registry policy example and exact-file KSV-0125 suppressions for public deployment placeholders.
+
 ### Added
 
 - Governed per-domain fine-tuning operator workflow: opt-in encrypted capture,
@@ -18,6 +22,12 @@
   a new trace. Outbound trace headers are on by default and can be disabled per
   provider; inbound `tracestate` is deliberately dropped.
 - Forward Anthropic `thinking` settings to supported Bedrock Claude models and preserve `thinking` and `redacted_thinking` history, signatures, ordering, and streamed reasoning blocks through Converse tool continuations. Malformed blocks fail before AWS dispatch.
+- Add per-request tool-routing counts, first failure class, retries, escalations,
+  outcome bucket, and reliability source to usage records and reports. Tool
+  reliability matrix v1 has an empty seed because it contains no
+  provider/model-attributed failure counts; routing starts neutral and learns
+  from live usage. The additive migration is schema 21, following main's schema-20
+  recomputed-input migration.
 - Add nightly evaluation aggregation across the previous 30 runs, with expected-missing cells reported separately from gate failures.
 - Add virtual model groups whose eligible targets are selected from per-family
   capability vectors imported from reproducible eval reports. The config Admin
@@ -25,6 +35,11 @@
 - Added a release checklist and a bounded package upgrade-and-rollback check.
 - Retain AI review findings by exact commit range and artifact digest, scope the review credential to the tag-only review environment, and attest the release manifests and review evidence.
 - Add machine-client registration, credential metadata and revocation, effective-grant access review, and expiring and unused-credential warnings. Client credentials are checked against the shared control-plane store on authentication; credential secrets are not stored or returned.
+
+- Add an opt-in CPU-first small-work model group to the hierarchy reference. It
+  uses the official pinned vLLM CPU image, limits the CPU candidate to 800
+  estimated input tokens and 128 requested output tokens, and falls back to the
+  frontier candidate on upstream failure or timeout.
 
 ### Security
 
@@ -117,6 +132,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add a standalone prompt-injection detector example with a commit-pinned model revision, downloaded-weight checksum verification, and overlapping chunk scoring for opted-in tool-result and document segments.
 - Add an opt-in OCSF 1.4.0 JSON Lines security-event stream for stdout, append-only files, and allow-listed signed HTTPS webhooks. Security events use bounded sink and webhook queues, timestamp/nonce HMAC signatures, rotation-aware file output, and Prometheus drop/failure counters. Containment maps to Account Change Disable/Enable with target and actor identity; detector findings use configured IDs and evidence request UIDs capped at 256 characters.
 - Add parent/child hierarchy governance with authenticated bounded policy snapshots, shared parent organization counters, inherited model-group/tool/PII restrictions, singleflight refresh and bounded stale-cache fallback.
+  Hierarchy audit attribution adds `organization_id` and `team_id` in schema 22 via migration `2026111624`, after tool-routing schema 21 migration `2026111623`.
 
 - Add caller key containment through `/admin/v1/containment`, `routerctl contain` and `routerctl release`, plus an optional HMAC-SHA256 SOAR/EDR webhook. Webhook writes use signed nonce replay protection without ETag headers; containment can resume only containment-originated suspensions.
 - Record recomputed prompt tokens when upstream reports cached prompt tokens. Usage and cost reports now show cached and recomputed input tokens with reporting coverage.
