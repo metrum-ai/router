@@ -7,6 +7,8 @@ doc_type: reference
 
 For v5.0.0, `metrum-ai-router-migrate --json` writes one JSON document to stdout. Database diagnostics are sent to stderr.
 
+Targets that ignore caller sampling controls can declare `temperature` or `top_p` in `request_shape_support.unsupported_request_features`; the router omits each declared field and records the omission on the attempt. Pre-commit upstream `unsupported_field` refusals now fall back to the next eligible target. Other non-retryable 4xx responses retain their prior stop behavior.
+
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
 
 ## v5.0.0 provider spend breaker

@@ -3233,6 +3233,32 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		return nil, attempt, upstreamError{Class: "encode_error", Message: "unable to sanitize cross-provider history", Err: historyErr}
 	}
 	req = cleanReq
+	var droppedSamplingFields []string
+	for _, field := range []string{"temperature", "top_p"} {
+		if !supportsAnyCapability(target.RequestShapeSupport.UnsupportedRequestFeatures, field) || req == nil {
+			continue
+		}
+		if field == "temperature" && req.Temperature == nil || field == "top_p" && req.TopP == nil {
+			continue
+		}
+		copyReq := *req
+		copyReq.Raw = make(map[string]any, len(req.Raw))
+		for key, value := range req.Raw {
+			copyReq.Raw[key] = value
+		}
+		if field == "temperature" {
+			copyReq.Temperature = nil
+		} else {
+			copyReq.TopP = nil
+			delete(copyReq.Raw, field)
+		}
+		req = &copyReq
+		droppedSamplingFields = append(droppedSamplingFields, field)
+		attempt.ErrorDetails = append(attempt.ErrorDetails, upstreamErrorDetailLogRecord{
+			Seq: len(attempt.ErrorDetails) + 1, TS: attempt.TS, AttemptIndex: attemptIndex, ErrorClass: "request_field_dropped",
+			FieldName: "dropped_field", FieldValue: field, Source: "target_capability",
+		})
+	}
 	// Opaque reasoning provenance (#622): unwrap history minted for this target
 	// and drop it for every other target. Off by default, so nothing changes
 	// unless an operator enables observe or enforce.
@@ -3335,6 +3361,15 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 				chatBody["store"] = false
 			}
 			upReqBody, err = json.Marshal(chatBody)
+		}
+	}
+	if err == nil && len(droppedSamplingFields) > 0 {
+		var body map[string]any
+		if err = json.Unmarshal(upReqBody, &body); err == nil {
+			for _, field := range droppedSamplingFields {
+				delete(body, field)
+			}
+			upReqBody, err = json.Marshal(body)
 		}
 	}
 	attempt.RequestBytes = int64(len(upReqBody))
@@ -3522,6 +3557,7 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 			upErr.Message = "trusted upstream router rate limited the request"
 		}
 		upErr.Details = s.extractUpstreamErrorDetails(raw, httpResp.StatusCode, upErr.Class, attemptIndex, attempt.TS)
+		upErr.Details = append(upErr.Details, attempt.ErrorDetails...)
 		attempt.DurationMS = durationMillis(time.Since(start))
 		attempt.ResponseBytes = int64(len(raw))
 		attempt.ErrorClass = upErr.Class
@@ -3540,6 +3576,7 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		upErr := classifyUpstreamStatus(httpResp.StatusCode, raw)
 		upErr.RetryAfter = parseRetryAfterHeader(httpResp.Header.Get("Retry-After"), time.Now().UTC())
 		upErr.Details = s.extractUpstreamErrorDetails(raw, httpResp.StatusCode, upErr.Class, attemptIndex, attempt.TS)
+		upErr.Details = append(upErr.Details, attempt.ErrorDetails...)
 		attempt.DurationMS = durationMillis(time.Since(start))
 		attempt.ResponseBytes = int64(len(raw))
 		attempt.ErrorClass = upErr.Class
@@ -3961,7 +3998,7 @@ func classifyUpstreamStatus(status int, raw []byte) upstreamError {
 		Message:      upstreamStatusMessage(status, raw, class),
 		StatusCode:   status,
 		Retryable:    class == "upstream_quota_exhausted" || class == "upstream_rate_limited" || class == "upstream_timeout" || (status >= 500 && status != http.StatusLoopDetected),
-		Fallbackable: upstreamAccessFailureFallbackable(class),
+		Fallbackable: upstreamAccessFailureFallbackable(class) || class == "upstream_unsupported_field",
 	}
 }
 
@@ -3979,6 +4016,8 @@ func statusErrorClass(status int, raw []byte) string {
 		return "upstream_model_access_denied"
 	case upstreamBodyIndicatesEntitlementFailure(status, raw):
 		return "upstream_entitlement_failed"
+	case status >= 400 && status < 500 && upstreamBodyIndicatesUnsupportedField(raw):
+		return "upstream_unsupported_field"
 	case status == http.StatusUnauthorized:
 		return "upstream_auth_failed"
 	case status == http.StatusForbidden:
@@ -3996,6 +4035,16 @@ func statusErrorClass(status int, raw []byte) string {
 	default:
 		return "upstream_status"
 	}
+}
+
+func upstreamBodyIndicatesUnsupportedField(raw []byte) bool {
+	text := strings.ToLower(strings.TrimSpace(string(raw)))
+	for _, marker := range []string{"unsupported_field", "unsupported field", "unknown field", "unrecognized field"} {
+		if strings.Contains(text, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func upstreamAccessFailureFallbackable(class string) bool {

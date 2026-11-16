@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Drop target-declared unsupported `temperature` and `top_p` fields before dispatch, and allow pre-commit `unsupported_field` refusals to fall back.
 - `router-migrate --json` keeps stdout valid JSON by directing GORM diagnostics
   to stderr.
 
