@@ -30,6 +30,9 @@ The NVIDIA and AMD reference pins moved to the official `vllm/vllm-openai:v0.33.
 NVIDIA and AMD Kubernetes deployment examples and provisioning intents use the
 digest-pinned official vLLM v0.33.0 images, matching the reference
 configurations. Update copied examples from older releases before deploying them.
+### Tenant cache isolation
+
+Response-cache entries remain isolated by caller and project by default. Project-level cache sharing is opt-in with `projects[].share_cache_within_project`. Self-hosted vLLM or SGLang providers can receive per-tenant prefix-cache salts by setting `providers[].upstream_kind` and `server.cache.upstream_salt_key_env`; provide the environment key through the deployment secret manager on every router replica. See [Tenant cache isolation](/docs/security-governance/cache-isolation) for the config example, compatibility behavior and key requirements.
 
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
 

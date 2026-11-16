@@ -5,9 +5,12 @@ package router
 
 import (
 	"container/list"
+	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync"
 	"time"
@@ -117,6 +120,73 @@ func cacheKey(req *IRRequest, target Target, callerID, project, instruction stri
 // normalized-translation collision cannot share an entry (issue #645).
 func targetCacheKey(req *IRRequest, provider ProviderConfig, target Target, callerID, project, callerDialect string) string {
 	return cacheKey(req, target, callerID, project, instructionBoundaryKey(req, callerDialect, targetDialect(provider, target)))
+}
+
+func projectSharesCache(cfg *Config, project string) bool {
+	if cfg == nil {
+		return false
+	}
+	project = normalizeAccountID(project)
+	if project == "" || project == "unknown" {
+		return false
+	}
+	for _, configured := range cfg.Projects {
+		if normalizeAccountID(configured.ID) == project {
+			return configured.ShareCacheWithinProject
+		}
+	}
+	return false
+}
+
+func deriveTenantCacheSalt(key []byte, caller *callerRuntime) (string, error) {
+	if len(key) < 32 || caller == nil {
+		return "", errors.New("tenant cache salt unavailable")
+	}
+	project := normalizeAccountID(caller.cfg.Project)
+	scope := "caller:" + normalizeAccountID(caller.cfg.ID)
+	if project != "" {
+		scope = "project:" + project
+	}
+	if strings.HasSuffix(scope, ":") {
+		return "", errors.New("tenant cache scope unavailable")
+	}
+	mac := hmac.New(sha256.New, key)
+	_, _ = mac.Write([]byte("metrum-router-prefix-cache-v1\x00" + scope))
+	return base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), nil
+}
+
+func injectTenantCacheSalt(body []byte, provider ProviderConfig, caller *callerRuntime, key []byte) ([]byte, error) {
+	if provider.UpstreamKind != "vllm" && provider.UpstreamKind != "sglang" {
+		return body, nil
+	}
+	salt, err := deriveTenantCacheSalt(key, caller)
+	if err != nil {
+		return nil, errors.New("tenant cache salt unavailable")
+	}
+	var object map[string]any
+	if err := json.Unmarshal(body, &object); err != nil || object == nil {
+		return nil, errors.New("unable to encode upstream cache isolation")
+	}
+	object["cache_salt"] = salt
+	encoded, err := json.Marshal(object)
+	if err != nil {
+		return nil, errors.New("unable to encode upstream cache isolation")
+	}
+	return encoded, nil
+}
+
+func resolveCacheSaltKey(cfg CacheConfig, lookupEnv func(string) (string, bool)) ([]byte, error) {
+	if cfg.UpstreamSaltKeyEnv == "" {
+		return nil, nil
+	}
+	if lookupEnv == nil {
+		return nil, errors.New("upstream cache salt key unavailable")
+	}
+	key, ok := lookupEnv(cfg.UpstreamSaltKeyEnv)
+	if !ok || len(key) < 32 {
+		return nil, errors.New("upstream cache salt key unavailable or too short")
+	}
+	return []byte(key), nil
 }
 
 // cacheRawFieldAllowlist enumerates Raw keys that are either represented in the

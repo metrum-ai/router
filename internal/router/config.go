@@ -442,9 +442,10 @@ type RetentionClassConfig struct {
 }
 
 type CacheConfig struct {
-	Enabled    bool          `yaml:"enabled"`
-	MaxBytes   int64         `yaml:"max_bytes"`
-	DefaultTTL time.Duration `yaml:"default_ttl"`
+	Enabled            bool          `yaml:"enabled"`
+	MaxBytes           int64         `yaml:"max_bytes"`
+	DefaultTTL         time.Duration `yaml:"default_ttl"`
+	UpstreamSaltKeyEnv string        `yaml:"upstream_salt_key_env,omitempty" json:"upstreamSaltKeyEnv,omitempty"`
 }
 
 type LoggingConfig struct {
@@ -1246,12 +1247,13 @@ type UserConfig struct {
 }
 
 type ProjectConfig struct {
-	ID           string                     `yaml:"id" json:"id"`
-	Name         string                     `yaml:"name" json:"name"`
-	Status       string                     `yaml:"status" json:"status"`
-	Description  string                     `yaml:"description" json:"description"`
-	Environments []ProjectEnvironmentConfig `yaml:"environments,omitempty" json:"environments,omitempty"`
-	Budget       ProjectBudgetConfig        `yaml:"budget,omitempty" json:"budget,omitempty"`
+	ID                      string                     `yaml:"id" json:"id"`
+	Name                    string                     `yaml:"name" json:"name"`
+	Status                  string                     `yaml:"status" json:"status"`
+	Description             string                     `yaml:"description" json:"description"`
+	Environments            []ProjectEnvironmentConfig `yaml:"environments,omitempty" json:"environments,omitempty"`
+	Budget                  ProjectBudgetConfig        `yaml:"budget,omitempty" json:"budget,omitempty"`
+	ShareCacheWithinProject bool                       `yaml:"share_cache_within_project,omitempty" json:"shareCacheWithinProject,omitempty"`
 }
 
 type ProjectBudgetConfig struct {
@@ -2090,6 +2092,7 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 	if err := validateMCPPolicyReferences(c.MCP, c.Callers, c.Projects, c.Models); err != nil {
 		return err
 	}
+	cacheSaltProviderConfigured := false
 	for name, p := range c.Provider {
 		breaker := p.SpendBreaker
 		if breaker.HourlyUSD < 0 || breaker.DailyUSD < 0 || math.IsNaN(breaker.HourlyUSD) || math.IsNaN(breaker.DailyUSD) || math.IsInf(breaker.HourlyUSD, 0) || math.IsInf(breaker.DailyUSD, 0) {
@@ -2104,8 +2107,15 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		if normalizeDialect(p.Dialect) == "" {
 			return fmt.Errorf("provider %s has unsupported dialect %q", name, p.Dialect)
 		}
-		if p.UpstreamKind != "" && p.UpstreamKind != "router" {
+		if p.UpstreamKind != "" && p.UpstreamKind != "router" && p.UpstreamKind != "vllm" && p.UpstreamKind != "sglang" {
 			return fmt.Errorf("provider %s has unsupported upstream_kind %q", name, p.UpstreamKind)
+		}
+		if p.UpstreamKind == "vllm" || p.UpstreamKind == "sglang" {
+			cacheSaltProviderConfigured = true
+			dialect := normalizeDialect(p.Dialect)
+			if dialect != "openai-chat" && dialect != "openai-responses" {
+				return fmt.Errorf("provider %s cache salting requires an OpenAI-compatible dialect", name)
+			}
 		}
 		if p.UpstreamKind == "router" && isBedrock(p) {
 			return fmt.Errorf("provider %s cannot use upstream_kind router with bedrock", name)
@@ -2178,6 +2188,12 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 				return err
 			}
 		}
+	}
+	if cacheSaltProviderConfigured && !validEnvName(c.Server.Cache.UpstreamSaltKeyEnv) {
+		return fmt.Errorf("server.cache.upstream_salt_key_env is required for vllm/sglang providers")
+	}
+	if !cacheSaltProviderConfigured && c.Server.Cache.UpstreamSaltKeyEnv != "" && !validEnvName(c.Server.Cache.UpstreamSaltKeyEnv) {
+		return fmt.Errorf("server.cache.upstream_salt_key_env must name an environment variable")
 	}
 	if len(c.Models) == 0 {
 		return fmt.Errorf("at least one model group is required")

@@ -4,6 +4,7 @@
 package router
 
 import (
+	"encoding/json"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -173,6 +174,103 @@ func TestCacheKeyIncludesCallerAndSamplingFields(t *testing.T) {
 	}
 	if cacheKey(base, target, "caller-a", "proj-1", "") == cacheKey(withChoices, target, "caller-a", "proj-1", "") {
 		t.Fatal("cache key must include n")
+	}
+}
+
+func TestTenantCacheScopeSharingAndSalt(t *testing.T) {
+	base := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
+	base.Projects = []ProjectConfig{{ID: "alpha"}, {ID: "beta"}}
+	callerA := &callerRuntime{cfg: CallerConfig{ID: "caller-a", Project: "alpha"}}
+	callerB := &callerRuntime{cfg: CallerConfig{ID: "caller-b", Project: "alpha"}}
+	callerOther := &callerRuntime{cfg: CallerConfig{ID: "caller-c", Project: "beta"}}
+	req := &IRRequest{Model: "g", Input: "same prompt"}
+	rcA, rcB := &requestContext{caller: callerA}, &requestContext{caller: callerB}
+	idA, projectA := cacheCallerScope(rcA, base)
+	idB, projectB := cacheCallerScope(rcB, base)
+	if idA == idB || projectA != projectB {
+		t.Fatal("default response cache scope is not caller partitioned")
+	}
+	keyA := cacheKey(req, Target{Provider: "p", Model: "m"}, idA, projectA, "")
+	keyB := cacheKey(req, Target{Provider: "p", Model: "m"}, idB, projectB, "")
+	if keyA == keyB {
+		t.Fatal("default cache keys crossed callers")
+	}
+	base.Projects[0].ShareCacheWithinProject = true
+	idA, projectA = cacheCallerScope(rcA, base)
+	idB, projectB = cacheCallerScope(rcB, base)
+	if idA != "" || idB != "" || projectA != "alpha" || projectB != "alpha" {
+		t.Fatal("project sharing did not use project-only scope")
+	}
+	keyA = cacheKey(req, Target{Provider: "p", Model: "m"}, idA, projectA, "")
+	keyB = cacheKey(req, Target{Provider: "p", Model: "m"}, idB, projectB, "")
+	if keyA != keyB {
+		t.Fatal("project sharing did not reuse within project")
+	}
+	idOther, projectOther := cacheCallerScope(&requestContext{caller: callerOther}, base)
+	keyOther := cacheKey(req, Target{Provider: "p", Model: "m"}, idOther, projectOther, "")
+	if keyOther == keyA {
+		t.Fatal("project sharing crossed tenant boundary")
+	}
+	secret := []byte(strings.Repeat("s", 32))
+	saltA, err := deriveTenantCacheSalt(secret, callerA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saltB, err := deriveTenantCacheSalt(secret, callerB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saltOther, err := deriveTenantCacheSalt(secret, callerOther)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saltA != saltB || saltA == saltOther || strings.Contains(saltA, "alpha") {
+		t.Fatal("cache salts are not stable, tenant scoped opaque values")
+	}
+}
+
+func TestTenantCacheSaltInjectionOverridesClientValue(t *testing.T) {
+	body, err := injectTenantCacheSalt([]byte(`{"model":"g","cache_salt":"attacker"}`), ProviderConfig{UpstreamKind: "vllm"}, &callerRuntime{cfg: CallerConfig{ID: "caller", Project: "alpha"}}, []byte(strings.Repeat("k", 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if decoded["cache_salt"] == "attacker" || decoded["cache_salt"] == "" {
+		t.Fatal("tenant salt failed to replace caller-controlled value")
+	}
+	if _, err := injectTenantCacheSalt([]byte(`{}`), ProviderConfig{UpstreamKind: "sglang"}, &callerRuntime{cfg: CallerConfig{ID: "caller"}}, nil); err == nil {
+		t.Fatal("missing key allowed unsalted upstream request")
+	}
+}
+
+func TestTenantCacheSaltKeyConfiguration(t *testing.T) {
+	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
+	cfg.Provider["mock"] = ProviderConfig{BaseURL: "http://127.0.0.1:1", Dialect: "openai", UpstreamKind: "vllm"}
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("vLLM salt provider accepted without environment key reference")
+	}
+	cfg.Server.Cache.UpstreamSaltKeyEnv = "ROUTER_PREFIX_CACHE_KEY"
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("valid vLLM salt config rejected: %v", err)
+	}
+	for _, tc := range []struct {
+		name    string
+		lookup  func(string) (string, bool)
+		wantErr bool
+	}{
+		{"missing", func(string) (string, bool) { return "", false }, true},
+		{"short", func(string) (string, bool) { return strings.Repeat("s", 31), true }, true},
+		{"valid", func(string) (string, bool) { return strings.Repeat("s", 32), true }, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := resolveCacheSaltKey(cfg.Server.Cache, tc.lookup)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("resolve error=%v", err)
+			}
+		})
 	}
 }
 

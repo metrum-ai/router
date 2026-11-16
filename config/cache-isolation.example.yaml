@@ -1,0 +1,17 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+# Fragment: merge these fields into the router's full configuration.
+server:
+  cache:
+    upstream_salt_key_env: ROUTER_PREFIX_CACHE_KEY
+
+providers:
+  local-vllm:
+    base_url: http://vllm.internal:8000/v1
+    dialect: openai-chat
+    upstream_kind: vllm
+    api_key_env: LOCAL_VLLM_KEY
+
+projects:
+  - id: research
+    share_cache_within_project: false
