@@ -92,6 +92,7 @@ func (h *configAdminHandler) adminConfigHandlerPatterns() []struct {
 		{"/config/groups/{group}", "config.group.get", h.handleGetGroup},
 		{"/config/groups/{group}/targets", "config.group.targets.replace", h.handleReplaceTargets},
 		{"/config/groups/{group}/targets", "config.group.targets.add", h.handleAddTarget},
+		{"/config/groups/{group}/targets:bulk", "config.group.targets.bulk", h.handleBulkTargets},
 		{"/config/groups/{group}/targets/{target_id...}", "config.group.targets.remove", h.handleRemoveTarget},
 		{"/config/groups/{group}/targets:validate", "config.group.targets.validate", h.handleValidateTargets},
 		{"/config/groups/{group}/rollback", "config.group.rollback", h.handleGroupRollback},
@@ -144,6 +145,7 @@ func (h *configAdminHandler) register(handle func(pattern string, handler http.H
 		"config.group.get":              "GET",
 		"config.group.targets.replace":  "PUT",
 		"config.group.targets.add":      "POST",
+		"config.group.targets.bulk":     "POST",
 		"config.group.targets.remove":   "DELETE",
 		"config.group.targets.validate": "POST",
 		"config.group.rollback":         "POST",
@@ -180,7 +182,7 @@ func (h *configAdminHandler) register(handle func(pattern string, handler http.H
 	for _, entry := range h.adminConfigHandlerPatterns() {
 		// The v5 resource APIs are mounted only on the dedicated /admin/v1
 		// listener. Keep the legacy serving-port surface unchanged.
-		if strings.HasPrefix(entry.key, "providers.") || entry.key == "models.list" || strings.HasPrefix(entry.key, "callers.quota.") || entry.key == "retention.put" || strings.HasPrefix(entry.key, "projects.") || strings.HasPrefix(entry.key, "memberships.") {
+		if entry.key == "config.group.targets.bulk" || strings.HasPrefix(entry.key, "providers.") || entry.key == "models.list" || strings.HasPrefix(entry.key, "callers.quota.") || entry.key == "retention.put" || strings.HasPrefix(entry.key, "projects.") || strings.HasPrefix(entry.key, "memberships.") {
 			continue
 		}
 		handle(methods[entry.key]+" "+prefix+entry.suffix, entry.handler)
@@ -503,6 +505,105 @@ type configAdminAddTargetRequest struct {
 	Reason   string          `json:"reason,omitempty"`
 	DryRun   bool            `json:"dry_run,omitempty"`
 	Force    bool            `json:"force,omitempty"`
+}
+
+type configAdminBulkTargetChange struct {
+	Action string          `json:"action"`
+	Target GroupTargetSpec `json:"target"`
+}
+
+type configAdminBulkTargetsRequest struct {
+	Changes []configAdminBulkTargetChange `json:"changes"`
+	Reason  string                        `json:"reason,omitempty"`
+}
+
+// handleBulkTargets applies up to 100 additions/removals within one model group
+// as one copy-on-write configuration revision. Validation happens before the
+// transaction is opened, and the single WriteGroupTargets call atomically
+// commits the whole resulting target list and its audit row.
+func (h *configAdminHandler) handleBulkTargets(w http.ResponseWriter, r *http.Request) {
+	subject, ok := h.authenticate(w, r)
+	if !ok {
+		return
+	}
+	if !h.authorize(w, r, subject, adminPermissionConfigWrite) {
+		return
+	}
+	if !h.writeGate(w) {
+		return
+	}
+	var body configAdminBulkTargetsRequest
+	if !decodeConfigAdminBody(w, r, &body) {
+		return
+	}
+	if len(body.Changes) == 0 || len(body.Changes) > 100 {
+		writeConfigAdminError(w, http.StatusBadRequest, "config-invalid-request", "bulk changes must contain between 1 and 100 operations")
+		return
+	}
+	expected, validIfMatch := parseIfMatch(r)
+	idempotencyKey, validKey := parseIdempotencyKey(r)
+	if !validIfMatch || !validKey {
+		writeConfigAdminError(w, http.StatusBadRequest, "config-invalid-request", "If-Match or Idempotency-Key header is invalid")
+		return
+	}
+	cfg, _, _, err := h.activeConfigForRead()
+	if err != nil || cfg == nil {
+		writeConfigAdminError(w, http.StatusConflict, "config-unavailable", "the active configuration is unavailable")
+		return
+	}
+	groupName := r.PathValue("group")
+	group, exists := cfg.Models[groupName]
+	if !exists {
+		writeConfigAdminError(w, http.StatusNotFound, "group-not-found", "model group is not in the active configuration")
+		return
+	}
+	targets := groupTargetSpecsFromGroup(group)
+	for _, change := range body.Changes {
+		target := change.Target
+		if strings.TrimSpace(target.Provider) == "" || (strings.TrimSpace(target.ModelRef) == "" && strings.TrimSpace(target.Model) == "") {
+			writeConfigAdminError(w, http.StatusBadRequest, "config-invalid-request", "each bulk change requires a provider and model reference")
+			return
+		}
+		identity := target.identity()
+		index := -1
+		for i := range targets {
+			if targets[i].identity() == identity {
+				index = i
+				break
+			}
+		}
+		switch change.Action {
+		case "add":
+			if index >= 0 {
+				writeConfigAdminError(w, http.StatusConflict, "target-already-present", "a bulk add refers to a target already in the group")
+				return
+			}
+			targets = append(targets, target)
+		case "remove":
+			if index < 0 {
+				writeConfigAdminError(w, http.StatusNotFound, "target-not-found", "a bulk remove refers to a target not in the group")
+				return
+			}
+			targets = append(targets[:index], targets[index+1:]...)
+		default:
+			writeConfigAdminError(w, http.StatusBadRequest, "config-invalid-request", "bulk action must be add or remove")
+			return
+		}
+	}
+	auditMeta, auditErr := adminAuditMetaForWrite(r, subject, authzObjectAdminConfig, "write")
+	if auditErr != nil {
+		writeConfigAdminError(w, http.StatusServiceUnavailable, "audit-unavailable", "the audit store is unavailable")
+		return
+	}
+	result, err := WriteGroupTargets(h.deps.DB, h.deps.RuntimeScope, GroupTargetsWriteRequest{
+		Group: groupName, Targets: targets, Reason: body.Reason, IdempotencyKey: idempotencyKey,
+		ExpectedRevision: expected, Action: configActionGroupTargetsBulk,
+	}, subject.subject, h.policy(), auditMeta, h.now())
+	if err != nil {
+		h.mapWriteError(w, err)
+		return
+	}
+	h.writeResultWithPropagation(w, http.StatusOK, result)
 }
 
 func (h *configAdminHandler) writeResultWithPropagation(w http.ResponseWriter, status int, result *GroupTargetsWriteResult) {

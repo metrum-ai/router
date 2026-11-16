@@ -9,6 +9,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -34,7 +36,7 @@ func main() {
 		return
 	}
 	if len(os.Args) < 2 {
-		die("usage: metrum-ai-routerctl <version|config|callers|contain|release|adminkeys|policies|groups|providers|models|admin-resource|status|usage|reports|blueprint|emergency> [flags]")
+		die("usage: metrum-ai-routerctl <version|config|callers|contain|release|adminkeys|policies|groups|providers|models|admin-resource|control-plane|status|usage|reports|blueprint|emergency> [flags]")
 	}
 	switch os.Args[1] {
 	case "version":
@@ -61,6 +63,8 @@ func main() {
 		modelsCommand(os.Args[2:])
 	case "admin-resource":
 		adminResourceCommand(os.Args[2:])
+	case "control-plane":
+		controlPlaneCommand(os.Args[2:])
 	case "status":
 		statusCommand(os.Args[2:])
 	case "usage":
@@ -78,6 +82,149 @@ func main() {
 	default:
 		die("unsupported command %q", os.Args[1])
 	}
+}
+
+func controlPlaneCommand(args []string) {
+	if len(args) == 0 || (args[0] != "backup" && args[0] != "restore") {
+		die("usage: metrum-ai-routerctl control-plane <backup|restore> [flags]")
+	}
+	mode := args[0]
+	fs, api := addAdminAPIFlags("control-plane " + mode)
+	file := ""
+	if mode == "backup" {
+		fs.StringVar(&file, "out", "", "new mode-0600 file for the control-plane backup")
+	} else {
+		fs.StringVar(&file, "in", "", "control-plane backup bundle file")
+	}
+	timeout := fs.Duration("timeout", 3*time.Minute, "maximum wait for the asynchronous operation")
+	fs.Parse(args[1:])
+	if fs.NArg() != 0 || strings.TrimSpace(file) == "" {
+		die("control-plane %s requires --%s FILE", mode, map[string]string{"backup": "out", "restore": "in"}[mode])
+	}
+	client := mustAdminAPIClient(api)
+	var payload any
+	if mode == "restore" {
+		info, err := os.Stat(file)
+		if err != nil || info.IsDir() || info.Size() > 32<<20 {
+			die("backup input must be a readable file no larger than 32 MiB")
+		}
+		raw, err := os.ReadFile(file)
+		if err != nil {
+			die("read backup input: %v", err)
+		}
+		if len(raw) > 32<<20 {
+			die("backup input must be a readable file no larger than 32 MiB")
+		}
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.UseNumber()
+		if err := decoder.Decode(&payload); err != nil {
+			die("backup input is not valid JSON")
+		}
+	}
+	path := "/admin/v1/control-plane/backups"
+	if mode == "restore" {
+		path = "/admin/v1/control-plane/restores"
+	}
+	body, status, err := client.Do(http.MethodPost, path, payload, api.mutationHeaders())
+	if err != nil {
+		dieAdmin(err)
+	}
+	if status != http.StatusAccepted {
+		die("control-plane operation start returned HTTP %d: %s", status, string(body))
+	}
+	var accepted struct {
+		Operation struct {
+			ID string `json:"id"`
+		} `json:"operation"`
+		OperationURL string `json:"operation_url"`
+	}
+	if err := json.Unmarshal(body, &accepted); err != nil || accepted.Operation.ID == "" || accepted.OperationURL == "" {
+		die("control-plane operation response is invalid")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+	defer cancel()
+	for {
+		select {
+		case <-ctx.Done():
+			die("control-plane operation %s did not finish before timeout", accepted.Operation.ID)
+		default:
+		}
+		body, status, err = client.Do(http.MethodGet, accepted.OperationURL, nil, nil)
+		if err != nil {
+			dieAdmin(err)
+		}
+		if status != http.StatusOK {
+			die("control-plane operation read returned HTTP %d: %s", status, string(body))
+		}
+		var state struct {
+			Status    string `json:"status"`
+			ErrorCode string `json:"error_code"`
+		}
+		if err := json.Unmarshal(body, &state); err != nil {
+			die("control-plane operation status is invalid")
+		}
+		if state.Status == "failed" {
+			die("control-plane operation failed: %s", state.ErrorCode)
+		}
+		if state.Status == "succeeded" {
+			break
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+	if mode == "backup" {
+		body, status, err = client.Do(http.MethodGet, "/admin/v1/control-plane/backups/"+accepted.Operation.ID, nil, nil)
+		if err != nil {
+			dieAdmin(err)
+		}
+		if status != http.StatusOK {
+			die("control-plane backup download returned HTTP %d: %s", status, string(body))
+		}
+		var downloaded struct {
+			Bundle json.RawMessage `json:"bundle"`
+		}
+		if err := json.Unmarshal(body, &downloaded); err != nil || len(downloaded.Bundle) == 0 {
+			die("control-plane backup response is invalid")
+		}
+		if err := verifyControlPlaneBackupDigest(downloaded.Bundle); err != nil {
+			die("control-plane backup integrity check failed")
+		}
+		fileHandle, err := os.OpenFile(file, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+		if err != nil {
+			die("create backup output securely: %v", err)
+		}
+		if _, err := fileHandle.Write(downloaded.Bundle); err != nil {
+			_ = fileHandle.Close()
+			die("write backup output: %v", err)
+		}
+		if err := fileHandle.Close(); err != nil {
+			die("close backup output: %v", err)
+		}
+	} else {
+		fmt.Printf("control-plane restore completed (operation %s)\n", accepted.Operation.ID)
+	}
+}
+
+func verifyControlPlaneBackupDigest(raw []byte) error {
+	var bundle map[string]any
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	if err := decoder.Decode(&bundle); err != nil {
+		return err
+	}
+	digest, ok := bundle["sha256"].(string)
+	if !ok || len(digest) != sha256.Size*2 {
+		return errors.New("backup digest is missing")
+	}
+	bundle["sha256"] = ""
+	canonical, err := json.Marshal(bundle)
+	if err != nil {
+		return err
+	}
+	actual := sha256.Sum256(canonical)
+	if hex.EncodeToString(actual[:]) != digest {
+		return errors.New("backup digest mismatch")
+	}
+	return nil
 }
 
 // adminResourceCommand exposes the versioned resource API to operators without
@@ -411,7 +558,7 @@ func configCommand(args []string) {
 // --admin-key-file; the router URL from --router-url or ROUTER_URL.
 func groupsCommand(args []string) {
 	if len(args) == 0 {
-		die("usage: metrum-ai-routerctl groups <list|show|set-targets|add-target|remove-target|rollback|history|shadow> [flags]")
+		die("usage: metrum-ai-routerctl groups <list|show|set-targets|add-target|remove-target|bulk-targets|rollback|history|shadow> [flags]")
 	}
 	if args[0] == "shadow" {
 		groupsShadowCommand(args[1:])
@@ -489,6 +636,29 @@ func groupsCommand(args []string) {
 			payload["position"] = *position
 		}
 		body, _, err := client.Do(http.MethodPost, "/admin/v1/config/groups/"+name+"/targets", payload, api.mutationHeaders())
+		if err != nil {
+			dieAdmin(err)
+		}
+		writeRawJSON(body)
+	case "bulk-targets":
+		fs, api := addAdminAPIFlags("groups bulk-targets")
+		changes := stringListFlag(fs, "change", "add=provider/model_ref or remove=provider/model_ref (repeatable, max 100)")
+		reason := fs.String("reason", "", "audit reason")
+		fs.Parse(args[1:])
+		name := groupNameArg(fs)
+		if len(*changes) == 0 || len(*changes) > 100 {
+			die("groups bulk-targets requires between 1 and 100 --change values")
+		}
+		payload := make([]map[string]any, 0, len(*changes))
+		for _, raw := range *changes {
+			action, targetRaw, ok := strings.Cut(raw, "=")
+			if !ok || (action != "add" && action != "remove") {
+				die("invalid --change %q: expected add=provider/model_ref or remove=provider/model_ref", raw)
+			}
+			provider, ref := mustParseTargetFlag(targetRaw)
+			payload = append(payload, map[string]any{"action": action, "target": map[string]any{"provider": provider, "model_ref": ref}})
+		}
+		body, _, err := mustAdminAPIClient(api).Do(http.MethodPost, "/admin/v1/config/groups/"+name+"/targets:bulk", map[string]any{"changes": payload, "reason": *reason}, api.mutationHeaders())
 		if err != nil {
 			dieAdmin(err)
 		}

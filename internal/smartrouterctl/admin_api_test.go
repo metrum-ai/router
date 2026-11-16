@@ -81,3 +81,15 @@ func TestAdminClientFailureHints(t *testing.T) {
 		t.Fatalf("unauthorized error lacks setup hints: %v", err)
 	}
 }
+
+func TestAdminClientLimitReadsOnlyOneBytePastCallerLimit(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(strings.Repeat("x", 100)))
+	}))
+	defer server.Close()
+	client := &AdminAPIClient{BaseURL: server.URL, Token: "test-admin-key"}
+	body, status, _, err := client.DoWithHeadersLimit(http.MethodGet, "/admin/v1/reports/cfo", nil, nil, 8)
+	if err != nil || status != http.StatusOK || len(body) != 9 {
+		t.Fatalf("bounded response length=%d status=%d err=%v; want 9 bytes, 200, nil", len(body), status, err)
+	}
+}

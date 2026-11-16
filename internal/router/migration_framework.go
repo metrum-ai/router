@@ -614,6 +614,24 @@ func (r *migrationRunner) Status() (MigrationStatus, error) {
 	if err := r.ensureLedger(); err != nil {
 		return MigrationStatus{}, err
 	}
+	return r.statusFromExistingLedger()
+}
+
+// StatusReadOnly reads the existing migration ledger without bootstrapping or
+// upgrading any migration metadata. It is intended for serving API handlers.
+func (r *migrationRunner) StatusReadOnly() (MigrationStatus, error) {
+	if r == nil || r.db == nil || !r.db.Migrator().HasTable("schema_migration_ledger") {
+		return MigrationStatus{}, errors.New("migration ledger unavailable")
+	}
+	for _, column := range []string{"manifest_digest", "scope", "migration_id", "checksum", "state"} {
+		if !r.db.Migrator().HasColumn("schema_migration_ledger", column) {
+			return MigrationStatus{}, errors.New("migration ledger metadata unavailable")
+		}
+	}
+	return r.statusFromExistingLedger()
+}
+
+func (r *migrationRunner) statusFromExistingLedger() (MigrationStatus, error) {
 	status := MigrationStatus{Scope: r.scope, Compatibility: r.compatibility, Compatible: true, State: "current"}
 	var records []migrationLedgerRecord
 	if err := r.db.Where("scope = ?", r.scope).Order("migration_id ASC").Find(&records).Error; err != nil {

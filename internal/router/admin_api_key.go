@@ -74,6 +74,9 @@ const (
 	authzObjectAdminQuotas      = "admin:quotas"
 	authzObjectAdminBudgets     = "admin:budgets"
 	authzObjectAdminRetention   = "admin:retention"
+	authzObjectAdminOperations  = "admin:operations"
+	authzObjectAdminBackup      = "admin:backup"
+	authzObjectAdminRestore     = "admin:restore"
 )
 
 // knownAdminKeyPermissions is the allowlist of permissions an admin key (or a
@@ -113,6 +116,10 @@ var knownAdminKeyPermissions = map[string]bool{
 	"admin:training:export":         true,
 	"admin:training:label":          true,
 	"metrics:read":                  true,
+	"admin:operations:read":         true,
+	"admin:backup:read":             true,
+	"admin:backup:write":            true,
+	"admin:restore:write":           true,
 }
 
 // adminPermissionObjectAction maps a fine-grained permission to the Casbin
@@ -158,6 +165,14 @@ func adminPermissionObjectAction(permission string) (object, action string, ok b
 		return authzObjectAdminRetention, "write", true
 	case adminPermissionRetentionForce:
 		return authzObjectAdminRetention, "force", true
+	case "admin:operations:read":
+		return authzObjectAdminOperations, authzActionRead, true
+	case "admin:backup:read":
+		return authzObjectAdminBackup, authzActionRead, true
+	case "admin:backup:write":
+		return authzObjectAdminBackup, "write", true
+	case "admin:restore:write":
+		return authzObjectAdminRestore, "write", true
 	}
 	// Generic rule: the last colon segment is the action, the head is the
 	// object (admin:reports:read -> admin:reports / read).

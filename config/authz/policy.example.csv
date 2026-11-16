@@ -18,3 +18,6 @@ p, adminkey:ops-admin, *, admin:budgets, read|write
 p, adminkey:ops-admin, example/prod, admin:memberships, read|write
 p, adminkey:ops-admin, example/prod, admin:quotas, read|write
 p, adminkey:ops-admin, *, admin:retention, write|force
+p, adminkey:ops-admin, *, admin:operations, read
+p, adminkey:backup-admin, *, admin:backup, read|write
+p, adminkey:backup-admin, *, admin:restore, write

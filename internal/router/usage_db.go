@@ -49,6 +49,14 @@ func (s *usageStore) migrationStatus() (MigrationStatus, error) {
 	return r.Status()
 }
 
+func (s *usageStore) migrationStatusReadOnly() (MigrationStatus, error) {
+	r, err := newUsageMigrationRunner(s.db)
+	if err != nil {
+		return MigrationStatus{}, err
+	}
+	return r.StatusReadOnly()
+}
+
 const (
 	// usageDBMigrationPolicyValidate verifies a fully applied immutable ledger
 	// and never applies application-schema DDL during serving startup.

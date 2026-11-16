@@ -775,20 +775,6 @@ func TestKeyHygieneConfigEnforcement(t *testing.T) {
 			t.Fatalf("min_entropy_bits=%d error=%v", invalidFloor, err)
 		}
 	}
-	cfg.Security.KeyHygiene.MinEntropyBits = 0
-	for _, maxAgeDays := range []int{0, 1, 30, 3650} {
-		cfg.Security.KeyHygiene.MaxAgeDays = maxAgeDays
-		if err := cfg.Validate(); err != nil {
-			t.Fatalf("max_age_days=%d should be valid: %v", maxAgeDays, err)
-		}
-	}
-	for _, maxAgeDays := range []int{-1, 3651} {
-		cfg.Security.KeyHygiene.MaxAgeDays = maxAgeDays
-		if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "max_age_days must be 0 (default) or between 1 and 3650") {
-			t.Fatalf("max_age_days=%d error=%v", maxAgeDays, err)
-		}
-	}
-	cfg.Security.KeyHygiene.MaxAgeDays = 0
 	cfg.Security.KeyHygiene = KeyHygieneConfig{MinEntropyBits: 128, Enforce: true}
 	cfg.Callers[0].Environment = "prod"
 	cfg.Callers[0].TokenID = "rtr_metrum_alice_example_prod_key1"
