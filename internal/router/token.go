@@ -24,14 +24,15 @@ const (
 )
 
 type TokenGenerateOptions struct {
-	User        string
-	OwnerUser   string
-	Project     string
-	Environment string
-	KeySlug     string
-	Allow       []string
-	Reader      io.Reader
-	Now         time.Time
+	User            string
+	OwnerUser       string
+	Project         string
+	Environment     string
+	KeySlug         string
+	Allow           []string
+	HoneytokenLabel string
+	Reader          io.Reader
+	Now             time.Time
 	// HashFormat selects the stored verifier; empty means token_hash.
 	HashFormat string
 	// HashIterations overrides the token_hash PBKDF2 iteration count.
@@ -90,7 +91,7 @@ func GenerateCallerToken(opts TokenGenerateOptions) (GeneratedToken, error) {
 	tokenID := strings.Join([]string{tokenPrefixName, user, project, environment, keySlug}, "_")
 	token := tokenID + "_" + secret
 	allow := append([]string(nil), opts.Allow...)
-	if len(allow) == 0 {
+	if len(allow) == 0 && strings.TrimSpace(opts.HoneytokenLabel) == "" {
 		return GeneratedToken{}, fmt.Errorf("at least one allowed model group is required")
 	}
 	callerID := strings.Join([]string{user, project, environment}, "-")
@@ -105,6 +106,13 @@ func GenerateCallerToken(opts TokenGenerateOptions) (GeneratedToken, error) {
 		Rate:        RateConfig{RPM: 120, TPM: 200000, Concurrent: 8},
 		Quota:       QuotaConfig{Day: BudgetConfig{Requests: 5000, Tokens: 20000000}, Month: BudgetConfig{Tokens: 400000000}, SoftPct: 80},
 		Key:         KeyConfig{LifetimeTokens: 2000000000, SoftPct: 90, OnExhaust: "disable"},
+	}
+	if label := strings.TrimSpace(opts.HoneytokenLabel); label != "" {
+		issuedAt := opts.Now
+		if issuedAt.IsZero() {
+			issuedAt = time.Now().UTC()
+		}
+		caller.Honeytoken = &HoneytokenConfig{Label: label, PlantedAt: issuedAt.UTC().Format(time.RFC3339)}
 	}
 	if hashFormat == TokenHashFormatLegacySHA256 {
 		caller.TokenSHA256 = legacyCallerTokenSHA256Hex(token)
