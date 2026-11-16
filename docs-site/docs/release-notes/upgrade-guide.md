@@ -861,3 +861,9 @@ caller IDs under `exempt_callers`. Throttle rules must set
 configured quotas. Enforced suspend rules require database config mode and
 are recorded as containment-made so the containment role or an administrator
 can resume them before their TTL. Actions expire at their configured TTL.
+
+## v5.0.0 Security Console
+
+The admin reports UI adds a Security Console to the Security events report. It ranks caller risk using detector results and caller authentication failures, and shows detector, authentication, and containment access events in the timeline. It links events to request evidence and provides JSON and Markdown incident bundles using the selected time window. Users with the domain-scoped containment permission can suspend a caller from the reports UI; the request requires same-origin CSRF protection and an audit reason. Release remains on the admin control plane and is shown as a `routerctl release` command and `/admin/v1/containment` request only for a caller suspended by containment. No new configuration is required.
+
+The console only displays signals returned by the selected time range and report page. A missing signal does not prove that a caller is safe. Request evidence remains subject to the existing report drilldown permissions.

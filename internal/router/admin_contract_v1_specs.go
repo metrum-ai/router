@@ -636,6 +636,20 @@ var adminV1OperationSpecs = []Operation{
 		Response: adminTextBody{MediaType: "text/csv"}, Errors: []int{400, 503},
 		Adapter: "reports", OpaqueQuery: true, RateClass: AdminRateClassRead, HandlerKey: "reports.security.csv",
 	},
+	{
+		ID: "exportAdminSecurityIncidentJSON", Method: "GET", Path: "/admin/v1/reports/security/export.json", LegacyPath: "/admin/reports/security/export.json",
+		Summary: "Export a security incident bundle as JSON",
+		Object:  authzObjectSecurityReports, Action: authzActionExport, Domain: AdminDomainHandler,
+		Response: adminOpenObject{Members: []string{"incident", "evidence"}}, Errors: []int{400, 404, 503},
+		Adapter: "reports", OpaqueQuery: true, RateClass: AdminRateClassRead, HandlerKey: "reports.security.json",
+	},
+	{
+		ID: "exportAdminSecurityIncidentMarkdown", Method: "GET", Path: "/admin/v1/reports/security/export.md", LegacyPath: "/admin/reports/security/export.md",
+		Summary: "Export a security incident bundle as Markdown",
+		Object:  authzObjectSecurityReports, Action: authzActionExport, Domain: AdminDomainHandler,
+		Response: adminTextBody{MediaType: "text/markdown"}, Errors: []int{400, 404, 503},
+		Adapter: "reports", OpaqueQuery: true, RateClass: AdminRateClassRead, HandlerKey: "reports.security.markdown",
+	},
 }
 
 // adminV1ScalarReportSpecs are the twelve savings/usage breakdown reports. They

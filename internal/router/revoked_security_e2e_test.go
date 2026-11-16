@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -40,6 +41,7 @@ func TestRevokedKeyScopedSecurityLocalhostE2E(t *testing.T) {
 	}}
 	cfg.Server.AdminAuth.Authorization = AdminAuthorizationConfig{Enabled: true, Policy: []string{
 		"p, basic:scoped, search/dev, admin:reports, read|drilldown", "p, basic:scoped, search/dev, admin:security_reports, read",
+		"p, basic:scoped, *, admin:containment, contain",
 		"p, basic:other, other/dev, admin:reports, read|drilldown", "p, basic:other, other/dev, admin:security_reports, read",
 	}}
 	canonical, err := yaml.Marshal(cfg)
@@ -58,6 +60,75 @@ func TestRevokedKeyScopedSecurityLocalhostE2E(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer svc.Close()
+	// Exercise the serving-port reports route with real Basic authentication,
+	// Casbin policy, the active config database, and the #883 mutation handler.
+	csrf := func(username string) (*http.Cookie, string) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, "http://reports.example/admin/reports/api/security/csrf-token", nil)
+		req.Host = "reports.example"
+		req.SetBasicAuth(username, "synthetic-admin-password")
+		rec := httptest.NewRecorder()
+		svc.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("csrf token for %s status=%d: %s", username, rec.Code, rec.Body.String())
+		}
+		var payload struct {
+			Token string `json:"csrf_token"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil || payload.Token == "" {
+			t.Fatalf("invalid csrf token response: %s", rec.Body.String())
+		}
+		return rec.Result().Cookies()[0], payload.Token
+	}
+	postContain := func(username string, cookie *http.Cookie, token string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "http://reports.example/admin/reports/api/security/containment", strings.NewReader(`{"caller_id":"alice","action":"suspend","reason":"e2e-test"}`))
+		req.Host = "reports.example"
+		req.Header.Set("Origin", "http://reports.example")
+		req.Header.Set("Content-Type", "application/json")
+		req.SetBasicAuth(username, "synthetic-admin-password")
+		if cookie != nil {
+			req.AddCookie(cookie)
+		}
+		if token != "" {
+			req.Header.Set("X-CSRF-Token", token)
+		}
+		rec := httptest.NewRecorder()
+		svc.Handler().ServeHTTP(rec, req)
+		return rec
+	}
+	scopedCookie, scopedToken := csrf("scoped")
+	if got := postContain("scoped", scopedCookie, ""); got.Code != http.StatusForbidden {
+		t.Fatalf("containment without CSRF status=%d body=%s", got.Code, got.Body.String())
+	}
+	otherCookie, otherToken := csrf("other")
+	if got := postContain("other", otherCookie, otherToken); got.Code != http.StatusForbidden {
+		t.Fatalf("containment without permission status=%d body=%s", got.Code, got.Body.String())
+	}
+	allowedContainment := postContain("scoped", scopedCookie, scopedToken)
+	if allowedContainment.Code != http.StatusOK {
+		t.Fatalf("allowed serving-port containment status=%d body=%s", allowedContainment.Code, allowedContainment.Body.String())
+	}
+	statusReq := httptest.NewRequest(http.MethodGet, "http://reports.example/admin/reports/api/security/containment-status?caller_id=alice", nil)
+	statusReq.Host = "reports.example"
+	statusReq.SetBasicAuth("scoped", "synthetic-admin-password")
+	statusRec := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(statusRec, statusReq)
+	if statusRec.Code != http.StatusOK || !strings.Contains(statusRec.Body.String(), `"contained":true`) || !strings.Contains(statusRec.Body.String(), `"can_contain":true`) {
+		t.Fatalf("authorized containment status=%d body=%s", statusRec.Code, statusRec.Body.String())
+	}
+	statusReq = httptest.NewRequest(http.MethodGet, "http://reports.example/admin/reports/api/security/containment-status?caller_id=alice", nil)
+	statusReq.Host = "reports.example"
+	statusReq.SetBasicAuth("other", "synthetic-admin-password")
+	statusRec = httptest.NewRecorder()
+	svc.Handler().ServeHTTP(statusRec, statusReq)
+	if statusRec.Code != http.StatusForbidden {
+		t.Fatalf("unauthorized containment status=%d body=%s", statusRec.Code, statusRec.Body.String())
+	}
+	var containmentAudit configControlPlaneChangeEventRow
+	if err := svc.configControlPlane.Where("action = ?", "caller_containment_suspend").Order("at DESC").First(&containmentAudit).Error; err != nil || containmentAudit.Actor != "basic:scoped" {
+		t.Fatalf("containment audit missing or wrong actor: %+v err=%v", containmentAudit, err)
+	}
 	mux := http.NewServeMux()
 	RegisterCallerDirectoryAdmin(mux, CallerAdminDeps{DB: runner.db, RuntimeScope: "staging", Authorize: func(r *http.Request, object, action string) bool { return r.Header.Get("X-Test-Admin") == "yes" }, AfterMutate: func(_ *http.Request, _ string) error { return svc.reloadActiveConfigFromDB() }})
 	mux.Handle("/", svc.Handler())

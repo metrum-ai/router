@@ -1024,8 +1024,8 @@ func TestAdminV1ReportsAdapterReusesLegacyBranch(t *testing.T) {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	}
 	reports := AdminV1ReportsHandlers(registry, reportsHandler)
-	if len(reports) != 30 {
-		t.Fatalf("bound %d reports operations, want 30", len(reports))
+	if len(reports) != 32 {
+		t.Fatalf("bound %d reports operations, want 32", len(reports))
 	}
 	extra := map[string]http.HandlerFunc{}
 	for key, handler := range reports {
@@ -1412,7 +1412,7 @@ func TestAdminV1ReportsDecideThroughAuthorize(t *testing.T) {
 			if !actions[call.Action] {
 				t.Fatalf("operation %s decided action %q, which is not one of its declared actions", op.ID, call.Action)
 			}
-			if strings.HasSuffix(op.Path, "/export.csv") || strings.HasSuffix(op.Path, "/export.md") {
+			if strings.HasSuffix(op.Path, "/export.csv") || strings.HasSuffix(op.Path, "/export.json") || strings.HasSuffix(op.Path, "/export.md") {
 				if call.Action != authzActionExport {
 					t.Fatalf("export operation %s decided action %q, want export", op.ID, call.Action)
 				}
@@ -1422,8 +1422,8 @@ func TestAdminV1ReportsDecideThroughAuthorize(t *testing.T) {
 			}
 		}
 	}
-	if reportOps != 30 {
-		t.Fatalf("exercised %d reports operations, want 30", reportOps)
+	if reportOps != 32 {
+		t.Fatalf("exercised %d reports operations, want 32", reportOps)
 	}
 }
 

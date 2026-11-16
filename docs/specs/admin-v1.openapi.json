@@ -7164,6 +7164,160 @@
         "x-admin-object": "admin:security_reports"
       }
     },
+    "/admin/v1/reports/security/export.json": {
+      "get": {
+        "operationId": "exportAdminSecurityIncidentJSON",
+        "parameters": [
+          {
+            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: incident, evidence.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "412": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Export a security incident bundle as JSON",
+        "tags": [
+          "reports"
+        ],
+        "x-admin-action": "export",
+        "x-admin-concurrency": "",
+        "x-admin-domain": "handler",
+        "x-admin-idempotency": "",
+        "x-admin-object": "admin:security_reports"
+      }
+    },
+    "/admin/v1/reports/security/export.md": {
+      "get": {
+        "operationId": "exportAdminSecurityIncidentMarkdown",
+        "parameters": [
+          {
+            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/markdown": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "412": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Export a security incident bundle as Markdown",
+        "tags": [
+          "reports"
+        ],
+        "x-admin-action": "export",
+        "x-admin-concurrency": "",
+        "x-admin-domain": "handler",
+        "x-admin-idempotency": "",
+        "x-admin-object": "admin:security_reports"
+      }
+    },
     "/admin/v1/reports/security/overview": {
       "get": {
         "operationId": "getAdminSecurityOverview",

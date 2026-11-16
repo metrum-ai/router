@@ -255,6 +255,7 @@ type SecurityReportOptions struct {
 	TokenID           string
 	AdminSubject      string
 	Client            string
+	RequestID         string
 }
 
 type securityTrendBucketRecord struct {
@@ -7831,6 +7832,9 @@ func (s *usageStore) adminSecurityTrendBucketsSQL(opts SecurityReportOptions) ([
 
 func (s *usageStore) securityAccessEventsQuery(opts SecurityReportOptions) *gorm.DB {
 	q := s.db.Model(&securityAccessEventRecord{}).Where("ts >= ? AND ts < ?", formatUsageTime(opts.From), formatUsageTime(opts.To))
+	if opts.RequestID != "" {
+		q = q.Where("request_id = ?", opts.RequestID)
+	}
 	if opts.Outcome != "" {
 		q = q.Where("outcome = ?", opts.Outcome)
 	}

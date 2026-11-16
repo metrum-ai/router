@@ -8,6 +8,7 @@ import { MetricGrid, type MetricGridConfig } from "@/components/MetricGrid";
 import { ReportCharts } from "@/components/ReportCharts";
 import { TabFilterPanel } from "@/components/TabFilterPanel";
 import { Button } from "@/components/ui/button";
+import { SecurityConsole } from "@/components/SecurityConsole";
 import type { ReportFilters, ReportPageAction, ReportResponse, TabSpec } from "@/lib/reports";
 import { columnsForTab, resolveSortKey, rowsForTab, tabById } from "@/lib/reports";
 
@@ -114,6 +115,7 @@ export function ReportPanel({ tab, report, filters, pageIndex, canGoBack, loadin
         </Card>
       ) : null}
       <ReportCharts charts={report?.charts} reportId={tab.id} />
+      {tab.id === "security-events" ? <SecurityConsole report={report} /> : null}
       <DataTable
         allowLocalCsv={tab.id !== "cfo"}
         rows={rows}

@@ -517,6 +517,7 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		return nil, err
 	}
 	s.routes()
+	s.registerAdminReportsContainmentRoute()
 	s.initAdminPlane()
 	// Admin v1 is mounted only after machine auth has been initialized. A
 	// listener with no configured authenticator remains health-only and fails
