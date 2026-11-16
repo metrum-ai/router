@@ -61,7 +61,7 @@ func applyTraceCorrelationMigration(db *gorm.DB) error {
 }
 
 func verifyTraceCorrelationMigration(db *gorm.DB) error {
-	if err := ensureUsageRelationalSchemaExcept(db, usageHierarchyAuditColumns); err != nil {
+	if err := ensureUsageRelationalSchemaExcept(db, mergeUsageColumnSets(usageHierarchyAuditColumns, usageToolRoutingColumns)); err != nil {
 		return err
 	}
 	indexes, err := db.Migrator().GetIndexes(&usageRecord{})

@@ -31,7 +31,7 @@ func clearHierarchyAuditMigrationLedger(t *testing.T, db *gorm.DB) {
 	}
 }
 
-func TestTraceCorrelationAndHierarchyAuditSchema19SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) {
+func TestTraceCorrelationAndHierarchyAuditSchema20SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) {
 	cfg := uncachedSQLiteUsageDBConfigForTest(filepath.Join(t.TempDir(), "usage.sqlite"))
 	store, err := OpenUsageStore(cfg)
 	if err != nil {
@@ -40,6 +40,10 @@ func TestTraceCorrelationAndHierarchyAuditSchema19SQLiteUpgradeDownAndRowRoundTr
 	if err := store.db.Create(recordFromRow(rowFromRecord(logRecord{RequestID: "legacy-trace-row", TS: time.Now().UTC().Format(time.RFC3339)}))).Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := revertToolRoutingUsageMigration(store.db); err != nil {
+		t.Fatal(err)
+	}
+	clearToolRoutingUsageLedger(t, store.db)
 	if err := revertHierarchyAuditMigration(store.db); err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +75,7 @@ func TestTraceCorrelationAndHierarchyAuditSchema19SQLiteUpgradeDownAndRowRoundTr
 		t.Fatal(err)
 	}
 	status, err := runner.Status()
-	if err != nil || status.SchemaVersion != 19 || !status.Compatible {
+	if err != nil || status.SchemaVersion != 20 || !status.Compatible {
 		t.Fatalf("after: %+v err=%v", status, err)
 	}
 	var legacy usageRecord
@@ -87,9 +91,9 @@ func TestTraceCorrelationAndHierarchyAuditSchema19SQLiteUpgradeDownAndRowRoundTr
 		t.Fatalf("trace row=%+v want=%+v err=%v", got, row, err)
 	}
 
-	previousDefinitions := make([]MigrationDefinition, 0, len(usageMigrationDefinitions)-2)
+	previousDefinitions := make([]MigrationDefinition, 0, len(usageMigrationDefinitions)-3)
 	for _, definition := range usageMigrationDefinitions {
-		if definition.ID != usageTraceCorrelationMigrationID && definition.ID != usageHierarchyAuditMigrationID {
+		if definition.ID != usageTraceCorrelationMigrationID && definition.ID != usageHierarchyAuditMigrationID && definition.ID != toolRoutingUsageMigrationID {
 			previousDefinitions = append(previousDefinitions, definition)
 		}
 	}
@@ -99,8 +103,12 @@ func TestTraceCorrelationAndHierarchyAuditSchema19SQLiteUpgradeDownAndRowRoundTr
 	}
 	oldStatus, err := old.Status()
 	if err != nil || oldStatus.Compatible || oldStatus.State != "incompatible" {
-		t.Fatalf("schema 17 binary should reject schema 19: %+v err=%v", oldStatus, err)
+		t.Fatalf("schema 17 binary should reject schema 20: %+v err=%v", oldStatus, err)
 	}
+	if err := revertToolRoutingUsageMigration(runner.db); err != nil {
+		t.Fatal(err)
+	}
+	clearToolRoutingUsageLedger(t, runner.db)
 	if err := revertHierarchyAuditMigration(runner.db); err != nil {
 		t.Fatal(err)
 	}

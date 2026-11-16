@@ -296,6 +296,9 @@ func (s *Service) recoverToolCall(ctx context.Context, rc *requestContext, calle
 			if attempt.ErrorMessage != "" {
 				attempt.ErrorMessage = s.sanitizeDiagnosticError(attempt.ErrorMessage)
 			}
+			// Keep the recovery action on failed attempts too. Usage summaries
+			// derive retry/escalation counts from these attempt records.
+			attempt.ToolValidation = &toolValidationLogRecord{Mode: cfg.mode(), Action: action}
 			rc.rec.AttemptsDetail = append(rc.rec.AttemptsDetail, attempt)
 			attempts = attemptIndex
 			if rc != nil {

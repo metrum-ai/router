@@ -14,6 +14,16 @@ import (
 	"gorm.io/gorm"
 )
 
+func usageMigrationDefinitionsThroughSchema(maxSchema int) []MigrationDefinition {
+	definitions := make([]MigrationDefinition, 0, len(usageMigrationDefinitions))
+	for _, definition := range usageMigrationDefinitions {
+		if definition.SchemaVersion <= maxSchema {
+			definitions = append(definitions, definition)
+		}
+	}
+	return definitions
+}
+
 // testResponseAffinityRow returns a fully populated dormant row. The values are
 // synthetic; no test here writes through a serving path because the schema-only
 // change enables none.
@@ -112,7 +122,7 @@ func TestResponseAffinitySchema12SQLiteUpgradeAndDown(t *testing.T) {
 	}
 	status, err := runner.Status()
 	// 18 is the current usage head after hierarchy audit attribution.
-	if err != nil || status.SchemaVersion != 19 {
+	if err != nil || status.SchemaVersion != 20 {
 		t.Fatalf("after: %+v err=%v", status, err)
 	}
 	if err := verifyResponseAffinityMigration(runner.db); err != nil {
@@ -129,7 +139,7 @@ func TestResponseAffinitySchema12SQLiteUpgradeAndDown(t *testing.T) {
 
 	// Earlier binaries must fail closed on the future schema instead of
 	// ignoring the table.
-	old, err := NewMigrationRunnerWithDataJobs(runner.db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 11, MinData: 0, MaxData: 1}, usageMigrationDefinitions[:len(usageMigrationDefinitions)-1], usageDataJobDefinitions)
+	old, err := NewMigrationRunnerWithDataJobs(runner.db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 11, MinData: 0, MaxData: 1}, usageMigrationDefinitionsThroughSchema(11), usageDataJobDefinitions)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +195,7 @@ func TestResponseAffinitySchema12FreshInstall(t *testing.T) {
 	}
 	status, err := runner.Status()
 	// Fresh installs reach the current usage head (18), including hierarchy audit attribution.
-	if err != nil || status.SchemaVersion != 19 || !status.Compatible {
+	if err != nil || status.SchemaVersion != 20 || !status.Compatible {
 		t.Fatalf("fresh install: %+v err=%v", status, err)
 	}
 	if err := verifyResponseAffinityMigration(runner.db); err != nil {
@@ -274,7 +284,7 @@ func TestResponseAffinitySchema12PostgresUpgradeAndDown(t *testing.T) {
 	}
 	after, err := runner.Status()
 	// 18 is the current usage head after hierarchy audit attribution.
-	if err != nil || after.SchemaVersion != 19 {
+	if err != nil || after.SchemaVersion != 20 {
 		t.Fatalf("after: %+v err=%v", after, err)
 	}
 	if err := verifyResponseAffinityMigration(runner.db); err != nil {
@@ -315,7 +325,7 @@ func TestResponseAffinitySchema12PostgresUpgradeAndDown(t *testing.T) {
 	if err != nil || afterDown.SchemaVersion != 11 {
 		t.Fatalf("after down: %+v err=%v", afterDown, err)
 	}
-	old, err := NewMigrationRunnerWithDataJobs(runner.db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 11, MinData: 0, MaxData: 1}, usageMigrationDefinitions[:len(usageMigrationDefinitions)-1], usageDataJobDefinitions)
+	old, err := NewMigrationRunnerWithDataJobs(runner.db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 11, MinData: 0, MaxData: 1}, usageMigrationDefinitionsThroughSchema(11), usageDataJobDefinitions)
 	if err != nil {
 		t.Fatal(err)
 	}

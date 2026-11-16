@@ -70,5 +70,5 @@ func verifyUsageProvenanceMigration(db *gorm.DB) error {
 			}
 		}
 	}
-	return ensureUsageRelationalSchemaExcept(db, mergeUsageColumnSets(usageCacheWriteColumns, usageRequestKindColumns, usageTokenBreakdownColumns, usageEndpointColumns, usageTraceCorrelationColumns, usageHierarchyAuditColumns))
+	return ensureUsageRelationalSchemaExcept(db, mergeUsageColumnSets(usageCacheWriteColumns, usageRequestKindColumns, usageTokenBreakdownColumns, usageEndpointColumns, usageTraceCorrelationColumns, usageHierarchyAuditColumns, usageToolRoutingColumns))
 }
