@@ -78,13 +78,13 @@ func TestAdminAuditChainMigrationUsesAssignedIDAndNextSchema(t *testing.T) {
 	if usage.ID != 2026111628 || control.ID != 2026111628 {
 		t.Fatalf("assigned migration IDs: usage=%d control=%d", usage.ID, control.ID)
 	}
-	if usage.SchemaVersion != 23 || control.SchemaVersion != 19 {
+	if usage.SchemaVersion != 24 || control.SchemaVersion != 20 {
 		t.Fatalf("next schema versions: usage=%d control=%d", usage.SchemaVersion, control.SchemaVersion)
 	}
-	if len(usage.Dependencies) != 1 || usage.Dependencies[0] != usageHierarchyAuditMigrationID {
+	if len(usage.Dependencies) != 1 || usage.Dependencies[0] != offlineOperationMarkerMigrationID {
 		t.Fatalf("usage migration dependencies=%v", usage.Dependencies)
 	}
-	if len(control.Dependencies) != 1 || control.Dependencies[0] != 2026111611 {
+	if len(control.Dependencies) != 1 || control.Dependencies[0] != offlineOperationMarkerMigrationID {
 		t.Fatalf("control migration dependencies=%v", control.Dependencies)
 	}
 }

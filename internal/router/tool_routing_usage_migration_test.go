@@ -75,9 +75,9 @@ func TestToolRoutingUsageSchema21UpgradeDownAndRoundTrip(t *testing.T) {
 
 	// This test isolates the schema-21 tool-routing migration. Later migrations
 	// (including the append-only audit-chain migration) are tested separately.
-	definitions := make([]MigrationDefinition, 0, len(usageMigrationDefinitions)-2)
+	definitions := make([]MigrationDefinition, 0, len(usageMigrationDefinitions)-3)
 	for _, definition := range usageMigrationDefinitions {
-		if definition.ID != adminAuditChainUsageMigrationID && definition.ID != usageHierarchyAuditMigrationID {
+		if definition.ID != offlineOperationMarkerMigrationID && definition.ID != adminAuditChainUsageMigrationID && definition.ID != usageHierarchyAuditMigrationID {
 			definitions = append(definitions, definition)
 		}
 	}

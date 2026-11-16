@@ -11,6 +11,34 @@ import (
 	"gorm.io/gorm"
 )
 
+func hierarchyAuditMigrationTestRunner(cfg UsageDBConfig) (*migrationRunner, func() error, error) {
+	db, err := openUsageDB(cfg)
+	if err != nil {
+		return nil, nil, err
+	}
+	definitions := make([]MigrationDefinition, 0, len(usageMigrationDefinitions)-2)
+	for _, definition := range usageMigrationDefinitions {
+		if definition.ID != offlineOperationMarkerMigrationID && definition.ID != adminAuditChainUsageMigrationID {
+			definitions = append(definitions, definition)
+		}
+	}
+	runner, err := NewMigrationRunnerWithDataJobs(db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 22, MinData: 0, MaxData: 1}, definitions, usageDataJobDefinitions)
+	if err != nil {
+		if sqlDB, dbErr := db.DB(); dbErr == nil {
+			_ = sqlDB.Close()
+		}
+		return nil, nil, err
+	}
+	closeDB := func() error {
+		sqlDB, err := db.DB()
+		if err != nil {
+			return err
+		}
+		return sqlDB.Close()
+	}
+	return runner, closeDB, nil
+}
+
 func clearHierarchyAuditMigrationLedger(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	if err := db.Where("scope = ? AND migration_id = ?", usageMigrationScope, usageHierarchyAuditMigrationID).Delete(&migrationAttemptRecord{}).Error; err != nil {
@@ -31,31 +59,14 @@ func clearAdminAuditChainMigrationLedger(t *testing.T, db *gorm.DB) {
 	}
 }
 
-func hierarchyAuditMigrationTestRunner(cfg UsageDBConfig) (*migrationRunner, func() error, error) {
-	db, err := openUsageDB(cfg)
-	if err != nil {
-		return nil, nil, err
+func clearOfflineOperationMarkerUsageMigration(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	if err := db.Where("scope = ? AND migration_id = ?", usageMigrationScope, offlineOperationMarkerMigrationID).Delete(&migrationAttemptRecord{}).Error; err != nil {
+		t.Fatal(err)
 	}
-	definitions := make([]MigrationDefinition, 0, len(usageMigrationDefinitions)-1)
-	for _, definition := range usageMigrationDefinitions {
-		if definition.ID != adminAuditChainUsageMigrationID {
-			definitions = append(definitions, definition)
-		}
+	if err := db.Where("scope = ? AND migration_id = ?", usageMigrationScope, offlineOperationMarkerMigrationID).Delete(&migrationLedgerRecord{}).Error; err != nil {
+		t.Fatal(err)
 	}
-	runner, err := NewMigrationRunnerWithDataJobs(db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 22, MinData: 0, MaxData: 1}, definitions, usageDataJobDefinitions)
-	if err != nil {
-		if sqlDB, dbErr := db.DB(); dbErr == nil {
-			_ = sqlDB.Close()
-		}
-		return nil, nil, err
-	}
-	return runner, func() error {
-		sqlDB, err := db.DB()
-		if err != nil {
-			return err
-		}
-		return sqlDB.Close()
-	}, nil
 }
 
 func TestHierarchyAuditSchema22SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) {
@@ -68,6 +79,8 @@ func TestHierarchyAuditSchema22SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) {
 	if err := store.db.Create(legacy).Error; err != nil {
 		t.Fatal(err)
 	}
+	clearOfflineOperationMarkerUsageMigration(t, store.db)
+	clearAdminAuditChainMigrationLedger(t, store.db)
 	if err := revertHierarchyAuditMigration(store.db); err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +124,13 @@ func TestHierarchyAuditSchema22SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) {
 		t.Fatalf("hierarchy row=%+v err=%v", roundTrip, err)
 	}
 
-	oldBinary, err := NewMigrationRunnerWithDataJobs(runner.db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 21, MinData: 0, MaxData: 1}, usageMigrationDefinitions, usageDataJobDefinitions)
+	priorDefinitions := make([]MigrationDefinition, 0, len(usageMigrationDefinitions)-2)
+	for _, definition := range usageMigrationDefinitions {
+		if definition.ID != offlineOperationMarkerMigrationID && definition.ID != adminAuditChainUsageMigrationID {
+			priorDefinitions = append(priorDefinitions, definition)
+		}
+	}
+	oldBinary, err := NewMigrationRunnerWithDataJobs(runner.db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 21, MinData: 0, MaxData: 1}, priorDefinitions, usageDataJobDefinitions)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -185,8 +185,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | `2026111607` | `usage` | 19 | add mission task and owner attribution | online | none | `restore-required` |
 | `2026111610` | `router-config` | 17 | add admin client and credential registry, lifecycle audit fields, and deduplicated unused-warning state | online | none | `restore-required` |
 | `2026111614` | `usage` | 20 | record recomputed prompt tokens and rollup coverage | online | none | `restore-required` |
-| `2026111628` | `router-config` | 19 | store chained admin audit hashes and prune checkpoints | online | none | `restore-required` |
-| `2026111628` | `usage` | 23 | store chained admin audit hashes and prune checkpoints | online | none | `restore-required` |
+| `2026111627` | `router-config` | 19 | add bounded offline-operation provenance markers | online | none | `restore-required` |
+| `2026111627` | `usage` | 23 | add bounded offline-operation provenance markers | online | none | `restore-required` |
+| `2026111628` | `router-config` | 20 | store chained admin audit hashes and prune checkpoints | online | none | `restore-required` |
+| `2026111628` | `usage` | 24 | store chained admin audit hashes and prune checkpoints | online | none | `restore-required` |
 
 ### Fixed
 

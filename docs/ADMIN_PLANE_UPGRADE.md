@@ -70,9 +70,10 @@ disabled client. A deleted client ID cannot be re-enabled; create a new client I
 ## v5.0.0 stored admin audit chains
 
 Migration `2026111628` stores chained hashes at write time for usage and
-router-config audit events and advances those schemas to 23 and 19 respectively.
-The router-config migration follows migration `2026111611`; the usage migration
-follows hierarchy audit migration `2026111626`. Apply both through the non-serving
+router-config audit events and advances those schemas to 24 and 20 respectively.
+Both migrations depend on offline-operation marker migration `2026111627` in their
+respective database scopes; the usage marker migration follows hierarchy audit
+migration `2026111626`. Apply both through the non-serving
 migration job before serving the release. Retention prunes expired rows, including
 delete markers, and moves the chain checkpoint to the last pruned hash so the
 remaining chain stays verifiable. Delete markers remain protected from the API's
@@ -196,7 +197,7 @@ without waiting for the next UTC window. `routerctl admin-resource` provides
 HTTP access to the versioned resource endpoints.
 
 Before enabling asynchronous operations, backups, or restores, apply the
-non-serving usage and router-config migrations through schema 18 using the
+non-serving usage and router-config migrations through schema 24 and schema 20, respectively, using the
 two-scope Job in [DATA_MIGRATIONS.md](DATA_MIGRATIONS.md). The restore API
 requires the separate `admin:restore:write` grant. It updates the configuration
 and usage databases sequentially; it is not an atomic cross-database operation.

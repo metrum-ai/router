@@ -139,7 +139,7 @@ func insertAdminAuditUsageTx(tx *gorm.DB, record AdminAuditRecord) error {
 		return fmt.Errorf("calculate audit row hash: %w", err)
 	}
 	if err := tx.Exec(
-		`INSERT INTO router_admin_audit_events (event_id, at, runtime_scope, principal_subject, principal_kind, credential_id, issuer, domain, object, action, operation_id, request_id, outcome, reason_code, ticket, config_set_id, prev_config_set_id, config_revision, before_hash, after_hash, idempotency_key, request_hash, detail, previous_hash, row_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO router_admin_audit_events (event_id, at, runtime_scope, principal_subject, principal_kind, credential_id, issuer, domain, object, action, operation_id, request_id, outcome, reason_code, ticket, config_set_id, prev_config_set_id, config_revision, before_hash, after_hash, idempotency_key, request_hash, detail, previous_hash, row_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(event_id) DO NOTHING`,
 		record.EventID, adminAuditFormatTime(at), adminAuditFieldValue(record.RuntimeScope),
 		adminAuditFieldValue(record.PrincipalSubject), adminAuditFieldValue(record.PrincipalKind),
 		adminAuditFieldValue(record.CredentialID), adminAuditFieldValue(record.Issuer),

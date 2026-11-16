@@ -17,7 +17,7 @@ func TestUsageMissionAttributionMigrationAndRoundTrip(t *testing.T) {
 	defer closeDB()
 	priorDefinitions := make([]MigrationDefinition, 0, len(usageMigrationDefinitions)-5)
 	for _, definition := range usageMigrationDefinitions {
-		if definition.ID != usageMissionAttributionMigrationID && definition.ID != usageRecomputedInputMigrationID && definition.ID != toolRoutingUsageMigrationID && definition.ID != usageHierarchyAuditMigrationID && definition.ID != adminAuditChainUsageMigrationID {
+		if definition.ID != usageMissionAttributionMigrationID && definition.ID != usageRecomputedInputMigrationID && definition.ID != toolRoutingUsageMigrationID && definition.ID != usageHierarchyAuditMigrationID && definition.ID != offlineOperationMarkerMigrationID && definition.ID != adminAuditChainUsageMigrationID {
 			priorDefinitions = append(priorDefinitions, definition)
 		}
 	}

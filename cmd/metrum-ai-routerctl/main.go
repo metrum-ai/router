@@ -21,6 +21,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -343,9 +344,12 @@ func emergencyCommand(args []string) {
 	if err != nil {
 		die("%v", err)
 	}
-	db, closer, err := openConfigDB(*opts)
+	db, closer, err := openConfigDB(*opts, true)
 	if err != nil {
 		die("%v", err)
+	}
+	if err := recordOfflineConfigOperation(db, "emergency "+args[0], opts.RuntimeScope, opts.Actor); err != nil {
+		die("record offline operation: %v", err)
 	}
 	defer closer()
 	run, err := router.RouterctlEmergencyCommand(db, cfg, 1)
@@ -457,11 +461,14 @@ func configCommand(args []string) {
 			writeRawJSON(body)
 			return
 		}
-		db, closer, err := openConfigDB(*opts)
+		db, closer, err := openConfigDB(*opts, true)
 		if err != nil {
 			die("%v", err)
 		}
 		defer closer()
+		if err := recordOfflineConfigOperation(db, "config import", opts.RuntimeScope, opts.Actor); err != nil {
+			die("record offline operation: %v", err)
+		}
 		setID, err := router.ImportCanonicalYAML(db, opts.RuntimeScope, *name, raw, opts.Actor)
 		if err != nil {
 			die("%v", err)
@@ -497,7 +504,7 @@ func configCommand(args []string) {
 			}
 			return
 		}
-		db, closer, err := openConfigDB(*opts)
+		db, closer, err := openConfigDB(*opts, false)
 		if err != nil {
 			die("%v", err)
 		}
@@ -541,11 +548,14 @@ func configCommand(args []string) {
 			writeRawJSON(body)
 			return
 		}
-		db, closer, err := openConfigDB(*opts)
+		db, closer, err := openConfigDB(*opts, true)
 		if err != nil {
 			die("%v", err)
 		}
 		defer closer()
+		if err := recordOfflineConfigOperation(db, "config activate", opts.RuntimeScope, opts.Actor); err != nil {
+			die("record offline operation: %v", err)
+		}
 		if err := router.ActivateConfigSet(db, opts.RuntimeScope, *setID, opts.Actor); err != nil {
 			die("%v", err)
 		}
@@ -573,11 +583,14 @@ func configCommand(args []string) {
 			writeRawJSON(body)
 			return
 		}
-		db, closer, err := openConfigDB(*opts)
+		db, closer, err := openConfigDB(*opts, true)
 		if err != nil {
 			die("%v", err)
 		}
 		defer closer()
+		if err := recordOfflineConfigOperation(db, "config rollback", opts.RuntimeScope, opts.Actor); err != nil {
+			die("record offline operation: %v", err)
+		}
 		if err := router.RollbackConfigSet(db, opts.RuntimeScope, *setID, opts.Actor); err != nil {
 			die("%v", err)
 		}
@@ -913,7 +926,18 @@ func addConfigDBFlags(fs *flag.FlagSet) *smartrouterctl.ConfigDBOptions {
 	return opts
 }
 
-func openConfigDB(opts smartrouterctl.ConfigDBOptions) (*gorm.DB, func() error, error) {
+func offlineConfigOperationUnsupported(goos, driver string, exclusive bool) bool {
+	driver = strings.ToLower(strings.TrimSpace(driver))
+	if driver == "" {
+		driver = "sqlite"
+	}
+	return goos == "windows" && exclusive && driver == "sqlite"
+}
+
+func openConfigDB(opts smartrouterctl.ConfigDBOptions, exclusive bool) (*gorm.DB, func() error, error) {
+	if offlineConfigOperationUnsupported(runtime.GOOS, opts.Driver, exclusive) {
+		return nil, nil, fmt.Errorf("offline SQLite mutations are unavailable on Windows; use the Admin API")
+	}
 	// --dsn-env keeps the DSN out of the process argument list.
 	if opts.DSNEnv != "" {
 		opts.DSN = os.Getenv(opts.DSNEnv)
@@ -921,7 +945,43 @@ func openConfigDB(opts smartrouterctl.ConfigDBOptions) (*gorm.DB, func() error, 
 	if err := opts.Validate(); err != nil {
 		return nil, nil, err
 	}
-	return router.OpenConfigControlPlaneDB(opts.UsageDBConfig())
+	var lock *os.File
+	var pgUnlock func() error
+	if strings.EqualFold(strings.TrimSpace(opts.Driver), "sqlite") {
+		var err error
+		lock, err = router.AcquireUsageRuntimeLock(opts.Path, exclusive)
+		if err != nil {
+			return nil, nil, err
+		}
+	}
+	db, closer, err := router.OpenConfigControlPlaneDB(opts.UsageDBConfig())
+	if err != nil {
+		if lock != nil {
+			_ = lock.Close()
+		}
+		return nil, nil, err
+	}
+	if !strings.EqualFold(strings.TrimSpace(opts.Driver), "sqlite") {
+		pgUnlock, err = router.AcquirePostgresConfigRuntimeLock(db, !exclusive)
+		if err != nil {
+			_ = closer()
+			return nil, nil, err
+		}
+	}
+	return db, func() error {
+		closeErr := closer()
+		if lock != nil {
+			_ = lock.Close()
+		}
+		if pgUnlock != nil {
+			_ = pgUnlock()
+		}
+		return closeErr
+	}, nil
+}
+
+func recordOfflineConfigOperation(db *gorm.DB, command, scope, actor string) error {
+	return router.RecordOfflineConfigMaintenance(db, command, scope, actor)
 }
 
 func callersCommand(args []string) {
