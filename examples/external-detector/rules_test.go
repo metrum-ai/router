@@ -61,6 +61,75 @@ func TestAuthFailureStormSignalsOpaqueKeyAndIPScopes(t *testing.T) {
 	}
 }
 
+func TestAuthFailureIPFloodDoesNotEvictPerKeyState(t *testing.T) {
+	service := newRuleDetector()
+	service.maxKeys = 2
+	now := time.Date(2026, 11, 16, 1, 0, 30, 0, time.UTC)
+	service.now = func() time.Time { return now }
+	for i := 0; i < authFailureLimit-1; i++ {
+		event := testEvent("auth_failure", i, "")
+		event.SourceIP = ""
+		if got, err := service.Detect(context.Background(), event); err != nil || len(got) != 0 {
+			t.Fatalf("pre-threshold key event signals=%v err=%v", got, err)
+		}
+	}
+	for i := 0; i < 100; i++ {
+		event := testEvent("auth_failure", 1000+i, "")
+		event.KeyID = ""
+		event.SourceIP = fmt.Sprintf("192.0.%d.%d", i/255, i%255+1)
+		if got, err := service.Detect(context.Background(), event); err != nil || len(got) != 0 {
+			t.Fatalf("single-IP event signals=%v err=%v", got, err)
+		}
+	}
+	if got := len(service.states[authKeyState].byKey); got != 1 {
+		t.Fatalf("IP flood changed per-key state count: %d", got)
+	}
+	if got := len(service.states[authIPState].byKey); got != service.maxKeys {
+		t.Fatalf("IP state LRU size=%d, want independent cap %d", got, service.maxKeys)
+	}
+	final := testEvent("auth_failure", 2000, "")
+	final.SourceIP = ""
+	got, err := service.Detect(context.Background(), final)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertRule(t, got, "auth_fail_storm")
+}
+
+func TestActiveObservationsRespectBothTimeBounds(t *testing.T) {
+	evaluatedAt := time.Date(2026, 11, 16, 1, 0, 30, 0, time.UTC)
+	events := []observation{
+		{at: evaluatedAt.Add(-2 * time.Minute), requestID: "too-old"},
+		{at: evaluatedAt.Add(-time.Minute), requestID: "lower-bound"},
+		{at: evaluatedAt, requestID: "now"},
+		{at: evaluatedAt.Add(time.Second), requestID: "future"},
+	}
+	got := activeObservations(events, evaluatedAt.Add(-time.Minute), evaluatedAt)
+	if len(got) != 2 || got[0].requestID != "lower-bound" || got[1].requestID != "now" {
+		t.Fatalf("active observations = %+v, want lower bound through evaluation time only", got)
+	}
+}
+
+func TestAuthFailureIgnoresFutureAndOutOfWindowEvents(t *testing.T) {
+	service := newRuleDetector()
+	now := time.Date(2026, 11, 16, 1, 0, 30, 0, time.UTC)
+	service.now = func() time.Time { return now }
+	future := testEvent("auth_failure", 1, now.Add(time.Second).Format(time.RFC3339Nano))
+	if got, err := service.Detect(context.Background(), future); err != nil || len(got) != 0 || len(service.states) != 0 {
+		t.Fatalf("future event was retained: signals=%v states=%d err=%v", got, len(service.states), err)
+	}
+	for i := 0; i < authFailureLimit-1; i++ {
+		old := testEvent("auth_failure", 100+i, now.Add(-2*time.Minute).Format(time.RFC3339Nano))
+		if got, err := service.Detect(context.Background(), old); err != nil || len(got) != 0 {
+			t.Fatalf("out-of-window event signals=%v err=%v", got, err)
+		}
+	}
+	current := testEvent("auth_failure", 999, now.Format(time.RFC3339Nano))
+	if got, err := service.Detect(context.Background(), current); err != nil || len(got) != 0 {
+		t.Fatalf("old events contributed to current threshold: signals=%v err=%v", got, err)
+	}
+}
+
 func TestValidationSweepTriggersAndBenignRequestsDoNot(t *testing.T) {
 	service := newRuleDetector()
 	service.now = func() time.Time { return time.Date(2026, 11, 16, 1, 0, 30, 0, time.UTC) }

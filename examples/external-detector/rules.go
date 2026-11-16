@@ -22,6 +22,8 @@ const (
 	evidenceLimit        = 8
 	spendBaselineMinutes = 15
 	maxActiveWindow      = 15 * time.Minute
+	authKeyState         = "auth_fail_storm/key"
+	authIPState          = "auth_fail_storm/ip"
 )
 
 type thresholds struct {
@@ -77,7 +79,7 @@ func (d *ruleDetector) Detect(_ context.Context, event detector.Event) ([]detect
 			return nil, err
 		}
 		at = parsed.UTC()
-		if at.Before(now.Add(-spendBaselineMinutes*time.Minute)) || at.After(now.Add(time.Minute)) {
+		if at.Before(now.Add(-spendBaselineMinutes*time.Minute)) || at.After(now) {
 			return nil, nil
 		}
 	}
@@ -89,12 +91,12 @@ func (d *ruleDetector) Detect(_ context.Context, event detector.Event) ([]detect
 	switch event.Kind {
 	case "auth_failure":
 		if event.KeyID != "" {
-			if signal := d.record("auth_fail_storm", event.KeyID, event.KeyID, obs, now); signal != nil {
+			if signal := d.recordInScope("auth_fail_storm", authKeyState, event.KeyID, event.KeyID, obs, now); signal != nil {
 				signals = append(signals, *signal)
 			}
 		}
 		if event.SourceIP != "" {
-			if signal := d.record("auth_fail_storm", "ip-"+event.SourceIP, "", obs, now); signal != nil {
+			if signal := d.recordInScope("auth_fail_storm", authIPState, "ip-"+event.SourceIP, "", obs, now); signal != nil {
 				signals = append(signals, *signal)
 			}
 		}
@@ -121,10 +123,14 @@ func (d *ruleDetector) Detect(_ context.Context, event detector.Event) ([]detect
 }
 
 func (d *ruleDetector) record(rule, key, signalKey string, event observation, now time.Time) *detector.Signal {
-	groupStates := d.states[rule]
+	return d.recordInScope(rule, rule, key, signalKey, event, now)
+}
+
+func (d *ruleDetector) recordInScope(rule, scope, key, signalKey string, event observation, now time.Time) *detector.Signal {
+	groupStates := d.states[scope]
 	if groupStates == nil {
 		groupStates = &ruleStates{byKey: make(map[string]*ruleState), lru: list.New()}
-		d.states[rule] = groupStates
+		d.states[scope] = groupStates
 	}
 	state := groupStates.byKey[key]
 	if state == nil {
@@ -181,7 +187,7 @@ func (d *ruleDetector) record(rule, key, signalKey string, event observation, no
 	case "spend_spike":
 		return d.spendSignal(rule, signalKey, state, event)
 	}
-	active := activeObservations(state.events, event.at.Add(-threshold))
+	active := activeObservations(state.events, now.Add(-threshold), now)
 	triggered := false
 	if rule == "model_enumeration" {
 		groups := make(map[string]bool)
@@ -236,10 +242,10 @@ func (d *ruleDetector) spendSignal(rule, key string, state *ruleState, event obs
 	return makeSignal(rule, key, "medium", minFloat(1, float64(current)/(baseline*float64(d.thresholds.spendMultiple*2))), active)
 }
 
-func activeObservations(events []observation, since time.Time) []observation {
+func activeObservations(events []observation, since, evaluatedAt time.Time) []observation {
 	active := make([]observation, 0, len(events))
 	for _, event := range events {
-		if !event.at.Before(since) {
+		if !event.at.Before(since) && !event.at.After(evaluatedAt) {
 			active = append(active, event)
 		}
 	}

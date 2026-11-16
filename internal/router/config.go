@@ -2027,6 +2027,12 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 	if err := validateAdminReports(c.Server.AdminReports, c.Server.AdminAuth, c.Server.UsageDB); err != nil {
 		return err
 	}
+	if err := validateMCPGateway(c.MCP, requireAdminKeyEnv); err != nil {
+		return err
+	}
+	if c.MCP.Enabled && c.Server.UsageDB.Enable != nil && !*c.Server.UsageDB.Enable {
+		return fmt.Errorf("mcp.enabled requires usage_db enabled for invocation audit")
+	}
 	if err := validateSecurityEvents(c.Server.Security.Events); err != nil {
 		return err
 	}

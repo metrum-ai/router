@@ -88,7 +88,10 @@ For the key-based auth-failure rule and the other key-scoped rules, the signal
 key is the router-provided opaque event key ID. The source-IP auth-failure
 signal has an empty key because it is scoped to an address, not a caller key.
 The rules keep at most 10,000 LRU keys per rule and 256 observations per key;
-each event window is bounded to 15 minutes. Rule thresholds are configurable
+key-based and source-IP auth-failure state use separate LRUs, so a flood of new
+IP addresses cannot evict key state. Each event window is bounded to 15 minutes.
+Observations newer than evaluation time and observations outside the rule window
+do not contribute to a signal. Rule thresholds are configurable
 with `--auth-failures`, `--tiny-requests`, `--denied-groups`, and
 `--spend-multiple`; defaults are 25, 20, 5, and 6 respectively.
 
