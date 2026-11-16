@@ -102,7 +102,22 @@ Cold start is deterministic. Until `min_observations` is reached, targets are or
 
 ## Conversation Affinity
 
-Dynamic-score routing pins the first selected target for requests that share a conversation prefix. Affinity is enabled by default, isolated by caller, expires after 600 seconds by default, and is bounded to 10,000 process-local entries by default. Set `affinity.enabled: false` to disable it, or configure `ttl_seconds` and `max_entries`.
+Dynamic-score routing pins the first selected target for requests that share a conversation prefix. A non-empty request `metadata.session_id` takes precedence and keeps a changing multi-turn prompt on the same eligible target. Affinity is isolated by caller, expires after 600 seconds by default, and is bounded to 10,000 process-local entries by default. Set `affinity.enabled: false` to disable it, or configure `ttl_seconds` and `max_entries`. Restart clears pins; each replica has its own store.
+
+For estimated prompts of at least 32,000 tokens, targets marked `tiered_kv_cache: true` are preferred within the already eligible target order. This is operator-declared capability metadata. It does not create eligibility or guarantee cache residency. See [KV-cache routing and metering](../operations/usage-reporting#kv-cache-routing-and-metering).
+
+Mark only backends configured for tiered KV-cache offload:
+
+```yaml
+models:
+  long-context-agent:
+    strategy: dynamic_score
+    targets:
+      - provider: self-hosted
+        model: agent-model
+        dialect: openai-chat
+        tiered_kv_cache: true
+```
 
 The router retains only a SHA-256 key derived from caller identity, model
 group, normalized inbound API dialect, system context, and the complete first
