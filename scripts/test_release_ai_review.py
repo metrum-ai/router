@@ -41,6 +41,20 @@ class ReleaseAIReviewTest(unittest.TestCase):
                 max_batches=2,
             )
 
+    def test_retry_batcher_keeps_a_large_file_atomic_under_the_hard_limit(self) -> None:
+        batches = review.pack_diff_files(
+            [("CHANGELOG.md", "context"), ("generated.js", "x" * 120)],
+            max_bytes=100,
+            max_single_file_bytes=150,
+        )
+        self.assertEqual(batches, [("context" + "x" * 120, ("CHANGELOG.md", "generated.js"))])
+        with self.assertRaisesRegex(ValueError, "per-request"):
+            review.pack_diff_files(
+                [("CHANGELOG.md", "context"), ("generated.js", "x" * 145)],
+                max_bytes=100,
+                max_single_file_bytes=150,
+            )
+
     def test_release_document_diffs_are_repeated_in_every_batch(self) -> None:
         upgrade = "docs-site/docs/release-notes/upgrade-guide.md"
         file_diffs = [
@@ -317,7 +331,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
                  patch.object(review.urllib.request, "urlopen", return_value=Response()) as urlopen, \
                  patch("sys.argv", args), redirect_stderr(stderr):
                 self.assertEqual(review.main(), 2)
-            batches.assert_called_once_with("v4.8.0", "abc1234", max_bytes=review.MAX_DIFF_BYTES)
+            batches.assert_called_once_with("v4.8.0", "abc1234", max_bytes=review.INITIAL_DIFF_BYTES)
             urlopen.assert_called_once()
             self.assertIn("stop_reason=refusal", stderr.getvalue())
             self.assertNotIn("splitting", stderr.getvalue())
@@ -421,11 +435,13 @@ class ReleaseAIReviewTest(unittest.TestCase):
             (root / "responses.json").write_text(json.dumps({
                 "schema": "metrum-ai-router-release-review-responses/v1", "acceptances": {},
             }), encoding="utf-8")
-            def batches(_base, _head, *, max_bytes, only_paths=None):
+            def batches(_base, _head, *, max_bytes, only_paths=None, max_single_file_bytes=None):
                 if only_paths is None:
+                    self.assertEqual(max_bytes, review.INITIAL_DIFF_BYTES)
                     return [("passed diff", ("passed.go",)), ("large combined diff", ("two-a.go", "two-b.go"))]
                 self.assertEqual(only_paths, {"two-a.go", "two-b.go"})
-                self.assertEqual(max_bytes, review.MAX_DIFF_BYTES // 2)
+                self.assertEqual(max_bytes, review.INITIAL_DIFF_BYTES // 2)
+                self.assertEqual(max_single_file_bytes, review.MAX_DIFF_BYTES)
                 return [("smaller diff two-a", ("two-a.go",)), ("smaller diff two-b", ("two-b.go",))]
             with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
                  patch.object(review, "git_diff_batches", side_effect=batches) as git_diff_batches, \
@@ -438,7 +454,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
                  patch("sys.argv", args):
                 self.assertEqual(review.main(), 0)
             self.assertEqual(git_diff_batches.call_count, 2)
-            self.assertEqual(git_diff_batches.call_args_list[1].kwargs["max_bytes"], review.MAX_DIFF_BYTES // 2)
+            self.assertEqual(git_diff_batches.call_args_list[1].kwargs["max_bytes"], review.INITIAL_DIFF_BYTES // 2)
             self.assertEqual(call_model.call_args_list, [
                 call("test-key", "passed diff", batch_number=1, batch_count=2),
                 call("test-key", "large combined diff", batch_number=2, batch_count=2),
@@ -459,7 +475,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
                 "--responses", str(responses), "--artifact-cache", str(root / "cache.json"),
                 "--artifact-output", str(root / "artifact.json"), "--output", str(root / "review.md"),
             ]
-            def batches(_base, _head, *, max_bytes, only_paths=None):
+            def batches(_base, _head, *, max_bytes, only_paths=None, max_single_file_bytes=None):
                 return [(f"diff limited to {max_bytes}", ("one.go",))]
 
             stderr = io.StringIO()
@@ -474,7 +490,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
             self.assertEqual(batch_builder.call_count, 6)
             self.assertEqual(
                 [entry.kwargs["max_bytes"] for entry in batch_builder.call_args_list],
-                [1_000_000, 500_000, 250_000, 125_000, 62_500, 32_768],
+                [700_000, 350_000, 175_000, 87_500, 43_750, 32_768],
             )
             self.assertIn("32768-byte minimum", stderr.getvalue())
             self.assertEqual(stderr.getvalue().count("split into"), 5)

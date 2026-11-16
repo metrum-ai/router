@@ -24,6 +24,7 @@ MODEL = "claude-fable-5-2"
 API_URL = "https://api.anthropic.com/v1/messages"
 API_VERSION = "2023-06-01"
 MAX_DIFF_BYTES = 1_000_000
+INITIAL_DIFF_BYTES = 700_000
 MIN_DIFF_BYTES = 32 * 1024
 MAX_OUTPUT_TOKENS = 32_000
 MAX_REVIEW_BATCHES = 32
@@ -98,11 +99,13 @@ def pack_diff_files(
     *,
     max_bytes: int = MAX_DIFF_BYTES,
     max_batches: int = MAX_REVIEW_BATCHES,
+    max_single_file_bytes: int | None = None,
 ) -> list[tuple[str, tuple[str, ...]]]:
     context_diffs = [(path, diff) for path, diff in file_diffs if path in REVIEW_CONTEXT_PATHS]
     context_paths = tuple(path for path, _ in context_diffs)
     context_bytes = sum(len(diff.encode("utf-8")) for _, diff in context_diffs)
-    if context_bytes > max_bytes:
+    hard_limit = max_single_file_bytes or max_bytes
+    if context_bytes > hard_limit:
         raise ValueError("release review context exceeds the per-request input limit")
     remaining_diffs = [(path, diff) for path, diff in file_diffs if path not in REVIEW_CONTEXT_PATHS]
     source_batches: list[tuple[list[str], list[str]]] = []
@@ -112,6 +115,14 @@ def pack_diff_files(
     for path, diff in remaining_diffs:
         diff_bytes = len(diff.encode("utf-8"))
         if context_bytes + diff_bytes > max_bytes:
+            if current_diffs:
+                source_batches.append((current_diffs, current_paths))
+                current_diffs = []
+                current_paths = []
+                current_bytes = 0
+            if max_single_file_bytes is not None and context_bytes + diff_bytes <= hard_limit:
+                source_batches.append(([diff], [path]))
+                continue
             raise ValueError(f"release diff for {path} exceeds the per-request review input limit")
         if current_diffs and context_bytes + current_bytes + diff_bytes > max_bytes:
             source_batches.append((current_diffs, current_paths))
@@ -144,6 +155,7 @@ def git_diff_batches(
     *,
     max_bytes: int = MAX_DIFF_BYTES,
     only_paths: set[str] | None = None,
+    max_single_file_bytes: int | None = None,
 ) -> list[tuple[str, tuple[str, ...]]]:
     names = subprocess.run(
         ["git", "--literal-pathspecs", "diff", "--no-renames", "--name-only", "-z", f"{base}..{head}"],
@@ -166,7 +178,11 @@ def git_diff_batches(
         if not result.stdout:
             raise ValueError(f"listed release diff file {path} produced an empty diff")
         file_diffs.append((path, result.stdout))
-    return pack_diff_files(file_diffs, max_bytes=max_bytes)
+    return pack_diff_files(
+        file_diffs,
+        max_bytes=max_bytes,
+        max_single_file_bytes=max_single_file_bytes,
+    )
 
 
 def call_model(
@@ -407,7 +423,7 @@ def main() -> int:
             if not api_key:
                 print("AI release review failed: required API credential is unavailable", file=sys.stderr)
                 return 2
-            diff_limit = MAX_DIFF_BYTES
+            diff_limit = INITIAL_DIFF_BYTES
             batches = git_diff_batches(args.base, args.head, max_bytes=diff_limit)
             findings_by_id: dict[str, dict[str, Any]] = {}
             batch_index = 0
@@ -434,6 +450,7 @@ def main() -> int:
                             args.head,
                             max_bytes=next_limit,
                             only_paths=set(paths),
+                            max_single_file_bytes=MAX_DIFF_BYTES,
                         )
                     except ValueError as split_error:
                         raise ValueError(f"batch {batch_label} could not be split further: {split_error}") from split_error
