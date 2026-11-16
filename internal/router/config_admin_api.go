@@ -896,6 +896,13 @@ func importConfigSetForAPI(db *gorm.DB, runtimeScope, name string, yamlBytes []b
 	if hadDeprecatedLicense {
 		return "", configAdminError(400, "config-invalid-request", "server.license is rejected; remove the block")
 	}
+	if err := validateRemovedScriptConfig(cleaned); err != nil {
+		return "", configAdminError(400, "config-invalid-request", err.Error())
+	}
+	cleaned, err = stripEmptyRemovedScriptFields(cleaned)
+	if err != nil {
+		return "", configAdminError(400, "config-invalid-request", "the document is not valid YAML")
+	}
 	var cfg Config
 	if err := yaml.Unmarshal(cleaned, &cfg); err != nil {
 		return "", configAdminError(400, "config-invalid-request", "the document is not a valid router configuration")

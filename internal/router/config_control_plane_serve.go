@@ -44,6 +44,9 @@ func loadActiveCanonicalConfig(db *gorm.DB, runtimeScope string, redactor *secre
 	if hadDeprecatedLicense {
 		return nil, fmt.Errorf("config key server.license is rejected in 4.0.0; remove the server.license block")
 	}
+	if err := validateRemovedScriptConfig(cleaned); err != nil {
+		return nil, err
+	}
 	var cfg Config
 	if err := yaml.Unmarshal(cleaned, &cfg); err != nil {
 		return nil, fmt.Errorf("parse active canonical YAML: %w", err)
