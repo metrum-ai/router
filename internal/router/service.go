@@ -132,6 +132,8 @@ type Service struct {
 	configControlPlane     *gorm.DB
 	configSnapshot         *ConfigSnapshot
 	configDBCloser         func() error
+	configRuntimeLock      *os.File
+	configPostgresUnlock   func() error
 	// adminAuditJanitorStop stops the retention purge jobs at shutdown, and
 	// adminAuditJanitorDone reports when each janitor goroutine has exited.
 	adminAuditJanitorStop  chan struct{}
@@ -680,6 +682,12 @@ func (s *Service) Close() {
 	if s.configDBCloser != nil {
 		_ = s.configDBCloser()
 	}
+	if s.configRuntimeLock != nil {
+		_ = s.configRuntimeLock.Close()
+	}
+	if s.configPostgresUnlock != nil {
+		_ = s.configPostgresUnlock()
+	}
 }
 
 func (s *Service) initConfigControlPlane() error {
@@ -694,12 +702,46 @@ func (s *Service) initConfigControlPlane() error {
 	if err != nil {
 		return err
 	}
+	var runtimeLock *os.File
+	if usageDBUsesSQLite(dbCfg) {
+		runtimeLock, err = AcquireUsageRuntimeLock(dbCfg.Path, false)
+		if err != nil {
+			return fmt.Errorf("lock config control-plane database: %w", err)
+		}
+	}
 	db, closer, err := OpenConfigControlPlaneDB(dbCfg)
 	if err != nil {
+		if runtimeLock != nil {
+			_ = runtimeLock.Close()
+		}
 		return fmt.Errorf("open config control-plane database: %w", err)
+	}
+	var pgUnlock func() error
+	if !usageDBUsesSQLite(dbCfg) {
+		pgUnlock, err = AcquirePostgresConfigRuntimeLock(db, true)
+		if err != nil {
+			_ = closer()
+			return fmt.Errorf("lock config control-plane database: %w", err)
+		}
+	}
+	var usageDB *gorm.DB
+	if s.usage != nil {
+		usageDB = s.usage.db
+	}
+	if err := consumeOfflineConfigMaintenance(db, usageDB); err != nil {
+		_ = closer()
+		if runtimeLock != nil {
+			_ = runtimeLock.Close()
+		}
+		if pgUnlock != nil {
+			_ = pgUnlock()
+		}
+		return fmt.Errorf("audit offline config operations: %w", err)
 	}
 	s.configControlPlane = db
 	s.configDBCloser = closer
+	s.configRuntimeLock = runtimeLock
+	s.configPostgresUnlock = pgUnlock
 	scope := strings.TrimSpace(s.cfg.Server.ConfigSource.RuntimeScope)
 	if scope != "" {
 		reload := func() {

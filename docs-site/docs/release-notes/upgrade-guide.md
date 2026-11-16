@@ -340,12 +340,22 @@ metrum-ai-routerctl config activate --offline --db <config-db> --scope prod --se
 ```
 
 Repeat migration for every active legacy caller before running verify, import,
-review, and activation. Run these `--offline` commands only while every router
-replica is stopped. Use the v5 binary for each step. For PostgreSQL, add
+review, and activation. Run offline mutations only while every router replica is
+stopped; read-only config export uses a shared lock and may run while routers
+serve. Use the v5 binary for each step. For PostgreSQL, add
 `--driver postgres --dsn-env <environment-variable>` to each `--offline`
 database command. Review the
 imported set and diff before activation; retain the exported original and
 database backup for rollback.
+
+Offline import, activate, rollback, emergency activation/deactivation, and
+backup/restore refuse while a v5 router holds the database runtime lock; stop
+every replica first, including for emergency operations. Offline maintenance
+locking is unavailable on Windows. A v4.8 router does not take this lock, so a
+mixed v4.8/v5 fleet is not protected; upgrade every replica before relying on
+offline exclusion. The next serving startup consumes operation markers into
+the admin audit. PostgreSQL session advisory locks require session pooling and
+do not protect operations through PgBouncer transaction pooling.
 
 The load error names `callers migrate-legacy`; use `callers rotate` when no
 usable raw token is available.
