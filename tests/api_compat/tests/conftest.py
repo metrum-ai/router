@@ -72,7 +72,9 @@ def _start_router(tmp_path_factory, server_extra=""):
   cache: {{enabled: false}}
   usage_db: {{enabled: false}}
   logging: {{path: "{work / 'router.jsonl'}"}}
-{server_extra}state_path: "{work / 'state.json'}"
+{server_extra}admin:
+  enabled: false
+state_path: "{work / 'state.json'}"
 providers:
   chat: {{base_url: "{upstream_url}/v1", dialect: openai-chat}}
   responses: {{base_url: "{upstream_url}/v1", dialect: openai-responses}}
@@ -168,7 +170,12 @@ def spawn_router(router, work, config_text, *, ready_timeout_s=90.0, env=None):
     work.mkdir(parents=True, exist_ok=True)
     port = unused_port()
     config_path = work / "config.yaml"
-    config_path.write_text(config_text.replace("{port}", str(port)))
+    config = config_text.replace("{port}", str(port)).rstrip()
+    # API compatibility routers exercise serving APIs only. Disable the admin
+    # listener so parallel instances never contend for its shared default port.
+    if "\nadmin:" in "\n" + config:
+        raise ValueError("api_compat spawn_router configs must not declare an admin section")
+    config_path.write_text(config + "\nadmin:\n  enabled: false\n")
     run_env = os.environ | {"GOPROXY": "off", "GOSUMDB": "off", "GOTOOLCHAIN": "local"}
     if env:
         run_env |= env

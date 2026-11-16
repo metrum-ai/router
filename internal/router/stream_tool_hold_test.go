@@ -251,6 +251,23 @@ func TestStreamToolCallResultEventsReplaceCallsForEveryDialect(t *testing.T) {
 	}
 }
 
+func TestSecretToolCallInspectorRedactsOnlyCompleteArguments(t *testing.T) {
+	rules, err := compilePIIRules(builtinSecretRules())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dlp := &secretStreamDLP{state: &piiRedactionState{rules: rules, limit: 200, result: &piiFilterResult{RuleCounts: map[string]int{}}, placeholderFor: map[string]string{}}}
+	secret := "sk_live_" + strings.Repeat("a", 20)
+	calls := []IRToolCall{{ID: "c1", Name: "http_request", Arguments: `{"authorization":"` + secret + `"}`, Dialect: "openai-chat"}}
+	result, err := (secretToolCallInspector{dlp: dlp}).inspectStreamToolCalls(calls, false)
+	if err != nil || result.Action != toolCallInspectionRedact || len(result.Calls) != 1 {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	if strings.Contains(result.Calls[0].Arguments, "sk_live_") || !strings.Contains(result.Calls[0].Arguments, "[SECRET_STRIPE_1]") {
+		t.Fatalf("secret not replaced in complete arguments: %s", result.Calls[0].Arguments)
+	}
+}
+
 type cancelableToolStreamReader struct {
 	first []byte
 	ctx   context.Context

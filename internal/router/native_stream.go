@@ -141,12 +141,26 @@ func proxyNativeSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, 
 		if frameComplete || (err == io.EOF && frame.Len() > 0) {
 			rawFrame := append([]byte(nil), frame.Bytes()...)
 			frame.Reset()
+			frames := [][]byte{rawFrame}
+			if rc != nil && rc.secretStreamDLP != nil {
+				var filterErr error
+				frames, filterErr = filterNativeSecretStreamFrame(rawFrame, rc.secretStreamDLP)
+				if filterErr != nil {
+					return result, upstreamError{Class: "secret_dlp_stream_filter_error", Message: "stream secret inspection failed", Retryable: !result.Committed, Fallbackable: !result.Committed, Committed: result.Committed, Err: filterErr}
+				}
+			}
 			done, terminal := accumulateNativeSSE(result.Response, dialect, rawFrame)
 			if done {
 				result.Done = true
 			}
 			if terminal {
 				result.Terminal = true
+			}
+			if len(frames) == 0 {
+				if result.Done {
+					return result, nil
+				}
+				continue
 			}
 			// Meter upstream usage even when it was requested by the router, but
 			// do not expose the usage-only chunk unless the caller opted in.
@@ -155,7 +169,6 @@ func proxyNativeSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, 
 				frameReserved = 0
 				continue
 			}
-			frames := [][]byte{rawFrame}
 			if rc != nil && rc.streamToolCallHold != nil {
 				gated, gateErr := rc.streamToolCallHold.apply(nativeStreamEvent(rawFrame))
 				if gateErr != nil {

@@ -58,8 +58,13 @@ are process-local, so send the admin request to the replica that emitted the
 pending event. Timeout, full pending capacity, and denial all fail closed. A
 release allows the matching retry to return the original tool call to the
 agent; the router never executes tools itself. Streamed tool requests are
-inspected before tool frames are released when bounded stream inspection is
-enabled for the model group.
+inspected before tool frames are released. Enforce mode automatically uses a
+30-second, 1 MiB per-stream hold when the model group has no explicit bounded
+hold settings; configure `tool_routing.streaming` to tune those limits. Held
+bytes also count against the process-wide SSE buffer budget. If built-in
+secret DLP is enabled, completed tool arguments pass through its redactor
+before release. Custom DLP expressions remain fail closed for streamed
+responses because they have no declared bounded match length.
 
 Tool arguments and prompt text are never copied into firewall events or usage
 metadata. Events include only the rule code, action, and, for approval events,

@@ -27,11 +27,13 @@ Permissions:
 
 ### `GET /admin/v1/config/groups`
 
-Lists every model group with its strategy, ordered targets (provider, model or `model_ref`, weight, region, validation status), contract summary, and the active `set_id` and runtime `revision`. Works in file mode too.
+Lists every model group with its strategy, ordered targets (provider, model or `model_ref`, weight, region, validation status), contract summary, optional `virtual_model` thresholds, and the active `set_id` and runtime `revision`. Virtual targets include their measured capability vectors, `member` status, and an `exclusion_reason` when they miss a threshold. Works in file mode too.
 
 ### `GET /admin/v1/config/groups/{group}`
 
-One group in full, plus `eligible_catalog_models`: the provider/`model_ref` inventory the group may target.
+One group in full, plus `eligible_catalog_models`: the provider/`model_ref` inventory the group may target. For virtual groups, `virtual_model` contains the active thresholds and each target includes its measured vector, membership and exclusion reason.
+
+Use `metrum-ai-routerctl groups import-eval --group <name> --report <report.json> --matrix <preregistered-matrix.yaml>` to import vectors from a schema-v1 eval-infrastructure report. The CLI sends target updates with the current `If-Match` revision, so concurrent config changes reject the update instead of overwriting it. Vector values are derived from task results and report provenance; the CLI provides no flags for entering measurements manually.
 
 ### `PUT /admin/v1/config/groups/{group}/targets`
 

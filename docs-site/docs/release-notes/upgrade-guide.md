@@ -5,6 +5,24 @@ doc_type: reference
 
 # Upgrade Guide
 
+## v5.0.0 request trace correlation
+
+Inbound trace acceptance is opt-in. Existing callers and deployments that do not
+configure a trusted parent receive a new trace for every inbound request. To
+preserve a trace across routers, configure `server.trace.trusted_parent_cidrs`
+for the immediate parent network, or enable `trust_traceparent` only on an
+authenticated child-router caller. Outbound `traceparent` and `X-Request-Id`
+propagation is on by default for every provider. Set
+`providers.<name>.propagate_trace: false` to disable both headers for one
+provider. Inbound `tracestate` is
+deliberately dropped and never forwarded. A trusted proxy or ingress CIDR trusts
+every client behind it, so trust only the immediate router network. Schema 18
+adds scalar trace, span, and
+parent-span columns to the usage table and an index on `trace_id`; existing rows
+remain valid with empty values. The migration is additive and is applied by the
+deployment migration job. See [router configuration](../configuration/router-config#request-trace-correlation)
+for trust boundaries and examples.
+
 ## Security hardening
 
 Review the [Router Hardening Guide](../security-governance/hardening), [Threat Summary](../security-governance/threat-model-v5), and [Compromise Runbook](../security-governance/compromise-runbook) before production rollout. These docs use existing v5.0.0 settings; no config migration is required.
@@ -76,7 +94,9 @@ Use this guide for customer-managed package upgrades. The exact maintenance wind
 
 Tool-aware model groups can opt in to `tool_routing.streaming.hold_until_validated` with
 `hold_timeout_ms` (1–60000) and `hold_max_bytes` (1–33554432). Tool-call frames are withheld until
-the complete call has passed inspection; ordinary text frames still stream immediately. For
+the complete call has passed inspection; ordinary text frames still stream immediately. When
+`server.tool_firewall.mode: enforce` is active, streamed calls are held automatically with a
+30-second, 1 MiB per-stream default unless the group config sets explicit bounds. For
 OpenAI Chat Completions, OpenAI Responses, and Anthropic Messages, the first tool-call frame incurs
 the remaining upstream tool-call generation time plus router inspection time. The hold limit applies per stream, and held bytes also count against the process-wide
 `server.streaming.max_inflight_line_bytes` budget shared with native and Responses SSE parsing. This
@@ -84,6 +104,17 @@ budget is per router process, so configure each replica to cover its expected co
 The timeout is an absolute deadline from the first held tool event; upstream byte activity does not
 extend it. Responses argument delta/done events remain private through inspection, and Anthropic
 tool-use frames are released before the terminal `message_delta`.
+## Virtual models
+
+The optional `virtual_model` block adds capability thresholds to a model
+group. Existing groups are unchanged. Import matching eval-infrastructure
+reports with `metrum-ai-routerctl groups import-eval`; vectors and provenance
+are applied through the config Admin API's copy-on-write group update. The
+group list/show API now reports each target's measured vector, membership and
+exclusion reason. Missing or ambiguous report data fails without changing the
+active config. Reported context tokens are the maximum observed in the eval
+workload, not a model's theoretical context limit.
+
 
 ## v5.0.0 caller-token hygiene
 
@@ -132,6 +163,27 @@ does not fail over to another provider until the window resets. Use
 also enter security access events when
 `server.admin_reports.security.enabled` is true; structured log events remain
 available otherwise.
+
+## v5.0.0 secret DLP
+
+Model groups can set `pii_filter.secrets_enabled: true` to apply the built-in
+credential detector pack to inbound text, buffered responses, and streamed
+text. `mode: redact_only` replaces matches with placeholders; `mode:
+fail_on_match` blocks matching requests. Existing custom rules and replacement
+limits continue to apply. Configure `apply_to.tool_results` for tool-result
+coverage. Streamed text keeps a 512-byte ordinary rolling tail, holds plausible
+JWTs from their start (up to 4,096 bytes per segment), and tracks every PEM
+BEGIN marker through its end marker, up to 64 KiB. The PEM cap and overlong
+provider-token or credential-assignment candidates fail closed. Unary response
+replacement-limit exhaustion also fails closed. Response redaction requires
+`secrets_enabled` and `apply_to.messages`; custom-only PII configurations keep
+their prior response behavior.
+
+As an interim limit until the #929 bounded tool-call inspection integration
+lands, streams with advertised tools on a group with `secrets_enabled: true`
+fail with HTTP 400 `secret-dlp-stream-inspection-required`. Use non-streaming
+requests or omit tools until that integration is available. This gate does not
+apply to groups without secret DLP enabled.
 
 ## v5.0.0 trusted proxy client IP resolution
 

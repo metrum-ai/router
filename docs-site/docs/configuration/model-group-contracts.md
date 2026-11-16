@@ -9,6 +9,55 @@ Model group contracts let an operator publish stable, deployment-defined model g
 
 Callers still request a model group they are allowed to use. `/v1/models` remains the caller-facing source of truth for allowed groups. Contract metadata does not let a caller route into another group.
 
+## Virtual models from eval reports
+
+A virtual model is a model group with a `virtual_model` threshold block. Target
+vectors are imported from reproducible dynamic-group eval reports; callers
+cannot supply vector values through the CLI. The report matrix suite is the
+task family. For each target and family, the importer stores quality pass rate,
+tool-task pass rate when tool tasks exist, maximum observed input tokens,
+nearest-rank p95 completion latency, mean task cost, run ID, report SHA-256 and
+measurement date. A missing vector dimension is unknown and cannot satisfy a
+threshold. Maximum observed input tokens describes tested workload context; it
+is not a proven model context limit.
+
+```yaml
+models:
+  code-virtual:
+    strategy: dynamic_score
+    virtual_model:
+      task_family: humaneval
+      min_quality_score: 0.90
+      min_context_tokens: 256
+      max_p95_latency_ms: 8000
+      max_cost_usd: 0.01
+    targets:
+      - provider: hosted
+        model_ref: code-model-a
+      - provider: local
+        model_ref: code-model-b
+```
+
+Import reports through the authenticated config Admin API's copy-on-write
+group target update:
+
+```sh
+metrum-ai-routerctl groups import-eval --group code-virtual \
+  --report report.json --matrix evaluators/eval-infra/preregistered-matrix.yaml \
+  --reason "refresh measured capability vectors"
+metrum-ai-routerctl groups show code-virtual
+```
+
+The report must use schema version 1, contain dynamic-group target results,
+match each target to exactly one configured provider/model, and carry pinned
+router, dataset, client, seed and task-image provenance. Invalid, ambiguous or
+incomplete reports leave the active configuration unchanged. The group show
+and list APIs include each target's vector, `member` flag and exclusion reason.
+Changing the threshold config or importing a new report creates an active
+config revision; request routing and member inspection use that same revision.
+Only aggregate metrics and provenance are retained, never prompts or model
+outputs.
+
 ## Example
 
 ```yaml

@@ -13,6 +13,44 @@ Model group names are deployment-defined. Names such as `default`, `fast`, `smal
 
 For admin authentication, admin authorization, and PII filtering, see the canonical Security And Governance pages: [Admin Authentication](./admin-authentication), [Admin Authorization](./admin-authorization), and [PII Filtering](./pii-filtering).
 
+## Request trace correlation
+
+Router chains accept W3C `traceparent` only from a trusted immediate parent.
+Configure the parent network under `server.trace.trusted_parent_cidrs`, or set
+`trust_traceparent: true` on a caller whose token authenticates a child router.
+Both inbound trust options default to off. A malformed, duplicate, or untrusted
+header starts a new trace. Each router creates its own span and request ID, then
+propagates `traceparent` and `X-Request-Id` to upstream providers by default.
+Set `providers.<name>.propagate_trace: false` to disable both outbound headers
+for that provider. Usage rows link per-hop request IDs through scalar trace,
+span, and parent-span IDs; raw headers, caller tokens, and prompts are not
+stored. Inbound `tracestate` is deliberately dropped and never forwarded.
+
+```yaml
+server:
+  trace:
+    trusted_parent_cidrs:
+      - 10.20.0.0/16
+callers:
+  - token_env: CHILD_ROUTER_TOKEN
+    trust_traceparent: true
+```
+
+Disable outbound correlation headers only for a provider that must not receive
+them:
+
+```yaml
+providers:
+  external_provider:
+    propagate_trace: false
+```
+
+Use CIDRs only for networks whose routers you operate. Trusting a proxy or
+ingress CIDR trusts every client whose traffic arrives through that network;
+configure the CIDR for the immediate trusted router only. The caller option is
+bound to the authenticated caller entry. Either option trusts an inbound trace
+ID and should be limited to router-to-router paths.
+
 ## File Layout
 
 The top-level config shape is:

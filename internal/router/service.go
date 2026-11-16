@@ -212,8 +212,9 @@ func (e routingEligibilityError) Error() string {
 }
 
 type requestContext struct {
-	id    string
-	start time.Time
+	id          string
+	start       time.Time
+	correlation requestTraceContext
 	// receiveAt is the router receive clock used for router-added latency
 	// (receive to outbound WroteRequest). Prefer this over start when deriving
 	// issue #159 router-added latency from request_trace_events.
@@ -230,6 +231,7 @@ type requestContext struct {
 	via                    []string
 	securityRecorded       bool
 	securityReason         string
+	secretStreamDLP        *secretStreamDLP
 	pacedUpstreamStream    bool
 	maxSSELineBytes        int
 	lineBufferBudget       *lineBufferBudget
@@ -1984,6 +1986,11 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		rc.rec.Warnings = append(rc.rec.Warnings, ad.WarningText)
 	}
 	piiResult, err := applyPIIFilter(req, group.PIIFilter, dialect)
+	if piiResult.state != nil {
+		// Rebind after the result struct is returned by value so outbound matches
+		// update the metadata observed by this request lifecycle.
+		piiResult.state.result = &piiResult
+	}
 	if err != nil {
 		var blocked piiFilterBlockedError
 		if errors.As(err, &blocked) {
@@ -2021,6 +2028,17 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	}
 	if s.detectorSegmentsEnabled() {
 		rc.detectorSegments = extractDetectorSegments(req)
+	}
+	if req.Stream && group.PIIFilter.Enabled && group.PIIFilter.SecretsEnabled {
+		rc.secretStreamDLP = &secretStreamDLP{state: piiResult.state, mode: normalizePIIFilterMode(group.PIIFilter), failOnMatch: group.PIIFilter.FailOnMatch}
+	}
+	if group.PIIFilter.Enabled && group.PIIFilter.SecretsEnabled && req.Stream && len(group.PIIFilter.Rules) > 0 {
+		// Custom expressions have no declared maximum match length, so only the
+		// bounded built-in pack can use the rolling text filter safely.
+		code := "secret-dlp-stream-inspection-required"
+		rc.trace("secret_dlp_stream_blocked", "", Target{}, 0, http.StatusBadRequest, code, false, 0)
+		s.writeError(w, rc, http.StatusBadRequest, code)
+		return
 	}
 	captureDecision := s.contentCaptureFor(rc.caller, req.Model, group)
 	s.captureRequestContent(rc, req, r.Header, captureDecision)
@@ -2311,6 +2329,33 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 				resp.StopReason = "end_turn"
 			}
 		}
+		responseApply := normalizePIIApplyTo(group.PIIFilter.ApplyTo)
+		responseScopeEnabled := responseApply.messages
+		if group.PIIFilter.Enabled && group.PIIFilter.SecretsEnabled && responseScopeEnabled && !resp.Streamed {
+			before := piiResult.Replacements
+			redactPIIResponse(resp, piiResult.state, responseApply)
+			if piiResult.LimitExceeded || piiResult.Replacements > before && (normalizePIIFilterMode(group.PIIFilter) == "fail_on_match" || group.PIIFilter.FailOnMatch) {
+				ensureResponseID(resp)
+				if totalTokens(resp.Usage) == 0 && reservationTokens > 0 {
+					resp.Usage = estimatedUsageForReservation(req, dialect, reservationTokens)
+					resp.Warnings = appendWarning(resp.Warnings, "usage-estimated")
+				}
+				quotaState, keyState, qerr := s.quota.RecordTokens(rc.caller, resAd.Reservation, resp.Usage)
+				if qerr != nil {
+					rc.rec.QuotaState, rc.rec.KeyState = "error", "error"
+				} else {
+					rc.rec.QuotaState, rc.rec.KeyState = quotaState, keyState
+					rc.rec.Usage, rc.rec.UsageSource = resp.Usage, "reported"
+					if containsUsageEstimate(resp.Warnings) {
+						rc.rec.UsageSource = "estimated"
+					}
+				}
+				code := "pii-filter-blocked"
+				rc.trace("pii_filter_blocked", "pii_filter matched response content", dec.Target, 0, http.StatusBadGateway, code, false, 0)
+				s.writeError(w, rc, http.StatusBadGateway, code)
+				return
+			}
+		}
 		ensureResponseID(resp)
 		if totalTokens(resp.Usage) == 0 && reservationTokens > 0 {
 			resp.Usage = estimatedUsageForReservation(req, dialect, reservationTokens)
@@ -2591,6 +2636,10 @@ func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) 
 	rc := s.newRequestContext(r, dialect, id, receiveAt, ipInfo)
 	rc.securityReason = securityReason
 	rc.caller = caller
+	rc.correlation = traceparentFromRequest(r, caller, err == nil, s.cfg.Server.Trace)
+	rc.rec.TraceID = rc.correlation.traceID
+	rc.rec.SpanID = rc.correlation.spanID
+	rc.rec.ParentSpanID = rc.correlation.parentSpanID
 	// Mark count requests before authentication errors can be recorded.
 	switch r.URL.Path {
 	case "/v1/messages/count_tokens", "/anthropic/v1/messages/count_tokens":
@@ -3035,8 +3084,14 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 		return decision{}, err
 	}
 	contractResult := contractFilterResult{targets: targets}
-	if rc == nil || rc.rec.RequestKind != "count_tokens" {
-		contractResult = s.targetsForContract(groupName, group, targets, req, callerDialect)
+	if rc == nil || rc.rec.RequestKind != "count_tokens" || group.VirtualModel != nil {
+		contractGroup := group
+		if rc != nil && rc.rec.RequestKind == "count_tokens" {
+			// Keep the existing count_tokens contract behavior while still
+			// enforcing virtual-model membership for every request kind.
+			contractGroup.Contract = nil
+		}
+		contractResult = s.targetsForContract(groupName, contractGroup, targets, req, callerDialect)
 	}
 	targets = contractResult.targets
 	if len(targets) == 0 {
@@ -3649,6 +3704,15 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 	for name, value := range provider.Headers {
 		httpReq.Header.Set(name, value)
 	}
+	if provider.PropagateTrace == nil || *provider.PropagateTrace {
+		httpReq.Header.Set("X-Request-Id", rc.id)
+		if traceparent := rc.correlation.traceparent(); traceparent != "" {
+			httpReq.Header.Set("traceparent", traceparent)
+		}
+	} else {
+		httpReq.Header.Del("X-Request-Id")
+		httpReq.Header.Del("traceparent")
+	}
 	forwardRouterVia(httpReq.Header, rc.via)
 	httpReq.Header.Del("Anthropic-Beta")
 	if outDialect == "anthropic" {
@@ -3874,7 +3938,8 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		if group, ok := s.cfg.Models[groupName]; ok {
 			holdConfig := group.ToolRouting.Streaming
 			firewallEnforced := strings.EqualFold(strings.TrimSpace(s.cfg.Server.ToolFirewall.Mode), toolFirewallEnforce)
-			if firewallEnforced && !holdConfig.HoldUntilValidated {
+			dlpToolCalls := rc.secretStreamDLP != nil && len(req.Tools) > 0
+			if (firewallEnforced || dlpToolCalls) && !holdConfig.HoldUntilValidated {
 				// Enforce mode must never proxy executable stream frames before
 				// inspection. Use conservative defaults when the group did not
 				// explicitly opt into a separately tuned schema hold.
@@ -3888,6 +3953,9 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 						callerID = rc.caller.cfg.ID
 					}
 					rc.streamToolCallHold.inspectors = append(rc.streamToolCallHold.inspectors, firewallToolCallInspector{service: s, rc: rc, callerID: callerID, request: req})
+				}
+				if dlpToolCalls {
+					rc.streamToolCallHold.inspectors = append(rc.streamToolCallHold.inspectors, secretToolCallInspector{dlp: rc.secretStreamDLP})
 				}
 			}
 		}

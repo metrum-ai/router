@@ -197,6 +197,7 @@ type ServerConfig struct {
 	Retention                   RetentionConfig                   `yaml:"retention"`
 	DecisionTelemetry           DecisionTelemetryConfig           `yaml:"decision_telemetry"`
 	TrafficShape                ServerTrafficShapeConfig          `yaml:"traffic_shape" json:"traffic_shape"`
+	Trace                       TraceConfig                       `yaml:"trace" json:"trace,omitempty"`
 	// ExperimentProfiles holds opt-in, scoped TTFT delay and delivered-token
 	// pacing profiles for endpoint-bound agent studies (#379). They are off by
 	// default, must be scoped to experiment callers/groups/targets, and never
@@ -209,6 +210,12 @@ type ServerConfig struct {
 	// explicitly listed model groups (#533). It is off by default.
 	ResponsesAffinity ResponsesAffinityConfig `yaml:"responses_affinity" json:"responsesAffinity,omitempty"`
 	ToolFirewall      ToolFirewallConfig      `yaml:"tool_firewall" json:"toolFirewall,omitempty"`
+}
+
+// TraceConfig controls which immediate network peers may establish inbound
+// trace context. Outbound trace propagation is configured per provider.
+type TraceConfig struct {
+	TrustedParentCIDRs []string `yaml:"trusted_parent_cidrs" json:"trustedParentCidrs,omitempty"`
 }
 
 // AutoContainmentConfig maps enforce-mode detector signals to bounded key actions.
@@ -542,17 +549,18 @@ type DecisionTelemetryConfig struct {
 }
 
 type ProviderConfig struct {
-	BaseURL      string                     `yaml:"base_url"`
-	Dialect      string                     `yaml:"dialect"`
-	UpstreamKind string                     `yaml:"upstream_kind" json:"upstreamKind,omitempty"`
-	APIKey       string                     `yaml:"api_key"`
-	APIKeyEnv    string                     `yaml:"api_key_env"`
-	KeyID        string                     `yaml:"key_id"`
-	AuthScheme   string                     `yaml:"auth_scheme"`
-	Headers      map[string]string          `yaml:"headers"`
-	TrafficShape TrafficShapeConfig         `yaml:"traffic_shape" json:"trafficShape,omitempty"`
-	SpendBreaker ProviderSpendBreakerConfig `yaml:"spend_breaker" json:"spendBreaker,omitempty"`
-	Models       map[string]ProviderModel   `yaml:"models"`
+	BaseURL        string                     `yaml:"base_url"`
+	Dialect        string                     `yaml:"dialect"`
+	UpstreamKind   string                     `yaml:"upstream_kind" json:"upstreamKind,omitempty"`
+	PropagateTrace *bool                      `yaml:"propagate_trace,omitempty" json:"propagate_trace,omitempty"`
+	APIKey         string                     `yaml:"api_key"`
+	APIKeyEnv      string                     `yaml:"api_key_env"`
+	KeyID          string                     `yaml:"key_id"`
+	AuthScheme     string                     `yaml:"auth_scheme"`
+	Headers        map[string]string          `yaml:"headers"`
+	TrafficShape   TrafficShapeConfig         `yaml:"traffic_shape" json:"trafficShape,omitempty"`
+	SpendBreaker   ProviderSpendBreakerConfig `yaml:"spend_breaker" json:"spendBreaker,omitempty"`
+	Models         map[string]ProviderModel   `yaml:"models"`
 }
 
 // ProviderSpendBreakerConfig caps estimated spend attributed to one provider.
@@ -647,6 +655,7 @@ type ModelGroup struct {
 	ToolRouting    ToolRoutingConfig    `yaml:"tool_routing" json:"toolRouting,omitempty"`
 	RoutingPolicy  RoutingPolicyConfig  `yaml:"routing_policy"`
 	Contract       *ModelGroupContract  `yaml:"contract" json:"contract,omitempty"`
+	VirtualModel   *VirtualModelConfig  `yaml:"virtual_model" json:"virtualModel,omitempty"`
 	PIIFilter      PIIFilterConfig      `yaml:"pii_filter"`
 	ContentCapture ContentCaptureConfig `yaml:"content_capture"`
 	// SpendCeiling optionally caps semantic/dynamic_score escalation for this group.
@@ -654,6 +663,86 @@ type ModelGroup struct {
 	SpendCeiling     SpendCeilingConfig `yaml:"spend_ceiling" json:"spend_ceiling,omitempty"`
 	AttemptTimeoutMS int                `yaml:"attempt_timeout_ms"`
 	Targets          []Target           `yaml:"targets"`
+}
+
+// VirtualModelConfig selects targets from measured, imported eval capability vectors.
+type VirtualModelConfig struct {
+	TaskFamily         string   `yaml:"task_family" json:"taskFamily"`
+	MinQualityScore    *float64 `yaml:"min_quality_score" json:"minQualityScore,omitempty"`
+	MinToolReliability *float64 `yaml:"min_tool_reliability" json:"minToolReliability,omitempty"`
+	MinContextTokens   int      `yaml:"min_context_tokens" json:"minContextTokens,omitempty"`
+	MaxP95LatencyMS    *float64 `yaml:"max_p95_latency_ms" json:"maxP95LatencyMs,omitempty"`
+	MaxCostUSD         *float64 `yaml:"max_cost_usd" json:"maxCostUsd,omitempty"`
+}
+
+func validateVirtualModelConfig(group string, model ModelGroup) error {
+	config := model.VirtualModel
+	if config == nil {
+		return nil
+	}
+	if strings.TrimSpace(config.TaskFamily) == "" {
+		return fmt.Errorf("model group %s virtual_model.task_family is required", group)
+	}
+	if config.MinContextTokens < 0 {
+		return fmt.Errorf("model group %s virtual_model.min_context_tokens cannot be negative", group)
+	}
+	for field, value := range map[string]*float64{
+		"min_quality_score":    config.MinQualityScore,
+		"min_tool_reliability": config.MinToolReliability,
+	} {
+		if err := validateOptionalUnitInterval(group, "virtual_model."+field, value); err != nil {
+			return err
+		}
+	}
+	for field, value := range map[string]*float64{
+		"max_p95_latency_ms": config.MaxP95LatencyMS,
+		"max_cost_usd":       config.MaxCostUSD,
+	} {
+		if err := validateOptionalNonNegative(group, "virtual_model."+field, value); err != nil {
+			return err
+		}
+	}
+	for _, target := range model.Targets {
+		if target.Validation == nil {
+			continue
+		}
+		for family, vector := range target.Validation.Capabilities {
+			if !validCapabilityLabel(family, 80) || vector.TaskFamily != family || !validCapabilityLabel(vector.EvalRunID, 128) || len(vector.EvalReportSHA256) != 64 || !strings.EqualFold(target.Validation.Status, "passed") || target.Validation.Harness != "eval-infra" {
+				return fmt.Errorf("model group %s target %s/%s has invalid capability provenance", group, target.Provider, target.Model)
+			}
+			if _, err := time.Parse("2006-01-02", vector.MeasuredAt); err != nil {
+				return fmt.Errorf("model group %s target %s/%s has invalid capability measurement date", group, target.Provider, target.Model)
+			}
+			if _, err := hex.DecodeString(vector.EvalReportSHA256); err != nil {
+				return fmt.Errorf("model group %s target %s/%s has invalid capability report digest", group, target.Provider, target.Model)
+			}
+			if err := validateOptionalUnitInterval(group, "target capability quality_score", &vector.QualityScore); err != nil {
+				return err
+			}
+			if vector.ToolReliability != nil {
+				if err := validateOptionalUnitInterval(group, "target capability tool_reliability", vector.ToolReliability); err != nil {
+					return err
+				}
+			}
+			if vector.ContextTokens < 0 || math.IsNaN(vector.P95LatencyMS) || math.IsInf(vector.P95LatencyMS, 0) || vector.P95LatencyMS < 0 || math.IsNaN(vector.MeanCostUSD) || math.IsInf(vector.MeanCostUSD, 0) || vector.MeanCostUSD < 0 {
+				return fmt.Errorf("model group %s target %s/%s has invalid capability metrics", group, target.Provider, target.Model)
+			}
+		}
+	}
+	return nil
+}
+
+func validCapabilityLabel(value string, limit int) bool {
+	if value == "" || len(value) > limit {
+		return false
+	}
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || strings.ContainsRune("._:-", r) {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // SpendCeilingConfig limits which tiers/costs semantic and dynamic_score may select.
@@ -828,6 +917,7 @@ type DynamicEvaluationTarget struct {
 
 type PIIFilterConfig struct {
 	Enabled                   bool             `yaml:"enabled" json:"enabled"`
+	SecretsEnabled            bool             `yaml:"secrets_enabled" json:"secretsEnabled"`
 	Mode                      string           `yaml:"mode" json:"mode"`
 	FailOnMatch               bool             `yaml:"fail_on_match" json:"failOnMatch"`
 	ApplyTo                   PIIFilterApplyTo `yaml:"apply_to" json:"applyTo"`
@@ -1255,13 +1345,27 @@ type RequestShapeSupport struct {
 }
 
 type TargetValidation struct {
-	Status       string  `yaml:"status" json:"status,omitempty"`
-	Workload     string  `yaml:"workload" json:"workload,omitempty"`
-	ValidatedAt  string  `yaml:"validated_at" json:"validatedAt,omitempty"`
-	QualityScore float64 `yaml:"quality_score" json:"qualityScore,omitempty"`
-	PassRate     float64 `yaml:"pass_rate" json:"passRate,omitempty"`
-	Harness      string  `yaml:"harness" json:"harness,omitempty"`
-	Notes        string  `yaml:"notes" json:"notes,omitempty"`
+	Status       string                            `yaml:"status" json:"status,omitempty"`
+	Workload     string                            `yaml:"workload" json:"workload,omitempty"`
+	ValidatedAt  string                            `yaml:"validated_at" json:"validatedAt,omitempty"`
+	QualityScore float64                           `yaml:"quality_score" json:"qualityScore,omitempty"`
+	PassRate     float64                           `yaml:"pass_rate" json:"passRate,omitempty"`
+	Harness      string                            `yaml:"harness" json:"harness,omitempty"`
+	Notes        string                            `yaml:"notes" json:"notes,omitempty"`
+	Capabilities map[string]TargetCapabilityVector `yaml:"capabilities,omitempty" json:"capabilities,omitempty"`
+}
+
+// TargetCapabilityVector is derived from task-level results in a reproducible eval report.
+type TargetCapabilityVector struct {
+	QualityScore     float64  `yaml:"quality_score" json:"qualityScore"`
+	ToolReliability  *float64 `yaml:"tool_reliability,omitempty" json:"toolReliability,omitempty"`
+	ContextTokens    int      `yaml:"context_tokens" json:"contextTokens"`
+	P95LatencyMS     float64  `yaml:"p95_latency_ms" json:"p95LatencyMs"`
+	MeanCostUSD      float64  `yaml:"mean_cost_usd" json:"meanCostUsd"`
+	EvalRunID        string   `yaml:"eval_run_id" json:"evalRunId"`
+	EvalReportSHA256 string   `yaml:"eval_report_sha256" json:"evalReportSha256"`
+	TaskFamily       string   `yaml:"task_family" json:"taskFamily"`
+	MeasuredAt       string   `yaml:"measured_at" json:"measuredAt"`
 }
 
 type CallerConfig struct {
@@ -1285,6 +1389,7 @@ type CallerConfig struct {
 	RevokedTokenHash   string               `yaml:"revoked_token_hash,omitempty" json:"revoked_token_hash,omitempty"`
 	Allow              []string             `yaml:"allow" json:"allow"`
 	MetricsAdmin       bool                 `yaml:"metrics_admin" json:"metrics_admin"`
+	TrustTraceparent   bool                 `yaml:"trust_traceparent" json:"trust_traceparent,omitempty"`
 	ContentAdmin       bool                 `yaml:"content_admin" json:"content_admin"`
 	ContentCapture     ContentCaptureConfig `yaml:"content_capture" json:"content_capture"`
 	// SpendCeiling is the caller's opt-in entitlement for semantic/dynamic_score escalation.
@@ -2111,6 +2216,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 	if err := validateClientIP(c.Server.ClientIP); err != nil {
 		return err
 	}
+	if err := validateTraceConfig(c.Server.Trace); err != nil {
+		return err
+	}
 	if err := validateASNPrefixes(c.Server.ClientIP.ASNPrefixes); err != nil {
 		return err
 	}
@@ -2461,6 +2569,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 			return err
 		}
 		if err := c.validateModelGroupContract(name, m); err != nil {
+			return err
+		}
+		if err := validateVirtualModelConfig(name, m); err != nil {
 			return err
 		}
 		c.Models[name] = m
@@ -3706,7 +3817,7 @@ func validatePIIFilter(group string, cfg PIIFilterConfig) error {
 		return fmt.Errorf("F-011: pii-filter-redact-and-restore-unsupported: model group %s", group)
 	}
 	if !cfg.Enabled {
-		if cfg.Mode != "" || cfg.FailOnMatch || cfg.RestoreResponse != nil || cfg.MaxReplacementsPerRequest != 0 || len(cfg.Rules) > 0 {
+		if cfg.SecretsEnabled || cfg.Mode != "" || cfg.FailOnMatch || cfg.RestoreResponse != nil || cfg.MaxReplacementsPerRequest != 0 || len(cfg.Rules) > 0 {
 			return fmt.Errorf("model group %s configures pii_filter but pii_filter.enabled is false", group)
 		}
 		return nil
@@ -3719,10 +3830,15 @@ func validatePIIFilter(group string, cfg PIIFilterConfig) error {
 	if cfg.MaxReplacementsPerRequest < 0 {
 		return fmt.Errorf("model group %s pii_filter max_replacements_per_request cannot be negative", group)
 	}
-	if len(cfg.Rules) == 0 {
+	if len(cfg.Rules) == 0 && !cfg.SecretsEnabled {
 		return fmt.Errorf("model group %s pii_filter requires at least one rule", group)
 	}
 	seen := map[string]bool{}
+	if cfg.SecretsEnabled {
+		for _, rule := range builtinSecretRules() {
+			seen[rule.Name] = true
+		}
+	}
 	for i, rule := range cfg.Rules {
 		name := strings.TrimSpace(rule.Name)
 		if name == "" {

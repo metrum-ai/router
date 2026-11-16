@@ -38,6 +38,32 @@ type firewallToolCallInspector struct {
 	request  *IRRequest
 }
 
+type secretToolCallInspector struct {
+	dlp *secretStreamDLP
+}
+
+func (i secretToolCallInspector) inspectStreamToolCalls(calls []IRToolCall, _ bool) (toolCallInspectionResult, error) {
+	if i.dlp == nil {
+		return toolCallInspectionResult{Action: toolCallInspectionAllow}, nil
+	}
+	redacted := append([]IRToolCall(nil), calls...)
+	changed := false
+	for index := range redacted {
+		value, err := i.dlp.redactCandidate(redacted[index].Arguments)
+		if err != nil {
+			return toolCallInspectionResult{}, err
+		}
+		if value != redacted[index].Arguments {
+			redacted[index].Arguments = value
+			changed = true
+		}
+	}
+	if changed {
+		return toolCallInspectionResult{Action: toolCallInspectionRedact, Calls: redacted}, nil
+	}
+	return toolCallInspectionResult{Action: toolCallInspectionAllow}, nil
+}
+
 func (i firewallToolCallInspector) inspectStreamToolCalls(calls []IRToolCall, truncated bool) (toolCallInspectionResult, error) {
 	if i.service == nil || i.rc == nil || len(calls) == 0 {
 		return toolCallInspectionResult{Action: toolCallInspectionAllow}, nil
