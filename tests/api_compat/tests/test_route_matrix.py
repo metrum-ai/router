@@ -15,7 +15,7 @@ import pytest
 import yaml
 
 from conftest import PROMPT_CANARY, TOOL_CANARY, request, unused_port
-from harness import CALLER, CALLER_DIGEST
+from harness import CALLER, CALLER_ID, CALLER_DIGEST
 from harness.manifest_loader import cases_by_id, load_manifests
 from harness.scripted_upstream import FakeUpstream, ScriptedScenario
 
@@ -212,7 +212,8 @@ models:
         model: plain-model
 callers:
   - id: synthetic-allowed
-    token_sha256: {CALLER_DIGEST}
+    token_hash: {CALLER_DIGEST}
+    token_id: {CALLER_ID}
     allow: [tools-fallback]
 '''
     config_path = work / "config.yaml"

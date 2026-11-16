@@ -88,7 +88,7 @@ func TestAnthropicStructuredFormatMapping(t *testing.T) {
 	if !requestHasStructuredOutput(req) || !strings.Contains(string(b), `"response_format":{"json_schema"`) {
 		t.Fatalf("format lost: %s", b)
 	}
-	if !unknownAnthropicBlocks([]any{map[string]any{"role": "user", "content": []any{map[string]any{"type": "future_block", "text": "never flatten"}}}}) {
+	if !unknownAnthropicBlocks([]any{map[string]any{"role": "user", "content": []any{map[string]any{"type": "future_block", "text": "never flatten"}}}}, false) {
 		t.Fatal("unknown accepted")
 	}
 }

@@ -23,9 +23,13 @@ import (
 )
 
 func TestSecurityDoctorConfigFindings(t *testing.T) {
+	tokenHash, err := router.HashCallerToken("rtr_metrum_security_doctor_test_secret", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	cfg := &router.Config{
 		Admin:   router.AdminPlaneConfig{Enabled: true, Listen: "0.0.0.0:8081", TLS: router.AdminTLSConfig{ClientAuth: "optional"}},
-		Callers: []router.CallerConfig{{ID: "caller", TokenSHA256: "verifier"}},
+		Callers: []router.CallerConfig{{ID: "caller", TokenHash: tokenHash, TokenID: "rtr_metrum_security_doctor_test"}},
 		Models:  map[string]router.ModelGroup{"medical": {Targets: []router.Target{{Tags: []string{"sensitive"}}}}},
 	}
 	findings := securityDoctorConfigFindings(cfg)
@@ -495,7 +499,7 @@ func TestSecurityDoctorReportSubmissionSendsSafeSummary(t *testing.T) {
 		Schema: "metrum.ai/router-security-posture/v1", Generated: "2026-11-16T06:00:00Z", Target: "https://router.example",
 		Findings: []securityDoctorFinding{{Check: "admin-listener", Status: "warn", Severity: "medium", Detail: "private target 10.0.0.5", Fix: "rotate secret"}},
 	}
-	if err := submitSecurityDoctorReport(server.URL, "", report); err != nil {
+	if err := submitSecurityDoctorReport(server.URL, "", "", report); err != nil {
 		t.Fatal(err)
 	}
 	if gotPath != "/admin/v1/reports/security/posture/latest" || gotAuthorization != "Bearer admin-test-secret" {
@@ -512,7 +516,11 @@ func TestSecurityDoctorReportSubmissionSendsSafeSummary(t *testing.T) {
 func writeSecurityDoctorConfig(t *testing.T) string {
 	t.Helper()
 	config := filepath.Join(t.TempDir(), "router.yaml")
-	raw := fmt.Sprintf("state_path: %q\nserver:\n  identifiers:\n    mode: passthrough\n  usage_db:\n    enabled: true\n    driver: sqlite\n    path: %q\n    migration_policy: auto-safe\nproviders:\n  mock:\n    base_url: http://127.0.0.1:1/v1\n    dialect: openai-chat\n    api_key: placeholder\nmodels:\n  local:\n    strategy: weighted\n    targets:\n      - {provider: mock, model: example, weight: 1}\ncallers:\n  - id: alice\n    token_sha256: %s\n    allow: [local]\n    rate:\n      rpm: 30\n", filepath.Join(filepath.Dir(config), "router-state.json"), filepath.Join(filepath.Dir(config), "usage.db"), strings.Repeat("ab", 32))
+	tokenHash, err := router.HashCallerToken("rtr_metrum_security_doctor_test_secret", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := fmt.Sprintf("state_path: %q\nserver:\n  identifiers:\n    mode: passthrough\n  usage_db:\n    enabled: true\n    driver: sqlite\n    path: %q\n    migration_policy: auto-safe\nproviders:\n  mock:\n    base_url: http://127.0.0.1:1/v1\n    dialect: openai-chat\n    api_key: placeholder\nmodels:\n  local:\n    strategy: weighted\n    targets:\n      - {provider: mock, model: example, weight: 1}\ncallers:\n  - id: alice\n    token_hash: %s\n    token_id: rtr_metrum_security_doctor_test\n    allow: [local]\n    rate:\n      rpm: 30\n", filepath.Join(filepath.Dir(config), "router-state.json"), filepath.Join(filepath.Dir(config), "usage.db"), tokenHash)
 	if err := os.WriteFile(config, []byte(raw), 0600); err != nil {
 		t.Fatal(err)
 	}

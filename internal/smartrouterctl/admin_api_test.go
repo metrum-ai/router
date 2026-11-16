@@ -23,7 +23,7 @@ func TestAdminClientEndpointAndRedirectSafety(t *testing.T) {
 	}
 	client, err := NewAdminAPIClient("", "")
 	if err != nil || client.BaseURL != "http://127.0.0.1:8081" {
-		t.Fatalf("default endpoint = %v, err=%v", client, err)
+		t.Fatalf("default endpoint client=%+v err=%v", client, err)
 	}
 
 	hits := 0

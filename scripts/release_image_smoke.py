@@ -6,8 +6,11 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import hashlib
 import json
 import os
+import secrets
 import socket
 import subprocess
 import tarfile
@@ -23,6 +26,17 @@ def free_port() -> int:
     with socket.socket() as listener:
         listener.bind(("127.0.0.1", 0))
         return listener.getsockname()[1]
+
+
+def smoke_caller_credentials() -> tuple[str, str]:
+    """Return synthetic salted credentials for the no-upstream image smoke."""
+    token_id = "rtr_metrum_release_image_smoke_test"
+    token = token_id + "_secret"
+    salt = secrets.token_bytes(32)
+    derived = hashlib.pbkdf2_hmac("sha3_512", token.encode(), salt, 20000, 64)
+    encode = lambda value: base64.urlsafe_b64encode(value).decode().rstrip("=")
+    verifier = f"pbkdf2-sha3-512:i=20000:{encode(salt)}:{encode(derived)}"
+    return verifier, token_id
 
 
 def smoke(config: dict, binary_data: bytes, version: str) -> None:
@@ -48,6 +62,7 @@ def smoke(config: dict, binary_data: bytes, version: str) -> None:
             raise RuntimeError("release image binary version output does not match the release")
         port = free_port()
         cfg = root / "config.yaml"
+        token_hash, token_id = smoke_caller_credentials()
         cfg.write_text(
             f"server:\n  listen: 127.0.0.1:{port}\n"
             "  identifiers:\n    mode: passthrough\n"
@@ -59,7 +74,8 @@ def smoke(config: dict, binary_data: bytes, version: str) -> None:
             "models:\n  default:\n    strategy: static\n    targets:\n"
             "      - provider: mock\n        model: mock-model\n"
             "callers:\n  - id: startup-smoke\n"
-            "    token_sha256: 0000000000000000000000000000000000000000000000000000000000000000\n"
+            f"    token_hash: {token_hash}\n"
+            f"    token_id: {token_id}\n"
             "    allow: [default]\n"
             "admin:\n  enabled: false\n",
             encoding="utf-8",

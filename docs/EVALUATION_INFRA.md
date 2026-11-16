@@ -115,9 +115,14 @@ for spend accounting. Harbor runs after the canary, sums earlier same-day Harbor
 and sets the relay's reservation cap to the remaining portion of its $0.50
 allowance. Same-day history is downloaded from sanitized workflow artifacts; a
 missing or malformed prior report fails closed. Each canary invocation also
-has a $0.50 guard. The canary report records router charges from the local
-usage database and direct-provider token usage priced at the recorded list
-rates; direct charges are estimates and are not invoice reconciled. The rolling
+has a $0.50 guard. The canary report labels Router charges from local usage
+rows as measured `request_usage` spend, and labels direct-provider charges as a
+list-rate estimate; the latter is not invoice reconciled. The `nightly_cost`
+and aggregate `cost_basis` report fields identify these sources explicitly.
+Gate violations from reports older than 30 days are listed in
+`historical_gate_violations` with the age window in
+`historical_gate_violation_max_age_days`; they do not fail a later nightly
+run. The rolling
 artifact reports task attempts, passes, Wilson 95% intervals, paired outcomes,
 missing/under-sampled cells, violations and cost totals. It is evidence only,
 not a certification claim.
@@ -127,6 +132,12 @@ during that cell's single live trial. The first main-branch nightly run is the
 first source of measured live costs; before that, no Harbor cell cost is
 reported. The relay's $0.50 reservation cap is an upper-bound safety control,
 not a reported cell cost.
+
+Before making provider calls, the hosted Harbor job runs a Docker-backed,
+provider-free function-call replay through the same OpenAI Responses adapter
+used by the live cells. Its bounded `preflight.json` artifact records only the
+exit code, verifier reward, and mock request count; it contains no prompts or
+provider data.
 
 The workflow retains only schema reports, the rolling aggregate, and the
 sanitized Harbor result summary for 90 days. Prompts, raw provider responses,

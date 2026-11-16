@@ -2,6 +2,7 @@
 # Copyright 2026 Metrum AI
 # SPDX-License-Identifier: Apache-2.0
 """Exercise the load driver through a local router and scripted backend only."""
+import base64
 import hashlib
 import os
 import pathlib
@@ -17,7 +18,12 @@ from urllib.request import urlopen
 from test_load import Upstream
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-TOKEN = "synthetic-overhead-test-token"
+TOKEN_ID = "rtr_overhead_load_smoke"
+TOKEN = TOKEN_ID + "_secret"
+_SALT = b"overhead-smoke-salt16"
+_KEY = hashlib.pbkdf2_hmac("sha3_512", TOKEN.encode(), _SALT, 10000, 64)
+_b64 = lambda value: base64.urlsafe_b64encode(value).decode().rstrip("=")
+TOKEN_HASH = f"pbkdf2-sha3-512:i=10000:{_b64(_SALT)}:{_b64(_KEY)}"
 
 
 def free_port():
@@ -58,7 +64,8 @@ models:
   chat: {{strategy: static, targets: [{{provider: mock, model: chat}}]}}
 callers:
   - id: overhead-smoke
-    token_sha256: "{hashlib.sha256(TOKEN.encode()).hexdigest()}"
+    token_hash: "{TOKEN_HASH}"
+    token_id: "{TOKEN_ID}"
     allow: [chat]
     rate: {{rpm: 2400, tpm: 100000000, concurrent: 160}}
     quota: {{day: {{requests: 100000, tokens: 400000000}}, month: {{tokens: 8000000000}}}}

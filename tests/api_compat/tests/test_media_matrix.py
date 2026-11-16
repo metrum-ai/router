@@ -27,6 +27,7 @@ import pytest
 
 from conftest import (
     CALLER,
+    CALLER_ID,
     CALLER_DIGEST,
     assert_generated_artifacts_redacted,
     spawn_router,
@@ -185,7 +186,8 @@ providers:
 models:{_VISION_GROUPS}
 callers:
   - id: synthetic-allowed
-    token_sha256: {CALLER_DIGEST}
+    token_hash: {CALLER_DIGEST}
+    token_id: {CALLER_ID}
     allow: [vision-chat, vision-responses, vision-messages, vision-pii, text-chat]
 '''
     # The f-string above doubles braces once for Python; collapse the YAML layer.

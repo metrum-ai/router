@@ -10,7 +10,7 @@ cd "$ROOT"
 WORKDIR="${LIVE_FULL_E2E_WORKDIR:-$(mktemp -d)}"
 PORT="${ROUTER_PORT:-18082}"
 BASE_URL="http://127.0.0.1:${PORT}"
-TOKEN="${ROUTER_TOKEN:-rtr_live_full_e2e_local}"
+TOKEN="${ROUTER_TOKEN:-rtr_metrum_live_full_e2e_k1_localsecret}"
 MODEL="${LIVE_FULL_E2E_MODEL:-deepseek/deepseek-v4-flash:nitro}"
 GROUP="${LIVE_FULL_E2E_GROUP:-live-cache}"
 KEEP_WORKDIR="${KEEP_LIVE_E2E_WORKDIR:-0}"
@@ -53,15 +53,9 @@ if [[ -z "${OPENROUTER_API_KEY:-}" ]]; then
   exit 2
 fi
 
-hash_token() {
-  python3 - "$TOKEN" <<'PY'
-import hashlib
-import sys
-print(hashlib.sha256(sys.argv[1].encode()).hexdigest())
-PY
-}
-
-TOKEN_HASH="$(hash_token)"
+TOKEN_META="$(printf %s "$TOKEN" | python3 scripts/caller_token.py)"
+TOKEN_HASH="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["token_hash"])' <<<"$TOKEN_META")"
+TOKEN_ID="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["token_id"])' <<<"$TOKEN_META")"
 cat >"$WORKDIR/config.yaml" <<YAML
 server:
   listen: ":${PORT}"
@@ -86,8 +80,8 @@ models:
       - { provider: openrouter, model: "${MODEL}" }
 callers:
   - id: live-full
-    token_sha256: "${TOKEN_HASH}"
-    token_id: "rtr_live_full_e2e"
+    token_hash: "${TOKEN_HASH}"
+    token_id: "${TOKEN_ID}"
     allow: ["${GROUP}"]
     rate: { rpm: 120, tpm: 200000, concurrent: 4 }
     quota:

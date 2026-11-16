@@ -153,6 +153,19 @@ most 500 rows for seven days and caps retained results at 64 MiB. Backup
 bundles include admin-key verifiers, so grant `admin:backup/read` only to
 operators authorized to handle them.
 
+## v5.0.0 machine-client registry
+
+The machine-client API adds online migration `2026111610` (schema 17), after the schema-16 admin operations migration (`2026111606`) and the caller-token migrations. It creates the shared client and credential metadata tables used by per-request revocation and expiry checks. Database-mode
+deployments apply it with the online prefix using
+`router-migrate --scope router-config --action apply`; no maintenance window or
+backup-evidence reference is needed for this migration. The migration stores
+credential descriptors only; verifier secrets remain in their existing
+credential stores. Registering any credential makes its policy subject managed
+immediately. Only credentials registered to that subject authenticate; all
+unregistered credentials for it are refused from that point onward, including
+before disable, revoke, or expiry. Ensure registration leaves at least one usable
+global administrator.
+
 ## Phase 6: DB-backed serving source of truth
 
 Phase 6 raises the `router_config` compatibility window to `MaxSchema: 6` and
@@ -199,10 +212,10 @@ The DB-backed mode does not change the secrets contract:
   in-memory runtime configuration and never writes or logs the value.
 - Caller tokens are stored only as a verifier plus the public `token_id`.
   New and rotated callers use `token_hash` (salted PBKDF2-HMAC-SHA3-512);
-  legacy callers may still carry deprecated `token_sha256`. Both forms share
-  the existing `router_config_callers.token_sha256` column, distinguished by
-  the self-describing `pbkdf2-sha3-512:` prefix, so no schema migration is
-  needed. Raw caller tokens have no column in any `router_config` table
+  the `router_config_callers.token_sha256` column, which is retained as a
+  storage compatibility detail while holding only salted verifiers. Legacy
+  values are rejected when loading the active configuration. Raw caller
+  tokens have no column in any `router_config` table
   and are never stored in `router_config_documents` or
   `router_config_change_events`.
 

@@ -442,7 +442,7 @@ func TestAnthropicToolResultForms627(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			raw, err := encodeAnthropicToolsBridge("m", req, anthropicToolTarget(), "openai-chat")
+			raw, err := encodeAnthropicToolsBridge("m", req, anthropicToolTarget(), "openai-chat", ProviderConfig{})
 			if err != nil {
 				t.Fatalf("valid Anthropic result form rejected: %v", err)
 			}
@@ -472,7 +472,7 @@ func TestAnthropicToolResultForms627(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		raw, err := encodeAnthropicToolsBridge("m", req, anthropicToolTarget(), "openai-chat")
+		raw, err := encodeAnthropicToolsBridge("m", req, anthropicToolTarget(), "openai-chat", ProviderConfig{})
 		if err != nil {
 			t.Fatal(err)
 		}

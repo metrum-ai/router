@@ -90,10 +90,11 @@ models:
         model: mock-model
 callers:
   - id: startup-test
-    token_sha256: %s
+    token_hash: %s
+    token_id: rtr_test_alice
     allow: [default]
 `, filepath.Join(dir, "requests.jsonl"), tlsBlock, filepath.Join(dir, "state.json"),
-		"0000000000000000000000000000000000000000000000000000000000000000")
+		"pbkdf2-sha3-512:i=10000:c3RhcnR1cC10ZXN0LXNhbHQxNg:w9K-aqgc1Dil4f71Pwhzu4Ui9AhbKY42pZq1ZVnJji5V0164n8bY3SpZYNqRE4L_M_6OZ2ywFpPqtZ1TlQjMtw")
 	path := filepath.Join(dir, "config.yaml")
 	if err := os.WriteFile(path, []byte(config), 0o600); err != nil {
 		t.Fatalf("write config: %v", err)

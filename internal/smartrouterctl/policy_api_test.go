@@ -3,13 +3,56 @@
 package smartrouterctl
 
 import (
+	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 )
+
+func TestPolicyAPIClientUnixSocket(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Unix sockets are unavailable on Windows")
+	}
+	socket := filepath.Join(t.TempDir(), "policy.sock")
+	listener, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer policy-socket-key" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		_, _ = w.Write([]byte(`{"items":[]}`))
+	})}
+	go func() { _ = srv.Serve(listener) }()
+	t.Cleanup(func() { _ = srv.Close() })
+	t.Setenv("ROUTER_ADMIN_KEY", "policy-socket-key")
+	t.Setenv("ROUTER_URL", "")
+	client, err := NewPolicyAPIClientWithSocket("", "", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := client.Call("list", "", nil, PolicyCallOptions{})
+	if err != nil || string(body) != `{"items":[]}` {
+		t.Fatalf("policy socket response=%s err=%v", body, err)
+	}
+	if _, err := NewPolicyAPIClientWithSocket("http://localhost", "", socket); err == nil {
+		t.Fatal("accepted both URL and socket")
+	}
+	t.Setenv("ROUTER_URL", "")
+	if client, err := NewPolicyAPIClientWithSocket("", "", ""); err != nil || client.admin.BaseURL != "http://127.0.0.1:8081" {
+		t.Fatalf("default policy endpoint client=%+v err=%v", client, err)
+	}
+	if err := srv.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestPolicyClientCredentialAndEndpointSafety(t *testing.T) {
 	t.Setenv("ROUTER_ADMIN_KEY", "")

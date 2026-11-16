@@ -20,11 +20,12 @@ func TestCallerTokenRevocationMigrationBackfillsLegacyHashes(t *testing.T) {
 	for _, definition := range configControlPlaneMigrationDefinitions {
 		// Keep the fixture at schema 14 across later migrations appended by
 		// adjacent v5 admin features.
-		if definition.ID == callerTokenRevocationMigrationID || definition.ID == 2026111605 || definition.ID == 2026111606 {
+		if definition.ID == callerTokenRevocationMigrationID || definition.ID == 2026111610 || definition.ID == adminOperationsMigrationID {
 			continue
 		}
 		previousDefinitions = append(previousDefinitions, definition)
 	}
+
 	previousRunner, err := NewMigrationRunner(runner.db, configControlPlaneScope, previousCompatibility, previousDefinitions)
 	if err != nil {
 		t.Fatal(err)

@@ -74,6 +74,7 @@ func TestPythonPolicyExamplesRouteThroughRouter(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			requestToken := testToken
 			policyURL := startExamplePolicy(t, tc.example)
 			var gotModel string
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -98,6 +99,8 @@ func TestPythonPolicyExamplesRouteThroughRouter(t *testing.T) {
 			if tc.callerProject != "" {
 				cfg.Callers[0].Project = tc.callerProject
 				cfg.Callers[0].TokenID = tc.callerTokenID
+				requestToken = tc.callerTokenID + "_" + strings.Repeat("x", 12)
+				cfg.Callers[0].TokenHash = mustCallerTokenHashForTest(t, requestToken)
 			}
 			cfg.Models["example-policy"] = ModelGroup{Strategy: "external", ExternalPolicy: ExternalPolicyConfig{URL: policyURL + "/route", AllowHosts: []string{parsed.Hostname()}, TimeoutMS: 1000, IncludeRequest: tc.includeRequest}, Targets: tc.targets}
 			cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "example-policy")
@@ -107,7 +110,7 @@ func TestPythonPolicyExamplesRouteThroughRouter(t *testing.T) {
 			}
 			defer svc.Close()
 			req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(fmt.Sprintf(`{"model":"example-policy","messages":[{"role":"user","content":%q}]}`, tc.userText)))
-			req.Header.Set("Authorization", "Bearer "+testToken)
+			req.Header.Set("Authorization", "Bearer "+requestToken)
 			rr := httptest.NewRecorder()
 			svc.Handler().ServeHTTP(rr, req)
 			if rr.Code != http.StatusOK {

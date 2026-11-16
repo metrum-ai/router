@@ -6,6 +6,7 @@ package router
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -63,7 +64,16 @@ func bedrockInput(body []byte) (*bedrockruntime.ConverseInput, error) {
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return nil, err
 	}
-	in := &bedrockruntime.ConverseInput{ModelId: aws.String(stringValue(raw["model"])), InferenceConfig: &bt.InferenceConfiguration{}}
+	preserveReasoning := raw["bedrock_reasoning"] == true || raw["thinking"] != nil
+	model := stringValue(raw["model"])
+	in := &bedrockruntime.ConverseInput{ModelId: aws.String(model), InferenceConfig: &bt.InferenceConfiguration{}}
+	// Anthropic's thinking object is a model-specific Converse option. Keep it
+	// opaque at this boundary: Bedrock Claude validates its shape and budget.
+	if isBedrockClaudeModel(model) {
+		if thinking, ok := raw["thinking"].(map[string]any); ok && len(thinking) > 0 {
+			in.AdditionalModelRequestFields = document.NewLazyDocument(map[string]any{"thinking": thinking})
+		}
+	}
 	if n, ok := numberAsInt(raw["max_tokens"]); ok {
 		in.InferenceConfig.MaxTokens = bedrockMaxTokens(n)
 	}
@@ -101,6 +111,52 @@ func bedrockInput(body []byte) (*bedrockruntime.ConverseInput, error) {
 			}
 			msg.Content = append(msg.Content, &bt.ContentBlockMemberToolResult{Value: bt.ToolResultBlock{ToolUseId: aws.String(stringValue(m["tool_call_id"])), Content: []bt.ToolResultContentBlock{&bt.ToolResultContentBlockMemberText{Value: text}}}})
 		} else {
+			if role == "assistant" {
+				if blocks, ok := m["bedrock_content"].([]any); ok {
+					if !preserveReasoning {
+						return nil, fmt.Errorf("unsupported internal Bedrock content field")
+					}
+					if !isBedrockClaudeModel(model) {
+						return nil, fmt.Errorf("Bedrock reasoning content is supported only for Claude models")
+					}
+					for _, rawBlock := range blocks {
+						block, _ := rawBlock.(map[string]any)
+						switch stringValue(block["type"]) {
+						case "text":
+							msg.Content = append(msg.Content, &bt.ContentBlockMemberText{Value: stringValue(block["text"])})
+						case "thinking":
+							text, signature := stringValue(block["thinking"]), stringValue(block["signature"])
+							if text == "" || signature == "" {
+								return nil, fmt.Errorf("invalid Bedrock reasoning block: thinking requires text and signature")
+							}
+							msg.Content = append(msg.Content, &bt.ContentBlockMemberReasoningContent{Value: &bt.ReasoningContentBlockMemberReasoningText{Value: bt.ReasoningTextBlock{Text: aws.String(text), Signature: aws.String(signature)}}})
+						case "redacted_thinking":
+							data := stringValue(block["data"])
+							decoded, err := base64.StdEncoding.DecodeString(data)
+							if data == "" || err != nil {
+								return nil, fmt.Errorf("invalid Bedrock reasoning block: redacted_thinking data must be base64")
+							}
+							msg.Content = append(msg.Content, &bt.ContentBlockMemberReasoningContent{Value: &bt.ReasoningContentBlockMemberRedactedContent{Value: decoded}})
+						case "tool_use":
+							args := block["input"]
+							if args == nil || stringValue(block["id"]) == "" || stringValue(block["name"]) == "" {
+								return nil, fmt.Errorf("invalid Bedrock reasoning block: tool_use requires id, name, and input")
+							}
+							msg.Content = append(msg.Content, &bt.ContentBlockMemberToolUse{Value: bt.ToolUseBlock{ToolUseId: aws.String(stringValue(block["id"])), Name: aws.String(stringValue(block["name"])), Input: document.NewLazyDocument(args)}})
+						default:
+							return nil, fmt.Errorf("unsupported Bedrock content block type %q", stringValue(block["type"]))
+						}
+					}
+					if len(msg.Content) > 0 {
+						if len(in.Messages) > 0 && in.Messages[len(in.Messages)-1].Role == msg.Role {
+							in.Messages[len(in.Messages)-1].Content = append(in.Messages[len(in.Messages)-1].Content, msg.Content...)
+						} else {
+							in.Messages = append(in.Messages, msg)
+						}
+						continue
+					}
+				}
+			}
 			text := contentToText(m["content"])
 			if text != "" {
 				msg.Content = append(msg.Content, &bt.ContentBlockMemberText{Value: text})
@@ -239,6 +295,7 @@ func bedrockDo(ctx context.Context, region string, body []byte, clients ...*http
 	client := bedrockruntime.NewFromConfig(cfg)
 	var raw map[string]any
 	_ = json.Unmarshal(body, &raw)
+	preserveReasoning := raw["bedrock_reasoning"] == true || raw["thinking"] != nil
 	stream, _ := raw["stream"].(bool)
 	h := make(http.Header)
 	if !stream {
@@ -249,14 +306,26 @@ func bedrockDo(ctx context.Context, region string, body []byte, clients ...*http
 		msg := map[string]any{"role": "assistant"}
 		text := ""
 		calls := []any{}
+		ordered := []any{}
 		if m, ok := out.Output.(*bt.ConverseOutputMemberMessage); ok {
 			for _, b := range m.Value.Content {
 				switch b := b.(type) {
 				case *bt.ContentBlockMemberText:
 					text += b.Value
+					ordered = append(ordered, map[string]any{"type": "text", "text": b.Value})
+				case *bt.ContentBlockMemberReasoningContent:
+					switch reason := b.Value.(type) {
+					case *bt.ReasoningContentBlockMemberReasoningText:
+						ordered = append(ordered, map[string]any{"type": "thinking", "thinking": aws.ToString(reason.Value.Text), "signature": aws.ToString(reason.Value.Signature)})
+					case *bt.ReasoningContentBlockMemberRedactedContent:
+						ordered = append(ordered, map[string]any{"type": "redacted_thinking", "data": base64.StdEncoding.EncodeToString(reason.Value)})
+					}
 				case *bt.ContentBlockMemberToolUse:
 					args, _ := b.Value.Input.MarshalSmithyDocument()
 					calls = append(calls, map[string]any{"id": aws.ToString(b.Value.ToolUseId), "type": "function", "function": map[string]any{"name": aws.ToString(b.Value.Name), "arguments": string(args)}})
+					var input any
+					_ = json.Unmarshal(args, &input)
+					ordered = append(ordered, map[string]any{"type": "tool_use", "id": aws.ToString(b.Value.ToolUseId), "name": aws.ToString(b.Value.Name), "input": input})
 				}
 			}
 		}
@@ -264,11 +333,14 @@ func bedrockDo(ctx context.Context, region string, body []byte, clients ...*http
 		if len(calls) > 0 {
 			msg["tool_calls"] = calls
 		}
+		if preserveReasoning {
+			msg["bedrock_content"] = ordered
+		}
 		b, _ := json.Marshal(map[string]any{"id": id, "object": "chat.completion", "model": aws.ToString(in.ModelId), "choices": []any{map[string]any{"index": 0, "message": msg, "finish_reason": bedrockFinish(out.StopReason)}}, "usage": bedrockUsage(out.Usage)})
 		h.Set("Content-Type", "application/json")
 		return &http.Response{StatusCode: 200, Header: h, Body: io.NopCloser(bytes.NewReader(b))}, nil
 	}
-	out, err := client.ConverseStream(ctx, &bedrockruntime.ConverseStreamInput{ModelId: in.ModelId, Messages: in.Messages, System: in.System, InferenceConfig: in.InferenceConfig, ToolConfig: in.ToolConfig})
+	out, err := client.ConverseStream(ctx, &bedrockruntime.ConverseStreamInput{ModelId: in.ModelId, Messages: in.Messages, System: in.System, InferenceConfig: in.InferenceConfig, ToolConfig: in.ToolConfig, AdditionalModelRequestFields: in.AdditionalModelRequestFields})
 	if err != nil {
 		return bedrockError(err), nil
 	}
@@ -278,6 +350,8 @@ func bedrockDo(ctx context.Context, region string, body []byte, clients ...*http
 		defer writer.Close()
 		s := out.GetStream()
 		defer s.Close()
+		reasoningBlocks := map[int32]bool{}
+		redactedReasoning := map[int32][]byte{}
 		emit := func(delta map[string]any, finish any, usage any) error {
 			event := map[string]any{"id": id, "object": "chat.completion.chunk", "model": aws.ToString(in.ModelId), "choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": finish}}}
 			if usage != nil {
@@ -303,6 +377,43 @@ func bedrockDo(ctx context.Context, region string, body []byte, clients ...*http
 					delta = map[string]any{"content": d.Value}
 				case *bt.ContentBlockDeltaMemberToolUse:
 					delta = map[string]any{"tool_calls": []any{map[string]any{"index": aws.ToInt32(e.Value.ContentBlockIndex), "function": map[string]any{"arguments": aws.ToString(d.Value.Input)}}}}
+				case *bt.ContentBlockDeltaMemberReasoningContent:
+					if !preserveReasoning {
+						break
+					}
+					index := aws.ToInt32(e.Value.ContentBlockIndex)
+					events := []any{}
+					switch reason := d.Value.(type) {
+					case *bt.ReasoningContentBlockDeltaMemberText:
+						if !reasoningBlocks[index] {
+							reasoningBlocks[index] = true
+							events = append(events, map[string]any{"event": "start", "index": index, "type": "thinking"})
+						}
+						events = append(events, map[string]any{"event": "thinking_delta", "index": index, "text": reason.Value})
+					case *bt.ReasoningContentBlockDeltaMemberSignature:
+						if !reasoningBlocks[index] {
+							reasoningBlocks[index] = true
+							events = append(events, map[string]any{"event": "start", "index": index, "type": "thinking"})
+						}
+						events = append(events, map[string]any{"event": "signature_delta", "index": index, "signature": reason.Value})
+					case *bt.ReasoningContentBlockDeltaMemberRedactedContent:
+						redactedReasoning[index] = append(redactedReasoning[index], reason.Value...)
+					}
+					if len(events) > 0 {
+						delta = map[string]any{"bedrock_events": events}
+					}
+				}
+			case *bt.ConverseStreamOutputMemberContentBlockStop:
+				index := aws.ToInt32(e.Value.ContentBlockIndex)
+				if data, ok := redactedReasoning[index]; ok {
+					delta = map[string]any{"bedrock_events": []any{
+						map[string]any{"event": "start", "index": index, "type": "redacted_thinking", "data": base64.StdEncoding.EncodeToString(data)},
+						map[string]any{"event": "stop", "index": index},
+					}}
+					delete(redactedReasoning, index)
+				} else if reasoningBlocks[index] {
+					delta = map[string]any{"bedrock_events": []any{map[string]any{"event": "stop", "index": index}}}
+					delete(reasoningBlocks, index)
 				}
 			case *bt.ConverseStreamOutputMemberMessageStop:
 				finish = bedrockFinish(e.Value.StopReason)
@@ -325,3 +436,14 @@ func bedrockDo(ctx context.Context, region string, body []byte, clients ...*http
 }
 
 func isBedrock(p ProviderConfig) bool { return normalizeAuthScheme(p.AuthScheme) == "bedrock" }
+
+func isBedrockClaudeModel(model string) bool {
+	model = strings.TrimSpace(model)
+	if dot := strings.IndexByte(model, '.'); dot > 0 {
+		switch model[:dot] {
+		case "us", "us-gov", "eu", "apac", "global", "ca", "sa", "jp", "au":
+			model = model[dot+1:]
+		}
+	}
+	return strings.HasPrefix(model, "anthropic.claude-")
+}

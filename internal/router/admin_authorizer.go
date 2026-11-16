@@ -16,6 +16,13 @@ type Authorizer interface {
 	Authorize(context.Context, Principal, string, string, string) error
 }
 
+// permits is reserved for authorization governance comparisons where both
+// subjects are trusted principals already loaded from the active machine
+// generation. Request authorization still goes through Authorize.
+func (a *authorizer) permits(subject, domain, object, action string) bool {
+	return a != nil && a.enforce(authorizationSubject{subject: subject, domain: domain}, object, action)
+}
+
 var (
 	ErrAdminForbidden           = &AdminAuthorizationError{status: 403, code: "admin-forbidden"}
 	ErrAuthorizationUnavailable = &AdminAuthorizationError{status: 503, code: "authorization-unavailable"}

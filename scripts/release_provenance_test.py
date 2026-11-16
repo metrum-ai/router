@@ -10,6 +10,7 @@ import unittest
 from pathlib import Path
 
 import yaml
+from release_image_smoke import smoke_caller_credentials
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github/workflows/release.yml"
@@ -37,7 +38,14 @@ def validate(workflow):
     assert ai_step["env"]["REVIEW_BASE"] == "${{ needs.resolve.outputs.previous_tag }}"
     assert ai_step["env"]["ANTHROPIC_API_KEY"] == "${{ secrets.ANTHROPIC_API_KEY }}"
     assert "--artifact-cache" in ai_step["run"] and "--artifact-output" in ai_step["run"]
-    assert any(step.get("name") == "Restore review artifact for this commit range" for step in ai_review["steps"])
+    restore = next(step for step in ai_review["steps"] if step.get("name") == "Restore review artifact for this commit range")
+    assert restore["uses"] == "actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9"
+    assert restore["with"]["key"] == "${{ steps.review-range.outputs.artifact_name }}"
+    assert restore["with"]["path"] == "${{ runner.temp }}/review-cache/review.json"
+    save = next(step for step in ai_review["steps"] if step.get("name") == "Store review artifact for reruns of this commit range")
+    assert save["uses"] == "actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9"
+    assert save["with"]["key"] == "${{ steps.review-range.outputs.artifact_name }}"
+    assert save.get("if", "").startswith("always() &&")
     assert any(step.get("name") == "Store review artifact for reruns of this commit range" for step in ai_review["steps"])
     review_key = next(step["run"] for step in ai_review["steps"] if step.get("name") == "Derive immutable review artifact name")
     assert "release_review_artifact_key.py" in review_key
@@ -170,6 +178,14 @@ class ProvenanceWorkflowTest(unittest.TestCase):
         self.assertIn("make package", all_runs)
         dry_run_steps = jobs["dry-run"]["steps"]
         dry_run_names = [step.get("name") for step in dry_run_steps]
+        review_restore = dry_run_steps[dry_run_names.index("Restore review artifact for this commit range")]
+        review_save = dry_run_steps[dry_run_names.index("Store review artifact for reruns of this commit range")]
+        self.assertEqual(review_restore["uses"], "actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9")
+        self.assertEqual(review_restore["with"]["key"], "${{ steps.review-range.outputs.artifact_name }}")
+        self.assertEqual(review_restore["with"]["path"], "${{ runner.temp }}/review-cache/review.json")
+        self.assertEqual(review_save["uses"], "actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9")
+        self.assertEqual(review_save["with"]["key"], "${{ steps.review-range.outputs.artifact_name }}")
+        self.assertTrue(review_save.get("if", "").startswith("always() &&"))
         preserve = dry_run_names.index("Preserve first build output")
         reset = dry_run_names.index("Reset generated package outputs before clean-cache rebuild")
         rebuild = dry_run_names.index("Rebuild with clean Go caches")
@@ -233,6 +249,15 @@ class ProvenanceWorkflowTest(unittest.TestCase):
             with self.subTest(command=command):
                 self.assertIn(command, release_runs)
                 self.assertIn(command, dry_runs)
+
+    def test_release_image_smoke_uses_salted_caller_config(self):
+        token_hash, token_id = smoke_caller_credentials()
+        smoke_source = (ROOT / "scripts/release_image_smoke.py").read_text(encoding="utf-8")
+        self.assertTrue(token_hash.startswith("pbkdf2-sha3-512:i=20000:"))
+        self.assertEqual(token_id, "rtr_metrum_release_image_smoke_test")
+        self.assertIn('"    token_hash: {token_hash}\\n"', smoke_source)
+        self.assertIn('"    token_id: {token_id}\\n"', smoke_source)
+        self.assertNotIn('token_sha256:', smoke_source)
 
 
 if __name__ == "__main__":

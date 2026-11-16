@@ -5,8 +5,6 @@ package router
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -64,9 +62,13 @@ func TestTenantCacheIsolationEndToEnd(t *testing.T) {
 	other := cfg.Callers[0]
 	other.ID, other.User, other.Project = "bob", "bob", "tenant-a"
 	other.TokenID = "rtr_bob_test"
-	otherToken := "bob-test-token"
-	sum := sha256.Sum256([]byte(otherToken))
-	other.TokenSHA256 = hex.EncodeToString(sum[:])
+	otherToken := "rtr_bob_test_secret"
+	otherTokenHash, err := HashCallerToken(otherToken, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	other.TokenHash = otherTokenHash
+	other.TokenSHA256 = ""
 	cfg.Callers = append(cfg.Callers, other)
 	cfg.Users = []UserConfig{{ID: "alice"}, {ID: "bob"}}
 	cfg.Projects = []ProjectConfig{{ID: "tenant-a"}}

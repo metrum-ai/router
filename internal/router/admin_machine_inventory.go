@@ -54,7 +54,7 @@ func (g generationInventory) enabledPolicyAdmins(_ *Config) ([]Principal, error)
 		if published := g.generation.trust.current.Load(); published != nil && published.identity != nil {
 			for _, domain := range published.identity.domains {
 				for san, subject := range domain.subjects {
-					add(Principal{Subject: subject, Kind: "mtls", CredentialID: san, Issuer: domain.issuer})
+					add(Principal{Subject: subject, Identity: san, Kind: "mtls", CredentialID: san, Issuer: domain.issuer})
 				}
 			}
 		}
@@ -67,7 +67,7 @@ func (g generationInventory) enabledPolicyAdmins(_ *Config) ([]Principal, error)
 				kind = "oauth"
 			}
 			for _, mapping := range binding.Authenticator.cfg.Subjects {
-				add(Principal{Subject: mapping.Subject, Kind: kind, CredentialID: mapping.Value, Issuer: issuer})
+				add(Principal{Subject: mapping.Subject, Identity: mapping.Value, Kind: kind, CredentialID: mapping.Claim + ":" + mapping.Value, Issuer: issuer})
 			}
 		}
 	}

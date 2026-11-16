@@ -18,7 +18,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 from urllib.request import urlopen
 
-from run_chat_smoke import DIGEST, ROOT, TOKEN, free_port
+from run_chat_smoke import DIGEST, ROOT, TOKEN, TOKEN_ID, free_port
 from claude_chat_fixture import ChatMock
 
 # Official wrapper supports npm --ignore-scripts without a postinstall.
@@ -157,7 +157,8 @@ models:
   chat: {{strategy: static, targets: [{{provider: mock, model: {target_model}, tool_support: {{anthropic_messages: [client_tools, tool_choice], openai_chat: [tools, tool_choice]}}, reasoning: {{supported: true, mode: opt_in, control: token_budget}}, allowed_betas: [context-management-2025-06-27], request_shape_support: {{supported_inbound_dialects: [anthropic], validation_status: passed}}}}]}}
 callers:
   - id: agent-compat
-    token_sha256: "{DIGEST}"
+    token_hash: "{DIGEST}"
+    token_id: "{TOKEN_ID}"
     allow: [chat]
     rate: {{rpm: 2400, tpm: 100000000, concurrent: 160}}
     quota: {{day: {{requests: 100000, tokens: 400000000}}, month: {{tokens: 8000000000}}}}

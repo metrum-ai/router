@@ -35,6 +35,7 @@ import re
 import shlex
 import shutil
 import socket
+import secrets
 import sqlite3
 import subprocess
 import sys
@@ -164,12 +165,19 @@ def prepare_config(source, workdir, port, db_path):
     token = env("ROUTER_CALLER_TOKEN")
     if not token:
         raise GateError("ROUTER_CALLER_TOKEN is required")
-    # token_hash lookup requires the shaped rtr_metrum_<...>_<secret> token; the
-    # gate accepts any operator token, so it writes the unsalted verifier and
-    # leaves that deprecation warning visible in the router log.
-    text, replaced = re.subn(r"(?m)^(\s*)token_hash:\s*\S+", lambda m: f"{m.group(1)}token_sha256: {sha256(token)}", text, count=1)
+    token_id_match = re.search(r"(?m)^\s*token_id:\s*([^\s]+)", text)
+    if not token_id_match:
+        raise GateError("release config caller requires token_id for salted token_hash")
+    token_id = token_id_match.group(1).strip('"\'')
+    if not token.startswith(token_id + "_"):
+        raise GateError("ROUTER_CALLER_TOKEN must start with the configured token_id and underscore")
+    salt = secrets.token_bytes(32)
+    derived = hashlib.pbkdf2_hmac("sha3_512", token.encode(), salt, 20000, 64)
+    encode = lambda value: base64.urlsafe_b64encode(value).decode().rstrip("=")
+    verifier = f"pbkdf2-sha3-512:i=20000:{encode(salt)}:{encode(derived)}"
+    text, replaced = re.subn(r"(?m)^(\s*)token_hash:\s*\S+", lambda m: f"{m.group(1)}token_hash: {verifier}", text, count=1)
     if not replaced:
-        text = re.sub(r"(?m)^(\s*)token_sha256:\s*\S+", lambda m: f"{m.group(1)}token_sha256: {sha256(token)}", text, count=1)
+        raise GateError("release config has no caller token verifier field")
     target = Path(workdir) / "config.yaml"
     target.write_text(text, encoding="utf-8")
     return target

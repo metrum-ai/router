@@ -304,6 +304,7 @@ func geminiGenerateContentTextEligible(req *IRRequest) bool {
 
 func encodeResponsesPassthrough(model string, req *IRRequest, target Target) ([]byte, error) {
 	body := providerPassthroughBody(req)
+	delete(body, "bedrock_reasoning")
 	body["model"] = model
 	if requestHasForbiddenProviderHostedTools(req) {
 		return nil, fmt.Errorf("provider-hosted-tools-forbidden")
@@ -336,6 +337,26 @@ func encodeResponsesPassthrough(model string, req *IRRequest, target Target) ([]
 
 func encodeChatPassthrough(model string, req *IRRequest, target Target) ([]byte, error) {
 	body := providerPassthroughBody(req)
+	delete(body, "bedrock_reasoning")
+	// bedrock_content is an internal Anthropic-to-Bedrock bridge field. Never
+	// accept it from a caller's OpenAI Chat message.
+	if messages, ok := body["messages"].([]any); ok {
+		clean := make([]any, len(messages))
+		for i, value := range messages {
+			if message, ok := value.(map[string]any); ok {
+				copy := make(map[string]any, len(message))
+				for key, field := range message {
+					if key != "bedrock_content" {
+						copy[key] = field
+					}
+				}
+				clean[i] = copy
+			} else {
+				clean[i] = value
+			}
+		}
+		body["messages"] = clean
+	}
 	body["model"] = model
 	// The router calls upstreams in unary mode and synthesizes downstream SSE.
 	// This keeps tool-call responses and usage accounting deterministic.
@@ -870,7 +891,7 @@ func encodeAnthropicResponse(resp *IRResponse, publicModel string) map[string]an
 
 func encodeChatResponse(resp *IRResponse, publicModel string) map[string]any {
 	if resp.RawResponse && resp.Raw != nil {
-		return withPublicModel(resp.Raw, publicModel)
+		return stripBedrockInternalChatFields(withPublicModel(resp.Raw, publicModel))
 	}
 	usage := chatUsageMap(resp.Usage)
 	return map[string]any{
@@ -885,6 +906,51 @@ func encodeChatResponse(resp *IRResponse, publicModel string) map[string]any {
 		}},
 		"usage": usage,
 	}
+}
+
+func stripBedrockInternalChatFields(raw map[string]any) map[string]any {
+	if raw == nil {
+		return nil
+	}
+	if _, exists := raw["bedrock_reasoning"]; !exists {
+		containsInternalContent := false
+		for _, value := range valueAsSlice(raw["choices"]) {
+			choice, _ := value.(map[string]any)
+			message, _ := choice["message"].(map[string]any)
+			if _, exists := message["bedrock_content"]; exists {
+				containsInternalContent = true
+				break
+			}
+		}
+		if !containsInternalContent {
+			return raw
+		}
+	}
+	out := cloneMap(raw)
+	delete(out, "bedrock_reasoning")
+	choices := valueAsSlice(raw["choices"])
+	if len(choices) == 0 {
+		return out
+	}
+	cleanChoices := make([]any, len(choices))
+	for i, value := range choices {
+		choice, ok := value.(map[string]any)
+		if !ok {
+			cleanChoices[i] = value
+			continue
+		}
+		cleanChoice := cloneMap(choice)
+		if message, ok := choice["message"].(map[string]any); ok {
+			cleanMessage := cloneMap(message)
+			delete(cleanMessage, "bedrock_content")
+			cleanChoice["message"] = cleanMessage
+			cleanChoices[i] = cleanChoice
+		} else {
+			cleanChoices[i] = cleanChoice
+		}
+	}
+	out["choices"] = cleanChoices
+	return out
 }
 
 func encodeResponsesResponse(resp *IRResponse, publicModel string) map[string]any {

@@ -30,13 +30,15 @@ if [[ -z "$BIN" ]]; then
   (cd "$(git rev-parse --show-toplevel)" && go build -o "$BIN" ./cmd/metrum-ai-router)
 fi
 
-TOKEN="$(openssl rand -hex 16)"
-TOKEN_SHA="$(printf '%s' "$TOKEN" | sha256sum | cut -d' ' -f1)"
+TOKEN="rtr_metrum_local_affinity_test_k1_$(openssl rand -hex 16)"
+TOKEN_META="$(printf %s "$TOKEN" | python3 scripts/caller_token.py)"
+TOKEN_HASH="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["token_hash"])' <<<"$TOKEN_META")"
+TOKEN_ID="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["token_id"])' <<<"$TOKEN_META")"
 AFFINITY_SMOKE_KEY="$(openssl rand -hex 32)"
 export AFFINITY_SMOKE_KEY
-python3 - "$WORKDIR/config.yaml" "$PORT" "$MODEL" "$TOKEN_SHA" <<'PY'
+python3 - "$WORKDIR/config.yaml" "$PORT" "$MODEL" "$TOKEN_HASH" "$TOKEN_ID" <<'PY'
 import sys
-path, port, model, token_sha = sys.argv[1:5]
+path, port, model, token_hash, token_id = sys.argv[1:6]
 open(path, "w").write(f"""server:
   listen: 127.0.0.1:{port}
   default_model_group: live
@@ -76,8 +78,8 @@ callers:
     project: affinity-smoke
     environment: test
     status: active
-    token_sha256: {token_sha}
-    token_id: rtr_smoke
+    token_hash: {token_hash}
+    token_id: {token_id}
     allow: [live]
     rate: {{rpm: 60, tpm: 100000, concurrent: 2}}
 """)

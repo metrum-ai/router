@@ -4,8 +4,6 @@
 package router
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -90,7 +88,7 @@ func TestTraceCorrelationDirectAndRouterChains(t *testing.T) {
 
 			tokens := make([]string, depth+1)
 			for i := range tokens {
-				tokens[i] = fmt.Sprintf("trace-hop-token-%d", i)
+				tokens[i] = fmt.Sprintf("rtr_metrum_trace_hop_%d_secret", i)
 			}
 			nextURL := upstream.URL
 			servers := make([]*httptest.Server, depth+1)
@@ -105,8 +103,14 @@ func TestTraceCorrelationDirectAndRouterChains(t *testing.T) {
 					cfg.Models["default"] = group
 				}
 				cfg.Provider["mock"] = provider
-				sum := sha256.Sum256([]byte(tokens[i]))
-				cfg.Callers[0].TokenSHA256 = hex.EncodeToString(sum[:])
+				tokenID := fmt.Sprintf("rtr_metrum_trace_hop_%d", i)
+				cfg.Callers[0].TokenID = tokenID
+				tokenHash, hashErr := HashCallerToken(tokens[i], nil, 0)
+				if hashErr != nil {
+					t.Fatal(hashErr)
+				}
+				cfg.Callers[0].TokenHash = tokenHash
+				cfg.Callers[0].TokenSHA256 = ""
 				cfg.Callers[0].TrustTraceparent = i > 0
 				cfg.Server.Trace.TrustedParentCIDRs = []string{"127.0.0.1/32"}
 				if i == 0 {

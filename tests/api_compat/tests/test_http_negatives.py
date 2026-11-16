@@ -18,6 +18,7 @@ import pytest
 
 from conftest import (
     CALLER,
+    CALLER_ID,
     CALLER_DIGEST,
     DENIED_CALLER,
     PROMPT_CANARY,
@@ -251,7 +252,8 @@ models:
   chat: {{strategy: static, targets: [{{provider: chat, model: synthetic-chat, tool_support: {{openai_chat: [tools, tool_choice]}}}}]}}
 callers:
   - id: synthetic-allowed
-    token_sha256: {CALLER_DIGEST}
+    token_hash: {CALLER_DIGEST}
+    token_id: {CALLER_ID}
     allow: [chat]
 '''
     config_path = work / "config.yaml"

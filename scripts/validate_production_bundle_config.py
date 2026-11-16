@@ -6,8 +6,8 @@
 
 Reads a local config.yaml (for example production-identical.yaml) and checks that
 state paths, trusted proxy CIDRs, and a caller token verifier are present: either
-token_hash (pbkdf2-sha3-512:i=<iterations>:<salt>:<key>, with token_id) or the
-deprecated token_sha256. Never reads or prints raw router tokens or verifiers.
+token_hash (pbkdf2-sha3-512:i=<iterations>:<salt>:<key>, with token_id). Never
+reads or prints raw router tokens or verifiers.
 Metrum AI Router operations tooling.
 """
 
@@ -97,9 +97,7 @@ def main() -> int:
             elif not str(caller.get("token_id") or "").strip():
                 errors.append(f"caller {caller.get('id')} token_hash requires token_id")
             continue
-        token_hash = caller.get("token_sha256") or ""
-        if len(token_hash) != 64:
-            errors.append(f"caller {caller.get('id')} missing valid token_sha256")
+        errors.append(f"caller {caller.get('id')} missing valid token_hash")
     if errors:
         for err in errors:
             print(err, file=sys.stderr)

@@ -4,18 +4,22 @@
 
 ### Added
 
+- Add an optional admin Unix socket with configurable owner/mode and `metrum-ai-routerctl --socket` transport; existing authentication and authorization stay in force.
+- Add release-only OpenAI Chat, OpenAI Responses, and Anthropic Messages SDK client cells to the bounded tool-call workflow. A manual `cell_set=release` dispatch on `main` attaches the sanitized report to release checks.
 - Define trusted W3C `traceparent` correlation across router chains, with a new
   span and request ID per hop and safe scalar usage fields for joining requests.
   Trust is opt-in through `server.trace.trusted_parent_cidrs` or an authenticated
   caller's `trust_traceparent`; malformed, duplicate, or untrusted input starts
   a new trace. Outbound trace headers are on by default and can be disabled per
   provider; inbound `tracestate` is deliberately dropped.
+- Forward Anthropic `thinking` settings to supported Bedrock Claude models and preserve `thinking` and `redacted_thinking` history, signatures, ordering, and streamed reasoning blocks through Converse tool continuations. Malformed blocks fail before AWS dispatch.
 - Add nightly evaluation aggregation across the previous 30 runs, with expected-missing cells reported separately from gate failures.
 - Add virtual model groups whose eligible targets are selected from per-family
   capability vectors imported from reproducible eval reports. The config Admin
   API and `routerctl groups` show vectors, membership and exclusion reasons.
 - Added a release checklist and a bounded package upgrade-and-rollback check.
 - Retain AI review findings by exact commit range and artifact digest, scope the review credential to the tag-only review environment, and attest the release manifests and review evidence.
+- Add machine-client registration, credential metadata and revocation, effective-grant access review, and expiring and unused-credential warnings. Client credentials are checked against the shared control-plane store on authentication; credential secrets are not stored or returned.
 
 ### Security
 
@@ -49,6 +53,8 @@
 ### Fixed
 
 - Disable the unused admin listener on API compatibility test routers to avoid collisions when tests start several routers, and make plain `make` compile binaries without running the full test suite during CodeQL autobuild.
+- Preserve sanitized per-cell tool compatibility results when live SDK cells fail, and ingest failures as live evidence.
+- Require all three SDK cells in release reports and distinguish release details from nightly runs.
 - Roll back failed automatic suspensions so they release their action-cap slot; exempting a caller during config refresh releases an active automatic throttle before its TTL.
 - Migrate the API compatibility suite to Anthropic Python SDK 2.3.0 and test API-key and bearer authentication with separate clients.
 - Add a caller-authenticated MCP gateway with per-server egress allow-lists, `ROUTER_MCP_` credential forwarding, HTTPS upstreams (cleartext HTTP is limited to loopback), compositional tool allow-lists, bounded JSON-RPC traffic, persistent caller/tool rate and estimated-spend limits, and keyed invocation audit digests instead of raw arguments.
@@ -59,6 +65,10 @@
 
 - Keep the admin migration-status API read-only: it now refuses unavailable or pre-ledger databases without bootstrapping or upgrading migration tables.
 - Add a non-serving PostgreSQL Kubernetes migration Job example that plans or applies both scopes through router-config schema 16.
+
+- Generate OpenAPI concurrency and idempotency metadata from normalized runtime operations so the published contract omits `If-Match`, `Idempotency-Key`, and conflict responses for routes that do not enforce them.
+- Bind client credential metadata to configured identities; enforce client status, expiry and revocation across replicas; refuse lifecycle writes that remove the last policy administrator; exclude expired and revoked bindings from access-review grants.
+- Treat every credential registration as managing its entire subject when checking administrator lockout, return unavailable when access-review grants cannot be resolved, and delay unused-credential warnings until a binding has been registered for 24 hours.
 
 ### Security
 
@@ -79,6 +89,9 @@
   security reports surface. Usage migration 2026111602 adds a singleton summary table at usage schema version 17.
 - Record UTC issuance timestamps for generated and rotated caller keys; the
   security self-test warns when age is unknown and fails keys older than 90 days.
+
+- Label direct-provider nightly spend as a list-rate estimate, retain measured Router usage as its own basis, and report gate violations from runs older than 30 days as historical.
+- Align Harbor's provider-free Docker preflight with the live OpenAI Responses adapter and retain its sanitized summary on failure.
 
 All notable changes to Metrum AI Router are documented in this file.
 
@@ -135,6 +148,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | Migration id | Scope | Schema version | Change | Maintenance | Data job | Rollback class |
 | --- | --- | --- | --- | --- | --- | --- |
 | `2026111601` | `router-config` | 13 | remove v4 serving-port admin settings from stored configs | maintenance | none | `restore-required` |
+| `2026111610` | `router-config` | 17 | add admin client and credential registry, lifecycle audit fields, and deduplicated unused-warning state | online | none | `restore-required` |
 
 ### Fixed
 
@@ -163,6 +177,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   require at least Go 1.27.4.
 - Resolve proxied client addresses from the right through trusted proxy hops, so client-supplied leftmost `X-Forwarded-For` values cannot control caller binding, admin OIDC rate limits, or security access records.
 - Add optional per-caller CIDR, ASN-prefix, and verified mTLS identity binding with off, report, and enforce modes. Enforced mismatches return the same generic 401 as invalid tokens; security events retain the specific reason.
+
+### Breaking
+
+- v5.0.0 removes caller `token_sha256` verifiers. Configurations using the old
+  field fail at load; migrate held tokens with `metrum-ai-routerctl callers
+  migrate-legacy --config <config.yaml> --id <caller-id> --token-file
+  <private-file>` (or `--token-file -` for stdin) or rotate them. Migration
+  preserves status and unknown entropy; disabled or revoked callers are cleaned
+  without receiving a token. Rotation preserves status and revocation metadata;
+  use `--reactivate` only to explicitly restore access. Token generation and
+  rotation now emit only salted `token_hash` verifiers.
 
 ## [4.8.0] - 2026-11-08
 

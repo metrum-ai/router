@@ -38,12 +38,18 @@ CELL_MAP = {
     "anthropic-messages-routed": "parallel-gate-messages-through-router",
     "chat-caller-to-messages-target": "parallel-gate-chat-to-messages",
     "messages-caller-to-chat-target": "parallel-gate-messages-to-chat",
+    "openai-chat-sdk": "openai-sdk-chat-tool-loop",
+    "openai-responses-sdk": "openai-sdk-responses-tool-loop",
+    "anthropic-messages-sdk": "anthropic-sdk-messages-tool-loop",
 }
 
 # Cells that run through the local router and therefore have router usage rows.
 ROUTED_CELLS = {name for name in CELL_MAP if name.endswith("-routed")} | {
     "chat-caller-to-messages-target",
     "messages-caller-to-chat-target",
+    "openai-chat-sdk",
+    "openai-responses-sdk",
+    "anthropic-messages-sdk",
 }
 
 
@@ -108,7 +114,9 @@ def charged_cost_usd(raw: dict) -> tuple[Decimal, str, str]:
     return router_usage, "usage_rows", "router usage rows"
 
 
-def build_report(raw: dict, date: str, commit: str, runner: str = "agent-tool-compat-live") -> dict:
+def build_report(raw: dict, date: str, commit: str, runner: str = "agent-tool-compat-live", cell_set: str = "nightly") -> dict:
+    if cell_set not in {"nightly", "release"}:
+        raise ReportError(f"unknown cell_set {cell_set!r}")
     cells = raw.get("cells")
     if not isinstance(cells, list) or not cells:
         raise ReportError("gate report has no cells")
@@ -132,15 +140,22 @@ def build_report(raw: dict, date: str, commit: str, runner: str = "agent-tool-co
         entry = {
             "id": CELL_MAP[name],
             "status": "fail" if problems else "pass",
-            "detail": detail or "nightly live gate",
+            "detail": detail or f"{cell_set} live gate",
             "cost": cost,
         }
         out_cells.append(entry)
+    if cell_set == "release":
+        required = {"openai-chat-sdk", "openai-responses-sdk", "anthropic-messages-sdk"}
+        present = {cell.get("cell") for cell in cells}
+        missing = sorted(required - present)
+        if missing:
+            raise ReportError(f"release gate report is missing SDK cells: {', '.join(missing)}")
     report = {
         "schema_version": 1,
         "date": date,
         "commit": commit,
         "runner": runner,
+        "cell_set": cell_set,
         "cost": {
             "usd": float(charged),
             "source": charge_source,
@@ -268,6 +283,7 @@ def main() -> int:
     report_parser.add_argument("--date", required=True)
     report_parser.add_argument("--commit", required=True)
     report_parser.add_argument("--runner", default="agent-tool-compat-live")
+    report_parser.add_argument("--cell-set", choices=("nightly", "release"), default="nightly")
 
     guard_parser = sub.add_parser("guard", help="refuse to start when the monthly budget is spent")
     guard_parser.add_argument("--ledger", type=Path, required=True)
@@ -299,7 +315,7 @@ def main() -> int:
     try:
         if args.command == "report":
             raw = json.loads(args.gate_report.read_text(encoding="utf-8"))
-            report = build_report(raw, args.date, args.commit, args.runner)
+            report = build_report(raw, args.date, args.commit, args.runner, args.cell_set)
             args.out.parent.mkdir(parents=True, exist_ok=True)
             args.out.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
             failed = [cell["id"] for cell in report["cells"] if cell["status"] == "fail"]

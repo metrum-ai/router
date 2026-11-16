@@ -23,9 +23,9 @@ The tool prints:
 
 - The full token to give to the caller once.
 - A public `token_id` used in logs and reports.
-- A `callers:` YAML entry containing `owner_user`, `project`, `token_id`, and `token_hash`, a salted PBKDF2-HMAC-SHA3-512 verifier in the form `pbkdf2-sha3-512:i=<iterations>:<salt>:<key>`. Pass `--hash-format legacy-sha256` only for routers older than this release; that writes the deprecated `token_sha256` instead.
+- A `callers:` YAML entry containing `owner_user`, `project`, `token_id`, and `token_hash`, a salted PBKDF2-HMAC-SHA3-512 verifier in the form `pbkdf2-sha3-512:i=<iterations>:<salt>:<key>`.
 
-Before the caller token can authenticate, `owner_user` must exist in `users`, `project` must exist in `projects`, and `project_memberships` must contain an active membership for that user/project pair. Each configured user id, project id, caller `id`, `token_hash` or `token_sha256`, and non-empty `token_id` must be unique after normalization. Legacy `token_sha256` values are checked case-insensitively, and validation errors identify the caller IDs without printing hash values. `metrum-ai-routerctl callers verify --token-file <file> --config <config.yaml> --id <caller-id>` checks a token against its configured `token_hash`, and `metrum-ai-routerctl callers hash --token-file <file>` converts an existing token to `token_hash` without rotating it. User, project, and membership statuses support `active`, `disabled`, `suspended`, `removed`, and `archived`; caller token statuses also support `expired` and `rotated`. `--username` is an alias for `--owner-user`; `--user` remains a deprecated compatibility alias.
+Before the caller token can authenticate, `owner_user` must exist in `users`, `project` must exist in `projects`, and `project_memberships` must contain an active membership for that user/project pair. Each configured user id, project id, caller `id`, `token_hash`, and non-empty `token_id` must be unique after normalization. Validation errors identify the caller IDs without printing hash values. `metrum-ai-routerctl callers verify --token-file <file> --config <config.yaml> --id <caller-id>` checks a token against its configured `token_hash`; `callers hash` only prints verifier material. For a v4.8 upgrade, use the v5 routerctl to migrate every active legacy caller before verifying tokens. Migration refuses disabled or revoked legacy callers unless `--remove-disabled` is supplied; that option removes the entire caller entry without issuing a token. Rotation preserves status; use `--reactivate` only to explicitly restore access. User, project, and membership statuses support `active`, `disabled`, `suspended`, `removed`, and `archived`; caller token statuses also support `expired` and `rotated`. `--username` is an alias for `--owner-user`; `--user` remains a deprecated compatibility alias.
 
 ## Identity Model
 
@@ -101,7 +101,8 @@ Generating a token is not the same as activating it.
   `--replace` (with `--write`) to replace that one caller's entry with the minted
   defaults deliberately, or use a
   distinct `--owner-user`, `--project` or `--env` for a separate caller. Use
-  `callers rotate` to replace the hash and emit a new token file, or `callers
+  `callers rotate` to replace the hash and emit a new token file, optionally adding
+  `--reactivate` to restore a disabled/revoked caller, or `callers
   revoke` to disable a caller. The CLI never activates config on a remote managed
   hostname or signs licenses.
 

@@ -252,6 +252,7 @@ type ChatUpstreamToAnthropicCaller struct {
 	reader                    ChatUpstreamToResponsesCaller
 	begun, finished, terminal bool
 	blocks                    map[int]int
+	bedrockBlocks             map[int]int
 	nextIndex                 int
 }
 
@@ -261,6 +262,7 @@ func (t *ChatUpstreamToAnthropicCaller) Begin(est TokenEstimate) ([]Event, error
 	}
 	t.begun = true
 	t.blocks = map[int]int{}
+	t.bedrockBlocks = map[int]int{}
 	t.reader = ChatUpstreamToResponsesCaller{ResponseID: t.ResponseID, Model: t.Model, PublicModel: t.PublicModel, IncludeReasoning: t.IncludeReasoning}
 	_, err := t.reader.Begin(est)
 	id := t.ResponseID
@@ -273,6 +275,59 @@ func (t *ChatUpstreamToAnthropicCaller) UsageSnapshot() Usage { return t.reader.
 func (t *ChatUpstreamToAnthropicCaller) Next(up Event) ([]Event, error) {
 	if t.finished || t.terminal {
 		return nil, ErrTerminal
+	}
+	var bedrockEvents []Event
+	if !bytes.Equal(bytes.TrimSpace(up.Data), []byte("[DONE]")) {
+		var payload map[string]any
+		if err := json.Unmarshal(up.Data, &payload); err != nil {
+			return nil, err
+		}
+		choices, _ := payload["choices"].([]any)
+		for _, value := range choices {
+			choice, _ := value.(map[string]any)
+			delta, _ := choice["delta"].(map[string]any)
+			rawEvents, _ := delta["bedrock_events"].([]any)
+			for _, raw := range rawEvents {
+				event, _ := raw.(map[string]any)
+				indexFloat, _ := event["index"].(float64)
+				index := int(indexFloat)
+				blockIndex, exists := t.bedrockBlocks[index]
+				eventType, _ := event["event"].(string)
+				switch eventType {
+				case "start":
+					if exists {
+						return nil, errors.New("stream: duplicate Bedrock reasoning block start")
+					}
+					blockIndex = t.nextIndex
+					t.nextIndex++
+					t.bedrockBlocks[index] = blockIndex
+					block := map[string]any{"type": "thinking", "thinking": "", "signature": ""}
+					blockType, _ := event["type"].(string)
+					if blockType == "redacted_thinking" {
+						block = map[string]any{"type": "redacted_thinking", "data": event["data"]}
+					}
+					bedrockEvents = append(bedrockEvents, typedEvent("content_block_start", map[string]any{"index": blockIndex, "content_block": block}))
+				case "thinking_delta":
+					if !exists {
+						return nil, errors.New("stream: Bedrock reasoning delta before start")
+					}
+					bedrockEvents = append(bedrockEvents, typedEvent("content_block_delta", map[string]any{"index": blockIndex, "delta": map[string]any{"type": "thinking_delta", "thinking": event["text"]}}))
+				case "signature_delta":
+					if !exists {
+						return nil, errors.New("stream: Bedrock signature delta before start")
+					}
+					bedrockEvents = append(bedrockEvents, typedEvent("content_block_delta", map[string]any{"index": blockIndex, "delta": map[string]any{"type": "signature_delta", "signature": event["signature"]}}))
+				case "stop":
+					if !exists {
+						return nil, errors.New("stream: Bedrock reasoning stop before start")
+					}
+					bedrockEvents = append(bedrockEvents, typedEvent("content_block_stop", map[string]any{"index": blockIndex}))
+					delete(t.bedrockBlocks, index)
+				}
+			}
+			delete(delta, "bedrock_events")
+		}
+		up.Data, _ = json.Marshal(payload)
 	}
 	// Anthropic has one text channel. Preserve OpenAI refusal text in it,
 	// including fragments produced by the Responses reader.
@@ -301,7 +356,7 @@ func (t *ChatUpstreamToAnthropicCaller) Next(up Event) ([]Event, error) {
 	if err != nil && !errors.Is(err, ErrTerminal) {
 		return nil, err
 	}
-	var out []Event
+	out := bedrockEvents
 	for _, e := range events {
 		var p struct {
 			OutputIndex int `json:"output_index"`

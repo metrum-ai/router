@@ -75,6 +75,7 @@ type Service struct {
 	machineGeneration  atomic.Pointer[adminMachineGeneration]
 	// #815 API-issued admin keys live in the authoritative control-plane DB.
 	adminKeys                    *adminKeyStore
+	adminClients                 *adminClientStore
 	adminKeyCfgMaxLifetime       time.Duration
 	adminKeyCfgDefaultOverlap    time.Duration
 	adminKeyCfgDefaultOverlapSet bool
@@ -132,18 +133,20 @@ type Service struct {
 	configDBCloser         func() error
 	// adminAuditJanitorStop stops the retention purge jobs at shutdown, and
 	// adminAuditJanitorDone reports when each janitor goroutine has exited.
-	adminAuditJanitorStop chan struct{}
-	adminAuditJanitorDone []<-chan struct{}
-	configReloadStop      func()
-	configNotifyStop      func()
-	autoContainmentStop   func()
-	autoContainmentMu     sync.Mutex
-	policySyncStop        func()
-	policyNotifyStop      func()
-	providerUsageStop     func()
-	configInstanceID      string
-	configLoaded          atomic.Value // configLoadedState
-	shadows               *shadowRuntime
+	adminAuditJanitorStop  chan struct{}
+	adminAuditJanitorDone  []<-chan struct{}
+	adminClientMonitorStop chan struct{}
+	adminClientMonitorDone chan struct{}
+	configReloadStop       func()
+	configNotifyStop       func()
+	autoContainmentStop    func()
+	autoContainmentMu      sync.Mutex
+	policySyncStop         func()
+	policyNotifyStop       func()
+	providerUsageStop      func()
+	configInstanceID       string
+	configLoaded           atomic.Value // configLoadedState
+	shadows                *shadowRuntime
 	// provenance binds opaque provider reasoning history to its origin (#622).
 	// It is off unless configured, and off changes no behaviour.
 	provenance reasoningProvenanceBinding
@@ -457,11 +460,15 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 	}
 	// The factory needs the bootstrap authorizer, so it is installed here; the
 	// control plane is opened earlier but its workers only run after this point.
-	if err := s.initAdminMachineRuntime(); err != nil {
+	if err := s.initAdminKeys(); err != nil {
 		s.Close()
 		return nil, err
 	}
-	if err := s.initAdminKeys(); err != nil {
+	if err := s.initAdminClients(); err != nil {
+		s.Close()
+		return nil, err
+	}
+	if err := s.initAdminMachineRuntime(); err != nil {
 		s.Close()
 		return nil, err
 	}
@@ -596,6 +603,13 @@ func (s *Service) TLSManager() *tlsacme.Manager {
 }
 
 func (s *Service) Close() {
+	if s.adminClientMonitorStop != nil {
+		close(s.adminClientMonitorStop)
+		s.adminClientMonitorStop = nil
+		if s.adminClientMonitorDone != nil {
+			<-s.adminClientMonitorDone
+		}
+	}
 	if s.providerUsageStop != nil {
 		s.providerUsageStop()
 		s.providerUsageStop = nil
@@ -893,8 +907,8 @@ func (s *Service) loadedConfigRevision() (int64, string, time.Time) {
 }
 
 func (s *Service) routes() {
-	// The handler checks the atomically published configuration on each request,
-	// so database config reloads can enable and disable MCP without restart.
+	// The handler reads the atomically published config so database reloads can
+	// enable or disable the MCP endpoint without a serving restart.
 	s.mux.HandleFunc("POST /mcp", s.handleMCP)
 	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, healthPayload(true, ""))
@@ -3436,7 +3450,14 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		EndpointHost:     endpointHost(provider.BaseURL),
 		AttemptTimeoutMS: s.attemptTimeoutMS(groupName, target),
 	}
-	cleanReq, historyErr := foreignReasoningHistory(req, callerDialect, outDialect)
+	cleanReq := req
+	var historyErr error
+	usesBedrockAnthropicToolsCodec := normalizeDialect(callerDialect) == "anthropic" &&
+		isBedrock(provider) && isBedrockClaudeModel(target.Model) &&
+		anthropicToolsBridgeEnabled(target, outDialect)
+	if !usesBedrockAnthropicToolsCodec {
+		cleanReq, historyErr = foreignReasoningHistory(req, callerDialect, outDialect)
+	}
 	if historyErr != nil {
 		attempt.ErrorClass = "encode_error"
 		return nil, attempt, upstreamError{Class: "encode_error", Message: "unable to sanitize cross-provider history", Err: historyErr}
@@ -3538,7 +3559,7 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		bridgeReq.Stream = bridgeStream
 		upReqBody, err = encodeChatToResponsesBridge(target.Model, &bridgeReq, target, chatResponsesSession.PreviousResponseID)
 	} else if callerDialect == "anthropic" && anthropicToolsBridgeEnabled(target, outDialect) {
-		upReqBody, err = encodeAnthropicToolsBridge(target.Model, req, target, outDialect)
+		upReqBody, err = encodeAnthropicToolsBridge(target.Model, req, target, outDialect, provider)
 	} else {
 		upReq := req
 		if translatedOpenAI && outDialect == "anthropic" {
@@ -6142,7 +6163,7 @@ func (s *Service) initAdminKeys() error {
 	// routes unmounted instead of advertising a store every call would fail on.
 	for _, table := range []string{adminKeyMetadataTable, adminKeyGenerationTable, adminKeyOperationTable} {
 		if !s.configControlPlane.Migrator().HasTable(table) {
-			log.Printf("admin key lifecycle stores unavailable; key routes stay unmounted (apply the control-plane key migration)")
+			log.Printf("admin key lifecycle store unavailable; key lifecycle routes return 503 until the control-plane key migration is applied")
 			return nil
 		}
 	}
@@ -6153,6 +6174,58 @@ func (s *Service) initAdminKeys() error {
 	store.recorder = s.adminKeyLifecycleRecorder
 	s.adminKeys = store
 	return nil
+}
+
+func (s *Service) initAdminClients() error {
+	if s == nil || s.configControlPlane == nil {
+		return nil
+	}
+	if !s.configControlPlane.Migrator().HasTable(adminClientTable) || !s.configControlPlane.Migrator().HasTable(adminClientCredentialTable) {
+		log.Printf("admin client lifecycle store unavailable; client endpoints return unavailable until the control-plane client migration is applied")
+		return nil
+	}
+	s.adminClients = &adminClientStore{db: s.configControlPlane, now: time.Now}
+	s.adminClients.recorder = s.adminClientLifecycleRecorder
+	s.adminClientMonitorStop = make(chan struct{})
+	s.adminClientMonitorDone = make(chan struct{})
+	go s.runAdminClientCredentialMonitor(s.adminClientMonitorStop, s.adminClientMonitorDone)
+	return nil
+}
+
+func (s *Service) runAdminClientCredentialMonitor(stop <-chan struct{}, done chan<- struct{}) {
+	defer close(done)
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	monitor := func() { s.monitorAdminClientCredentials() }
+	monitor()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-ticker.C:
+			monitor()
+		}
+	}
+}
+
+func (s *Service) monitorAdminClientCredentials() {
+	if s == nil || s.adminClients == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = s.adminClients.emitDueExpiryWarnings(ctx, 30*24*time.Hour)
+	_ = s.adminClients.emitUnusedWarnings(ctx)
+	if count, err := s.adminClients.expiringCount(ctx, 30*24*time.Hour); err == nil {
+		s.adminMetrics().SetAdminCredentialsExpiring(count)
+	}
+	if count, err := s.adminClients.unusedCount(ctx); err == nil {
+		s.adminMetrics().SetAdminClientCredentialsUnused(count)
+	}
+}
+
+func (s *Service) adminClientLifecycleRecorder(tx *gorm.DB, event adminClientLifecycleEvent) error {
+	return insertAdminCredentialEventTx(tx, AdminCredentialEvent{Kind: "client", Lifecycle: event.Action, ClientID: event.ClientID, CredentialID: event.CredentialID, Subject: adminAuditFieldValue(event.Subject), Actor: adminAuditFieldValue(event.Actor), RequestID: event.RequestID, Issuer: "local", Outcome: "success"})
 }
 
 // adminKeyLifecycleRecorder is the production #869 adapter for API-issued key

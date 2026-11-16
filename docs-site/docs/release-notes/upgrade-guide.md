@@ -150,6 +150,20 @@ also enter security access events when
 `server.admin_reports.security.enabled` is true; structured log events remain
 available otherwise.
 
+## v5.0.0 Bedrock reasoning history
+
+Anthropic Messages requests routed through Bedrock Converse now forward the
+`thinking` request option for supported Claude models and retain signed
+`thinking` and `redacted_thinking` history through unary and streaming tool
+continuations. No router configuration change is required; callers opt in with
+their normal Anthropic `thinking` object. The router rejects missing thinking
+signatures and malformed redacted data before dispatch. Opaque signatures are
+returned in Anthropic continuation blocks for provider validation, are excluded
+from usage rows and request logs, and are not returned in OpenAI Chat responses.
+Bedrock still validates signature authenticity, and opaque signatures may be
+scoped to a provider account. Keep reasoning history on the same Bedrock target
+and account; cross-provider and cross-account replay is unsupported.
+
 ## v5.0.0 secret DLP
 
 Model groups can set `pii_filter.secrets_enabled: true` to apply the built-in
@@ -205,14 +219,18 @@ keys removed before restart.
 ## v5.0.0 routerctl Admin API changes
 
 The online `metrum-ai-routerctl` commands now use the versioned API on the dedicated admin
-listener. The default endpoint is `http://127.0.0.1:8081`; override it with `--router-url` or
-`ROUTER_URL`. Remote endpoints require HTTPS. Credentials remain in `ROUTER_ADMIN_KEY`,
+listener. Set either `--router-url`/`ROUTER_URL` for TCP or `--socket` for a Unix socket; do not
+combine them. Unix sockets can run alone or alongside TCP, and their filesystem mode controls which
+local users can connect. Remote TCP endpoints require HTTPS. Credentials remain in `ROUTER_ADMIN_KEY`,
 `ROUTER_ADMIN_KEY_FILE`, or a mode-0600 `--admin-key-file`. Endpoint values must be origins with
 no path (a single trailing slash is tolerated), query, fragment, or embedded credentials; use only
 the scheme, host, and optional port. Non-2xx responses are written to stderr as concise
 `admin API <status> <type>: <message>` diagnostics. Connection and timeout failures use
 `admin API request failed: <cause>` and include a hint to check `admin.enabled`, `admin.listen`,
 and the admin credential setting; response bodies and credentials are not printed.
+
+When `admin.unix_socket.path` is configured without `admin.listen`, the socket is the only admin
+listener and the default TCP listener is disabled. Set `admin.listen` explicitly to keep TCP access.
 
 | Command | v5 behavior and flags |
 | --- | --- |
@@ -244,6 +262,81 @@ deliberate direct database operations while the router is stopped.
    or `metrum-genai-smartrouter-*` CLIs.
 
 ## v5.0.0 Configuration Changes
+
+### Caller token verifier removal
+
+v5 rejects a non-empty `callers[].token_sha256`; an empty value written by v4.8
+alongside `token_hash` is ignored. `callers migrate-legacy` is shipped only in
+the v5 `metrum-ai-routerctl`; run that v5 binary against a v4.8 config before
+upgrading the router. Back up the configuration and token files, then migrate
+every active legacy caller:
+
+```sh
+metrum-ai-routerctl callers migrate-legacy --config config.yaml --id <caller-id> --token-file <private-token-file>
+# Or pass the token on stdin without placing it in an argument:
+cat <private-token-file> | metrum-ai-routerctl callers migrate-legacy --config config.yaml --id <caller-id> --token-file -
+```
+
+The command verifies that the supplied token matches the stored SHA-256 value,
+derives the salted verifier, preserves the token, removes `token_sha256`, and
+keeps a configuration backup. The raw token is read from the private file; do
+not pass it as a command-line argument. If the token is unavailable or does not
+have the supported `<token_id>_<secret>` format, use
+`metrum-ai-routerctl callers rotate --config config.yaml --id <caller-id>
+--token-out <private-file>` and distribute the replacement once. Rotation
+preserves caller status and revocation metadata; add `--reactivate` only when
+you intend to restore access. For disabled or revoked legacy callers, use
+`migrate-legacy --remove-disabled`; this deletes the entire caller entry without
+issuing a token. v4.8 rejects a caller with neither verifier even when it is
+disabled, so do not leave a verifier-free caller entry in the file. The removed
+caller must be recreated explicitly if access is needed later. Run:
+
+```sh
+metrum-ai-routerctl callers migrate-legacy --config config.yaml --id <caller-id> --remove-disabled
+```
+
+Migrate every active legacy caller before running `callers verify`; verify each
+token after all migrations are complete.
+`callers hash` only prints hash material; it does not edit a config and is not
+the migration command.
+
+The migrated active caller remains readable by v4.8 because it contains the
+supported salted `token_hash` field and no non-empty legacy verifier. Rotated
+callers also remain readable; revoked callers stay disabled after rotation.
+Disabled or revoked callers removed with `--remove-disabled` are absent from
+the migrated file. Retain the original backup and recreate removed callers only
+through a reviewed, explicit provisioning step.
+
+For database-backed config, export the active document, edit a local copy or
+run the CLI against the exported document to migrate each legacy caller, import
+the updated YAML as a new config set, review its diff, then activate that set.
+Test startup from the stored document before completing rollout. The recommended
+v4.8 DB migration is a maintenance-window procedure: stop every router replica
+before the `--offline` export, import, and activate commands below, keep them
+stopped through activation, then start all replicas on v4.8 and verify startup
+before upgrading. This avoids a mixed fleet reading incompatible config. For
+file-mode deployments, migrate a copy while v4.8 serves its unchanged file;
+replace the file and restart v4.8 to verify it before upgrading.
+
+For a SQLite control-plane database, the command sequence is:
+
+```sh
+metrum-ai-routerctl config export --offline --db <config-db> --scope prod --out config.yaml
+metrum-ai-routerctl callers migrate-legacy --config config.yaml --id <caller-id> --token-file <private-token-file>
+metrum-ai-routerctl config import --offline --db <config-db> --scope prod --name v5-caller-migration --yaml config.yaml
+metrum-ai-routerctl config activate --offline --db <config-db> --scope prod --set-id <imported-set-id>
+```
+
+Repeat migration for every active legacy caller before running verify, import,
+review, and activation. Run these `--offline` commands only while every router
+replica is stopped. Use the v5 binary for each step. For PostgreSQL, add
+`--driver postgres --dsn-env <environment-variable>` to each `--offline`
+database command. Review the
+imported set and diff before activation; retain the exported original and
+database backup for rollback.
+
+The load error names `callers migrate-legacy`; use `callers rotate` when no
+usable raw token is available.
 
 ### TypeScript Routing Policy Removal
 
@@ -778,8 +871,7 @@ plan the conversion now. No usage-database or control-plane schema migration.
 3. Check with `metrum-ai-routerctl callers verify --token-file <file>
    --config <config.yaml> --id <caller-id>` and restart the router.
 4. `metrum-ai-routerctl callers generate`, `metrum-ai-router-token-gen` and
-   the database-mode caller admin API now issue `token_hash` by default. Use
-   `--hash-format legacy-sha256` only when issuing tokens for older routers.
+   the database-mode caller admin API issue `token_hash` by default.
 
 Redis-backed bridge sessions move to a SHA3-512 key layout
 (`metrum-ai-router:bridge-session-v2:...`). For one session TTL plus one hour
@@ -1013,3 +1105,19 @@ can resume them before their TTL. Actions expire at their configured TTL.
 
 The OCSF 1.4.0 JSON Lines stream is disabled by default. To enable it, set `server.security.events.enabled`, choose stdout or file output, and optionally configure an HTTPS webhook with `webhook_allow_hosts` and a 32-byte-or-longer secret supplied through the environment. Webhook signatures cover the timestamp, a random nonce, and the exact body; receivers must enforce a timestamp window and reject nonce replay. Detector signals and failures use the configured detector ID and bounded signal metadata; evidence request IDs use the finding UID, capped at 256 characters. Containment events use Account Change Disable/Enable and include the target caller and acting principal. Database-backed changes to this config require a router restart. Firewall-hold (#891) and honeytoken (#884) source integrations follow when those PRs merge; keep #885 open until then. See [Security event stream](../security-governance/security-events) for full verification and queue behavior.
 The prompt-injection detector is an optional external example. It is off unless a detector is configured, and it receives no segment text unless its own `include_segments` list explicitly opts in. Prompts and user messages are never sent in v5.0.0.
+
+## v5.0.0 admin client identities
+
+Registering any credential makes its policy subject managed immediately. Only
+credentials registered to that subject authenticate; all unregistered credentials
+for it are refused from that point onward, including before disable, revoke, or
+expiry. Ensure registration leaves at least one usable global administrator.
+
+The router-config migration `2026111610` advances schema 16 to 17 and adds the admin client and
+credential-binding tables and extends credential lifecycle audit records with client ID and actor. Apply it with the
+packaged non-serving migration job before starting serving replicas; follow the backup, apply,
+verify, and status steps in [Data Migrations](https://github.com/metrum-ai/router/blob/main/docs/DATA_MIGRATIONS.md). Client endpoints return
+unavailable until the migration is applied. Bindings are checked against the active configured
+admin identity, including its subject and stable mTLS SAN or SPIFFE identity. Disabled/deleted
+clients and revoked/expired credentials lose access. Re-register replacement credentials to restore
+a disabled client; deleted IDs cannot be re-enabled, so create a new ID.

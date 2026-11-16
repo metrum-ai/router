@@ -14,7 +14,7 @@ from urllib.request import urlopen
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'tests/agent_compat'))
-from run_chat_smoke import DIGEST, TOKEN, Mock, free_port, runtime_environment  # noqa: E402
+from run_chat_smoke import DIGEST, TOKEN, TOKEN_ID, Mock, free_port, runtime_environment  # noqa: E402
 
 
 def main():
@@ -48,7 +48,8 @@ models:
   chat: {{strategy: static, targets: [{{provider: mock, model: synthetic-chat, tool_support: {{openai_chat: [tools, tool_choice]}}}}]}}
 callers:
   - id: agent-compat
-    token_sha256: "{DIGEST}"
+    token_hash: "{DIGEST}"
+    token_id: "{TOKEN_ID}"
     allow: [chat]
     rate: {{rpm: 2400, tpm: 100000000, concurrent: 160}}
     quota: {{day: {{requests: 100000, tokens: 400000000}}, month: {{tokens: 8000000000}}}}

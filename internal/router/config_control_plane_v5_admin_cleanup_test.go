@@ -28,6 +28,7 @@ func TestV5AdminConfigCleanupMigrationRemovesRemovedKeys(t *testing.T) {
 		}
 	}
 	prior, err := NewMigrationRunner(r.db, configControlPlaneScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 12, MinData: 0, MaxData: 0}, beforeCleanup)
+
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,6 +46,7 @@ func TestV5AdminConfigCleanupMigrationRemovesRemovedKeys(t *testing.T) {
 	cleanupCompatibility := configControlPlaneCompatibility
 	cleanupCompatibility.MaxSchema = 13
 	next, err := NewMigrationRunner(r.db, configControlPlaneScope, cleanupCompatibility, throughCleanup)
+
 	if err != nil {
 		t.Fatal(err)
 	}

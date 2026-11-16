@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated": "2026-11-04",
+  "updated": "2026-11-16",
   "clients": [
     {
       "id": "pi",
@@ -75,6 +75,25 @@
         "openai-chat",
         "anthropic-messages"
       ]
+    },
+    {
+      "id": "openai-python-sdk",
+      "name": "OpenAI Python SDK",
+      "version": "3.41.0",
+      "pin": "tests/api_compat/uv.lock",
+      "surfaces": [
+        "openai-chat",
+        "openai-responses"
+      ]
+    },
+    {
+      "id": "anthropic-python-sdk",
+      "name": "Anthropic Python SDK",
+      "version": "2.3.0",
+      "pin": "tests/api_compat/uv.lock",
+      "surfaces": [
+        "anthropic-messages"
+      ]
     }
   ],
   "not_covered_clients": [
@@ -92,6 +111,57 @@
     }
   ],
   "cells": [
+    {
+      "id": "openai-sdk-chat-tool-loop",
+      "client": "openai-python-sdk",
+      "surface": "openai-chat",
+      "upstream": "openai-chat",
+      "path": "same-dialect",
+      "features": [
+        "tool_call"
+      ],
+      "tier": "not-covered",
+      "status": "not-covered",
+      "reason": "Real SDK tool-loop run is awaiting its first live result.",
+      "evidence": {
+        "kind": "issue",
+        "ref": "https://github.com/metrum-ai/router/issues/769"
+      }
+    },
+    {
+      "id": "openai-sdk-responses-tool-loop",
+      "client": "openai-python-sdk",
+      "surface": "openai-responses",
+      "upstream": "openai-responses",
+      "path": "same-dialect",
+      "features": [
+        "tool_call"
+      ],
+      "tier": "not-covered",
+      "status": "not-covered",
+      "reason": "Real SDK tool-loop run is awaiting its first live result.",
+      "evidence": {
+        "kind": "issue",
+        "ref": "https://github.com/metrum-ai/router/issues/769"
+      }
+    },
+    {
+      "id": "anthropic-sdk-messages-tool-loop",
+      "client": "anthropic-python-sdk",
+      "surface": "anthropic-messages",
+      "upstream": "anthropic-messages",
+      "path": "same-dialect",
+      "features": [
+        "tool_call"
+      ],
+      "tier": "not-covered",
+      "status": "not-covered",
+      "reason": "Real SDK tool-loop run is awaiting its first live result.",
+      "evidence": {
+        "kind": "issue",
+        "ref": "https://github.com/metrum-ai/router/issues/769"
+      }
+    },
     {
       "id": "pi-chat-same-dialect-stream",
       "client": "pi",
@@ -944,6 +1014,74 @@
           "router_usage_rows_usd": 0.00276805
         },
         "detail": "nightly live gate"
+      }
+    },
+    {
+      "id": "openai-python-sdk-chat-responses-not-covered",
+      "client": "openai-python-sdk",
+      "surface": "openai-chat",
+      "upstream": "openai-responses",
+      "path": "chat_to_responses",
+      "features": [
+        "tool_call"
+      ],
+      "tier": "not-covered",
+      "status": "not-covered",
+      "reason": "Cross-dialect live SDK coverage is outside the v5.0.0 client-level cell set.",
+      "evidence": {
+        "kind": "issue",
+        "ref": "https://github.com/metrum-ai/router/issues/769"
+      }
+    },
+    {
+      "id": "openai-python-sdk-chat-messages-not-covered",
+      "client": "openai-python-sdk",
+      "surface": "openai-chat",
+      "upstream": "anthropic-messages",
+      "path": "chat_to_messages",
+      "features": [
+        "tool_call"
+      ],
+      "tier": "not-covered",
+      "status": "not-covered",
+      "reason": "Cross-dialect live SDK coverage is outside the v5.0.0 client-level cell set.",
+      "evidence": {
+        "kind": "issue",
+        "ref": "https://github.com/metrum-ai/router/issues/769"
+      }
+    },
+    {
+      "id": "openai-python-sdk-responses-chat-not-covered",
+      "client": "openai-python-sdk",
+      "surface": "openai-responses",
+      "upstream": "openai-chat",
+      "path": "responses_to_chat",
+      "features": [
+        "tool_call"
+      ],
+      "tier": "not-covered",
+      "status": "not-covered",
+      "reason": "Cross-dialect live SDK coverage is outside the v5.0.0 client-level cell set.",
+      "evidence": {
+        "kind": "issue",
+        "ref": "https://github.com/metrum-ai/router/issues/769"
+      }
+    },
+    {
+      "id": "anthropic-python-sdk-messages-chat-not-covered",
+      "client": "anthropic-python-sdk",
+      "surface": "anthropic-messages",
+      "upstream": "openai-chat",
+      "path": "messages_to_chat",
+      "features": [
+        "tool_call"
+      ],
+      "tier": "not-covered",
+      "status": "not-covered",
+      "reason": "Cross-dialect live SDK coverage is outside the v5.0.0 client-level cell set.",
+      "evidence": {
+        "kind": "issue",
+        "ref": "https://github.com/metrum-ai/router/issues/769"
       }
     }
   ],

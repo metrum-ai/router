@@ -51,6 +51,7 @@ func securityDoctorCommand(args []string, stdout, stderr io.Writer) int {
 	advisories := fs.String("advisories", "", "engine advisory snapshot JSON file (default: snapshot beside the release binary)")
 	reportLatest := fs.Bool("report-latest", false, "store the safe summary as the latest admin security posture report")
 	routerURL := fs.String("router-url", "", "router admin API base URL (or ROUTER_URL)")
+	socketPath := fs.String("socket", "", "admin Unix socket path")
 	adminKeyFile := fs.String("admin-key-file", "", "mode-0600 admin key file (or ROUTER_ADMIN_KEY_FILE)")
 	if err := fs.Parse(args); err != nil {
 		return 2
@@ -79,7 +80,7 @@ func securityDoctorCommand(args []string, stdout, stderr io.Writer) int {
 		report.Findings = append(report.Findings, probeSecurityTarget(*target)...)
 	}
 	if *reportLatest {
-		if err := submitSecurityDoctorReport(*routerURL, *adminKeyFile, report); err != nil {
+		if err := submitSecurityDoctorReport(*routerURL, *adminKeyFile, *socketPath, report); err != nil {
 			fmt.Fprintln(stderr, "doctor: could not submit latest security posture report")
 			return 2
 		}
@@ -109,8 +110,8 @@ func securityDoctorCommand(args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func submitSecurityDoctorReport(routerURL, adminKeyFile string, report securityDoctorReport) error {
-	client, err := smartrouterctl.NewAdminAPIClient(routerURL, adminKeyFile)
+func submitSecurityDoctorReport(routerURL, adminKeyFile, socketPath string, report securityDoctorReport) error {
+	client, err := smartrouterctl.NewAdminAPIClientWithSocket(routerURL, adminKeyFile, socketPath)
 	if err != nil {
 		return err
 	}
