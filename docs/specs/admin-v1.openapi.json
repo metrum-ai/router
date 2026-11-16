@@ -58,6 +58,9 @@
       },
       "GroupTargetSpec": {
         "properties": {
+          "clear_validation": {
+            "type": "boolean"
+          },
           "model": {
             "type": "string"
           },
@@ -90,6 +93,12 @@
       },
       "GroupTargetValidationSpec": {
         "properties": {
+          "capabilities": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/TargetCapabilityVector"
+            },
+            "type": "object"
+          },
           "harness": {
             "type": "string"
           },
@@ -229,6 +238,48 @@
         "required": [
           "provider",
           "sample_rate"
+        ],
+        "type": "object"
+      },
+      "TargetCapabilityVector": {
+        "properties": {
+          "contextTokens": {
+            "type": "integer"
+          },
+          "evalReportSha256": {
+            "type": "string"
+          },
+          "evalRunId": {
+            "type": "string"
+          },
+          "meanCostUsd": {
+            "type": "number"
+          },
+          "measuredAt": {
+            "type": "string"
+          },
+          "p95LatencyMs": {
+            "type": "number"
+          },
+          "qualityScore": {
+            "type": "number"
+          },
+          "taskFamily": {
+            "type": "string"
+          },
+          "toolReliability": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "qualityScore",
+          "contextTokens",
+          "p95LatencyMs",
+          "meanCostUsd",
+          "evalRunId",
+          "evalReportSha256",
+          "taskFamily",
+          "measuredAt"
         ],
         "type": "object"
       },
@@ -1170,7 +1221,7 @@
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "description": "Open object. Documented members: group, strategy, targets, contract, set_id, revision.",
+                  "description": "Open object. Documented members: group, strategy, targets, contract, virtual_model, set_id, revision.",
                   "type": "object"
                 }
               }
