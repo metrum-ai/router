@@ -5,10 +5,10 @@
 
 This example compares one `dynamic_score` group and target set with session
 affinity disabled and enabled. The disabled arm alternates four short requests
-across two deployments of the same model, then the enabled arm pins a session
-to its first successful target. Each arm uses its own synthetic prefix to
-isolate cache state. Both arms include a 32,000-token request to exercise the
-tiered target above the short-request 120 KB bound.
+across two deployments of the same model. The enabled arm pins a session to
+the target that actually serves the request. Each arm uses its own synthetic
+prefix to isolate cache state. Both arms include a 32,000-token request to
+exercise the tiered target above the short-request 120 KB bound.
 
 The harness reads actual usage rows for reported input and cached tokens,
 configured-price request costs, and streaming TTFB. It reads only response
@@ -45,8 +45,9 @@ uv run --with pyyaml python examples/kv-cache-cost/run.py --router /tmp/kv-route
 
 The sanitized [2026-11-16 result](evidence/hosted-affinity-pair-2026-11-16.json)
 shows the off arm split short traffic 2/2 across providers and the affinity-on
-arm route all four short requests to Fireworks. Short-request cache hit rates were 25% off and 50% on. Short-request
-streaming TTFB p50/p95 was 651.5/1,176 ms off and 916.5/1,151 ms on.
+arm route all four short requests to Fireworks. Short-request cache hit rates
+were 25% off and 50% on. Short-request streaming TTFB p50/p95 was
+651.5/1,176 ms off and 916.5/1,151 ms on.
 The tiered requests reported 48,050 and 48,049 input tokens, respectively, and
 both reported zero cached input tokens. The sanitized result includes each
 request's usage-row data. This single small run showed more short-request cache
@@ -54,9 +55,9 @@ hits with affinity and higher median TTFB. Provider mix differs between the
 arms, and the sample is not a causal production estimate.
 
 Across all five requests per arm, recomputed input totaled 95,070 tokens with
-affinity off and 92,513 with affinity on. The observed cost difference mostly
-reflects provider price mix, so recomputed-token counts are the more direct
-comparison of cache reuse in this run.
+affinity off and 92,513 with affinity on. Because endpoint prices and provider
+mix differ, recomputed-token totals are the more direct cache-reuse comparison
+in this run; these results do not establish a cost difference.
 
 Costs are calculated from usage rows at the configured endpoint prices, not
 provider invoice reconciliations. A missing cached-token field means unknown,
@@ -71,6 +72,9 @@ compatible responses can provide `prompt_tokens_details.cached_tokens` or
 `input_tokens_details.cached_tokens`; Anthropic Messages responses can provide
 `cache_read_input_tokens`. Support varies by engine and model. The hit rate is
 derived from cached-token and reported-request counters; requests without a
-reported cached-token field are excluded.
+reported cached-token field are excluded. For requests with at least 32,000
+estimated input tokens, affinity is applied after the tiered-target preference.
+An eligible existing affinity pin can therefore take precedence over the tiered
+preference.
 
 Metrum AI
