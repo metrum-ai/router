@@ -141,6 +141,13 @@ jobs:
         run: python3 scripts/release_artifact_inventory.py --dist-dir dist --version "${VERSION}" --commit "${COMMIT}" --build-date "${BUILD_DATE}" --set binary
       - name: Preserve first build output
         run: cp -a dist "${RUNNER_TEMP}/primary-dist"
+      - name: Reset generated package outputs before clean-cache rebuild
+        run: |
+          set -euo pipefail
+          git restore --worktree -- .
+          git clean -fd
+          rm -rf dist
+          python3 scripts/validate_release_clean.py
       - name: Rebuild with clean Go caches
         run: |
           set -euo pipefail
