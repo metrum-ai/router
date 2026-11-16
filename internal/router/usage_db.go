@@ -1705,8 +1705,14 @@ func openUsageDB(cfg UsageDBConfig) (*gorm.DB, error) {
 }
 
 func migrationDBLogger() logger.Interface {
-	return logger.New(log.New(os.Stderr, "", log.LstdFlags), logger.Config{LogLevel: logger.Silent})
+	return silentMigrationLogger{Interface: logger.New(log.New(os.Stderr, "", log.LstdFlags), logger.Config{LogLevel: logger.Silent})}
 }
+
+// silentMigrationLogger prevents GORM's migrator Debug calls from escalating
+// the database logger. The CLI reports returned failures on stderr itself.
+type silentMigrationLogger struct{ logger.Interface }
+
+func (l silentMigrationLogger) LogMode(logger.LogLevel) logger.Interface { return l }
 
 func sqliteDSNWithForeignKeys(path string) string {
 	separator := "?"
