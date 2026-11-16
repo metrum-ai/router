@@ -5,6 +5,10 @@ doc_type: reference
 
 # Upgrade Guide
 
+## Security hardening
+
+Review the [Router Hardening Guide](../security-governance/hardening), [Threat Summary](../security-governance/threat-model-v5), and [Compromise Runbook](../security-governance/compromise-runbook) before production rollout. These docs use existing v5.0.0 settings; no config migration is required.
+
 ## Detector service boundary (v5.0.0)
 
 Custom detector strategies run as separate services behind the versioned
