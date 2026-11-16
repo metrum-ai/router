@@ -56,7 +56,7 @@ Use this glossary for short canonical definitions. For the request flow and mode
 | target region | Optional operator-declared selected-target diagnostic label; it does not enforce processing location and is not exposed to callers or routing policies. | [Model Metadata](../reference/model-metadata) |
 | target selection | The process of filtering eligible targets and choosing one according to the model group's strategy. | [Routing Strategy Decision Tree](../routing/strategy-decision-tree) |
 | target-level context eligibility | A target-specific check that skips targets unable to satisfy the request context, such as max-token or modality requirements. | [Router Configuration](../configuration/router-config) |
-| tier | Deployment-defined target metadata used by policy, reports, or scripts to group targets by role or cost class. | [TypeScript Routing Policy](../configuration/routing-typescript) |
+| tier | Deployment-defined target metadata used by external policy services and reports to group targets by role or cost class. | [External Routing Policy](../configuration/external-routing-policy) |
 | token budget | The configured or requested token allowance used for quota admission, traffic shaping, and upstream output caps. | [Error Reference](../reference/errors) |
 | tool dialect | The tool-call protocol a target has been validated to support, such as OpenAI Chat tools or Anthropic client tools. | [Agents, Tools, And Vision](../agents-tools-vision/overview) |
 | usage rows | Relational usage database records for request, attempt, cost, latency, routing, quota, and diagnostic facts. | [Usage Reporting](../operations/usage-reporting) |

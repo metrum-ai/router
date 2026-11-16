@@ -7,7 +7,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"os"
 	"strings"
 	"time"
 
@@ -394,9 +393,6 @@ func policyFailure(group, strategy, kind, terminal string, err error, durationMS
 		message = err.Error()
 	}
 	callerMessage := message
-	if strategy == "script" {
-		callerMessage = safePolicyExecutionMessage(class)
-	}
 	return routingPolicyError{
 		Group:   group,
 		Message: callerMessage,
@@ -516,16 +512,6 @@ func routingPolicyFingerprint(cfg *Config, groupName string, group ModelGroup) s
 	switch strings.ToLower(strings.TrimSpace(group.Strategy)) {
 	case "dynamic_score":
 		payload["dynamic_score"] = group.RoutingPolicy.DynamicScore
-	case "script":
-		payload["script_sha256"] = scriptContentFingerprint(cfg, group.Script)
-		payload["script_http"] = map[string]any{
-			"enabled":            group.ScriptHTTP.Enabled,
-			"allow_hosts_count":  len(group.ScriptHTTP.AllowHosts),
-			"allow_http":         group.ScriptHTTP.AllowHTTP,
-			"timeout_ms":         group.ScriptHTTP.TimeoutMS,
-			"max_response_bytes": group.ScriptHTTP.MaxResponseBytes,
-			"headers_count":      len(group.ScriptHTTP.Headers),
-		}
 	case "external":
 		payload["external_policy"] = map[string]any{
 			"method":             strings.ToUpper(strings.TrimSpace(group.ExternalPolicy.Method)),
@@ -651,22 +637,6 @@ func validationPassRateForFingerprint(validation *TargetValidation) float64 {
 		return 0
 	}
 	return validation.PassRate
-}
-
-func scriptContentFingerprint(cfg *Config, scriptPath string) string {
-	resolved := strings.TrimSpace(scriptPath)
-	if resolved == "" {
-		return ""
-	}
-	if cfg != nil && cfg.baseDir != "" && !strings.HasPrefix(resolved, "/") {
-		resolved = cfg.baseDir + "/" + resolved
-	}
-	raw, err := os.ReadFile(resolved)
-	if err != nil {
-		return "unavailable"
-	}
-	sum := sha256.Sum256(raw)
-	return hex.EncodeToString(sum[:])
 }
 
 func canonicalFingerprint(v any) string {
