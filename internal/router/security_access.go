@@ -4,6 +4,7 @@
 package router
 
 import (
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -109,6 +110,36 @@ func (s *Service) recordRequestSecurityAccess(rc *requestContext, status int, co
 		InputTokens:         rec.Usage.InputTokens,
 		OutputTokens:        rec.Usage.OutputTokens,
 		TotalTokens:         totalTokens(rec.Usage),
+	})
+}
+
+func (s *Service) recordToolFirewallDecisionEvent(rc *requestContext, approvalID, action, ruleCode string) {
+	if rc == nil || action == "" {
+		return
+	}
+	// The ID is opaque routing metadata, not a credential. Events contain only
+	// policy result metadata; tool names and arguments are intentionally absent.
+	if approvalID != "" {
+		log.Printf("event=tool_firewall_approval_%s approval_id=%s rule_code=%s request_id=%s", action, approvalID, ruleCode, rc.id)
+	} else {
+		log.Printf("event=tool_firewall_decision action=%s rule_code=%s request_id=%s", action, ruleCode, rc.id)
+	}
+	if !s.securityReportsEnabled() {
+		return
+	}
+	eventType := "firewall_hold"
+	if action == "deny" || action == "denied" || action == "timeout" || action == "shadow" {
+		eventType = "firewall_block"
+	}
+	reason := "rule:" + ruleCode
+	if approvalID != "" {
+		reason += ":approval_" + action + ":" + approvalID
+	}
+	s.recordSecurityAccessEvent(securityAccessEvent{
+		TS: time.Now().UTC(), RequestID: rc.id,
+		EventType: eventType, Surface: "tool_firewall",
+		HTTPMethod: rc.method, PathTemplate: "/v1/{endpoint}", StatusCode: http.StatusOK,
+		Outcome: action, ReasonCode: reason,
 	})
 }
 

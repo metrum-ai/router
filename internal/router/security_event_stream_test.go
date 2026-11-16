@@ -132,6 +132,8 @@ func TestOCSFSecurityEventsValidateAgainstPinned140Classes(t *testing.T) {
 		{TS: time.Unix(3, 0), RequestID: strings.Repeat("x", 300), EventType: "security_detector_signal", StatusCode: 200, RequestedModel: "configured-id"},
 		{TS: time.Unix(4, 0), RequestID: "finding-1", EventType: "dlp_hit", StatusCode: 400},
 		{TS: time.Unix(5, 0), RequestID: "activity-1", EventType: "api_request", StatusCode: 200, IPAddress: "192.0.2.1"},
+		{TS: time.Unix(6, 0), RequestID: "approval-1", EventType: "firewall_hold", StatusCode: 200, Outcome: "pending", ReasonCode: "approval_pending:approval_0123456789abcdef0123456789abcdef"},
+		{TS: time.Unix(7, 0), RequestID: "approval-2", EventType: "firewall_block", StatusCode: 200, Outcome: "denied", ReasonCode: "approval_denied:approval_0123456789abcdef0123456789abcdef"},
 	} {
 		line, err := marshalOCSFSecurityEvent(source)
 		if err != nil {
@@ -149,6 +151,9 @@ func TestOCSFSecurityEventsValidateAgainstPinned140Classes(t *testing.T) {
 			if event["uid"] != strings.Repeat("x", 256) || event["finding_info"].(map[string]any)["uid"] != strings.Repeat("x", 256) {
 				t.Errorf("external evidence request ID was not capped in finding UIDs: %s", line)
 			}
+		}
+		if strings.HasPrefix(source.EventType, "firewall_") && !isSecurityStreamEvent(source.EventType) {
+			t.Errorf("firewall approval event %q was filtered from OCSF stream", source.EventType)
 		}
 		categoryUID, ok := event["category_uid"].(float64)
 		if !ok {
@@ -436,12 +441,14 @@ func TestSecurityEventStreamDoesNotQueueOrdinaryAccessTraffic(t *testing.T) {
 	svc.recordSecurityAccessEvent(securityAccessEvent{RequestID: "allowed-api", EventType: "api_request", StatusCode: http.StatusOK})
 	svc.recordSecurityAccessEvent(securityAccessEvent{RequestID: "allowed-admin", EventType: "admin_access", StatusCode: http.StatusOK})
 	svc.recordSecurityAccessEvent(securityAccessEvent{RequestID: "auth-failure", EventType: "api_auth_failed", StatusCode: http.StatusUnauthorized})
+	svc.recordSecurityAccessEvent(securityAccessEvent{RequestID: "approval-pending", EventType: "firewall_hold", StatusCode: http.StatusOK})
+	svc.recordSecurityAccessEvent(securityAccessEvent{RequestID: "approval-denied", EventType: "firewall_block", StatusCode: http.StatusOK})
 	stream.close()
 	body, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(body), "allowed-api") || strings.Contains(string(body), "allowed-admin") || !strings.Contains(string(body), "auth-failure") {
+	if strings.Contains(string(body), "allowed-api") || strings.Contains(string(body), "allowed-admin") || !strings.Contains(string(body), "auth-failure") || !strings.Contains(string(body), "approval-pending") || !strings.Contains(string(body), "approval-denied") {
 		t.Fatalf("security stream included ordinary traffic or omitted auth failure: %s", body)
 	}
 }

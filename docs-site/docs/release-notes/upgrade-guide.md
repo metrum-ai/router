@@ -181,6 +181,17 @@ For config import/export/activate/rollback, the historical `--api` flag remains 
 redundant online-mode selector and cannot be combined with `--offline`. Add `--offline` only for
 deliberate direct database operations while the router is stopped.
 
+## v5.0.0 tool-call firewall
+
+`server.tool_firewall` is off by default. Review the [Tool Call Firewall
+configuration](../configuration/tool-firewall) before enabling `shadow` or
+`enforce`. Sequence counters and pending approvals are process-local; with
+multiple replicas, route each conversation and its approval request to the same
+router process. Configure `admin:tool_approvals:resolve` only for principals
+that may release held tool calls. Enforced streamed requests that offer tools
+return HTTP 400 `tool_firewall_stream_inspection_required` until bounded stream
+inspection is available.
+
 ## Pre-Upgrade Checklist
 
 1. Read the release notes for operator impact, database changes, license changes, and caller-visible behavior.

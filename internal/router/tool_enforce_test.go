@@ -31,6 +31,10 @@ func sequenceUpstream(t *testing.T, responses ...string) *httptest.Server {
 }
 
 func chatToolCallBody(t *testing.T, arguments string) string {
+	return chatToolCallBodyNamed(t, "read_file", arguments)
+}
+
+func chatToolCallBodyNamed(t *testing.T, name, arguments string) string {
 	t.Helper()
 	payload, err := json.Marshal(map[string]any{
 		"id": "up",
@@ -41,7 +45,7 @@ func chatToolCallBody(t *testing.T, arguments string) string {
 				"tool_calls": []map[string]any{{
 					"id":       "call_1",
 					"type":     "function",
-					"function": map[string]any{"name": "read_file", "arguments": arguments},
+					"function": map[string]any{"name": name, "arguments": arguments},
 				}},
 			},
 			"finish_reason": "tool_calls",
