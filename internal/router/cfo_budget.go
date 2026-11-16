@@ -68,12 +68,14 @@ func (s *Service) cfoBudgets(subject adminAuthSubject, global bool, opts UsageRe
 			break
 		}
 		matched++
-		state := s.quota.stateFor(caller.cfg.ID, now)
+		state := s.quota.stateFor(caller.quotaStateID(), now)
+		keyState := s.quota.stateFor(caller.cfg.ID, now)
 		s.quota.resetWindows(state, now)
+		s.quota.resetWindows(keyState, now)
 		for _, row := range []cfoBudgetRow{
 			{CallerID: caller.cfg.ID, Project: project, Window: "day", Used: state.DayTokens, Limit: caller.cfg.Quota.Day.Tokens},
 			{CallerID: caller.cfg.ID, Project: project, Window: "month", Used: state.MonthTokens, Limit: caller.cfg.Quota.Month.Tokens},
-			{CallerID: caller.cfg.ID, Project: project, Window: "lifetime", Used: state.LifetimeTokens, Limit: caller.cfg.Key.LifetimeTokens},
+			{CallerID: caller.cfg.ID, Project: project, Window: "lifetime", Used: keyState.LifetimeTokens, Limit: caller.cfg.Key.LifetimeTokens},
 		} {
 			if row.Limit > 0 {
 				percent := float64(row.Used) * 100 / float64(row.Limit)

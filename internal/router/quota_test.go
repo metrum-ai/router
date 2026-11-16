@@ -348,3 +348,26 @@ func TestQuotaAcquireConcurrencyExhaustSaveFailure(t *testing.T) {
 		t.Fatalf("acquire=%#v, want 503 quota-state-error", ad)
 	}
 }
+
+func TestQuotaAcquireConcurrencyIgnoresInFlightTokenEstimates(t *testing.T) {
+	dir := t.TempDir()
+	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", dir)
+	cfg.Callers[0].Key.LifetimeTokens = 100
+	qs, err := newQuotaStore("", cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caller := qs.callers["alice"]
+	reserved := qs.ReserveTokens(caller, 100)
+	if !reserved.OK {
+		t.Fatalf("reserve=%#v", reserved)
+	}
+	ad := qs.AcquireConcurrency(caller)
+	if !ad.OK || ad.KeyState != "active" {
+		t.Fatalf("acquire=%#v, want active despite temporary estimate", ad)
+	}
+	qs.ReleaseReservation(caller, reserved.Reservation)
+	if qs.state.Callers["alice"].Disabled {
+		t.Fatal("temporary estimate persisted the caller as exhausted")
+	}
+}

@@ -15,9 +15,9 @@ func TestUsageMissionAttributionMigrationAndRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer closeDB()
-	priorDefinitions := make([]MigrationDefinition, 0, len(usageMigrationDefinitions)-1)
+	priorDefinitions := make([]MigrationDefinition, 0, len(usageMigrationDefinitions)-3)
 	for _, definition := range usageMigrationDefinitions {
-		if definition.ID != usageMissionAttributionMigrationID && definition.ID != usageRecomputedInputMigrationID {
+		if definition.ID != usageMissionAttributionMigrationID && definition.ID != usageRecomputedInputMigrationID && definition.ID != usageHierarchyAuditMigrationID {
 			priorDefinitions = append(priorDefinitions, definition)
 		}
 	}
@@ -44,7 +44,7 @@ func TestUsageMissionAttributionMigrationAndRoundTrip(t *testing.T) {
 		}
 	}
 	legacy := logRecord{RequestID: "before-mission-attribution", TS: time.Now().UTC().Format(time.RFC3339Nano), CallerID: "worker"}
-	if err := store.db.Omit("TaskID", "HumanOwner", "RecomputedInputTokens").Create(recordFromRow(rowFromRecord(legacy))).Error; err != nil {
+	if err := store.db.Omit("TaskID", "HumanOwner", "RecomputedInputTokens", "OrganizationID", "TeamID").Create(recordFromRow(rowFromRecord(legacy))).Error; err != nil {
 		t.Fatalf("write row before migration: %v", err)
 	}
 	currentDefinitions := append(append([]MigrationDefinition(nil), priorDefinitions...), UsageMissionAttributionMigrationDefinition())

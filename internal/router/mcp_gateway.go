@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -310,6 +311,52 @@ func (s *Service) handleMCP(w http.ResponseWriter, r *http.Request) {
 		writeMCPError(w, request.ID, -32602, "invalid tools/call parameters")
 		return
 	}
+	hierarchyPolicy, hierarchyErr := s.effectiveHierarchyPolicy(r.Context(), caller)
+	if hierarchyErr != nil {
+		writeMCPHTTPError(w, request.ID, http.StatusServiceUnavailable, "inherited policy unavailable")
+		return
+	}
+	if hierarchyPolicy != nil {
+		if modelGroup == "" || !hierarchyPolicyAllowsGroup(hierarchyPolicy, modelGroup) {
+			modelGroupDenied = true
+		}
+		if request.Method == "tools/call" {
+			if !hierarchyPolicyAllowsTools(hierarchyPolicy, []map[string]any{{"name": callParams.Name}}) {
+				writeMCPError(w, request.ID, -32003, "tool denied by inherited policy")
+				return
+			}
+			localFilter := PIIFilterConfig{}
+			if group, ok := cfg.Models[modelGroup]; ok {
+				localFilter = group.PIIFilter
+			}
+			filter, filterErr := mergeHierarchyPIIFilters(localFilter, hierarchyPolicy.PIIFilter)
+			if filterErr != nil {
+				writeMCPHTTPError(w, request.ID, http.StatusServiceUnavailable, "inherited policy invalid")
+				return
+			}
+			if filter.Enabled {
+				arguments, marshalErr := json.Marshal(callParams.Arguments)
+				if marshalErr != nil {
+					writeMCPError(w, request.ID, -32602, "invalid tools/call parameters")
+					return
+				}
+				ir := &IRRequest{Messages: []IRMessage{{Role: "user", Content: string(arguments)}}}
+				if _, filterErr = applyPIIFilter(ir, filter, "openai-chat"); filterErr != nil {
+					var blocked piiFilterBlockedError
+					if errors.As(filterErr, &blocked) {
+						writeMCPError(w, request.ID, -32003, "request denied by inherited PII policy")
+					} else {
+						writeMCPHTTPError(w, request.ID, http.StatusServiceUnavailable, "inherited PII policy invalid")
+					}
+					return
+				}
+				if err := json.Unmarshal([]byte(ir.Messages[0].Content), &callParams.Arguments); err != nil {
+					writeMCPError(w, request.ID, -32602, "invalid tools/call parameters")
+					return
+				}
+			}
+		}
+	}
 	quotaAdmission := s.quota.AdmitMCP(caller, cfg.MCP.RPM)
 	if !quotaAdmission.OK {
 		if request.Method == "tools/call" {
@@ -353,6 +400,19 @@ func (s *Service) handleMCP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		result, err = s.mcpListTools(r.Context(), cfg, caller, modelGroup)
+		if err == nil && hierarchyPolicy != nil && hierarchyPolicy.ToolAllowList != nil {
+			if payload, ok := result.(map[string]any); ok {
+				if list, ok := payload["tools"].([]mcpTool); ok {
+					filtered := make([]mcpTool, 0, len(list))
+					for _, tool := range list {
+						if hierarchyPolicyAllowsTools(hierarchyPolicy, []map[string]any{{"name": tool.Name}}) {
+							filtered = append(filtered, tool)
+						}
+					}
+					payload["tools"] = filtered
+				}
+			}
+		}
 	case "tools/call":
 		started := time.Now()
 		auditID, auditErr := s.beginMCPToolAudit(caller, callParams.Name, callParams.Arguments)

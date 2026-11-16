@@ -287,6 +287,7 @@ Report APIs also return `pagination` metadata. Raw request and security-event en
 
 ```text
 /admin/reports/api/requests?since=24h&limit=50&client=codex-cli&resolved_group=default&sort=timeUtc&direction=desc
+/admin/reports/api/requests?since=24h&limit=50&organization_id=acme&team_id=platform&hop_id=<span_id>
 /admin/reports/api/requests?since=24h&limit=50&cursor=<next_cursor>
 /admin/reports/api/security/events?since=24h&limit=50&sort=timeUtc&direction=desc
 ```
