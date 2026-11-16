@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -373,16 +374,24 @@ type DecisionTelemetryConfig struct {
 }
 
 type ProviderConfig struct {
-	BaseURL      string                   `yaml:"base_url"`
-	Dialect      string                   `yaml:"dialect"`
-	UpstreamKind string                   `yaml:"upstream_kind" json:"upstreamKind,omitempty"`
-	APIKey       string                   `yaml:"api_key"`
-	APIKeyEnv    string                   `yaml:"api_key_env"`
-	KeyID        string                   `yaml:"key_id"`
-	AuthScheme   string                   `yaml:"auth_scheme"`
-	Headers      map[string]string        `yaml:"headers"`
-	TrafficShape TrafficShapeConfig       `yaml:"traffic_shape" json:"trafficShape,omitempty"`
-	Models       map[string]ProviderModel `yaml:"models"`
+	BaseURL      string                     `yaml:"base_url"`
+	Dialect      string                     `yaml:"dialect"`
+	UpstreamKind string                     `yaml:"upstream_kind" json:"upstreamKind,omitempty"`
+	APIKey       string                     `yaml:"api_key"`
+	APIKeyEnv    string                     `yaml:"api_key_env"`
+	KeyID        string                     `yaml:"key_id"`
+	AuthScheme   string                     `yaml:"auth_scheme"`
+	Headers      map[string]string          `yaml:"headers"`
+	TrafficShape TrafficShapeConfig         `yaml:"traffic_shape" json:"trafficShape,omitempty"`
+	SpendBreaker ProviderSpendBreakerConfig `yaml:"spend_breaker" json:"spendBreaker,omitempty"`
+	Models       map[string]ProviderModel   `yaml:"models"`
+}
+
+// ProviderSpendBreakerConfig caps estimated spend attributed to one provider.
+type ProviderSpendBreakerConfig struct {
+	HourlyUSD float64 `yaml:"hourly_usd" json:"hourlyUsd,omitempty"`
+	DailyUSD  float64 `yaml:"daily_usd" json:"dailyUsd,omitempty"`
+	OnTrip    string  `yaml:"on_trip" json:"onTrip,omitempty"`
 }
 
 type ProviderModel struct {
@@ -1741,6 +1750,13 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		return err
 	}
 	for name, p := range c.Provider {
+		breaker := p.SpendBreaker
+		if breaker.HourlyUSD < 0 || breaker.DailyUSD < 0 || math.IsNaN(breaker.HourlyUSD) || math.IsNaN(breaker.DailyUSD) || math.IsInf(breaker.HourlyUSD, 0) || math.IsInf(breaker.DailyUSD, 0) {
+			return fmt.Errorf("provider %s spend_breaker ceilings must be finite and non-negative", name)
+		}
+		if breaker.OnTrip != "" && breaker.OnTrip != "failover" && breaker.OnTrip != "stop" {
+			return fmt.Errorf("provider %s spend_breaker on_trip must be failover or stop", name)
+		}
 		if p.BaseURL == "" {
 			return fmt.Errorf("provider %s missing base_url", name)
 		}
