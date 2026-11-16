@@ -1076,6 +1076,30 @@ func TestSecretDLPToolCallInspectorBlocksFailOnMatch(t *testing.T) {
 	}
 }
 
+func TestSecretDLPToolCallInspectorRedactsEscapedArguments(t *testing.T) {
+	rules, err := compilePIIRules(builtinSecretRules())
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := &piiRedactionState{
+		rules: rules, limit: 20, result: &piiFilterResult{RuleCounts: map[string]int{}},
+		placeholderFor: map[string]string{},
+	}
+	inspector := secretDLPToolCallInspector{dlp: &secretStreamDLP{state: state, mode: "redact"}}
+	secretBody := strings.Repeat("a", 64)
+	arguments := `{"api_key":"sk-or-v1\u002d` + secretBody + `"}`
+	result, err := inspector.inspectStreamToolCalls([]IRToolCall{{Index: 0, ID: "call_1", Name: "lookup", Arguments: arguments}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Action != toolCallInspectionRedact || len(result.Calls) != 1 {
+		t.Fatalf("inspector action=%q calls=%d, want redaction of escaped argument", result.Action, len(result.Calls))
+	}
+	if strings.Contains(result.Calls[0].Arguments, secretBody) || !strings.Contains(result.Calls[0].Arguments, "[SECRET_PROVIDER_1]") {
+		t.Fatalf("inspector leaked or missed escaped credential body")
+	}
+}
+
 func TestSecretDLPRedactsHeldResponsesAndAnthropicToolCalls(t *testing.T) {
 	secret := fakeGitHubToken()
 	for _, tc := range []struct {
@@ -1190,8 +1214,30 @@ func TestSecretDLPRedactsEscapedSecretSplitAcrossToolArgumentDeltas(t *testing.T
 	response := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(response, req)
 	body := response.Body.String()
+	secretBody := strings.Repeat("a", 64)
 	if response.Code != http.StatusOK || strings.Contains(body, secret) || !strings.Contains(body, "[SECRET_PROVIDER_1]") {
 		t.Fatalf("status=%d streamed escaped tool argument leaked or missed redaction", response.Code)
+	}
+	var deltaCount, doneCount int
+	for _, frame := range strings.Split(body, "\n\n") {
+		if strings.Contains(frame, "event: response.function_call_arguments.delta") {
+			deltaCount++
+			if strings.Contains(frame, secretBody) {
+				t.Fatalf("streamed function_call_arguments.delta leaked the credential body")
+			}
+		}
+		if strings.Contains(frame, "event: response.function_call_arguments.done") {
+			doneCount++
+			if strings.Contains(frame, secretBody) {
+				t.Fatalf("streamed function_call_arguments.done leaked the credential body")
+			}
+		}
+		if strings.Contains(frame, secretBody) {
+			t.Fatalf("stream frame leaked the credential body")
+		}
+	}
+	if deltaCount != 2 || doneCount != 1 {
+		t.Fatalf("streamed argument frames: deltas=%d done=%d, want 2 deltas and 1 done", deltaCount, doneCount)
 	}
 }
 
