@@ -10,15 +10,97 @@ package router
 // active.
 
 import (
+	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestContainmentWebhookMountAdminV1ReloadsAndRefusesCaller(t *testing.T) {
+	t.Setenv("MOCK_API_KEY", "test-only-serve-e2e-provider-key")
+	secret := strings.Repeat("w", 32)
+	t.Setenv("TEST_CONTAINMENT_WEBHOOK_SECRET", secret)
+	dbPath := serveAuthE2EDB(t)
+	r, closeDB, err := ConfigControlPlaneMigrationRunner(UsageDBConfig{Driver: "sqlite", Path: dbPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = closeDB() })
+	applyConfigControlPlaneMigrationsForTest(t, r)
+	setID, err := ImportCanonicalYAML(r.db, "staging", "initial", []byte(serveAuthCanonicalYAML()), "test-actor")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ActivateConfigSet(r.db, "staging", setID, "test-actor"); err != nil {
+		t.Fatal(err)
+	}
+	bootstrapPath := filepath.Join(t.TempDir(), "bootstrap.yaml")
+	if err := os.WriteFile(bootstrapPath, []byte(serveAuthBootstrapYAML(t, dbPath, "staging")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfigForServe(bootstrapPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(t.TempDir(), "usage.sqlite"))
+	cfg.StatePath = filepath.Join(t.TempDir(), "router-state.json")
+	svc, err := newServiceWithVerifiedFixture(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { svc.Close() })
+	containmentPolicy, err := newAuthorizer(AdminAuthorizationConfig{Enabled: true, Policy: []string{"p, role:containment, *, admin:containment, contain"}}, nil, nil, AdminAuthConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc.authorizerSnapshot.Store(containmentPolicy)
+	svc.cfg.Server.ContainmentWebhook = ContainmentWebhookConfig{Enabled: true, SecretEnv: "TEST_CONTAINMENT_WEBHOOK_SECRET", TimestampWindow: "10m"}
+	adminMux := http.NewServeMux()
+	allow := func(_ context.Context, p Principal, _ string, object, action string) error {
+		if p.Subject == authzRoleContainment && object == authzObjectAdminContainment && action == authzActionContain {
+			return nil
+		}
+		return ErrAuthorizationUnavailable
+	}
+	if err := svc.MountAdminV1(adminMux, testAuthenticator{}, allow); err != nil {
+		t.Fatalf("MountAdminV1: %v", err)
+	}
+	serveRequest := func() int {
+		req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+		req.Header.Set("Authorization", "Bearer "+serveAuthToken)
+		rec := httptest.NewRecorder()
+		svc.Handler().ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if got := serveRequest(); got < 200 || got >= 300 {
+		t.Fatalf("caller request before containment = %d", got)
+	}
+	body := `{"caller_id":"alice","action":"suspend","reason":"edr-alert"}`
+	timestamp := strconv.FormatInt(time.Now().UTC().Unix(), 10)
+	nonce := "soar-reload-path-0001"
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte(timestamp + "\n" + nonce + "\n" + body))
+	webhook := httptest.NewRequest(http.MethodPost, containmentWebhookPath, strings.NewReader(body))
+	webhook.Header.Set("X-Containment-Timestamp", timestamp)
+	webhook.Header.Set("X-Containment-Nonce", nonce)
+	webhook.Header.Set("X-Containment-Signature", "sha256="+hex.EncodeToString(mac.Sum(nil)))
+	webhookRec := httptest.NewRecorder()
+	adminMux.ServeHTTP(webhookRec, webhook)
+	if webhookRec.Code != http.StatusOK {
+		t.Fatalf("mounted webhook status = %d body=%s", webhookRec.Code, webhookRec.Body.String())
+	}
+	if got := serveRequest(); got != http.StatusUnauthorized && got != http.StatusForbidden {
+		t.Fatalf("caller request after live reload = %d, want refused", got)
+	}
+}
 
 // serveAuthToken is the raw bearer token used by the e2e harness. It lives
 // only in this test file and never leaves the test process. Its SHA-256 is

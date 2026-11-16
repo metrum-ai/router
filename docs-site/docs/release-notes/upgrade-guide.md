@@ -687,3 +687,24 @@ Re-check `/readyz` and `/version` before closing the change.
 ## Security event stream
 
 The OCSF 1.4.0 JSON Lines stream is disabled by default. To enable it, set `server.security.events.enabled`, choose stdout or file output, and optionally configure an HTTPS webhook with a 32-byte-or-longer secret supplied through the environment. See [Security event stream](../security-governance/security-events) for signature verification and queue behavior.
+
+## v5.0.0 caller containment
+
+The new caller containment endpoints require the `admin:containment` / `contain`
+Casbin grant in the global `*` domain. Add that narrow grant to the SecOps identity that needs to suspend
+or resume keys. Supply a short reason code, not free text. Do not combine this
+grant with caller issue, rotation, or revoke unless
+the same identity needs those separate operations. The optional signed webhook
+is off by default and requires `admin.enabled: true` with
+`server.config_source.mode: database`. To enable it, configure
+`server.containment_webhook.enabled` and `secret_env`, then provide a 32-byte-or-longer secret through the named
+environment variable. See [Admin Authentication](/docs/configuration/admin-authentication)
+for headers, signing input, timestamp bounds, and CLI examples. A suspended
+caller with a TTL becomes active when the TTL expires; no database migration is
+required.
+The containment role can resume only keys it suspended; keys suspended by an
+administrator or by legacy configuration require all caller write permissions
+(issue, rotate, and revoke) to resume.
+Signed webhook callers do not need an ETag or idempotency header. Their nonce
+reservation is durable for at least twice the configured timestamp window and
+expired reservations are pruned hourly.
