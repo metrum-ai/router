@@ -104,6 +104,12 @@ percentage is applied. Throttling remains in the usage database. Run
 dedicated NOTIFY signal and poll shared throttle rows every second as fallback;
 SQLite applies throttle state locally.
 
+An operator can release an automatic throttle before its TTL by adding the
+caller ID to `server.auto_containment.exempt_callers` and applying the config
+reload. The runtime throttle is removed on refresh while its stored action
+record remains until expiry; keep the caller exempt until then to prevent the
+active record from being applied again.
+
 An enforced `suspend` rule requires `server.config_source.mode: database` and
 uses the caller-containment path. Its canonical record is marked as
 containment-made by the detector, so the containment role or an administrator

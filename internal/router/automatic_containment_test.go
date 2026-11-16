@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -28,6 +29,34 @@ type autoContainmentTestDetector struct{}
 
 func (autoContainmentTestDetector) Detect(context.Context, detector.Event) ([]detector.Signal, error) {
 	return []detector.Signal{{SchemaVersion: detector.SchemaVersion, DetectorID: "test-detector", Severity: "critical", Score: 1}}, nil
+}
+
+type countingAutoContainmentTestDetector struct{ calls *atomic.Int32 }
+
+func (d countingAutoContainmentTestDetector) Detect(context.Context, detector.Event) ([]detector.Signal, error) {
+	signals := []detector.Signal{{SchemaVersion: detector.SchemaVersion, DetectorID: "test-detector", Severity: "critical", Score: 1}}
+	d.calls.Add(1)
+	return signals, nil
+}
+
+func openAutomaticContainmentTestDB(t *testing.T, name string) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(sqliteDriver.Open(filepath.Join(t.TempDir(), name)), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := applyUsageAdminAuditMigration(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := applyAutomaticContainmentMigration(db); err != nil {
+		t.Fatal(err)
+	}
+	conn, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	return db
 }
 
 func TestAutoContainmentConfigValidation(t *testing.T) {
@@ -100,6 +129,75 @@ func TestAutoContainmentEnforceFiltersCapsAndThrottlesUnlimitedCallers(t *testin
 	}
 	if exemptActions != 0 || nonEnforceActions != 0 {
 		t.Fatalf("exempt actions=%d non-enforce actions=%d; want neither caller actioned", exemptActions, nonEnforceActions)
+	}
+}
+
+func TestAutomaticContainmentExemptionReleasesActiveThrottleOnRefresh(t *testing.T) {
+	db := openAutomaticContainmentTestDB(t, "containment-exempt-refresh.sqlite")
+	caller := &callerRuntime{cfg: CallerConfig{ID: "caller-a"}}
+	cfg := &Config{Server: ServerConfig{AutoContainment: AutoContainmentConfig{
+		Mode: "enforce", MaxActionsPerMinute: 5, UnlimitedThrottleLimit: 100,
+		Rules: []AutoContainmentRuleConfig{{DetectorID: "test-detector", Severity: "critical", Action: "throttle", ThrottlePercent: 10, TTLMS: 60000}},
+	}}}
+	snapshot := NewConfigSnapshot()
+	snapshot.Store(cfg)
+	svc := &Service{cfg: cfg, configSnapshot: snapshot, quota: &quotaStore{callers: map[string]*callerRuntime{"caller-a": caller}}, usage: &usageStore{db: db}}
+	svc.applyAutomaticContainmentResult(detect.Result{DetectorID: "test-detector", CallerID: "caller-a", Enforce: true, Signals: []detector.Signal{{SchemaVersion: detector.SchemaVersion, DetectorID: "test-detector", Severity: "critical", Score: 1}}})
+	if got := caller.effectiveRateLimit(100); got != 10 {
+		t.Fatalf("throttle limit before exemption=%d, want 10", got)
+	}
+	reloaded := *cfg
+	reloaded.Server.AutoContainment.ExemptCallers = []string{"caller-a"}
+	snapshot.Store(&reloaded)
+	svc.syncAutomaticContainment()
+	if got := caller.effectiveRateLimit(100); got != 100 {
+		t.Fatalf("throttle limit after exempt refresh=%d, want base 100", got)
+	}
+	var rows int64
+	if err := db.Model(&automaticContainmentActionRecord{}).Where("caller_id = ?", "caller-a").Count(&rows).Error; err != nil || rows != 1 {
+		t.Fatalf("active action row count=%d err=%v; exemption must retain the TTL record", rows, err)
+	}
+}
+
+func TestAutomaticSuspendFailureRollsBackActionCapForRetry(t *testing.T) {
+	db := openAutomaticContainmentTestDB(t, "containment-suspend-rollback.sqlite")
+	controlPlane, err := gorm.Open(sqliteDriver.Open(filepath.Join(t.TempDir(), "missing-config-control-plane.sqlite")), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &Service{
+		cfg: &Config{Server: ServerConfig{ConfigSource: ConfigSourceConfig{Mode: "database"}, AutoContainment: AutoContainmentConfig{
+			Mode: "enforce", MaxActionsPerMinute: 1,
+			Rules: []AutoContainmentRuleConfig{{DetectorID: "test-detector", Severity: "critical", Action: "suspend", TTLMS: 60000}},
+		}}},
+		configControlPlane: controlPlane,
+		usage:              &usageStore{db: db},
+	}
+	result := detect.Result{DetectorID: "test-detector", CallerID: "caller-a", Enforce: true, Signals: []detector.Signal{{SchemaVersion: detector.SchemaVersion, DetectorID: "test-detector", Severity: "critical", Score: 1}}}
+	svc.applyAutomaticContainmentResult(result)
+	// A second attempt must get through the one-action cap too. The control-plane
+	// request still fails, but it must create a fresh (then rolled-back) attempt.
+	svc.applyAutomaticContainmentResult(result)
+	var actions, capRows int64
+	if err := db.Model(&automaticContainmentActionRecord{}).Count(&actions).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&automaticContainmentEventRecord{}).Count(&capRows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if actions != 0 || capRows != 0 {
+		t.Fatalf("failed suspend left actions=%d cap rows=%d; want both zero for retry", actions, capRows)
+	}
+	var failedAudits int64
+	if err := db.Table(usageAdminAuditTable).Where("principal_subject = ? AND outcome = ? AND reason_code = ?", "test-detector", "failed", "automatic_suspend_failed").Count(&failedAudits).Error; err != nil || failedAudits != 2 {
+		t.Fatalf("failed suspension audit rows=%d err=%v; want 2 attempts", failedAudits, err)
+	}
+	controlPlaneSQL, err := controlPlane.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := controlPlaneSQL.Close(); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -448,7 +546,8 @@ func TestAutoContainmentDetectorStormCapsManyCallersEndToEnd(t *testing.T) {
 		_, _ = io.WriteString(w, `{"id":"upstream","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`)
 	}))
 	defer upstream.Close()
-	detectorServer := httptest.NewServer(detector.Handler(autoContainmentTestDetector{}))
+	var detectorCalls atomic.Int32
+	detectorServer := httptest.NewServer(detector.Handler(countingAutoContainmentTestDetector{calls: &detectorCalls}))
 	defer detectorServer.Close()
 	dir := t.TempDir()
 	cfg := testConfig(t, upstream.URL, "provider-key", dir)
@@ -492,15 +591,15 @@ func TestAutoContainmentDetectorStormCapsManyCallersEndToEnd(t *testing.T) {
 		}
 	}
 	deadline := time.Now().Add(3 * time.Second)
-	var count int64
-	for time.Now().Before(deadline) {
-		if err := svc.usage.db.Model(&automaticContainmentEventRecord{}).Count(&count).Error; err != nil {
-			t.Fatal(err)
-		}
-		if count == 3 {
-			break
-		}
+	for detectorCalls.Load() < int32(len(tokens)) && time.Now().Before(deadline) {
 		time.Sleep(20 * time.Millisecond)
+	}
+	if got := detectorCalls.Load(); got < int32(len(tokens)) {
+		t.Fatalf("completed detector calls=%d; want at least all %d caller calls before checking the cap", got, len(tokens))
+	}
+	var count int64
+	if err := svc.usage.db.Model(&automaticContainmentEventRecord{}).Count(&count).Error; err != nil {
+		t.Fatal(err)
 	}
 	if count != 3 {
 		t.Fatalf("storm action events = %d; want exactly capped 3 of 20 callers", count)

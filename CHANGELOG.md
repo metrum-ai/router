@@ -13,6 +13,7 @@
 
 ### Fixed
 
+- Roll back failed automatic suspensions so they release their action-cap slot; exempting a caller during config refresh releases an active automatic throttle before its TTL.
 - Migrate the API compatibility suite to Anthropic Python SDK 2.3.0 and test API-key and bearer authentication with separate clients.
 
 - `router-migrate --json` keeps stdout valid JSON by directing GORM diagnostics
