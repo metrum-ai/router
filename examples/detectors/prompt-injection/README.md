@@ -11,6 +11,8 @@ The router sends no text by default. Configure `include_segments` on this specif
 
 Install the pinned, CPU-only dependency set with wheel hashes checked. The lock is for CPython 3.12 and uses the official PyTorch CPU wheel index (`https://download.pytorch.org/whl/cpu`):
 
+Direct inference pins are `torch==2.10.0+cpu`, `transformers==5.18.0`, and `sentencepiece==0.2.1`. `requirements.in` also pins patched `httpx2`, `httpcore2`, `setuptools`, and `idna` versions; `requirements.txt` contains hashes for the full dependency set.
+
 ```sh
 python3 -m pip install --require-hashes -r examples/detectors/prompt-injection/requirements.txt
 python3 examples/detectors/prompt-injection/server.py
