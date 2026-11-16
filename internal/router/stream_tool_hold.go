@@ -5,6 +5,8 @@ package router
 
 import (
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/metrum-ai/router/internal/stream"
@@ -71,16 +73,19 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 	switch eventType {
 	case "response.output_item.added":
 		item, _ := payload["item"].(map[string]any)
-		if item != nil && stringValue(item["type"]) == "function_call" {
+		if item != nil {
 			idx := streamToolIndex(payload["output_index"])
-			id := stringValue(item["call_id"])
-			if id == "" {
-				id = stringValue(item["id"])
+			call, tool, recognized := responsesToolItemCall(item, idx)
+			if tool && !recognized {
+				return h.failClosedUnsupportedTool(stringValue(item["type"]))
 			}
-			h.calls.addDelta("openai-responses", idx, id, stringValue(item["name"]), toolCallArgumentsText(item["arguments"]))
-			h.indexes[idx] = true
-			toolEvent = true
-			passThrough = stream.Event{}
+			if recognized {
+				h.calls.addDelta("openai-responses", idx, call.ID, call.Name, call.Arguments)
+				h.calls.setKind(idx, call.Kind)
+				h.indexes[idx] = true
+				toolEvent = true
+				passThrough = stream.Event{}
+			}
 		}
 	case "response.function_call_arguments.delta":
 		idx := streamToolIndex(payload["output_index"])
@@ -95,22 +100,76 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 		h.indexes[idx] = true
 		toolEvent = true
 		passThrough = stream.Event{}
+	case "response.custom_tool_call_input.delta":
+		idx := streamToolIndex(payload["output_index"])
+		h.calls.addDelta("openai-responses", idx, "", "", stringValue(payload["delta"]))
+		h.calls.setKind(idx, "custom_tool_call")
+		h.indexes[idx] = true
+		toolEvent = true
+		passThrough = stream.Event{}
+	case "response.custom_tool_call_input.done":
+		idx := streamToolIndex(payload["output_index"])
+		h.calls.addDelta("openai-responses", idx, "", "", "")
+		h.calls.setKind(idx, "custom_tool_call")
+		h.calls.setArguments(idx, stringValue(payload["input"]))
+		h.indexes[idx] = true
+		toolEvent = true
+		passThrough = stream.Event{}
 	case "response.output_item.done":
 		item, _ := payload["item"].(map[string]any)
 		idx := streamToolIndex(payload["output_index"])
-		if item != nil && stringValue(item["type"]) == "function_call" {
-			h.calls.addDelta("openai-responses", idx, stringValue(item["call_id"]), stringValue(item["name"]), "")
-			h.calls.setArguments(idx, toolCallArgumentsText(item["arguments"]))
-			h.indexes[idx] = true
-			toolEvent = true
-			passThrough = stream.Event{}
+		if item != nil {
+			call, tool, recognized := responsesToolItemCall(item, idx)
+			if tool && !recognized {
+				return h.failClosedUnsupportedTool(stringValue(item["type"]))
+			}
+			if recognized {
+				h.calls.addDelta("openai-responses", idx, call.ID, call.Name, "")
+				h.calls.setKind(idx, call.Kind)
+				h.calls.setArguments(idx, call.Arguments)
+				h.indexes[idx] = true
+				toolEvent = true
+				passThrough = stream.Event{}
+			}
 		}
 	case "response.completed":
 		terminal, terminalReason = true, "tool_calls"
+		response, _ := payload["response"].(map[string]any)
+		output, _ := response["output"].([]any)
+		for idx, rawItem := range output {
+			item, _ := rawItem.(map[string]any)
+			if item == nil {
+				continue
+			}
+			call, tool, recognized := responsesToolItemCall(item, idx)
+			if tool && !recognized {
+				return h.failClosedUnsupportedTool(stringValue(item["type"]))
+			}
+			if recognized {
+				h.calls.addDelta("openai-responses", idx, call.ID, call.Name, "")
+				h.calls.setKind(idx, call.Kind)
+				h.calls.setArguments(idx, call.Arguments)
+				h.indexes[idx] = true
+				toolEvent = true
+			}
+		}
+		if toolEvent {
+			event.Data, _ = json.Marshal(payload)
+			passThrough = stream.Event{}
+		}
 	case "response.failed", "response.incomplete":
+		if err := stripResponsesTerminalToolArguments(payload); err != nil {
+			h.reset()
+			return nil, err
+		}
 		if len(h.held) > 0 {
 			h.reset()
 		}
+		encoded, err := json.Marshal(payload)
+		if err != nil {
+			return nil, upstreamError{Class: "tool_call_hold_inspection_failed", Message: "unable to sanitize Responses terminal event", Err: err}
+		}
+		event.Data = encoded
 		return []stream.Event{event}, nil
 	case "content_block_start":
 		block, _ := payload["content_block"].(map[string]any)
@@ -144,11 +203,19 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 		terminal, terminalReason = true, "tool_use"
 	case "message_delta":
 		delta, _ := payload["delta"].(map[string]any)
-		if stringValue(delta["stop_reason"]) == "tool_use" {
+		stopReason := stringValue(delta["stop_reason"])
+		if stopReason == "tool_use" {
 			terminal, terminalReason = true, "tool_use"
+		} else if stopReason != "" && len(h.held) > 0 {
+			h.reset()
+			return nil, upstreamError{Class: "tool_call_hold_incomplete", Message: "Anthropic stream ended with a non-tool stop reason while a tool call was incomplete", Committed: true, Fallbackable: false}
 		}
 	default:
+		if strings.HasPrefix(eventType, "response.") && (strings.Contains(eventType, "call") || strings.Contains(eventType, "tool")) {
+			return h.failClosedUnsupportedTool(eventType)
+		}
 		if choices, ok := payload["choices"].([]any); ok {
+			heldChoices := make([]any, 0, len(choices))
 			for _, rawChoice := range choices {
 				choice, _ := rawChoice.(map[string]any)
 				if choice == nil {
@@ -163,6 +230,11 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 					continue
 				}
 				toolEvent = true
+				heldChoice := map[string]any{"delta": map[string]any{"tool_calls": rawCalls}, "finish_reason": nil}
+				if index, ok := choice["index"]; ok {
+					heldChoice["index"] = index
+				}
+				heldChoices = append(heldChoices, heldChoice)
 				for _, rawCall := range rawCalls {
 					call, _ := rawCall.(map[string]any)
 					if call == nil {
@@ -182,14 +254,27 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 				}
 			}
 			if toolEvent {
-				encoded, err := json.Marshal(payload)
+				heldPayload := make(map[string]any, len(payload))
+				for key, value := range payload {
+					if key != "choices" {
+						heldPayload[key] = value
+					}
+				}
+				heldPayload["choices"] = heldChoices
+				encoded, err := json.Marshal(heldPayload)
 				if err != nil {
 					return nil, upstreamError{Class: "stream_translator_error", Message: "unable to split held tool-call frame", Err: err}
 				}
-				if len(choices) > 0 && choicesContainOnlyToolData(payload) && !terminal {
+				heldEvent := event
+				heldEvent.Data = encoded
+				event = heldEvent
+				if len(choices) > 0 && choicesContainOnlyNonTerminalToolData(payload) {
 					passThrough = stream.Event{}
 				} else {
-					passThrough.Data = encoded
+					passThrough.Data, err = json.Marshal(payload)
+					if err != nil {
+						return nil, upstreamError{Class: "stream_translator_error", Message: "unable to split held tool-call frame", Err: err}
+					}
 				}
 			}
 		}
@@ -263,6 +348,57 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 	return out, nil
 }
 
+func (h *streamToolCallHold) failClosedUnsupportedTool(kind string) ([]stream.Event, error) {
+	h.reset()
+	return nil, upstreamError{Class: "tool_call_hold_unsupported_type", Message: fmt.Sprintf("streamed tool item type %q cannot be inspected safely", kind), Committed: true, Fallbackable: false}
+}
+
+func (h *streamToolCallHold) pending() bool {
+	return h != nil && len(h.held) > 0
+}
+
+func responsesToolItemCall(item map[string]any, index int) (IRToolCall, bool, bool) {
+	kind := stringValue(item["type"])
+	toolBearing := strings.Contains(kind, "call") || strings.Contains(kind, "tool")
+	call := IRToolCall{Index: index, Dialect: "openai-responses", Kind: kind, Name: stringValue(item["name"])}
+	call.ID = stringValue(item["call_id"])
+	if call.ID == "" {
+		call.ID = stringValue(item["id"])
+	}
+	switch kind {
+	case "function_call":
+		call.Arguments = toolCallArgumentsText(item["arguments"])
+	case "custom_tool_call":
+		call.Arguments = toolCallArgumentsText(item["input"])
+	case "local_shell_call":
+		call.Arguments = canonicalToolCallArguments(item["action"])
+	default:
+		return call, toolBearing, false
+	}
+	return call, true, true
+}
+
+func stripResponsesTerminalToolArguments(payload map[string]any) error {
+	response, _ := payload["response"].(map[string]any)
+	output, _ := response["output"].([]any)
+	for _, rawItem := range output {
+		item, _ := rawItem.(map[string]any)
+		if item == nil {
+			continue
+		}
+		_, tool, recognized := responsesToolItemCall(item, 0)
+		if tool && !recognized {
+			return upstreamError{Class: "tool_call_hold_unsupported_type", Message: fmt.Sprintf("streamed tool item type %q cannot be inspected safely", stringValue(item["type"])), Committed: true, Fallbackable: false}
+		}
+		if recognized {
+			delete(item, "arguments")
+			delete(item, "input")
+			delete(item, "action")
+		}
+	}
+	return nil
+}
+
 func (h *streamToolCallHold) reset() {
 	if h != nil && h.budget != nil {
 		h.budget.Release(h.reserved + h.emitting)
@@ -322,7 +458,7 @@ func streamToolIndex(value any) int {
 	}
 }
 
-func choicesContainOnlyToolData(payload map[string]any) bool {
+func choicesContainOnlyNonTerminalToolData(payload map[string]any) bool {
 	choices, _ := payload["choices"].([]any)
 	if len(choices) == 0 {
 		return false

@@ -48,13 +48,16 @@ Set `tool_routing.streaming.hold_until_validated: true`, `hold_timeout_ms` (1–
 `hold_max_bytes` (1–33554432) to keep streamed tool-call frames from reaching the client until
 the complete call has arrived and passed validation. Text deltas continue to stream immediately.
 The hold applies to OpenAI Chat Completions, OpenAI Responses, and Anthropic Messages streams,
-including Responses `response.function_call_arguments.delta` and `.done` events. For Anthropic,
+including Responses function-call, custom-tool-call, and local-shell-call items and their argument
+events. Unrecognized tool-bearing Responses item/event types fail closed. A completed Responses
+snapshot is rewritten from the inspected call set; failed or incomplete snapshots have tool inputs
+stripped before forwarding. For Anthropic,
 held `tool_use` start/delta/stop frames are emitted in their original order before a terminal
 `message_delta` with `stop_reason: tool_use`.
-The hold uses an ordered inspector chain: schema validation runs first, and the same hook is the
-registration point for the #891 tool firewall and #890 secret-DLP inspectors in their dependent
-integrations. An inspector may allow, block, or return redacted arguments; redaction is applied to
-the held provider frames before release. Inspection failures discard the hold. The absolute
+The hold uses an ordered inspector chain: schema validation runs first, followed by the request-scoped
+#890 secret-DLP inspector when enabled; the #891 tool firewall registers through the same hook.
+Inspectors may allow, block, or return redacted arguments; redaction is applied to the held provider
+frames before release. Inspection failures discard the hold. The absolute
 `hold_timeout_ms` deadline begins with the first held tool event and is not extended by continued
 upstream byte activity. Client disconnect, upstream error, timeout, overflow, block, and cancellation
 all discard retained events and release their shared memory reservations.

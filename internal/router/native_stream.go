@@ -148,6 +148,9 @@ func proxyNativeSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, 
 			if terminal {
 				result.Terminal = true
 			}
+			if done && rc != nil && rc.streamToolCallHold != nil && rc.streamToolCallHold.pending() {
+				return result, upstreamError{Class: "tool_call_hold_incomplete", Message: "upstream stream ended before a tool-call inspection terminal", Committed: result.Committed, Fallbackable: false}
+			}
 			// Meter upstream usage even when it was requested by the router, but
 			// do not expose the usage-only chunk unless the caller opted in.
 			if normalizeDialect(dialect) == "openai-chat" && rc != nil && !rc.chatStreamIncludeUsage && isChatUsageOnlyFrame(rawFrame) {
@@ -157,13 +160,20 @@ func proxyNativeSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, 
 			}
 			frames := [][]byte{rawFrame}
 			if rc != nil && rc.streamToolCallHold != nil {
-				gated, gateErr := rc.streamToolCallHold.apply(nativeStreamEvent(rawFrame))
+				incoming := nativeStreamEvent(rawFrame)
+				gated, gateErr := rc.streamToolCallHold.apply(incoming)
 				if gateErr != nil {
 					return result, gateErr
 				}
-				frames = frames[:0]
-				for _, event := range gated {
-					frames = append(frames, event.Frame())
+				if len(gated) == 1 && gated[0].Name == incoming.Name && gated[0].Type == incoming.Type && bytes.Equal(gated[0].Data, incoming.Data) {
+					// Comments, keep-alive frames and all other untouched SSE events
+					// retain their exact wire representation (including id/retry).
+					frames = [][]byte{rawFrame}
+				} else {
+					frames = frames[:0]
+					for _, event := range gated {
+						frames = append(frames, event.Frame())
+					}
 				}
 			}
 			if rc != nil && rc.secretStreamDLP != nil {
@@ -215,6 +225,9 @@ func proxyNativeSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, 
 		}
 		if err != nil {
 			if errors.Is(err, io.EOF) {
+				if rc != nil && rc.streamToolCallHold != nil && rc.streamToolCallHold.pending() {
+					return result, upstreamError{Class: "tool_call_hold_incomplete", Message: "upstream stream ended before a tool-call inspection terminal", Committed: result.Committed, Fallbackable: false}
+				}
 				if !result.Committed {
 					return result, upstreamError{Class: "empty_stream", Message: "upstream stream ended before an event", Retryable: true}
 				}
@@ -237,10 +250,6 @@ func nativeStreamEvent(frame []byte) stream.Event {
 		if bytes.HasPrefix(line, []byte("event:")) {
 			event.Name = strings.TrimSpace(string(line[len("event:"):]))
 		}
-	}
-	var payload map[string]any
-	if json.Unmarshal(event.Data, &payload) == nil {
-		event.Type = stringValue(payload["type"])
 	}
 	return event
 }

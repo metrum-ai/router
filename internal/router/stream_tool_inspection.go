@@ -76,7 +76,13 @@ type schemaToolCallInspector struct {
 }
 
 func (i schemaToolCallInspector) inspectStreamToolCalls(calls []IRToolCall) (toolCallInspectionResult, error) {
-	validation := validateToolCalls(calls, i.tools, i.stopReason, i.options)
+	validated := make([]IRToolCall, 0, len(calls))
+	for _, call := range calls {
+		if call.Kind == "" || call.Kind == "function_call" || call.Kind == "tool_use" {
+			validated = append(validated, call)
+		}
+	}
+	validation := validateToolCalls(validated, i.tools, i.stopReason, i.options)
 	if validation.Invalid > 0 {
 		return toolCallInspectionResult{Action: toolCallInspectionBlock}, nil
 	}
@@ -93,7 +99,7 @@ func validToolCallRedaction(original, redacted []IRToolCall) bool {
 	}
 	for _, call := range redacted {
 		prior, ok := byIndex[call.Index]
-		if !ok || prior.ID != call.ID || prior.Name != call.Name || prior.Dialect != call.Dialect {
+		if !ok || prior.ID != call.ID || prior.Name != call.Name || prior.Dialect != call.Dialect || prior.Kind != call.Kind {
 			return false
 		}
 		delete(byIndex, call.Index)
@@ -146,22 +152,27 @@ func rewriteHeldToolCalls(events []stream.Event, calls []IRToolCall) ([]stream.E
 		case eventType == "response.output_item.added" || eventType == "response.output_item.done":
 			idx := streamToolIndex(payload["output_index"])
 			item, _ := payload["item"].(map[string]any)
-			if item != nil && stringValue(item["type"]) == "function_call" {
-				if replacement, ok := arguments[idx]; ok && (eventType != "response.output_item.added" || stringValue(item["arguments"]) != "") {
-					item["arguments"] = replacement
+			if item != nil {
+				if replacement, ok := arguments[idx]; ok && (eventType != "response.output_item.added" || responsesItemHasArguments(item)) {
+					if err := setResponsesItemArguments(item, replacement); err != nil {
+						return nil, err
+					}
 					if eventType == "response.output_item.added" {
 						first[idx] = true
 					}
 					changed = true
 				}
 			}
-		case eventType == "response.function_call_arguments.delta" || eventType == "response.function_call_arguments.done":
+		case eventType == "response.function_call_arguments.delta" || eventType == "response.function_call_arguments.done" || eventType == "response.custom_tool_call_input.delta" || eventType == "response.custom_tool_call_input.done":
 			idx := streamToolIndex(payload["output_index"])
 			if replacement, ok := arguments[idx]; ok {
-				if eventType == "response.function_call_arguments.done" || !first[idx] {
+				if eventType == "response.function_call_arguments.done" || eventType == "response.custom_tool_call_input.done" || !first[idx] {
 					payload["delta"] = replacement
 					if eventType == "response.function_call_arguments.done" {
 						payload["arguments"] = replacement
+						delete(payload, "delta")
+					} else if eventType == "response.custom_tool_call_input.done" {
+						payload["input"] = replacement
 						delete(payload, "delta")
 					}
 					first[idx] = true
@@ -169,6 +180,21 @@ func rewriteHeldToolCalls(events []stream.Event, calls []IRToolCall) ([]stream.E
 					payload["delta"] = ""
 				}
 				changed = true
+			}
+		case eventType == "response.completed":
+			response, _ := payload["response"].(map[string]any)
+			output, _ := response["output"].([]any)
+			for outputIndex, rawItem := range output {
+				item, _ := rawItem.(map[string]any)
+				if item == nil {
+					continue
+				}
+				if replacement, ok := arguments[outputIndex]; ok {
+					if err := setResponsesItemArguments(item, replacement); err != nil {
+						return nil, err
+					}
+					changed = true
+				}
 			}
 		case eventType == "content_block_start":
 			idx := streamToolIndex(payload["index"])
@@ -236,4 +262,33 @@ func rewriteHeldToolCalls(events []stream.Event, calls []IRToolCall) ([]stream.E
 		}
 	}
 	return out, nil
+}
+
+func responsesItemHasArguments(item map[string]any) bool {
+	switch stringValue(item["type"]) {
+	case "function_call":
+		return stringValue(item["arguments"]) != ""
+	case "custom_tool_call":
+		return stringValue(item["input"]) != ""
+	case "local_shell_call":
+		return item["action"] != nil
+	default:
+		return false
+	}
+}
+
+func setResponsesItemArguments(item map[string]any, arguments string) error {
+	switch stringValue(item["type"]) {
+	case "function_call":
+		item["arguments"] = arguments
+	case "custom_tool_call":
+		item["input"] = arguments
+	case "local_shell_call":
+		var action any
+		if err := json.Unmarshal([]byte(arguments), &action); err != nil {
+			return fmt.Errorf("decode redacted local shell action: %w", err)
+		}
+		item["action"] = action
+	}
+	return nil
 }

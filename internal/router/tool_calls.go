@@ -25,6 +25,7 @@ type IRToolCall struct {
 	Arguments string
 	Index     int
 	Dialect   string
+	Kind      string
 }
 
 // IRToolCallTruncated reports whether extraction hit maxToolCallsPerResponse.
@@ -173,6 +174,7 @@ type toolCallAccumulator struct {
 	names      map[int]string
 	args       map[int]*strings.Builder
 	dialects   map[int]string
+	kinds      map[int]string
 	truncatedC bool
 }
 
@@ -183,6 +185,7 @@ func newToolCallAccumulator() *toolCallAccumulator {
 		names:    map[int]string{},
 		args:     map[int]*strings.Builder{},
 		dialects: map[int]string{},
+		kinds:    map[int]string{},
 	}
 }
 
@@ -235,6 +238,13 @@ func (a *toolCallAccumulator) setArguments(index int, arguments string) {
 	_, _ = a.args[index].WriteString(arguments)
 }
 
+func (a *toolCallAccumulator) setKind(index int, kind string) {
+	if a == nil || a.calls[index] == nil {
+		return
+	}
+	a.kinds[index] = kind
+}
+
 // snapshot returns the calls assembled so far, in first-seen order.
 func (a *toolCallAccumulator) snapshot() []IRToolCall {
 	if a == nil {
@@ -252,6 +262,7 @@ func (a *toolCallAccumulator) snapshot() []IRToolCall {
 			Arguments: arguments,
 			Index:     index,
 			Dialect:   a.dialects[index],
+			Kind:      a.kinds[index],
 		})
 	}
 	return out

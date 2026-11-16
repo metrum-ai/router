@@ -50,6 +50,54 @@ func TestNativeChatUsageOnlyChunkRespectsCallerOptIn(t *testing.T) {
 	}
 }
 
+func TestNativeStreamToolHoldForwardsUntouchedSSEWireFrames(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(w, ": keep-alive\r\nid: 7\r\nretry: 1000\r\n\r\n")
+		_, _ = fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{\"role\":\"assistant\",\"content\":\"ok\"},\"finish_reason\":null}]}\n\n")
+		_, _ = fmt.Fprint(w, "data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}]}\n\n")
+		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer upstream.Close()
+	svc := nativeStreamTestService(t, upstream.URL, "openai-chat", []Target{{Provider: "native", Model: "native-chat"}}, func(cfg *Config) {
+		group := cfg.Models["native-stream"]
+		group.Strategy = "tool_aware"
+		group.ToolRouting = ToolRoutingConfig{Mode: "observe", Streaming: ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20}}
+		cfg.Models["native-stream"] = group
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"native-stream","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	response := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(response, req)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), ": keep-alive\r\nid: 7\r\nretry: 1000\r\n\r\n") {
+		t.Fatalf("untouched SSE wire fields were rewritten: status=%d body=%q", response.Code, response.Body.String())
+	}
+}
+
+func TestNativeStreamToolHoldFailsOnDoneWithoutToolTerminal(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(w, `data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{}"}}]},"finish_reason":null}]}`+"\n\n")
+		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	defer upstream.Close()
+	target := Target{Provider: "native", Model: "native-chat", ToolSupport: ToolSupport{OpenAIChat: []string{"tools", "tool_choice"}}}
+	svc := nativeStreamTestService(t, upstream.URL, "openai-chat", []Target{target}, func(cfg *Config) {
+		group := cfg.Models["native-stream"]
+		group.Strategy = "tool_aware"
+		group.ToolRouting = ToolRoutingConfig{Mode: "observe", Streaming: ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20}}
+		cfg.Models["native-stream"] = group
+	})
+	request := `{"model":"native-stream","stream":true,"messages":[{"role":"user","content":"hi"}],"tools":[{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(request))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	response := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(response, req)
+	if !strings.Contains(response.Body.String(), "tool_call_hold_incomplete") || strings.Contains(response.Body.String(), `"tool_calls"`) {
+		t.Fatalf("[DONE] silently discarded incomplete held tool data: status=%d body=%s", response.Code, response.Body.String())
+	}
+}
+
 func TestST1OpenAIChatNativeStreamFlushesIncrementally(t *testing.T) {
 	var upstreamBody map[string]any
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

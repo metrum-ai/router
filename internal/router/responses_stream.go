@@ -176,6 +176,9 @@ func runResponsesStream(ctx context.Context, w http.ResponseWriter, body io.Read
 				return result, upstreamError{Class: "upstream_response_too_large", Message: "upstream response exceeded configured size limit"}
 			}
 			if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+				if rc != nil && rc.streamToolCallHold != nil && rc.streamToolCallHold.pending() {
+					return result, upstreamError{Class: "tool_call_hold_incomplete", Message: "Responses stream ended before a tool-call inspection terminal", Retryable: !result.Committed, Fallbackable: false, Committed: result.Committed}
+				}
 				class := "empty_stream"
 				if result.Committed {
 					class = "stream_interrupted"

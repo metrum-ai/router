@@ -698,6 +698,74 @@ func TestSecretDLPToolCallInspectorBlocksFailOnMatch(t *testing.T) {
 	}
 }
 
+func TestSecretDLPRedactsHeldResponsesAndAnthropicToolCalls(t *testing.T) {
+	secret := fakeGitHubToken()
+	for _, tc := range []struct {
+		name, dialect, path string
+		frames              []string
+		request             string
+		target              Target
+	}{
+		{
+			name: "responses", dialect: "openai-responses", path: "/v1/responses",
+			frames: []string{
+				`event: response.output_item.added` + "\n" + `data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"lookup","arguments":""}}`,
+				`event: response.function_call_arguments.delta` + "\n" + `data: {"type":"response.function_call_arguments.delta","output_index":0,"delta":"{\"token\":\"` + secret + `\"}"}`,
+				`event: response.output_item.done` + "\n" + `data: {"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"lookup","arguments":"{\"token\":\"` + secret + `\"}"}}`,
+				`event: response.completed` + "\n" + `data: {"type":"response.completed","response":{"id":"resp_1","status":"completed","output":[{"type":"function_call","id":"fc_1","call_id":"call_1","name":"lookup","arguments":"{\"token\":\"` + secret + `\"}"}]}}`,
+			},
+			request: `{"model":"native-stream","stream":true,"input":"look up token","tools":[{"type":"function","name":"lookup","parameters":{"type":"object"}}]}`,
+			target:  Target{Provider: "native", Model: "responses-model", ToolSupport: ToolSupport{OpenAIResponses: []string{"function", "tool_choice"}}},
+		},
+		{
+			name: "anthropic", dialect: "anthropic", path: "/v1/messages",
+			frames: []string{
+				`event: message_start` + "\n" + `data: {"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"anthropic-model","content":[],"usage":{"input_tokens":1,"output_tokens":0}}}`,
+				`event: content_block_start` + "\n" + `data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_1","name":"lookup","input":{}}}`,
+				`event: content_block_delta` + "\n" + `data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"token\":\"` + secret + `\"}"}}`,
+				`event: content_block_stop` + "\n" + `data: {"type":"content_block_stop","index":0}`,
+				`event: message_delta` + "\n" + `data: {"type":"message_delta","delta":{"stop_reason":"tool_use"},"usage":{"output_tokens":1}}`,
+				`event: message_stop` + "\n" + `data: {"type":"message_stop"}`,
+			},
+			request: `{"model":"native-stream","stream":true,"max_tokens":32,"messages":[{"role":"user","content":"look up token"}],"tools":[{"name":"lookup","input_schema":{"type":"object"}}]}`,
+			target:  Target{Provider: "native", Model: "anthropic-model", ToolSupport: ToolSupport{AnthropicMessages: []string{"client_tools"}}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				for _, frame := range tc.frames {
+					_, _ = io.WriteString(w, frame+"\n\n")
+				}
+			}))
+			defer upstream.Close()
+			groupName := "native-stream"
+			svc := nativeStreamTestService(t, upstream.URL, tc.dialect, []Target{tc.target}, func(cfg *Config) {
+				group := cfg.Models[groupName]
+				group.Strategy = "tool_aware"
+				group.ToolRouting = ToolRoutingConfig{Mode: "observe", Streaming: ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20}}
+				group.PIIFilter.Enabled = true
+				group.PIIFilter.SecretsEnabled = true
+				cfg.Models[groupName] = group
+			})
+			req := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(tc.request))
+			req.Header.Set("Authorization", "Bearer "+testToken)
+			response := httptest.NewRecorder()
+			svc.Handler().ServeHTTP(response, req)
+			body := response.Body.String()
+			if response.Code != http.StatusOK || strings.Contains(body, secret) || !strings.Contains(body, "[SECRET_GITHUB_1]") {
+				t.Fatalf("status=%d leaked or missed redaction in full SSE body: %s", response.Code, body)
+			}
+			if tc.name == "anthropic" && strings.Index(body, "event: content_block_delta") > strings.Index(body, "event: message_delta") {
+				t.Fatalf("tool input delta came after terminal message_delta: %s", body)
+			}
+			if used := svc.lineBufferBudget.Used(); used != 0 {
+				t.Fatalf("aggregate budget after protocol DLP=%d, want 0", used)
+			}
+		})
+	}
+}
+
 func TestSecretDLPStreamFailsClosedForUnboundedCustomRules(t *testing.T) {
 	var calls atomic.Int64
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls.Add(1) }))

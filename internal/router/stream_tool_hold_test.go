@@ -156,6 +156,169 @@ func TestStreamToolCallHoldRecognizesResponsesAndAnthropicEvents(t *testing.T) {
 	}
 }
 
+func TestStreamToolCallHoldSplitsChatToolFrameExactlyOnce(t *testing.T) {
+	hold := newStreamToolCallHold(ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20}, nil, toolValidationOptions{})
+	first := stream.Event{Data: []byte(`{"id":"chatcmpl-1","choices":[{"index":0,"delta":{"role":"assistant","content":null,"tool_calls":[{"index":0,"id":"call_1","type":"function","function":{"name":"lookup","arguments":"{}"}}]},"finish_reason":"tool_calls"}]}`)}
+	got, err := hold.apply(first)
+	if err != nil || len(got) != 2 {
+		t.Fatalf("split terminal tool frame: events=%d err=%v", len(got), err)
+	}
+	var held, passed map[string]any
+	if err := json.Unmarshal(got[0].Data, &held); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(got[1].Data, &passed); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(got[0].Data), `"content"`) || !strings.Contains(string(got[0].Data), "tool_calls") {
+		t.Fatalf("held copy contains non-tool delta: %s", got[0].Data)
+	}
+	if strings.Contains(string(got[1].Data), `"tool_calls":[`) || !strings.Contains(string(got[1].Data), `"content":null`) || !strings.Contains(string(got[1].Data), `"finish_reason":"tool_calls"`) {
+		t.Fatalf("pass-through copy lost metadata or duplicated tool data: %s", got[1].Data)
+	}
+	hold.releaseEmitted()
+}
+
+func TestStreamToolCallHoldRedactsResponsesTerminalSnapshot(t *testing.T) {
+	hold := newStreamToolCallHold(ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20}, nil, toolValidationOptions{})
+	hold.inspectors = append(hold.inspectors, streamToolCallInspectorFunc(func(calls []IRToolCall) (toolCallInspectionResult, error) {
+		calls[0].Arguments = `{"token":"[REDACTED]"}`
+		return toolCallInspectionResult{Action: toolCallInspectionRedact, Calls: calls}, nil
+	}))
+	added := stream.Event{Type: "response.output_item.added", Data: []byte(`{"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","call_id":"call_1","name":"lookup","arguments":""}}`)}
+	if got, err := hold.apply(added); err != nil || len(got) != 0 {
+		t.Fatalf("added escaped: %v %v", got, err)
+	}
+	if len(hold.held) != 1 {
+		t.Fatalf("added was not held: %+v", hold.held)
+	}
+	terminal := stream.Event{Type: "response.completed", Data: []byte(`{"type":"response.completed","response":{"status":"completed","output":[{"type":"function_call","call_id":"call_1","name":"lookup","arguments":"{\"token\":\"ghp_secret\"}"}]}}`)}
+	got, err := hold.apply(terminal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := ""
+	for _, event := range got {
+		joined += string(event.Data)
+	}
+	if strings.Contains(joined, "ghp_secret") || !strings.Contains(joined, "[REDACTED]") {
+		t.Fatalf("Responses terminal snapshot leaked original arguments: %s", joined)
+	}
+	hold.releaseEmitted()
+}
+
+func TestStreamToolCallHoldStripsFailedResponsesTerminalArguments(t *testing.T) {
+	for _, terminalType := range []string{"response.failed", "response.incomplete"} {
+		t.Run(terminalType, func(t *testing.T) {
+			hold := newStreamToolCallHold(ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20}, nil, toolValidationOptions{})
+			added := stream.Event{Type: "response.output_item.added", Data: []byte(`{"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","call_id":"call_1","name":"lookup","arguments":""}}`)}
+			if _, err := hold.apply(added); err != nil {
+				t.Fatal(err)
+			}
+			terminal := stream.Event{Type: terminalType, Data: []byte(`{"type":"` + terminalType + `","response":{"status":"failed","output":[{"type":"function_call","arguments":"secret-value"}]}}`)}
+			got, err := hold.apply(terminal)
+			if err != nil || len(got) != 1 {
+				t.Fatalf("terminal: events=%v err=%v", got, err)
+			}
+			if strings.Contains(string(got[0].Data), "secret-value") || strings.Contains(string(got[0].Data), `"arguments"`) {
+				t.Fatalf("terminal leaked held arguments: %s", got[0].Data)
+			}
+		})
+	}
+}
+
+func TestStreamToolCallHoldFailsClosedOnUnknownResponsesToolType(t *testing.T) {
+	hold := newStreamToolCallHold(ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20}, nil, toolValidationOptions{})
+	unknown := stream.Event{Type: "response.output_item.added", Data: []byte(`{"type":"response.output_item.added","output_index":0,"item":{"type":"computer_call","call_id":"call_1","command":"secret"}}`)}
+	if got, err := hold.apply(unknown); err == nil || len(got) != 0 {
+		t.Fatalf("unknown Responses tool item was not rejected: events=%v err=%v", got, err)
+	} else {
+		var upstreamErr upstreamError
+		if !errors.As(err, &upstreamErr) || upstreamErr.Class != "tool_call_hold_unsupported_type" {
+			t.Fatalf("unexpected error: %v", err)
+		}
+	}
+}
+
+func TestStreamToolCallHoldInspectsCustomAndLocalShellCalls(t *testing.T) {
+	for _, tc := range []struct {
+		name, kind, eventType, argumentField, argument string
+	}{
+		{name: "custom_tool_call", kind: "custom_tool_call", eventType: "response.custom_tool_call_input.delta", argumentField: "input", argument: "private command"},
+		{name: "local_shell_call", kind: "local_shell_call", argumentField: "action", argument: `{"command":"private command"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			hold := newStreamToolCallHold(ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20}, nil, toolValidationOptions{})
+			var inspected []IRToolCall
+			hold.inspectors = append(hold.inspectors, streamToolCallInspectorFunc(func(calls []IRToolCall) (toolCallInspectionResult, error) {
+				inspected = append([]IRToolCall(nil), calls...)
+				calls[0].Arguments = strings.ReplaceAll(calls[0].Arguments, "private command", "[REDACTED]")
+				return toolCallInspectionResult{Action: toolCallInspectionRedact, Calls: calls}, nil
+			}))
+			item := map[string]any{"type": tc.kind, "id": "item_1", "call_id": "call_1", "name": "run", "status": "in_progress"}
+			if tc.argumentField == "input" {
+				item[tc.argumentField] = ""
+			} else {
+				item[tc.argumentField] = map[string]any{"command": "private command"}
+			}
+			addedData, _ := json.Marshal(map[string]any{"type": "response.output_item.added", "output_index": 0, "item": item})
+			if got, err := hold.apply(stream.Event{Type: "response.output_item.added", Data: addedData}); err != nil || len(got) != 0 {
+				t.Fatalf("item.added escaped: events=%v err=%v", got, err)
+			}
+			if tc.eventType != "" {
+				deltaData, _ := json.Marshal(map[string]any{"type": tc.eventType, "output_index": 0, "delta": tc.argument})
+				if got, err := hold.apply(stream.Event{Type: tc.eventType, Data: deltaData}); err != nil || len(got) != 0 {
+					t.Fatalf("input delta escaped: events=%v err=%v", got, err)
+				}
+			}
+			item["status"] = "completed"
+			if tc.argumentField == "input" {
+				item[tc.argumentField] = tc.argument
+			} else {
+				item[tc.argumentField] = map[string]any{"command": "private command"}
+			}
+			doneData, _ := json.Marshal(map[string]any{"type": "response.output_item.done", "output_index": 0, "item": item})
+			if got, err := hold.apply(stream.Event{Type: "response.output_item.done", Data: doneData}); err != nil || len(got) != 0 {
+				t.Fatalf("item.done escaped: events=%v err=%v", got, err)
+			}
+			completedItem := map[string]any{"type": tc.kind, "call_id": "call_1", "name": "run"}
+			if tc.argumentField == "input" {
+				completedItem[tc.argumentField] = tc.argument
+			} else {
+				completedItem[tc.argumentField] = map[string]any{"command": "private command"}
+			}
+			terminalData, _ := json.Marshal(map[string]any{"type": "response.completed", "response": map[string]any{"output": []any{completedItem}}})
+			got, err := hold.apply(stream.Event{Type: "response.completed", Data: terminalData})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(inspected) != 1 || inspected[0].Kind != tc.kind || !strings.Contains(inspected[0].Arguments, "private command") {
+				t.Fatalf("inspector did not receive complete %s input: %+v", tc.kind, inspected)
+			}
+			joined := ""
+			for _, event := range got {
+				joined += string(event.Data)
+			}
+			if strings.Contains(joined, "private command") || !strings.Contains(joined, "[REDACTED]") {
+				t.Fatalf("redaction did not cover held %s frames and terminal snapshot: %s", tc.kind, joined)
+			}
+			hold.releaseEmitted()
+		})
+	}
+}
+
+func TestStreamToolCallHoldDoesNotReleaseAnthropicCallAfterNonToolStop(t *testing.T) {
+	hold := newStreamToolCallHold(ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20}, nil, toolValidationOptions{})
+	start := stream.Event{Type: "content_block_start", Data: []byte(`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_1","name":"lookup","input":{}}}`)}
+	if _, err := hold.apply(start); err != nil {
+		t.Fatal(err)
+	}
+	stop := stream.Event{Type: "message_delta", Data: []byte(`{"type":"message_delta","delta":{"stop_reason":"max_tokens"}}`)}
+	if got, err := hold.apply(stop); err == nil || len(got) != 0 {
+		t.Fatalf("non-tool stop released held call: got=%v err=%v", got, err)
+	}
+}
+
 type streamToolCallInspectorFunc func([]IRToolCall) (toolCallInspectionResult, error)
 
 func (f streamToolCallInspectorFunc) inspectStreamToolCalls(calls []IRToolCall) (toolCallInspectionResult, error) {
