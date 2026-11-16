@@ -28,7 +28,7 @@ MAX_DIFF_BYTES = 1_000_000
 INITIAL_DIFF_BYTES = 300_000
 REQUEST_TIMEOUT_SECONDS = 900.0
 MIN_DIFF_BYTES = 32 * 1024
-MAX_OUTPUT_TOKENS = 32_000
+MAX_OUTPUT_TOKENS = 64_000
 MAX_REVIEW_BATCHES = 32
 # Generated files are accepted only when a named CI check is explicitly mapped here.
 GENERATED_FILE_VERIFICATION_ALLOWLIST: dict[str, str] = {}
@@ -197,17 +197,23 @@ def git_diff_names(base: str, head: str) -> list[str]:
     return [os.fsdecode(path) for path in names if path]
 
 
-def read_streaming_response(response: Any, *, timeout: float, started: float | None = None) -> tuple[str, str]:
+def read_streaming_response(
+    response: Any,
+    *,
+    timeout: float,
+    started: float | None = None,
+) -> tuple[str, str, int | None]:
     if started is None:
         started = time.monotonic()
     event_name = ""
     data_lines: list[str] = []
     text_blocks: dict[int, list[str]] = {}
     stop_reason: str | None = None
+    output_tokens: int | None = None
     message_stopped = False
 
     def dispatch_event() -> None:
-        nonlocal event_name, data_lines, stop_reason, message_stopped
+        nonlocal event_name, data_lines, stop_reason, output_tokens, message_stopped
         if not data_lines:
             event_name = ""
             return
@@ -230,6 +236,11 @@ def read_streaming_response(response: Any, *, timeout: float, started: float | N
             delta = payload.get("delta")
             if isinstance(delta, dict) and isinstance(delta.get("stop_reason"), str):
                 stop_reason = delta["stop_reason"]
+            usage = payload.get("usage")
+            if isinstance(usage, dict):
+                count = usage.get("output_tokens")
+                if isinstance(count, int) and not isinstance(count, bool) and count >= 0:
+                    output_tokens = count
         elif kind == "message_stop":
             message_stopped = True
         elif kind == "error":
@@ -253,10 +264,11 @@ def read_streaming_response(response: Any, *, timeout: float, started: float | N
     dispatch_event()
     if not message_stopped or stop_reason is None:
         raise RuntimeError("AI release review stream ended before message_delta/message_stop")
-    if not text_blocks:
-        raise RuntimeError("AI release review response had no text block")
-    final_index = max(text_blocks)
-    return "".join(text_blocks[final_index]).strip(), stop_reason
+    final_text = ""
+    if text_blocks:
+        final_index = max(text_blocks)
+        final_text = "".join(text_blocks[final_index]).strip()
+    return final_text, stop_reason, output_tokens
 
 
 def call_model(
@@ -271,7 +283,10 @@ def call_model(
         "model": MODEL,
         "max_tokens": MAX_OUTPUT_TOKENS,
         "stream": True,
-        "output_config": {"format": {"type": "json_schema", "schema": REVIEW_OUTPUT_SCHEMA}},
+        "output_config": {
+            "effort": "medium",
+            "format": {"type": "json_schema", "schema": REVIEW_OUTPUT_SCHEMA},
+        },
         "system": REVIEW_SYSTEM,
         "messages": [{
             "role": "user",
@@ -291,7 +306,9 @@ def call_model(
     started = time.monotonic()
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
-            text, stop_reason = read_streaming_response(response, timeout=timeout, started=started)
+            text, stop_reason, output_tokens = read_streaming_response(
+                response, timeout=timeout, started=started
+            )
     except urllib.error.HTTPError as exc:
         raise RuntimeError(f"AI release review request failed with HTTP status {exc.code}") from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
@@ -299,6 +316,11 @@ def call_model(
             raise RequestTimeoutError(f"AI release review request timed out after {timeout:g} seconds") from exc
         # Do not include provider response text, request data, or credentials.
         raise RuntimeError("AI release review request failed") from exc
+    count_label = str(output_tokens) if output_tokens is not None else "unknown"
+    print(
+        f"AI release review batch {batch_number}/{batch_count} usage.output_tokens={count_label}",
+        file=sys.stderr,
+    )
     if stop_reason != "end_turn":
         # Stop reasons are bounded provider metadata; never print response/request text.
         safe_reason = stop_reason if isinstance(stop_reason, str) and re.fullmatch(r"[a-z_]{1,40}", stop_reason) else "unknown"
@@ -306,6 +328,8 @@ def call_model(
         if safe_reason == "max_tokens":
             raise MaxTokensStopError(message)
         raise RuntimeError(message)
+    if not text:
+        raise RuntimeError("AI release review response had no text block (stop_reason=end_turn)")
     text = text.strip()
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.DOTALL)
