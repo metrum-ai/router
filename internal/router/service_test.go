@@ -6905,6 +6905,8 @@ func TestDailyQuotaAdmissionReservesRequestedMaxTokens(t *testing.T) {
 	cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
 	cfg.Callers[0].Quota.Day.Tokens = 20
 	cfg.Callers[0].Quota.Month.Tokens = 1000000
+	eventsPath := filepath.Join(t.TempDir(), "security.jsonl")
+	cfg.Server.Security.Events = SecurityEventStreamConfig{Enabled: true, Version: "1.4.0", Output: "file", Path: eventsPath}
 	svc, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -6923,6 +6925,14 @@ func TestDailyQuotaAdmissionReservesRequestedMaxTokens(t *testing.T) {
 	}
 	if calls.Load() != 0 {
 		t.Fatalf("upstream calls=%d, want 0", calls.Load())
+	}
+	svc.securityEventStream.close()
+	events, err := os.ReadFile(eventsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(events), "caller_quota_exhausted") || !strings.Contains(string(events), `"class_uid":2004`) || !strings.Contains(string(events), `"severity_id":3`) || strings.Contains(string(events), "provider_spend_breaker_trip") {
+		t.Fatalf("quota event missing or mislabeled: %s", events)
 	}
 }
 
@@ -9148,6 +9158,8 @@ func TestPIIFilterReplacementLimitBlocksBeforeUpstream(t *testing.T) {
 			filter := testPIIFilterConfig(mode)
 			filter.MaxReplacementsPerRequest = 1
 			cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
+			eventsPath := filepath.Join(t.TempDir(), "security.jsonl")
+			cfg.Server.Security.Events = SecurityEventStreamConfig{Enabled: true, Version: "1.4.0", Output: "file", Path: eventsPath}
 			cfg.Models["default"] = ModelGroup{
 				Strategy:  "static",
 				PIIFilter: filter,
@@ -9168,6 +9180,14 @@ func TestPIIFilterReplacementLimitBlocksBeforeUpstream(t *testing.T) {
 			}
 			if calls.Load() != 0 {
 				t.Fatalf("upstream calls=%d, want 0", calls.Load())
+			}
+			svc.securityEventStream.close()
+			events, err := os.ReadFile(eventsPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(events), "dlp_hit") || !strings.Contains(string(events), `"class_uid":2004`) || strings.Contains(string(events), "jane.doe@example.com") || strings.Contains(string(events), "jane.alt@example.com") {
+				t.Fatalf("DLP event missing or disclosed raw input: %s", events)
 			}
 		})
 	}
@@ -12496,6 +12516,8 @@ func TestImageURLPrivateDestinationsBlockedBeforeUpstream(t *testing.T) {
 
 			cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
 			cfg.Models["default"] = ModelGroup{Strategy: "static", Targets: []Target{{Provider: "mock", Model: "vision-model", InputModalities: []string{"text", "image"}}}}
+			eventsPath := filepath.Join(t.TempDir(), "security.jsonl")
+			cfg.Server.Security.Events = SecurityEventStreamConfig{Enabled: true, Version: "1.4.0", Output: "file", Path: eventsPath}
 			svc, err := New(cfg)
 			if err != nil {
 				t.Fatal(err)
@@ -12512,6 +12534,14 @@ func TestImageURLPrivateDestinationsBlockedBeforeUpstream(t *testing.T) {
 			}
 			if calls.Load() != 0 {
 				t.Fatalf("upstream calls=%d, want 0", calls.Load())
+			}
+			svc.securityEventStream.close()
+			events, err := os.ReadFile(eventsPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(events), "firewall_block") || !strings.Contains(string(events), `"class_uid":2004`) {
+				t.Fatalf("egress denial missing its OCSF event: %s", events)
 			}
 		})
 	}

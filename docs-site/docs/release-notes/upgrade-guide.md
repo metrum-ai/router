@@ -866,3 +866,7 @@ caller IDs under `exempt_callers`. Throttle rules must set
 configured quotas. Enforced suspend rules require database config mode and
 are recorded as containment-made so the containment role or an administrator
 can resume them before their TTL. Actions expire at their configured TTL.
+
+## Security event stream
+
+The OCSF 1.4.0 JSON Lines stream is disabled by default. To enable it, set `server.security.events.enabled`, choose stdout or file output, and optionally configure an HTTPS webhook with `webhook_allow_hosts` and a 32-byte-or-longer secret supplied through the environment. Webhook signatures cover the timestamp, a random nonce, and the exact body; receivers must enforce a timestamp window and reject nonce replay. Detector signals and failures use the configured detector ID and bounded signal metadata; evidence request IDs use the finding UID, capped at 256 characters. Containment events use Account Change Disable/Enable and include the target caller and acting principal. Database-backed changes to this config require a router restart. Firewall-hold (#891) and honeytoken (#884) source integrations follow when those PRs merge; keep #885 open until then. See [Security event stream](../security-governance/security-events) for full verification and queue behavior.
