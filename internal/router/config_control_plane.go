@@ -41,7 +41,7 @@ const configControlPlaneProviderHeaderNameCIIndex = "router_config_provider_head
 
 const configControlPlaneOneActiveSetPerScopeIndex = "router_config_one_active_set_per_scope"
 
-var configControlPlaneCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 13, MinData: 0, MaxData: 0}
+var configControlPlaneCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 15, MinData: 0, MaxData: 0}
 
 var configControlPlaneMigrationDefinitions = []MigrationDefinition{
 	{
@@ -142,7 +142,7 @@ var configControlPlaneMigrationDefinitions = []MigrationDefinition{
 
 func init() {
 	// Append the exported phase-6 definition after phase 5 so MaxSchema stays aligned.
-	configControlPlaneMigrationDefinitions = append(configControlPlaneMigrationDefinitions, ConfigControlPlanePhase6MigrationDefinition(), configCacheWriteMigration(), ConfigControlPlanePhase8MigrationDefinition(), ConfigControlPlanePhase9MigrationDefinition(), ConfigControlPlanePhase10MigrationDefinition(), ConfigControlPlanePhase11MigrationDefinition(), adminKeyMigrationDefinition(configControlPlanePhase11MigrationID, 12), v5AdminConfigCleanupMigration())
+	configControlPlaneMigrationDefinitions = append(configControlPlaneMigrationDefinitions, ConfigControlPlanePhase6MigrationDefinition(), configCacheWriteMigration(), ConfigControlPlanePhase8MigrationDefinition(), ConfigControlPlanePhase9MigrationDefinition(), ConfigControlPlanePhase10MigrationDefinition(), ConfigControlPlanePhase11MigrationDefinition(), adminKeyMigrationDefinition(configControlPlanePhase11MigrationID, 12), v5AdminConfigCleanupMigration(), callerTokenMetadataMigrationDefinition(), callerTokenRevocationMigrationDefinition())
 	for i := range configControlPlaneMigrationDefinitions {
 		configControlPlaneMigrationDefinitions[i] = FinalizeMigrationDefinition(configControlPlaneMigrationDefinitions[i])
 	}
@@ -233,6 +233,7 @@ func LoadActiveConfigFromDB(db *gorm.DB, runtimeScope string, identifiers ...Ide
 				return nil, fmt.Errorf("parse active canonical YAML: %w", err)
 			}
 			cfg.Admin = canonicalConfig.Admin
+			cfg.Security = canonicalConfig.Security
 		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("load active canonical YAML: %w", err)
 		}
@@ -327,7 +328,7 @@ func LoadActiveConfigFromDB(db *gorm.DB, runtimeScope string, identifiers ...Ide
 		return nil, err
 	}
 	for _, row := range callers {
-		caller := CallerConfig{ID: row.CallerID, OwnerUser: row.OwnerUser, Project: row.Project, Environment: row.Environment, Status: row.Status, TokenID: row.TokenID, MetricsAdmin: row.MetricsAdmin, ContentAdmin: row.ContentAdmin, Rate: RateConfig{RPM: row.RPM, TPM: row.TPM, Concurrent: row.Concurrent}}
+		caller := CallerConfig{ID: row.CallerID, OwnerUser: row.OwnerUser, Project: row.Project, Environment: row.Environment, Status: row.Status, TokenID: row.TokenID, TokenFormatVersion: row.TokenFormatVersion, TokenEntropyBits: row.TokenEntropyBits, RevokedTokenHash: row.RevokedTokenHash, MetricsAdmin: row.MetricsAdmin, ContentAdmin: row.ContentAdmin, Rate: RateConfig{RPM: row.RPM, TPM: row.TPM, Concurrent: row.Concurrent}}
 		caller.TokenHash, caller.TokenSHA256 = splitStoredCallerTokenVerifier(row.TokenSHA256)
 		var allowed []callerAllowedGroupRow
 		if err := db.Where("config_set_id = ? AND caller_id = ?", set.ID, row.CallerID).Order("group_name ASC").Find(&allowed).Error; err != nil {
@@ -1530,18 +1531,21 @@ type modelGroupTargetRow struct {
 func (modelGroupTargetRow) TableName() string { return "router_config_model_group_targets" }
 
 type callerRow struct {
-	CallerID     string `gorm:"column:caller_id"`
-	OwnerUser    string `gorm:"column:owner_user"`
-	Project      string `gorm:"column:project"`
-	Environment  string `gorm:"column:environment"`
-	Status       string `gorm:"column:status"`
-	TokenSHA256  string `gorm:"column:token_sha256"`
-	TokenID      string `gorm:"column:token_id"`
-	MetricsAdmin bool   `gorm:"column:metrics_admin"`
-	ContentAdmin bool   `gorm:"column:content_admin"`
-	RPM          int    `gorm:"column:rpm"`
-	TPM          int    `gorm:"column:tpm"`
-	Concurrent   int    `gorm:"column:concurrent"`
+	CallerID           string `gorm:"column:caller_id"`
+	OwnerUser          string `gorm:"column:owner_user"`
+	Project            string `gorm:"column:project"`
+	Environment        string `gorm:"column:environment"`
+	Status             string `gorm:"column:status"`
+	TokenSHA256        string `gorm:"column:token_sha256"`
+	TokenID            string `gorm:"column:token_id"`
+	TokenFormatVersion int    `gorm:"column:token_format_version"`
+	TokenEntropyBits   int    `gorm:"column:token_entropy_bits"`
+	RevokedTokenHash   string `gorm:"column:revoked_token_hash"`
+	MetricsAdmin       bool   `gorm:"column:metrics_admin"`
+	ContentAdmin       bool   `gorm:"column:content_admin"`
+	RPM                int    `gorm:"column:rpm"`
+	TPM                int    `gorm:"column:tpm"`
+	Concurrent         int    `gorm:"column:concurrent"`
 }
 
 func (callerRow) TableName() string { return "router_config_callers" }

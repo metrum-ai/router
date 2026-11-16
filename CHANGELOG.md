@@ -72,6 +72,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Generate checksummed v2 caller tokens, reject malformed checksums before lookup, add database-backed leaked-key self-revocation enforced by every authenticated route and propagated to replicas, and warn or enforce caller-token hygiene. Revoked verifiers live in a sticky denylist independent of config sets, so rollback and YAML import cannot restore a leaked key; rotation installs a new verifier.
 - Pin `golang.org/x/crypto` to the upstream fix commit for GO-2026-5932, removing the unused `openpgp` packages from the dependency graph.
 - Add optional per-provider hourly and daily spend breakers. Breaker state uses estimated costs in memory, emits structured trip/reset events, and returns `503 provider_spend_breaker` when configured to stop.
 - Raise the Go patch floor to 1.27.4 for GO-2026-6859 (CVE-2026-97054), an HTTP/1

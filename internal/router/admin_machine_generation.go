@@ -99,6 +99,10 @@ type machinePlanePublication struct {
 	Config *Config
 	// Callers is the prepared caller directory that belongs to Config.
 	Callers map[string]*callerRuntime
+	// RevokedTokens is the sticky denylist snapshot from the control-plane store.
+	// Nil means retain the current snapshot; an empty non-nil map clears it only
+	// for a deployment with no shared control-plane store.
+	RevokedTokens map[string]struct{}
 	// APIKeys is the prepared serving-port key catalogue that belongs to Config.
 	APIKeys map[string]*adminAPIKeyRuntime
 	// MaxStaleness is the configured policy freshness window (zero: unchanged).
@@ -160,7 +164,7 @@ func (s *Service) publishMachinePlane(prepare func(machinePlaneSnapshot) (*machi
 		if published == nil || pub.Generation.authorizer != published {
 			return errors.New("machine generation is not pinned to the authorizer being published")
 		}
-	} else if pub.Authorizer == nil && pub.Config == nil && pub.Callers == nil && pub.APIKeys == nil && pub.MaxStaleness == 0 && pub.Policy == nil {
+	} else if pub.Authorizer == nil && pub.Config == nil && pub.Callers == nil && pub.RevokedTokens == nil && pub.APIKeys == nil && pub.MaxStaleness == 0 && pub.Policy == nil {
 		return errors.New("empty machine plane publication")
 	}
 	// Installation starts here. Nothing below returns an error: the reload,
@@ -178,7 +182,11 @@ func (s *Service) publishMachinePlane(prepare func(machinePlaneSnapshot) (*machi
 			if callers == nil && s.quota != nil {
 				callers = s.quota.callers
 			}
-			s.callerAuth.rebuild(callerRuntimesInConfigOrder(pub.Config, callers))
+			if pub.RevokedTokens != nil {
+				s.callerAuth.rebuild(callerRuntimesInConfigOrder(pub.Config, callers), pub.RevokedTokens)
+			} else {
+				s.callerAuth.rebuild(callerRuntimesInConfigOrder(pub.Config, callers))
+			}
 		}
 		if pub.APIKeys != nil {
 			s.adminAPIKeys = pub.APIKeys
