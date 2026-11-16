@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -660,9 +661,27 @@ callers:
 	}
 	failMachinePreparation = false
 
+	// A stream change is published in the canonical config but takes effect
+	// only after process restart; verify reload logs that operational contract.
+	eventsYAML := strings.Replace(canonicalYAML, "  default_model_group: default", "  default_model_group: default\n  security:\n    events:\n      enabled: true\n      version: \"1.4.0\"\n      output: file\n      path: '"+filepath.Join(dir, "events.jsonl")+"'", 1)
+	eventsHash := sha256.Sum256([]byte(eventsYAML))
+	if err := db.Exec(`UPDATE router_config_documents SET canonical_yaml = ?, content_sha256 = ? WHERE config_set_id = ?`, eventsYAML, hex.EncodeToString(eventsHash[:]), "set-1").Error; err != nil {
+		t.Fatal(err)
+	}
+	oldLogWriter := log.Writer()
+	var reloadLogs bytes.Buffer
+	log.SetOutput(&reloadLogs)
+	defer log.SetOutput(oldLogWriter)
 	// Reload from the DB. The canonical document removes the bootstrap key.
 	if err := svc.reloadActiveConfigFromDB(); err != nil {
 		t.Fatalf("reloadActiveConfigFromDB: %v", err)
+	}
+	log.SetOutput(oldLogWriter)
+	if !strings.Contains(reloadLogs.String(), "server.security.events changed; restart required") {
+		t.Fatalf("stream config reload did not explain restart requirement: %s", reloadLogs.String())
+	}
+	if svc.securityEventStream != nil {
+		t.Fatal("reload rebuilt a process-local stream without restart")
 	}
 	machine := svc.machineGeneration.Load()
 	if machine == initialMachine || machine.authorizer != svc.currentAuthorizer() || len(machine.keys.keys) != 0 {

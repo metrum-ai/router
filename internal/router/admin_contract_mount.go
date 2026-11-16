@@ -138,6 +138,8 @@ type AdminObservation struct {
 	RateLimited   bool
 	AuthFailed    bool
 	PrincipalKind string
+	CallerID      string
+	SourceIP      string
 }
 
 func (d AdminV1Deps) now() time.Time {
@@ -251,7 +253,7 @@ func (m *adminV1Mount) wrap(op Operation, handler http.HandlerFunc) http.Handler
 		w.Header().Set(adminRequestIDHeader, requestIDValue)
 		adminDeprecationHeaders(w, op.Deprecated)
 
-		observation := AdminObservation{OperationID: op.ID, Object: op.Object, Action: op.Action, Method: op.Method}
+		observation := AdminObservation{OperationID: op.ID, Object: op.Object, Action: op.Action, Method: op.Method, SourceIP: adminSourceAddress(r)}
 		audit := AdminAuditEvent{
 			RequestID: requestIDValue, OperationID: op.ID, Object: op.Object, Action: op.Action,
 			Method: op.Method, Path: op.Path,
@@ -300,6 +302,7 @@ func (m *adminV1Mount) wrap(op Operation, handler http.HandlerFunc) http.Handler
 			return
 		}
 		observation.PrincipalKind = principal.Kind
+		observation.CallerID = principal.Subject
 		// Fail closed: a successful admin authentication must always leave a record.
 		if !m.recordCredentialEvent(ctx, AdminCredentialEvent{
 			Kind: principal.Kind, CredentialID: principal.CredentialID, Subject: principal.Subject,
@@ -363,7 +366,7 @@ func (m *adminV1Mount) wrap(op Operation, handler http.HandlerFunc) http.Handler
 						CredentialID: principal.CredentialID, Issuer: principal.Issuer, Domain: domain,
 						Object: op.Object, Action: op.Action, OperationID: op.ID, RequestID: requestIDValue,
 						ReasonCode: code, Path: op.Path, Status: status, Method: r.Method,
-						ClientIPHash: adminClientIPHash(adminSourceAddress(r)),
+						ClientIPHash: adminClientIPHash(adminSourceAddress(r)), SourceIP: adminSourceAddress(r),
 					}) {
 						status, code = http.StatusServiceUnavailable, "unavailable"
 					}
@@ -397,7 +400,7 @@ func (m *adminV1Mount) wrap(op Operation, handler http.HandlerFunc) http.Handler
 						CredentialID: principal.CredentialID, Issuer: principal.Issuer, Domain: checkDomain,
 						Object: check.Object, Action: check.Action, OperationID: op.ID, RequestID: requestIDValue,
 						ReasonCode: code, Path: op.Path, Status: status, Method: r.Method,
-						ClientIPHash: adminClientIPHash(adminSourceAddress(r)),
+						ClientIPHash: adminClientIPHash(adminSourceAddress(r)), SourceIP: adminSourceAddress(r),
 					}) {
 						status, code = http.StatusServiceUnavailable, "unavailable"
 					}
@@ -893,11 +896,10 @@ func adminSourceAddress(r *http.Request) string {
 	if r == nil {
 		return ""
 	}
-	host := r.RemoteAddr
-	if idx := strings.LastIndex(host, ":"); idx > 0 {
-		host = host[:idx]
+	if ip := parseIPFromHostPort(r.RemoteAddr); ip != nil {
+		return ip.String()
 	}
-	return host
+	return ""
 }
 
 // adminIdempotencyKeyFrom validates the Idempotency-Key header.

@@ -107,8 +107,9 @@ type ServerConfig struct {
 	ContainmentWebhook  ContainmentWebhookConfig  `yaml:"containment_webhook" json:"containmentWebhook,omitempty"`
 	// TLS configures the serving listener's own certificate (#810). The zero
 	// value keeps the v4.7 plaintext listener.
-	TLS          ServerTLSConfig    `yaml:"tls,omitempty"`
-	AdminReports AdminReportsConfig `yaml:"admin_reports"`
+	TLS          ServerTLSConfig      `yaml:"tls,omitempty"`
+	AdminReports AdminReportsConfig   `yaml:"admin_reports"`
+	Security     SecurityEventsConfig `yaml:"security" json:"security,omitempty"`
 	// AdminAPI is the `admin.api` block of the /admin/v1 contract. The documented defaults
 	// apply when it is absent.
 	AdminAPI          AdminAPIConfig           `yaml:"admin_api" json:"admin_api"`
@@ -241,6 +242,21 @@ type AdminReportsConfig struct {
 type AdminSecurityReportsConfig struct {
 	Enabled       bool `yaml:"enabled" json:"enabled"`
 	RetentionDays int  `yaml:"retention_days" json:"retention_days"`
+}
+
+// SecurityEventsConfig controls the opt-in OCSF JSON Lines event stream.
+type SecurityEventsConfig struct {
+	Events SecurityEventStreamConfig `yaml:"events" json:"events,omitempty"`
+}
+
+type SecurityEventStreamConfig struct {
+	Enabled           bool     `yaml:"enabled" json:"enabled,omitempty"`
+	Version           string   `yaml:"version" json:"version,omitempty"`
+	Output            string   `yaml:"output" json:"output,omitempty"`
+	Path              string   `yaml:"path" json:"path,omitempty"`
+	WebhookURL        string   `yaml:"webhook_url" json:"webhookUrl,omitempty"`
+	WebhookAllowHosts []string `yaml:"webhook_allow_hosts,omitempty" json:"webhookAllowHosts,omitempty"`
+	WebhookSecretEnv  string   `yaml:"webhook_secret_env" json:"webhookSecretEnv,omitempty"`
 }
 
 type ClientIPConfig struct {
@@ -1964,6 +1980,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		return fmt.Errorf("server containment_webhook requires server.config_source.mode database")
 	}
 	if err := validateAdminReports(c.Server.AdminReports, c.Server.AdminAuth, c.Server.UsageDB); err != nil {
+		return err
+	}
+	if err := validateSecurityEvents(c.Server.Security.Events); err != nil {
 		return err
 	}
 	if err := validateClientIP(c.Server.ClientIP); err != nil {
@@ -4721,4 +4740,48 @@ func normalizeDialect(d string) string {
 	default:
 		return ""
 	}
+}
+
+func validateSecurityEvents(cfg SecurityEventStreamConfig) error {
+	if !cfg.Enabled {
+		if cfg.Version != "" || cfg.Output != "" || cfg.Path != "" || cfg.WebhookURL != "" || len(cfg.WebhookAllowHosts) != 0 || cfg.WebhookSecretEnv != "" {
+			return fmt.Errorf("server.security.events settings require enabled: true")
+		}
+		return nil
+	}
+	if cfg.Version != "1.4.0" {
+		return fmt.Errorf("server.security.events.version must be 1.4.0")
+	}
+	output := strings.ToLower(strings.TrimSpace(cfg.Output))
+	if output != "stdout" && output != "file" {
+		return fmt.Errorf("server.security.events.output must be stdout or file")
+	}
+	if output == "file" && strings.TrimSpace(cfg.Path) == "" {
+		return fmt.Errorf("server.security.events.path is required for file output")
+	}
+	if output == "stdout" && strings.TrimSpace(cfg.Path) != "" {
+		return fmt.Errorf("server.security.events.path is only valid with file output")
+	}
+	if cfg.WebhookURL == "" && cfg.WebhookSecretEnv != "" {
+		return fmt.Errorf("server.security.events.webhook_secret_env requires webhook_url")
+	}
+	if cfg.WebhookURL == "" && len(cfg.WebhookAllowHosts) != 0 {
+		return fmt.Errorf("server.security.events.webhook_allow_hosts requires webhook_url")
+	}
+	if cfg.WebhookURL != "" {
+		u, err := url.Parse(cfg.WebhookURL)
+		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Fragment != "" {
+			return fmt.Errorf("server.security.events.webhook_url must be an https URL without userinfo or fragment")
+		}
+		if !regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`).MatchString(cfg.WebhookSecretEnv) {
+			return fmt.Errorf("server.security.events.webhook_secret_env must name an environment variable")
+		}
+		if len(cfg.WebhookAllowHosts) == 0 {
+			return fmt.Errorf("server.security.events.webhook_allow_hosts must allow the webhook host")
+		}
+		if err := validateSecurityEventWebhookURL(u, cfg.WebhookAllowHosts); err != nil {
+			return fmt.Errorf("server.security.events.webhook_url: %w", err)
+		}
+	}
+	return nil
 }

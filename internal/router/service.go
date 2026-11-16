@@ -116,6 +116,7 @@ type Service struct {
 	detectorMu             sync.RWMutex
 	detectorDropped        atomic.Uint64
 	detectorMetricsEnabled atomic.Bool
+	securityEventStream    *securityEventStream
 	detectorResultConsumer func(detect.Result)
 	shaping                *upstreamShapeManager
 	providerSpend          *providerSpendBreaker
@@ -516,6 +517,14 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		s.Close()
 		return nil, err
 	}
+	if cfg.Server.Security.Events.Enabled {
+		stream, err := newSecurityEventStream(cfg.Server.Security.Events, os.Getenv)
+		if err != nil {
+			s.Close()
+			return nil, err
+		}
+		s.securityEventStream = stream
+	}
 	s.routes()
 	s.initAdminPlane()
 	// Admin v1 is mounted only after machine auth has been initialized. A
@@ -565,6 +574,9 @@ func (s *Service) TLSManager() *tlsacme.Manager {
 }
 
 func (s *Service) Close() {
+	if s.securityEventStream != nil {
+		s.securityEventStream.close()
+	}
 	if s.adminAuditJanitorStop != nil {
 		close(s.adminAuditJanitorStop)
 		s.adminAuditJanitorStop = nil
@@ -681,6 +693,7 @@ func (s *Service) reloadActiveConfigFromDB() error {
 	if s.cfg == nil {
 		return fmt.Errorf("reload active config: service has no current configuration")
 	}
+	previousSecurityEvents := s.cfg.Server.Security.Events
 	scope := strings.TrimSpace(s.cfg.Server.ConfigSource.RuntimeScope)
 	if scope == "" {
 		return fmt.Errorf("reload active config: runtime scope is required")
@@ -792,6 +805,9 @@ func (s *Service) reloadActiveConfigFromDB() error {
 	}
 	if err := s.configureAutomaticContainment(context.Background()); err != nil {
 		return fmt.Errorf("reload active config: configure automatic containment: %w", err)
+	}
+	if !sameSecurityEventConfig(previousSecurityEvents, newCfg.Server.Security.Events) {
+		log.Printf("config control-plane reload: server.security.events changed; restart required for security event stream settings to take effect")
 	}
 	if adminListenerSettingsDiffer(s.cfg.Admin, newCfg.Admin) {
 		// The admin listener binds once; a reload cannot rebind it. Say so
@@ -1401,6 +1417,9 @@ func (s *Service) writeMetricsPayload(w http.ResponseWriter, r *http.Request, rc
 		// byte-identical /metrics output.
 		_, _ = io.WriteString(w, s.tlsManager.Prometheus())
 	}
+	if s.securityEventStream != nil {
+		_, _ = io.WriteString(w, s.securityEventStream.prometheus())
+	}
 	if s.usage != nil {
 		_, _ = io.WriteString(w, s.usage.writer.prometheus())
 	}
@@ -1941,6 +1960,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 			rc.rec.PIIFilterMode = piiResult.Mode
 			rc.rec.PIIFilterReplacements = piiResult.Replacements
 			rc.rec.PIIFilterRuleCount = piiRuleCount(piiResult)
+			s.recordPIISecurityEvent(rc, http.StatusBadRequest, "blocked")
 			rc.rec.Warnings = append(rc.rec.Warnings, piiResult.Warnings...)
 			rc.trace("pii_filter_blocked", "pii_filter matched request content", Target{}, 0, http.StatusBadRequest, "pii-filter-blocked", false, 0)
 			s.writeError(w, rc, http.StatusBadRequest, "pii-filter-blocked")
@@ -1954,6 +1974,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		rc.rec.PIIFilterMode = piiResult.Mode
 		rc.rec.PIIFilterReplacements = piiResult.Replacements
 		rc.rec.PIIFilterRuleCount = piiRuleCount(piiResult)
+		s.recordPIISecurityEvent(rc, http.StatusOK, "redacted")
 		rc.rec.Warnings = appendWarning(rc.rec.Warnings, "pii-filter-applied")
 		rc.rec.Warnings = append(rc.rec.Warnings, piiResult.Warnings...)
 		rc.trace("pii_filter_applied", fmt.Sprintf("replacements=%d rules=%d", piiResult.Replacements, piiRuleCount(piiResult)), Target{}, 0, 0, "", false, 0)
@@ -2598,7 +2619,7 @@ func (s *Service) recordProviderSpendEvent(provider, action, window string, ceil
 	if action == "trip" {
 		s.dispatchBuiltinDetectorEvent(detect.EventSpendBreakerTripped, "", "", provider)
 	}
-	if !s.securityReportsEnabled() {
+	if !s.securityReportsEnabled() && s.securityEventStream == nil {
 		return
 	}
 	reason := "provider_spend_breaker_" + action + "_" + window + ":" + provider
