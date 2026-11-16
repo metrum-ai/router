@@ -347,6 +347,16 @@ func TestProjectConfigToRelationalRejectsInvalidInputs(t *testing.T) {
 	}
 }
 
+func TestProjectConfigToRelationalRejectsRealGroupGrantToHoneytoken(t *testing.T) {
+	r, closeDB := newRelationalProjectionTestDB(t, "set-honeytoken")
+	defer func() { _ = closeDB() }()
+	cfg := minimalProjectionConfig()
+	cfg.Callers[0].Honeytoken = &HoneytokenConfig{Label: "projection decoy"}
+	if err := ProjectConfigToRelational(r.db, "set-honeytoken", cfg); err == nil || !strings.Contains(err.Error(), "only allow canary") {
+		t.Fatalf("projection accepted a honeytoken grant to a real group: %v", err)
+	}
+}
+
 func TestProjectConfigToRelationalRoundTripsThroughLoader(t *testing.T) {
 	t.Setenv("MOCK_API_KEY", "test-only-projection-provider-key")
 	r, closeDB := newRelationalProjectionTestDB(t, "set-1")

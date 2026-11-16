@@ -11,13 +11,14 @@ import (
 
 const (
 	EventHoneytokenUsed      = "honeytoken.used"
+	EventCanaryGroupUsed     = "canary_group.used"
 	EventSpendBreakerTripped = "spend_breaker.tripped"
 )
 
 type HoneytokenDetector struct{}
 
 func (HoneytokenDetector) Detect(_ context.Context, event detector.Event) ([]detector.Signal, error) {
-	if event.Kind != EventHoneytokenUsed {
+	if event.Kind != EventHoneytokenUsed && event.Kind != EventCanaryGroupUsed {
 		return []detector.Signal{}, nil
 	}
 	return []detector.Signal{{SchemaVersion: detector.SchemaVersion, DetectorID: "honeytoken", Severity: "critical", Score: 1, Key: event.KeyID, EvidenceRequestIDs: evidence(event.RequestID)}}, nil

@@ -1111,6 +1111,15 @@
           "environment": {
             "type": "string"
           },
+          "honeytoken_label": {
+            "type": "string"
+          },
+          "honeytoken_last_seen": {
+            "type": "string"
+          },
+          "honeytoken_planted_at": {
+            "type": "string"
+          },
           "id": {
             "type": "string"
           },
@@ -1162,6 +1171,9 @@
             "type": "boolean"
           },
           "environment": {
+            "type": "string"
+          },
+          "honeytoken_label": {
             "type": "string"
           },
           "key_slug": {

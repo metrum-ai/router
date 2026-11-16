@@ -269,7 +269,11 @@ func TestID006ReadinessAndPassthrough(t *testing.T) {
 			method = "POST"
 		}
 		rr := httptest.NewRecorder()
-		svc.Handler().ServeHTTP(rr, httptest.NewRequest(method, path, nil))
+		req := httptest.NewRequest(method, path, nil)
+		if strings.HasPrefix(path, "/v1/") {
+			req.Header.Set("Authorization", "Bearer "+testToken)
+		}
+		svc.Handler().ServeHTTP(rr, req)
 		if rr.Code != status {
 			t.Fatal(path, rr.Code)
 		}

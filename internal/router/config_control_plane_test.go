@@ -59,7 +59,7 @@ func TestAdminClientAndOperationsMigrationOrder(t *testing.T) {
 	for i := range configControlPlaneMigrationDefinitions {
 		definition := &configControlPlaneMigrationDefinitions[i]
 		switch definition.ID {
-		case 2026111610:
+		case adminClientMigrationID:
 			client = definition
 		case adminOperationsMigrationID:
 			operations = definition
@@ -73,6 +73,41 @@ func TestAdminClientAndOperationsMigrationOrder(t *testing.T) {
 	}
 }
 
+func TestConfigControlPlaneHoneytokenMigrationUpgradesSchema17(t *testing.T) {
+	definition := configControlPlaneHoneytokenMigrationDefinition()
+	if definition.ID != 2026111611 || definition.SchemaVersion != 18 || len(definition.Dependencies) != 1 || definition.Dependencies[0] != adminClientMigrationID {
+		t.Fatalf("honeytoken migration identity/dependency = id %d, schema %d, deps %v", definition.ID, definition.SchemaVersion, definition.Dependencies)
+	}
+	r, closeDB, err := ConfigControlPlaneMigrationRunner(UsageDBConfig{Driver: "sqlite", Path: filepath.Join(t.TempDir(), "config.sqlite")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = closeDB() }()
+	legacyDefinitions := make([]MigrationDefinition, 0, len(configControlPlaneMigrationDefinitions))
+	for _, definition := range configControlPlaneMigrationDefinitions {
+		if definition.SchemaVersion <= 17 {
+			legacyDefinitions = append(legacyDefinitions, definition)
+		}
+	}
+	legacy, err := NewMigrationRunner(r.db, configControlPlaneScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 17, MinData: 0, MaxData: 0}, legacyDefinitions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	applyConfigControlPlaneMigrationsForTest(t, legacy)
+	if r.db.Migrator().HasColumn("router_config_callers", "honeytoken_label") {
+		t.Fatal("schema 17 unexpectedly contains the honeytoken column")
+	}
+	current, err := NewMigrationRunner(r.db, configControlPlaneScope, configControlPlaneCompatibility, configControlPlaneMigrationDefinitions)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := current.ApplyPending("test-honeytoken-schema-upgrade"); err != nil {
+		t.Fatal(err)
+	}
+	if err := verifyConfigControlPlaneHoneytokens(r.db); err != nil {
+		t.Fatalf("honeytoken columns missing: %v", err)
+	}
+}
 func TestConfigControlPlanePhase1MigratesRelationalSchema(t *testing.T) {
 	r, closeDB, err := ConfigControlPlaneMigrationRunner(UsageDBConfig{Driver: "sqlite", Path: filepath.Join(t.TempDir(), "config.sqlite")})
 	if err != nil {
@@ -130,6 +165,13 @@ func TestLoadActiveConfigFromDBReadsValidatedCoreProjection(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	honey, err := GenerateCallerToken(TokenGenerateOptions{OwnerUser: "security", Project: "decoys", Environment: "prod", KeySlug: "honey", HoneytokenLabel: "database reload test", Now: time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO router_config_callers (config_set_id, caller_id, owner_user, project, environment, status, token_sha256, token_id, honeytoken_label, honeytoken_planted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, "set-1", honey.Caller.ID, honey.Caller.OwnerUser, honey.Caller.Project, honey.Caller.Environment, accountStatusActive, storedCallerTokenVerifier(honey.Caller), honey.TokenID, honey.Caller.Honeytoken.Label, honey.Caller.Honeytoken.PlantedAt).Error; err != nil {
+		t.Fatal(err)
+	}
 	cfg, err := LoadActiveConfigFromDB(db, "staging", IdentifierConfig{Mode: "passthrough"})
 	if err != nil {
 		t.Fatal(err)
@@ -146,6 +188,15 @@ func TestLoadActiveConfigFromDBReadsValidatedCoreProjection(t *testing.T) {
 	}
 	if model := provider.Models["small"]; model.Model != "mock-small" || model.ContextTokens != 8192 {
 		t.Fatalf("model projection mismatch: %+v", model)
+	}
+	var loadedHoneytoken *HoneytokenConfig
+	for _, caller := range cfg.Callers {
+		if caller.ID == honey.Caller.ID {
+			loadedHoneytoken = caller.Honeytoken
+		}
+	}
+	if loadedHoneytoken == nil || loadedHoneytoken.Label != "database reload test" || loadedHoneytoken.PlantedAt != honey.Caller.Honeytoken.PlantedAt {
+		t.Fatalf("database reload lost honeytoken metadata: %+v", loadedHoneytoken)
 	}
 }
 

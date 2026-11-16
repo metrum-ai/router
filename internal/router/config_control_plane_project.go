@@ -61,6 +61,9 @@ func ProjectConfigToRelational(tx *gorm.DB, configSetID string, cfg *Config) err
 	if cfg == nil {
 		return fmt.Errorf("project config: validated config is required")
 	}
+	if err := validateHoneytokenAllowedGroups(cfg.Callers, cfg.Models); err != nil {
+		return fmt.Errorf("project config: %w", err)
+	}
 
 	if err := deleteControlPlaneSetChildren(tx, configSetID); err != nil {
 		return err

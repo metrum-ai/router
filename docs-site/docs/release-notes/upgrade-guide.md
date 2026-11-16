@@ -69,6 +69,26 @@ Apply usage migration 2026111602 (usage schema version 17) first. Grant `admin:s
 only to the self-test operator; read and export grants do not include write.
 
 
+## Honeytokens and canary groups (v5.0.0)
+
+Honeytoken caller metadata and canary group allowlists are optional. Existing
+configurations need no changes. A honeytoken caller's `allow` list can contain
+only canary groups; config validation rejects real model groups, so decoy keys
+cannot inherit production access. New canary groups must use a targetless
+`static` strategy and explicitly list selected callers. Authenticated use emits
+a metadata-only critical event before dispatch; it contains no token, prompt,
+or user message. Known allowed canary completions return a canned response,
+while unknown/disallowed models and unsupported features retain ordinary
+caller errors. The config-control-plane migration advances schema 17 → 18
+with ID `2026111611`, depending on admin-client migration `2026111610`, to
+persist honeytoken label and planting time. Database-mode issuance and canary
+group grants use the active canonical config store. See
+[Honeytokens and canary groups](/docs/security-governance/honeytokens) for
+setup, reporting, and key handling.
+
+Caller routes authenticate before returning an identifier-rewrite availability
+error. Invalid credentials therefore receive 401, while authenticated
+honeytoken use is recorded before the route returns the unavailable response.
 
 ## Detector service boundary (v5.0.0)
 

@@ -5,6 +5,7 @@ package router
 
 import (
 	"bytes"
+	"container/list"
 	"context"
 	"crypto/rand"
 	"crypto/subtle"
@@ -124,6 +125,10 @@ type Service struct {
 	detectorMetricsEnabled atomic.Bool
 	securityEventStream    *securityEventStream
 	detectorResultConsumer func(detect.Result)
+	honeytokenEventMu      sync.Mutex
+	honeytokenEventLast    map[string]honeytokenEventEntry
+	honeytokenEventLRU     *list.List
+	honeytokenEventDrops   atomic.Uint64
 	shaping                *upstreamShapeManager
 	providerSpend          *providerSpendBreaker
 	contentCaptureKeys     contentCaptureKeyResolver
@@ -1187,11 +1192,23 @@ func (s *Service) modelMetadata(caller *callerRuntime, codexResponsesOnly bool) 
 	if caller == nil {
 		return data
 	}
-	for name := range caller.allow {
-		if codexResponsesOnly && len(s.codexTargetsForGroup(name, &IRRequest{Input: "catalog"})) == 0 {
+	visibleGroups := caller.allow
+	if caller.cfg.Honeytoken != nil {
+		// A decoy key should look like an ordinary router credential when a
+		// client enumerates models. Requests remain sinkholed by handleLLM.
+		visibleGroups = make(map[string]bool, len(s.cfg.Models))
+		for name := range s.cfg.Models {
+			visibleGroups[name] = true
+		}
+	}
+	for name := range visibleGroups {
+		group := s.cfg.Models[name]
+		if caller.cfg.Honeytoken == nil && group.Canary != nil && !canaryAllowsCaller(group.Canary, caller.cfg.ID) {
 			continue
 		}
-		group := s.cfg.Models[name]
+		if codexResponsesOnly && group.Canary == nil && len(s.codexTargetsForGroup(name, &IRRequest{Input: "catalog"})) == 0 {
+			continue
+		}
 		internalModalities := s.supportedInputModalitiesForGroup(name)
 		if codexResponsesOnly {
 			internalModalities = s.codexInputModalitiesForGroup(name)
@@ -1482,6 +1499,7 @@ func (s *Service) writeMetricsPayload(w http.ResponseWriter, r *http.Request, rc
 		_, _ = fmt.Fprintf(w, "# HELP metrum_ai_router_detector_dropped_total Detector events dropped because the bounded queue was full.\n# TYPE metrum_ai_router_detector_dropped_total counter\nmetrum_ai_router_detector_dropped_total %d\n", detectorDrops)
 		_, _ = fmt.Fprintf(w, "# HELP metrum_ai_router_detector_invalid_dropped_total Detector events rejected before queueing because they failed contract validation.\n# TYPE metrum_ai_router_detector_invalid_dropped_total counter\nmetrum_ai_router_detector_invalid_dropped_total %d\n", s.detectorInvalidDropped.Load())
 	}
+	_, _ = fmt.Fprintf(w, "# HELP metrum_ai_router_honeytoken_events_deduplicated_total Honeytoken and canary security events suppressed by the per-token one-minute event bound.\n# TYPE metrum_ai_router_honeytoken_events_deduplicated_total counter\nmetrum_ai_router_honeytoken_events_deduplicated_total %d\n", s.honeytokenEventDrops.Load())
 	if s.tlsManager != nil {
 		// Empty unless a listener terminates TLS itself, so a v4.7 configuration keeps
 		// byte-identical /metrics output.
@@ -1661,13 +1679,12 @@ func (s *Service) handleContentCapturePurgeExpired(w http.ResponseWriter, r *htt
 }
 
 func (s *Service) handleCountTokens(w http.ResponseWriter, r *http.Request) {
-	if !s.identifiersAvailable() {
-		s.writeUnavailableIdentifiers(w, "anthropic")
-		return
-	}
-
 	rc, ok := s.begin(w, r, "anthropic")
 	if !ok {
+		return
+	}
+	if !s.identifiersAvailable() {
+		s.writeUnavailableIdentifiers(w, "anthropic")
 		return
 	}
 	rc.rec.RequestKind = "count_tokens"
@@ -1711,7 +1728,24 @@ func (s *Service) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, rc, http.StatusBadRequest, "missing-model")
 		return
 	}
-	if _, exists := s.cfg.Models[req.Model]; !exists || !rc.callerCanUseGroup(req.Model) {
+	if rc.caller.cfg.Honeytoken != nil {
+		s.quota.Release(rc.caller)
+		bodyConcurrencyHeld = false
+		if !s.admitSinkhole(w, rc) {
+			return
+		}
+		defer s.quota.Release(rc.caller)
+		rc.rec.RequestedModel = req.Model
+		rc.rec.ResolvedGroup = "honeytoken"
+		rc.rec.UsageSource = "estimated"
+		s.writeEstimatedCountTokens(w, rc, req)
+		return
+	}
+	group, exists := s.cfg.Models[req.Model]
+	if !exists || !rc.callerCanUseGroup(req.Model) {
+		if exists && group.Canary != nil {
+			s.recordCanaryUse(rc, req.Model)
+		}
 		reason := "unknown-model"
 		if exists {
 			reason = "model-not-allowed"
@@ -1719,7 +1753,26 @@ func (s *Service) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		s.writeAnthropicModelNotFound(w, rc, reason)
 		return
 	}
+	if group.Canary != nil && !canaryAllowsCaller(group.Canary, rc.caller.cfg.ID) {
+		s.recordCanaryUse(rc, req.Model)
+		s.writeAnthropicModelNotFound(w, rc, "model-not-allowed")
+		return
+	}
 	rc.rec.RequestedModel = req.Model
+	if rc.caller.cfg.Honeytoken != nil || group.Canary != nil {
+		if group.Canary != nil {
+			s.recordCanaryUse(rc, req.Model)
+		}
+		s.quota.Release(rc.caller)
+		bodyConcurrencyHeld = false
+		if !s.admitSinkhole(w, rc) {
+			return
+		}
+		defer s.quota.Release(rc.caller)
+		rc.rec.UsageSource = "estimated"
+		s.writeEstimatedCountTokens(w, rc, req)
+		return
+	}
 	rc.rec.QuotaState = conc.QuotaState
 	rc.rec.KeyState = conc.KeyState
 	rc.rec.UsageSource = "none"
@@ -1727,13 +1780,13 @@ func (s *Service) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect string) {
-	if !s.identifiersAvailable() {
-		s.writeUnavailableIdentifiers(w, dialect)
-		return
-	}
 	endpointDialect := dialect
 	rc, ok := s.begin(w, r, dialect)
 	if !ok {
+		return
+	}
+	if !s.identifiersAvailable() {
+		s.writeUnavailableIdentifiers(w, dialect)
 		return
 	}
 	if !s.prepareRouterVia(w, r, rc) {
@@ -1831,9 +1884,41 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 			rc.chatStreamIncludeUsage, _ = options["include_usage"].(bool)
 		}
 	}
+	if rc.caller.cfg.Honeytoken != nil {
+		if invalidReasoningEffort(dialect, req.Raw) {
+			code := "invalid_reasoning_effort"
+			s.finish(rc, http.StatusBadRequest, &code)
+			writeJSON(w, http.StatusBadRequest, map[string]any{"error": map[string]any{
+				"type": "invalid_request_error", "code": code, "param": "reasoning_effort", "message": "invalid reasoning effort", "request_id": rc.id,
+			}})
+			return
+		}
+		// Model names are intentionally not validated for decoy credentials; a
+		// different error for unknown names would expose the sinkhole.
+		if group, exists := s.cfg.Models[req.Model]; exists && group.Canary != nil {
+			s.recordCanaryUse(rc, req.Model)
+		}
+		s.quota.Release(rc.caller)
+		bodyConcurrencyHeld = false
+		if !s.admitSinkhole(w, rc) {
+			return
+		}
+		defer s.quota.Release(rc.caller)
+		rc.rec.RequestedModel = req.Model
+		rc.rec.ResolvedGroup = "honeytoken"
+		text, usage := honeytokenSinkholeProfile(rc.id)
+		rc.rec.Usage = usage
+		rc.rec.UsageSource = "estimated"
+		s.writeIR(w, dialect, &IRResponse{ID: rc.id, Model: req.Model, Text: text, StopReason: "end_turn", Usage: rc.rec.Usage}, req.Stream, rc)
+		s.finish(rc, http.StatusOK, nil)
+		return
+	}
 
 	group, exists := s.cfg.Models[req.Model]
 	if !exists || !rc.callerCanUseGroup(req.Model) {
+		if exists && group.Canary != nil {
+			s.recordCanaryUse(rc, req.Model)
+		}
 		reason := "unknown-model"
 		if exists {
 			reason = "model-not-allowed"
@@ -1845,6 +1930,17 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 			s.writeAnthropicModelNotFound(w, rc, reason)
 		} else {
 			s.writeError(w, rc, http.StatusForbidden, reason)
+		}
+		return
+	}
+	if group.Canary != nil && !canaryAllowsCaller(group.Canary, rc.caller.cfg.ID) {
+		s.recordCanaryUse(rc, req.Model)
+		if dialect == "openai-chat" || dialect == "openai-responses" {
+			s.writeModelNotFound(w, rc, req.Model, "model-not-allowed")
+		} else if dialect == "anthropic" {
+			s.writeAnthropicModelNotFound(w, rc, "model-not-allowed")
+		} else {
+			s.writeError(w, rc, http.StatusForbidden, "model-not-allowed")
 		}
 		return
 	}
@@ -1871,7 +1967,6 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	}
 	if rc.rec.Endpoint == "responses.compact" {
 		if rawValuePresent(req.Raw, "previous_response_id") {
-			// Stored response ownership and target affinity are not implemented yet.
 			s.writeUnsupportedEndpoint(w, r, rc, false)
 			return
 		}
@@ -1892,6 +1987,50 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		}
 		group.Targets = native
 		req.NoCache = true
+	}
+	sinkhole := group.Canary != nil
+	if sinkhole {
+		if responsesBodyOnChatEndpoint && rawValuePresent(req.Raw, "previous_response_id") && !modelGroupHasNativeResponsesTarget(s.cfg, group) {
+			rc.trace("openai_compatibility_shape", "endpoint=/v1/chat/completions detected_shape=openai-responses bridge_direction=responses_to_chat mode=enabled rejection_reason="+openAIChatEndpointPreviousResponseUnsupportedError, Target{}, 0, http.StatusBadRequest, openAIChatEndpointPreviousResponseUnsupportedError, false, 0)
+			s.writeError(w, rc, http.StatusBadRequest, openAIChatEndpointPreviousResponseUnsupportedError)
+			return
+		}
+		if reason := s.mediaAdmission(group, req, dialect); reason != "" {
+			s.writeError(w, rc, http.StatusBadRequest, reason)
+			return
+		}
+		if _, err := applyPIIFilter(req, group.PIIFilter, dialect); err != nil {
+			var blocked piiFilterBlockedError
+			if errors.As(err, &blocked) {
+				s.writeError(w, rc, http.StatusBadRequest, "pii-filter-blocked")
+			} else {
+				s.writeError(w, rc, http.StatusBadGateway, "pii-filter-failed")
+			}
+			return
+		}
+		s.quota.Release(rc.caller)
+		bodyConcurrencyHeld = false
+		if !s.admitSinkhole(w, rc) {
+			return
+		}
+		defer s.quota.Release(rc.caller)
+	}
+	if group.Canary != nil {
+		s.recordCanaryUse(rc, req.Model)
+		rc.rec.RequestedModel = req.Model
+		rc.rec.ResolvedGroup = req.Model
+		text, usage := honeytokenSinkholeProfile(rc.id)
+		rc.rec.Usage = usage
+		rc.rec.UsageSource = "estimated"
+		response := &IRResponse{ID: rc.id, Model: req.Model, Text: text, StopReason: "end_turn", Usage: rc.rec.Usage}
+		s.writeIR(w, dialect, response, req.Stream, rc)
+		s.finish(rc, http.StatusOK, nil)
+		return
+	}
+	if responsesBodyOnChatEndpoint && rawValuePresent(req.Raw, "previous_response_id") && !modelGroupHasNativeResponsesTarget(s.cfg, group) {
+		rc.trace("openai_compatibility_shape", "endpoint=/v1/chat/completions detected_shape=openai-responses bridge_direction=responses_to_chat mode=enabled rejection_reason="+openAIChatEndpointPreviousResponseUnsupportedError, Target{}, 0, http.StatusBadRequest, openAIChatEndpointPreviousResponseUnsupportedError, false, 0)
+		s.writeError(w, rc, http.StatusBadRequest, openAIChatEndpointPreviousResponseUnsupportedError)
+		return
 	}
 	// Decide Responses→Anthropic limitations on the original history, before
 	// filtering or shadow replay. A system history on a PII-enabled group is now
@@ -1957,11 +2096,6 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	}
 	if reason := s.mediaAdmission(group, req, dialect); reason != "" {
 		s.writeError(w, rc, http.StatusBadRequest, reason)
-		return
-	}
-	if responsesBodyOnChatEndpoint && rawValuePresent(req.Raw, "previous_response_id") && !modelGroupHasNativeResponsesTarget(s.cfg, group) {
-		rc.trace("openai_compatibility_shape", "endpoint=/v1/chat/completions detected_shape=openai-responses bridge_direction=responses_to_chat mode=enabled rejection_reason="+openAIChatEndpointPreviousResponseUnsupportedError, Target{}, 0, http.StatusBadRequest, openAIChatEndpointPreviousResponseUnsupportedError, false, 0)
-		s.writeError(w, rc, http.StatusBadRequest, openAIChatEndpointPreviousResponseUnsupportedError)
 		return
 	}
 	rc.rec.RequestedModel = req.Model
@@ -2456,6 +2590,31 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	}
 }
 
+func (s *Service) admitSinkhole(w http.ResponseWriter, rc *requestContext) bool {
+	if s == nil || s.quota == nil || rc == nil || rc.caller == nil {
+		return false
+	}
+	ad := s.quota.Admit(rc.caller, 0)
+	if !ad.OK {
+		s.writeAdmissionError(w, rc, ad)
+		return false
+	}
+	rc.rec.QuotaState = ad.QuotaState
+	rc.rec.KeyState = ad.KeyState
+	if ad.WarningText != "" {
+		addRouterWarningHeaders(w.Header(), ad.WarningText)
+		rc.rec.Warnings = append(rc.rec.Warnings, ad.WarningText)
+	}
+	return true
+}
+
+func canaryAllowsCaller(canary *CanaryGroupConfig, callerID string) bool {
+	if canary == nil || callerID == "" {
+		return false
+	}
+	return stringSliceContains(canary.Callers, callerID)
+}
+
 func estimatedUsageForReservation(req *IRRequest, dialect string, reservationTokens int) Usage {
 	input := estimateTokens(req)
 	if input <= 0 {
@@ -2664,6 +2823,11 @@ func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) 
 		rc.rec.HumanOwner = mission.HumanOwner
 	}
 	rc.trace("router_receive", "router request receive", Target{}, 0, 0, "", false, 0)
+	if caller != nil && caller.cfg.Honeytoken != nil {
+		// Record use as soon as token verification identifies the planted key,
+		// even if a later account or binding policy rejects the request.
+		s.recordHoneytokenUse(rc)
+	}
 	if err != nil {
 		status := http.StatusUnauthorized
 		code := "unauthorized"
@@ -2685,6 +2849,120 @@ func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) 
 	}
 	rc.trace("request_accepted", "", Target{}, 0, 0, "", false, 0)
 	return rc, true
+}
+
+func (s *Service) recordHoneytokenUse(rc *requestContext) {
+	if rc == nil || rc.caller == nil || rc.caller.cfg.Honeytoken == nil {
+		return
+	}
+	if !s.allowHoneytokenEvent(rc.rec.TokenID, "security_honeytoken_used", time.Now().UTC()) {
+		return
+	}
+	s.dispatchBuiltinDetectorEvent(detect.EventHoneytokenUsed, rc.caller.cfg.ID, rc.id, rc.rec.TokenID)
+	if s.usage == nil {
+		return
+	}
+	s.usage.EmitSecurityAccessEvent(securityAccessEvent{
+		TS:           time.Now().UTC(),
+		RequestID:    rc.id,
+		EventType:    "security_honeytoken_used",
+		Surface:      securitySurfaceForDialect(rc.dialect),
+		HTTPMethod:   rc.method,
+		PathTemplate: rc.pathTemplate,
+		Outcome:      "critical",
+		ReasonCode:   "honeytoken_used",
+		AuthSource:   "caller_token",
+		CallerID:     rc.caller.cfg.ID,
+		TokenID:      rc.rec.TokenID,
+		IPAddress:    rc.clientIP.Address,
+		IPVersion:    rc.clientIP.Version,
+	})
+}
+
+func (s *Service) recordHoneytokenRequest(caller *callerRuntime, tokenID string, r *http.Request, dialect string) {
+	if caller == nil || caller.cfg.Honeytoken == nil || r == nil {
+		return
+	}
+	now := time.Now()
+	rc := s.newRequestContext(r, dialect, requestID(), now, resolveClientIP(r, s.cfg.Server.ClientIP))
+	rc.caller = caller
+	rc.rec.CallerID = caller.cfg.ID
+	rc.rec.TokenID = tokenID
+	s.recordHoneytokenUse(rc)
+}
+
+func (s *Service) recordCanaryUse(rc *requestContext, group string) {
+	if rc == nil || rc.caller == nil {
+		return
+	}
+	if !s.allowHoneytokenEvent(rc.rec.TokenID, "security_canary_group_used", time.Now().UTC(), group) {
+		return
+	}
+	s.dispatchBuiltinDetectorEvent(detect.EventCanaryGroupUsed, rc.caller.cfg.ID, rc.id, rc.rec.TokenID)
+	if s.usage == nil {
+		return
+	}
+	s.usage.EmitSecurityAccessEvent(securityAccessEvent{
+		TS:           time.Now().UTC(),
+		RequestID:    rc.id,
+		EventType:    "security_canary_group_used",
+		Surface:      securitySurfaceForDialect(rc.dialect),
+		HTTPMethod:   rc.method,
+		PathTemplate: rc.pathTemplate,
+		Outcome:      "critical",
+		ReasonCode:   "canary_group_used",
+		AuthSource:   "caller_token",
+		CallerID:     rc.caller.cfg.ID,
+		TokenID:      rc.rec.TokenID,
+		IPAddress:    rc.clientIP.Address,
+		IPVersion:    rc.clientIP.Version,
+		ModelGroup:   group,
+	})
+}
+
+func (s *Service) allowHoneytokenEvent(tokenID, eventType string, now time.Time, group ...string) bool {
+	if s == nil || strings.TrimSpace(tokenID) == "" {
+		return false
+	}
+	groupName := ""
+	if len(group) > 0 {
+		groupName = group[0]
+	}
+	key := eventType + "\x00" + tokenID + "\x00" + groupName
+	s.honeytokenEventMu.Lock()
+	defer s.honeytokenEventMu.Unlock()
+	if s.honeytokenEventLast == nil {
+		s.honeytokenEventLast = make(map[string]honeytokenEventEntry)
+		s.honeytokenEventLRU = list.New()
+	}
+	for oldest := s.honeytokenEventLRU.Back(); oldest != nil; oldest = s.honeytokenEventLRU.Back() {
+		oldKey := oldest.Value.(string)
+		entry := s.honeytokenEventLast[oldKey]
+		if now.Sub(entry.at) < time.Minute {
+			break
+		}
+		delete(s.honeytokenEventLast, oldKey)
+		s.honeytokenEventLRU.Remove(oldest)
+	}
+	if entry, ok := s.honeytokenEventLast[key]; ok && now.Sub(entry.at) < time.Minute {
+		s.honeytokenEventDrops.Add(1)
+		return false
+	}
+	const maxHoneytokenEventKeys = 10000
+	if len(s.honeytokenEventLast) >= maxHoneytokenEventKeys {
+		oldest := s.honeytokenEventLRU.Back()
+		if oldest != nil {
+			delete(s.honeytokenEventLast, oldest.Value.(string))
+			s.honeytokenEventLRU.Remove(oldest)
+		}
+	}
+	s.honeytokenEventLRU.PushFront(key)
+	s.honeytokenEventLast[key] = honeytokenEventEntry{at: now}
+	return true
+}
+
+type honeytokenEventEntry struct {
+	at time.Time
 }
 
 func cacheCallerScope(rc *requestContext, cfg *Config) (callerID, project string) {
