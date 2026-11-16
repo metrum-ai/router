@@ -43,6 +43,33 @@ func TestResourcePolicyExampleLoadsAndCoversDocumentedScopes(t *testing.T) {
 		{"example/prod", authzObjectAdminBudgets, "write"},
 		{"*", authzObjectAdminRetention, "write"},
 		{"*", authzObjectAdminRetention, "force"},
+		{"*", authzObjectAdminOperations, "read"},
+	}
+	backupAllowed, err := authorizer.enforcer.Enforce("adminkey:backup-admin", AdminGlobalDomain, authzObjectAdminBackup, "read")
+	if err != nil || !backupAllowed {
+		t.Errorf("backup-admin policy denied backup download: allowed=%v err=%v", backupAllowed, err)
+	}
+	for _, action := range []string{"read", "write"} {
+		backupAllowed, err = authorizer.enforcer.Enforce("adminkey:backup-admin", AdminGlobalDomain, authzObjectAdminBackup, action)
+		if err != nil || !backupAllowed {
+			t.Errorf("backup-admin policy denied %s: allowed=%v err=%v", action, backupAllowed, err)
+		}
+	}
+	restoreAllowed, err := authorizer.enforcer.Enforce("adminkey:backup-admin", AdminGlobalDomain, authzObjectAdminRestore, "write")
+	if err != nil || !restoreAllowed {
+		t.Errorf("backup-admin policy denied restore start: allowed=%v err=%v", restoreAllowed, err)
+	}
+	backupStartAllowed, err := authorizer.enforcer.Enforce("adminkey:ops-admin", AdminGlobalDomain, authzObjectAdminBackup, "write")
+	if err != nil || backupStartAllowed {
+		t.Errorf("operations role unexpectedly grants backup start: allowed=%v err=%v", backupStartAllowed, err)
+	}
+	restoreStartAllowed, err := authorizer.enforcer.Enforce("adminkey:ops-admin", AdminGlobalDomain, authzObjectAdminRestore, "write")
+	if err != nil || restoreStartAllowed {
+		t.Errorf("operations role unexpectedly grants restore start: allowed=%v err=%v", restoreStartAllowed, err)
+	}
+	operationsAllowed, err := authorizer.enforcer.Enforce("adminkey:ops-admin", AdminGlobalDomain, authzObjectAdminBackup, "read")
+	if err != nil || operationsAllowed {
+		t.Errorf("operations role unexpectedly grants access to verifier-bearing backup: allowed=%v err=%v", operationsAllowed, err)
 	}
 	for _, tc := range allowed {
 		allowed, err := authorizer.enforcer.Enforce(subject.subject, tc.domain, tc.object, tc.action)

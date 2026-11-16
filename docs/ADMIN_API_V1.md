@@ -259,10 +259,32 @@ they reset on restart and are not shared across replicas, so ceilings are
 approximate in multi-replica deployments. Remove or raise a ceiling to restore
 admission after a trip; a new window also resets it.
 
-The current API does not expose project/environment deletion or membership
-deletion; these operations remain follow-up scope. The CLI can call all
-versioned resource routes with `routerctl admin-resource METHOD --path
-/admin/v1/...` and JSON `--body` for writes.
+The API exposes project and environment deletion and membership deletion. A
+project cannot be deleted while caller entries still refer to it. Bulk target
+changes use `POST /admin/v1/config/groups/{group}/targets:bulk`; provide 1–100
+ordered `add` or `remove` changes and the server commits them as one revision.
+Any invalid member rejects the whole batch.
+
+Long-running control-plane work returns `202 Accepted` and an operation URL.
+Read it with `GET /admin/v1/operations/{operation_id}` until it reaches
+`succeeded` or `failed`. The result contains structured data or a stable safe
+error code. Control-plane backup and restore use
+`POST /admin/v1/control-plane/backups` and
+`POST /admin/v1/control-plane/restores`. A backup's verifier-bearing bundle is
+downloaded separately through
+`GET /admin/v1/control-plane/backups/{operation_id}`; this route requires the
+separate `admin:backup/read` grant. Protect the downloaded file as a credential
+backup. No API operation executes migrations. `routerctl control-plane backup
+--out FILE` and `routerctl control-plane restore --in FILE` perform the
+operation polling and secure local file handling. `routerctl groups
+bulk-targets GROUP --change add=provider/model_ref` provides CLI parity for
+atomic target batches. The generic `routerctl admin-resource` remains
+available for other versioned routes.
+
+Backups are versioned, SHA-256 checked bundles of control-plane configuration
+sets/revisions, policy sets, admin key verifiers, and audit records. Restore
+accepts only a clean, already-migrated replica. Operation rows expire after
+seven days and the store retains at most 500 records.
 
 ## Route map (legacy → `/admin/v1`)
 
@@ -306,6 +328,31 @@ carry `Deprecation`/`Sunset` headers.
 | `GET /admin/reports/api/{retention-status,provider-catalog-status,migrations}` | `GET /admin/v1/reports/{retention-status,provider-catalog-status,migrations}` | `admin:reports` / `read` |
 | `GET /admin/reports/api/quota-status` | `GET /admin/v1/reports/quota-status` | `admin:reports` / `read` |
 | `GET /admin/reports/api/requests` | `GET /admin/v1/reports/requests` | `admin:reports` / `read` |
+
+The v5.0.0-only resources have no legacy serving-port aliases:
+
+| Method and path | Authorization | Purpose |
+| --- | --- | --- |
+| `POST /admin/v1/config/groups/{group}/targets:bulk` | `admin:config` / `write` | Atomic target batch, 1–100 changes |
+| `GET /admin/v1/operations/{operation_id}` | `admin:operations` / `read` | Operation status and safe structured result |
+| `POST /admin/v1/control-plane/backups` | `admin:backup` / `write` | Start asynchronous backup |
+| `GET /admin/v1/control-plane/backups/{operation_id}` | `admin:backup` / `read` | Download verifier-bearing backup bundle |
+| `POST /admin/v1/control-plane/restores` | `admin:restore` / `write` | Start asynchronous restore into a clean replica |
+
+The operation status resource never includes backup bundles. Grant backup read
+only to operators that should handle API-key verifiers. Backup JSON includes
+configuration and policy revisions plus the corresponding audit records; verify
+its SHA-256 digest before restore. The operation store is bounded to 500 rows
+and seven days, with a 64 MiB aggregate result cap. Backup and restore start
+routes return `202 Accepted`, a `Location` header, and `Retry-After`; poll that
+URL for completion. The worker timeout is two minutes, while a status read marks
+work stale only after five minutes, preserving a late worker success. Restore
+replaces two independent databases sequentially, so it is not an atomic
+cross-database transaction. If usage restore fails after config restore, the
+service attempts bounded config cleanup and reports a safe failure if cleanup
+cannot complete. Pending or running records stale for five minutes become
+failed with `operation_timeout` when read. Migrations remain a non-serving CLI or
+Kubernetes Job action; API reads do not bootstrap or alter the schema.
 | `GET /admin/reports/api/request/{request_id}` | `GET /admin/v1/reports/requests/{request_id}` | `admin:reports` / `drilldown` |
 | `GET /admin/reports/api/request-evidence` | `GET /admin/v1/reports/request-evidence` | `admin:reports` / `drilldown` |
 | `GET /admin/reports/cfo/export.{csv,md}` | `GET /admin/v1/reports/cfo/export.{csv,md}` | `admin:reports` / `export` |

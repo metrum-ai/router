@@ -23,6 +23,8 @@ import (
 	"time"
 )
 
+const maxAdminAPIResponseBytes = 32 << 20
+
 // AdminAPIClient is a minimal authenticated Admin API client.
 type AdminAPIClient struct {
 	BaseURL string
@@ -167,9 +169,16 @@ func (c *AdminAPIClient) doWithHeaders(method, path string, body any, headers ma
 		return nil, 0, nil, fmt.Errorf("admin API request failed: %w (check admin.enabled, admin.listen, and ROUTER_ADMIN_KEY or ROUTER_ADMIN_KEY_FILE)", err)
 	}
 	defer resp.Body.Close()
-	raw, err := io.ReadAll(io.LimitReader(resp.Body, responseLimit+1))
+	readLimit := int64(maxAdminAPIResponseBytes + 1)
+	if responseLimit < maxAdminAPIResponseBytes {
+		readLimit = responseLimit + 1
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, readLimit))
 	if err != nil {
 		return nil, resp.StatusCode, resp.Header.Clone(), fmt.Errorf("admin API request failed: %w (check admin.enabled, admin.listen, and ROUTER_ADMIN_KEY or ROUTER_ADMIN_KEY_FILE)", err)
+	}
+	if int64(len(raw)) > maxAdminAPIResponseBytes {
+		return nil, resp.StatusCode, resp.Header.Clone(), fmt.Errorf("admin API response exceeds the %d byte hard limit", maxAdminAPIResponseBytes)
 	}
 	if enforceLimit && int64(len(raw)) > responseLimit {
 		return nil, resp.StatusCode, resp.Header.Clone(), fmt.Errorf("admin API response exceeds the %d byte client limit", responseLimit)

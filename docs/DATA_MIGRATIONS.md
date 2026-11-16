@@ -2,6 +2,8 @@
 
 This is the canonical operator runbook for durable usage-data migrations. `router-migrate` is the non-serving entrypoint for inspecting migration state and applying reviewed work. It opens the selected usage database without starting the router and emits only safe scalar metadata. With `--json`, stdout contains one JSON document; database diagnostics use stderr. Routine deployment guidance links here rather than reproducing a second migration procedure.
 
+The admin API migration report (`GET /admin/v1/reports/migrations`) is read-only. It reports the existing usage migration ledger and fails with `503 migration-status-unavailable` if that ledger is absent or too old to inspect safely. It never creates, upgrades, or applies migration schema. Use `router-migrate` from the host or a non-serving Kubernetes Job for migration plans and execution.
+
 ## Operator visibility and release contract
 
 Metrics-admin callers can scrape aggregate migration schema/data version, compatibility, pending count, and data-job state. If the serving process cannot read the migration ledger, the authorized scrape remains available and emits the bounded `smart_llmrouter_migration_status_available{scope="usage"} 0` signal while preserving the router, license, traffic-shaping, and build families; it exposes no database error text, SQL, or connection detail. The authenticated **Operations / Data migrations** browser report exposes the same safe contract plus release, execution, maintenance, lock, timeout, rollback, duration, and safe error-class metadata. For a schema migration bound to a data job, its effective report state is derived from the durable job only after the schema ledger is `applied`: a missing, pending, paused, or cancelled job is pending/not-validated; running is in-progress; failed is failed; and only validated is applied/verified. A ledger `failed` or `running` state remains authoritative (with validation `failed` or `in-progress`) even when a job is absent or reports a conflicting state. The report retains scalar data-job state and aggregate progress so neither an applied schema row nor contradictory job paperwork can falsely certify unfinished work. Both surfaces are strictly read-only: they contain no SQL, DSNs, raw configuration, credentials, request content, or migration controls. `/metrics` requires a metrics-admin caller; the browser report requires authenticated browser-admin identity plus `admin:reports` `read`. Ordinary caller tokens cannot use either surface as a migration control plane. Apply/retry/recovery remains the non-serving CLI deployment-job workflow with the recorded backup/recovery evidence required by the migration definition.
@@ -21,6 +23,30 @@ docker compose run --rm --no-deps --entrypoint /app/bin/metrum-ai-router-migrate
 ```
 
 Version-check the same packaged runner before this gate. Complete every data job named by the release contract; do not start serving if plan, apply, or any job is incompatible, pending, running, paused, cancelled, failed, or unrecognized. `verify-serving` runs schema postconditions and fails unless the ledger is current/compatible and every bound data job is validated. PostgreSQL is explicit: use `--driver=postgres --dsn-env=ROUTER_USAGE_DB_DSN` with a deployment-owned DSN.
+
+### Kubernetes Job example for PostgreSQL
+
+[`deploy/kubernetes/examples/postgres-migration-plan-job.yaml`](../deploy/kubernetes/examples/postgres-migration-plan-job.yaml)
+is a non-serving Job that runs the packaged migration CLI against both the
+usage and router-config database DSNs from a Kubernetes Secret. It applies both
+scopes by default, including router-config schema 16, and requires an approved
+backup evidence reference for the maintenance step. Set its image to the exact
+release digest and configure the Secret and evidence ConfigMap before applying:
+
+```sh
+kubectl apply -n <namespace> -f deploy/kubernetes/examples/postgres-migration-plan-job.yaml
+kubectl -n <namespace> wait --for=condition=complete job/metrum-ai-router-migration --timeout=30m
+kubectl -n <namespace> logs job/metrum-ai-router-migration
+```
+
+For planning, set `MIGRATION_ACTION=plan` and give the Job a unique `-plan` name;
+it plans both scopes without writes. Review both plans and take the approved
+backups. Then create a second Job with a unique `-apply` name and the default
+`MIGRATION_ACTION=apply`. The job cycles each scope through its online prefix
+and explicitly approved maintenance phases, applies later online migrations,
+then verifies both ledgers. Serving must remain stopped or drained until the
+Job succeeds and every required data-job checkpoint is validated. The
+migration report API stays read-only throughout this procedure.
 
 ### Checkpointed data-job procedure
 
@@ -174,6 +200,16 @@ authentication phases 12 and 13, which use the same control-plane scope.
   `admin_api_key_generations`, `admin_api_key_operations`). The store is only used
   when it exists: a deployment without this step starts normally and answers `503`
   on the key lifecycle routes rather than advertising a store it does not have.
+
+The v5.0.0 `router-config` schema version 16 also includes
+`2026111605` (admin client identities) and `2026111606` (durable asynchronous
+admin operations). The latter creates `router_admin_operations`; it stores only
+operation kind/state, structured result, stable safe error code, and timestamps.
+It retains at most 500 rows, seven days, and 64 MiB of results. Apply the
+router-config scope with the non-serving migration CLI before enabling the new
+operation and backup API routes; serving startup and read-only migration status
+never create or upgrade the table. The packaged Kubernetes Job example plans
+or applies both scopes and verifies both resulting ledgers, including schema 16.
 
 ### Upgrading with `migration_policy: deployment-job`
 

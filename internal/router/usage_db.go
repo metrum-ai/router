@@ -49,6 +49,14 @@ func (s *usageStore) migrationStatus() (MigrationStatus, error) {
 	return r.Status()
 }
 
+func (s *usageStore) migrationStatusReadOnly() (MigrationStatus, error) {
+	r, err := newUsageMigrationRunner(s.db)
+	if err != nil {
+		return MigrationStatus{}, err
+	}
+	return r.StatusReadOnly()
+}
+
 const (
 	// usageDBMigrationPolicyValidate verifies a fully applied immutable ledger
 	// and never applies application-schema DDL during serving startup.
@@ -395,6 +403,9 @@ type securityAccessEvent struct {
 	StatusCode          int
 	Outcome             string
 	ReasonCode          string
+	Object              string
+	Action              string
+	OperationID         string
 	AuthSubject         string
 	AuthSource          string
 	CallerID            string
@@ -3655,6 +3666,9 @@ func securityAccessRecordFromEvent(event securityAccessEvent) *securityAccessEve
 		StatusCode:          event.StatusCode,
 		Outcome:             event.Outcome,
 		ReasonCode:          event.ReasonCode,
+		Object:              event.Object,
+		Action:              event.Action,
+		OperationID:         event.OperationID,
 		AuthSubject:         event.AuthSubject,
 		AuthSource:          event.AuthSource,
 		CallerID:            event.CallerID,
@@ -3698,6 +3712,9 @@ func securityAccessEventFromRecord(record securityAccessEventRecord) (securityAc
 		StatusCode:          record.StatusCode,
 		Outcome:             record.Outcome,
 		ReasonCode:          record.ReasonCode,
+		Object:              record.Object,
+		Action:              record.Action,
+		OperationID:         record.OperationID,
 		AuthSubject:         record.AuthSubject,
 		AuthSource:          record.AuthSource,
 		CallerID:            record.CallerID,

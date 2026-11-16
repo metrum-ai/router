@@ -26,6 +26,8 @@ func TestV47AuthorizationFixtureMatrix(t *testing.T) {
 		// These permissions were added after v4.7 and are outside its frozen oracle.
 		switch permission {
 		case "admin:containment:contain",
+			"admin:operations:read", "admin:restore:write",
+			"admin:backup:read", "admin:backup:write",
 			"admin:providers:read", "admin:providers:write", "admin:catalog:read",
 			"admin:projects:read", "admin:projects:write",
 			"admin:memberships:read", "admin:memberships:write",

@@ -4,6 +4,7 @@
 
 ### Added
 
+- Add nightly evaluation aggregation across the previous 30 runs, with expected-missing cells reported separately from gate failures.
 - Added a release checklist and a bounded package upgrade-and-rollback check.
 - Retain AI review findings by exact commit range and artifact digest, scope the review credential to the tag-only review environment, and attest the release manifests and review evidence.
 
@@ -32,6 +33,9 @@
 - Ship the example external detector's per-rule bounded-LRU auth-failure storm, tiny-request sweep, denied-model enumeration, and spend-spike rules. Signals retain the router's opaque key ID and bounded evidence IDs; source-IP-only signals have no key. Configured detectors default to report mode, and the example rule thresholds are flags with documented defaults.
 - Keep the version-pinned Grype exception for the TypeScript 7 build-time compiler: stable `typescript` 7.0.2 still embeds `golang.org/x/text` v0.38.0, which a fresh Grype database reports as GO-2026-5970 (High). The exception applies only to the compiler binary under `node_modules`; revisit when a stable release embeds fixed Go and x/text v0.41.0 or later.
 - Evaluate published Casbin advisory ranges against the exact locked version, retain range evidence, and require reviewed exact-scope exceptions. Document fail-closed recovery for advisory service outages.
+### Security
+
+- Partition response-cache entries and vLLM prefix-cache salts by caller and project by default, add opt-in sharing inside a project, and forward stable salts only to explicitly configured vLLM providers. SGLang prefix-cache isolation is not supported in v5.0.0.
 
 ### Fixed
 
@@ -42,6 +46,9 @@
 - `router-migrate --json` keeps stdout valid JSON by directing GORM diagnostics
   to stderr.
 - Drop target-declared unsupported `temperature` and `top_p` fields before dispatch; classify structured 400/422 sampling-parameter refusals for pre-commit fallback; and forward `top_p` when translating to OpenAI Chat Completions.
+
+- Keep the admin migration-status API read-only: it now refuses unavailable or pre-ledger databases without bootstrapping or upgrading migration tables.
+- Add a non-serving PostgreSQL Kubernetes migration Job example that plans or applies both scopes through router-config schema 16.
 
 ### Security
 
@@ -76,8 +83,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Add an opt-in OCSF 1.4.0 JSON Lines security-event stream for stdout, append-only files, and allow-listed signed HTTPS webhooks. Security events use bounded sink and webhook queues, timestamp/nonce HMAC signatures, rotation-aware file output, and Prometheus drop/failure counters. Containment maps to Account Change Disable/Enable with target and actor identity; detector findings use configured IDs and evidence request UIDs capped at 256 characters.
+- Add delayed daily report-mode provider usage reconciliation for OpenAI, Anthropic, and Bedrock CloudWatch metrics, with bounded catch-up/retries, HTTPS-only allow-listed egress for provider APIs and Bedrock/STS, partial-data watermarks, auth-failure fast paths, and security-stream events.
+- Add a standalone prompt-injection detector example with a commit-pinned model revision, downloaded-weight checksum verification, and overlapping chunk scoring for opted-in tool-result and document segments.
 
+- Add an opt-in OCSF 1.4.0 JSON Lines security-event stream for stdout, append-only files, and allow-listed signed HTTPS webhooks. Security events use bounded sink and webhook queues, timestamp/nonce HMAC signatures, rotation-aware file output, and Prometheus drop/failure counters. Containment maps to Account Change Disable/Enable with target and actor identity; detector findings use configured IDs and evidence request UIDs capped at 256 characters.
 - Add caller key containment through `/admin/v1/containment`, `routerctl contain` and `routerctl release`, plus an optional HMAC-SHA256 SOAR/EDR webhook. Webhook writes use signed nonce replay protection without ETag headers; containment can resume only containment-originated suspensions.
 - Record recomputed prompt tokens when upstream reports cached prompt tokens. Usage and cost reports now show cached and recomputed input tokens with reporting coverage.
 - Prefer targets marked `tiered_kv_cache: true` for estimated prompts of at least 32,000 tokens. Dynamic-score affinity accepts `metadata.session_id` and remains bounded per process.
@@ -85,6 +94,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Route detector suspensions through the canonical containment API so containment and admin roles can resume them; require a finite default throttle limit for unlimited keys.
 
 - Add versioned provider and model-catalog reads, provider validation and create/update/disable, project and environment lifecycle, project-environment membership CRUD, project USD budgets with alert thresholds, caller quota reads and updates, and retention policy writes. Writes use configuration revisions; retention changes that can delete more data require `admin:retention:force`, and provider credential references and headers never appear in responses.
+
+- Cap process-wide in-flight SSE line-buffer capacity and expose current usage and rejections in Prometheus metrics.
 
 ### Security
 
@@ -106,6 +117,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   use `--offline` for deliberate direct database access while the router is stopped. The default
   Admin API endpoint is `http://127.0.0.1:8081`; non-loopback endpoints require HTTPS. Reports use
   `/admin/v1/reports`, and the former `/admin/reports` `--reports-prefix` value is rejected.
+
+### Admin operations
+
+- Add durable asynchronous admin operation resources, versioned control-plane backup/restore through the Admin API and routerctl, and atomic model-target batches capped at 100 operations.
 
 ### Migrations
 

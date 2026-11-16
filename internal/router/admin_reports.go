@@ -1293,7 +1293,7 @@ func (s *Service) handleAdminReportsContainmentStatus(w http.ResponseWriter, r *
 }
 
 func (s *Service) handleAdminMigrationStatus(w http.ResponseWriter, r *http.Request) {
-	statusFn := s.usage.migrationStatus
+	statusFn := s.usage.migrationStatusReadOnly
 	if s.migrationStatusFn != nil {
 		statusFn = s.migrationStatusFn
 	}

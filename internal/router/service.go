@@ -65,6 +65,7 @@ type Service struct {
 	imageURLLookup     egressLookupIPFunc
 	imageURLDNSTimeout time.Duration
 	callerAuth         *callerAuthState
+	cacheSaltKey       []byte
 	adminBasic         map[string]adminBasicRuntime
 	adminAPIKeys       map[string]*adminAPIKeyRuntime
 	adminOIDC          *adminOIDCRuntime
@@ -96,6 +97,7 @@ type Service struct {
 	usage                    *usageStore
 	migrationStatusFn        func() (MigrationStatus, error)
 	metrics                  *metricsStore
+	lineBufferBudget         *lineBufferBudget
 	// Admin-plane state: its own metrics registry, the audit/observation sinks, the
 	// Idempotency-Key store and the freshness source. They are separate from the serving path.
 	adminMetricsStore    *adminMetricsStore
@@ -138,6 +140,7 @@ type Service struct {
 	autoContainmentMu     sync.Mutex
 	policySyncStop        func()
 	policyNotifyStop      func()
+	providerUsageStop     func()
 	configInstanceID      string
 	configLoaded          atomic.Value // configLoadedState
 	shadows               *shadowRuntime
@@ -227,6 +230,7 @@ type requestContext struct {
 	securityReason         string
 	pacedUpstreamStream    bool
 	maxSSELineBytes        int
+	lineBufferBudget       *lineBufferBudget
 	chatStreamIncludeUsage bool
 	detectorTinyRequest    bool
 	traceSeq               int
@@ -308,6 +312,10 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
+	cacheSaltKey, err := resolveCacheSaltKey(cfg.Server.Cache, os.LookupEnv)
+	if err != nil {
+		return nil, err
+	}
 	tlsManager, err := NewListenerTLSManager(cfg.Server.TLS.ListenerTLSConfig, tlsacme.ListenerServing, "server.tls")
 	if err != nil {
 		return nil, err
@@ -380,6 +388,7 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		imageURLLookup:     defaultImageURLLookup,
 		imageURLDNSTimeout: defaultImageURLDNSTimeout,
 		callerAuth:         newCallerAuthState(),
+		cacheSaltKey:       cacheSaltKey,
 		adminBasic:         map[string]adminBasicRuntime{},
 		adminSession:       newAdminSessionStore(cfg.Server.AdminAuth.Sessions),
 		quota:              quota,
@@ -404,6 +413,7 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		tlsManager:         tlsManager,
 	}
 	s.configSnapshot.Store(cfg)
+	s.lineBufferBudget = newLineBufferBudget(int64(cfg.Server.Streaming.MaxInflightLineBytes), s.metrics)
 	s.policyFreshness = newPolicyFreshnessState(defaultPolicyMaxStaleness)
 	s.providerSpend.emit = s.recordProviderSpendEvent
 	// The operator's configured window applies at CONSTRUCTION, before the first
@@ -551,6 +561,9 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 	// Admin audit retention runs once per database that holds admin audit tables, and stops
 	// with the service.
 	s.StartAdminAuditJanitors()
+	if cfg.Server.ProviderUsageReconciliation.Enabled {
+		s.startProviderUsageReconciliation()
+	}
 	return s, nil
 }
 
@@ -581,6 +594,10 @@ func (s *Service) TLSManager() *tlsacme.Manager {
 }
 
 func (s *Service) Close() {
+	if s.providerUsageStop != nil {
+		s.providerUsageStop()
+		s.providerUsageStop = nil
+	}
 	if s.securityEventStream != nil {
 		s.securityEventStream.close()
 	}
@@ -2104,12 +2121,12 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 			}
 		}
 	}
-	callerID, project := cacheCallerScope(rc)
+	callerID, project := cacheCallerScope(rc, s.cfg)
 	key := targetCacheKey(req, s.cfg.Provider[dec.Target.Provider], dec.Target, callerID, project, dialect)
 	// PII normalization can collapse instruction boundaries that the selected
 	// provider receives distinctly. Until cache identity is target-bound,
 	// never read a response cached under a PII-enabled group.
-	if cacheable(req) && !group.PIIFilter.Enabled {
+	if rc.caller != nil && cacheable(req) && !group.PIIFilter.Enabled {
 		if cached, ok := s.cache.Get(key); ok {
 			ensureResponseID(cached)
 			captureCached := *cached
@@ -2309,8 +2326,8 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		// Cache only after successful settlement so a quota-state error cannot
 		// leave an undisclosed cache/usage inconsistency. Use the pre-restore
 		// payload so PII placeholders remain redacted in cache.
-		if cacheable(req) && !group.PIIFilter.Enabled {
-			putCaller, putProject := cacheCallerScope(rc)
+		if rc.caller != nil && cacheable(req) && !group.PIIFilter.Enabled {
+			putCaller, putProject := cacheCallerScope(rc, s.cfg)
 			s.cache.Put(targetCacheKey(req, s.cfg.Provider[served.Provider], served, putCaller, putProject, dialect), cacheResp)
 		}
 		rc.rec.QuotaState = quotaState
@@ -2567,11 +2584,15 @@ func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) 
 	return rc, true
 }
 
-func cacheCallerScope(rc *requestContext) (callerID, project string) {
+func cacheCallerScope(rc *requestContext, cfg *Config) (callerID, project string) {
 	if rc == nil || rc.caller == nil {
 		return "", ""
 	}
-	return rc.caller.cfg.ID, callerProject(rc.caller.cfg)
+	project = callerProject(rc.caller.cfg)
+	if projectSharesCache(cfg, project) {
+		return "", project
+	}
+	return rc.caller.cfg.ID, project
 }
 
 func (s *Service) finish(rc *requestContext, status int, code *string) {
@@ -3573,6 +3594,21 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		return nil, attempt, upstreamError{Class: "endpoint_error", Message: err.Error(), Err: err}
 	}
 	s.recordTranslationShapeTelemetry(rc, req, target, provider, outDialect, endpoint, attemptIndex, upReqBody)
+	if provider.UpstreamKind == "vllm" {
+		if outDialect != "openai-chat" && outDialect != "openai-responses" {
+			attempt.ErrorClass = "encode_error"
+			attempt.ErrorMessage = "upstream cache isolation requires an OpenAI-compatible request"
+			return nil, attempt, upstreamError{Class: attempt.ErrorClass, Message: attempt.ErrorMessage}
+		}
+		shareWithinProject := projectSharesCache(s.cfg, callerProject(rc.caller.cfg))
+		upReqBody, err = injectTenantCacheSalt(upReqBody, provider, rc.caller, s.cacheSaltKey, shareWithinProject)
+		if err != nil {
+			attempt.ErrorClass = "encode_error"
+			attempt.ErrorMessage = "upstream cache isolation unavailable"
+			return nil, attempt, upstreamError{Class: "encode_error", Message: attempt.ErrorMessage}
+		}
+		attempt.RequestBytes = int64(len(upReqBody))
+	}
 	attemptCtx := ctx
 	var cancel context.CancelFunc
 	if attempt.AttemptTimeoutMS > 0 {
@@ -3824,6 +3860,10 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 			streamBody = idleBody
 		}
 		rc.maxSSELineBytes = s.cfg.Server.Streaming.MaxSSELineBytes
+		rc.lineBufferBudget = s.lineBufferBudget
+		if rc.lineBufferBudget != nil {
+			rc.lineBufferBudget.SetLimit(int64(s.cfg.Server.Streaming.MaxInflightLineBytes))
+		}
 		streamResult, streamErr := proxy(attemptCtx, pw, streamBody, outDialect, target.Model, maxResponseBytes, rc, s.identifiers)
 		if pacer != nil && pacer.injectedMS > 0 && rc != nil {
 			rc.trace("experiment_profile_pacing", fmt.Sprintf("profile=%s hash=%s injected_ms=%.0f", pacer.name, pacer.hash, pacer.injectedMS), target, attemptIndex, 0, "", false, int64(pacer.injectedMS))
@@ -5684,7 +5724,7 @@ func upstreamFailureResponse(err upstreamError, rc *requestContext) (string, int
 	switch {
 	case err.Class == "upstream_loop_detected":
 		return "upstream-loop-detected", http.StatusLoopDetected
-	case err.Class == "upstream_protocol_error" || err.Class == "upstream_frame_too_large":
+	case err.Class == "upstream_protocol_error" || err.Class == "upstream_frame_too_large" || err.Class == "upstream_stream_buffer_limit":
 		return err.Class, http.StatusBadGateway
 	case err.Class == "response_affinity_store_failed":
 		return "response-affinity-unavailable", http.StatusServiceUnavailable

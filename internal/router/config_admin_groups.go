@@ -44,6 +44,7 @@ const (
 	configActionGroupTargetsReplace = "group_targets_replace"
 	configActionGroupTargetAdd      = "group_target_add"
 	configActionGroupTargetRemove   = "group_target_remove"
+	configActionGroupTargetsBulk    = "group_targets_bulk"
 	configActionGroupRollback       = "group_rollback"
 	configActionSetImport           = "set_import"
 	configActionSetActivate         = "set_activate"

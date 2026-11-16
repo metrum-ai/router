@@ -100,7 +100,7 @@ export VERSION COMMIT BUILD_DATE SOURCE_DATE_EPOCH DIST_DIR PKG_NAME GOOS GOARCH
 export COPYFILE_DISABLE
 TAR_ENV := COPYFILE_DISABLE=1
 
-BUILD_LDFLAGS = -X github.com/metrum-ai/router/internal/buildinfo.Version=$${VERSION} -X github.com/metrum-ai/router/internal/buildinfo.Commit=$${COMMIT} -X github.com/metrum-ai/router/internal/buildinfo.BuildDate=$${BUILD_DATE}
+BUILD_LDFLAGS = -buildid= -X github.com/metrum-ai/router/internal/buildinfo.Version=$${VERSION} -X github.com/metrum-ai/router/internal/buildinfo.Commit=$${COMMIT} -X github.com/metrum-ai/router/internal/buildinfo.BuildDate=$${BUILD_DATE}
 
 LOCAL_ROUTER_OUT ?= tmp/local-pi
 LOCAL_ROUTER_LISTEN ?= 0.0.0.0:18081
@@ -481,6 +481,8 @@ ci-python: secret-contract capability-smoke-contracts
 	python3 scripts/ci_topology_test.py
 	uv run --with pyyaml python -m unittest scripts/engine_advisory_gate_test.py -q
 	python3 scripts/harbor_promotion_test.py
+	python3 scripts/harbor_nightly_budget_test.py
+	python3 scripts/harbor_e2e/prepare_catalog_tasks_test.py
 	uv run --with pyyaml python scripts/eval_infra_test.py
 	uv run --with pyyaml python scripts/direct_provider_canary_test.py
 	uv run --with pyyaml python scripts/eval_infra_matrix.py

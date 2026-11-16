@@ -17,13 +17,15 @@ Every job is bounded and every guard fails closed: a job that cannot run is
 reported as such and the matrix stops rather than reporting a pass.
 """
 
-import json,os,pathlib,subprocess,sys,threading,time
+import json,os,pathlib,sqlite3,subprocess,sys,threading,time
 import generate_tasks,guarded_relay,harbor_config,mock_messages
 from harbor_config import make_config
 ROOT=pathlib.Path(os.environ.get('HARBOR_E2E_ROOT','/root/harbor-e2e'))
 TMP=pathlib.Path(os.environ.get('HARBOR_E2E_CREDS','/run/harbor-e2e'))
+TASKS=pathlib.Path(os.environ.get('HARBOR_CATALOG_TASKS',str(ROOT/'catalog-tasks')))
 HOST=os.environ.get('HARBOR_E2E_HOST','172.17.0.1')
 SHA=os.environ.get('HARBOR_E2E_SHA','')
+RUN_ID=os.environ.get('HARBOR_E2E_RUN_ID','local')
 SELFTEST=os.environ.get('HARBOR_E2E_SELFTEST')=='1'
 if not SELFTEST and subprocess.check_output(['findmnt','-no','FSTYPE','--target',str(TMP)],text=True).strip()!='tmpfs':raise SystemExit('credential directory not tmpfs')
 if (ROOT/'started').exists():raise SystemExit('already started; no repeat')
@@ -36,10 +38,19 @@ base=[os.environ.get('HARBOR_BIN') or '/root/harbor-venv/bin/harbor','run','-a',
 def run(name,style,mode,group,port,path):
  env=baseenv|{'HARBOR_E2E_STYLE':style,'HARBOR_E2E_MODE':mode,'HARBOR_E2E_ROUTER_URL':f'http://{HOST}:{port}'}
  args=base+['--job-name',name,'-m','metrum/'+group,'--path',str(path)]
- with (ROOT/(name+'.log')).open('w') as f:r=subprocess.run(args,env=env,stdout=f,stderr=subprocess.STDOUT,timeout=3600)
+ try:
+  with (ROOT/(name+'.log')).open('w') as f:r=subprocess.run(args,env=env,stdout=f,stderr=subprocess.STDOUT,timeout=900)
+  exit_code=r.returncode
+ except subprocess.TimeoutExpired:
+  exit_code=124
  rewards=list((ROOT/'jobs'/name).rglob('reward.txt'))
- vals=[p.read_text().strip() for p in rewards];print(json.dumps({'job':name,'exit':r.returncode,'count':len(vals),'passed':vals.count('1'),'values':vals}),flush=True)
- return {'exit':r.returncode,'values':vals}
+ vals=[p.read_text().strip() for p in rewards];print(json.dumps({'job':name,'exit':exit_code,'count':len(vals),'passed':vals.count('1'),'values':vals}),flush=True)
+ return {'exit':exit_code,'values':vals}
+
+def usage_snapshot():
+ with sqlite3.connect(TMP/'usage.sqlite') as db:
+  cost,count=db.execute('select coalesce(sum(total_cost_usd),0),count(*) from request_usage').fetchone()
+ return float(cost),int(count)
 if not SELFTEST:
     mock = mock_messages.start(HOST, 18082)
     try:
@@ -55,7 +66,7 @@ print('OFFLINE REPLAY PASSED; provider calls not yet made',flush=True)
 # Binding per lane is what made a repeat attempt fail with "Address already in
 # use"; both are started once here and torn down once in the finally block.
 relay = guarded_relay.http.server.ThreadingHTTPServer((HOST, 18081), guarded_relay.Relay)
-relay.budget = guarded_relay.Budget(max_calls=80, max_reserve=1.5)
+relay.budget = guarded_relay.Budget(max_calls=80, max_reserve=float(os.environ.get('HARBOR_MAX_RESERVE_USD', '0.50')))
 relay.secrets_path = TMP / 'provider-secrets.json'
 relay.records_path = ROOT / 'provider-usage.jsonl'
 threading.Thread(target=relay.serve_forever, daemon=True).start()
@@ -106,23 +117,37 @@ try:
                     response.read()
                 results[name] = {'exit': 0 if status == 200 else 1, 'values': ['1'] * 5 if status == 200 else ['0'] * 5}
                 print(json.dumps({'lane': name, 'status': status, 'selftest': True}), flush=True)
-            (ROOT / 'result.json').write_text(json.dumps({'sha': SHA, 'jobs': results, 'selftest': True}, indent=2) + '\n')
+            (ROOT / 'result.json').write_text(json.dumps({'sha': SHA, 'run_id': RUN_ID, 'jobs': results, 'selftest': True}, indent=2) + '\n')
         else:
-            for mode, style, group in lanes:
-                (TMP / 'router-token').write_text(tokens[(style, group)])
-                name = mode + '-' + group
-                results[name] = run(name, style, mode, group, 18081 if mode == 'direct' else 18080, tasks)
-                (ROOT / 'result.json').write_text(json.dumps({'sha': SHA, 'jobs': results, 'reserved_upper_usd': relay.budget.reserved, 'requests': relay.budget.calls}, indent=2) + '\n')
-                if len(results[name]['values']) != 5 or results[name]['exit'] != 0:
-                    raise RuntimeError('incomplete Harbor job ' + name)
-            for group in ('gpt', 'claude'):
-                direct = results['direct-' + group]['values']
-                routed = results['routed-' + group]['values']
-                if len(direct) != 5 or len(routed) != 5:
-                    raise RuntimeError('Harbor task inventory mismatch ' + group)
-                # Every task that passes directly must also pass through the router.
-                if any(d == '1' and r != '1' for d, r in zip(direct, routed)):
-                    raise RuntimeError('Harbor baseline mismatch ' + group)
+            cells = [(task_id, next((p for p in TASKS.iterdir() if p.name.startswith(task_id)), None))
+                     for task_id in ('HARBOR-02', 'HARBOR-03', 'HARBOR-04', 'HARBOR-05', 'HARBOR-06')]
+            if any(path is None for _, path in cells):
+                raise RuntimeError('Harbor catalog task staging is incomplete')
+            token = tokens[('openai-responses', 'gpt')]
+            failed = False
+            for task_id, path in cells:
+                (TMP / 'router-token').write_text(token)
+                before_cost, before_rows = usage_snapshot()
+                result = run(task_id, 'openai-responses', 'routed', 'gpt', 18080, path)
+                after_cost, after_rows = usage_snapshot()
+                row_count = after_rows - before_rows
+                measured_cost = round(after_cost - before_cost, 8) if row_count > 0 else None
+                results[task_id] = {
+                    'exit': result['exit'],
+                    'attempts': len(result['values']),
+                    'passes': result['values'].count('1'),
+                    'reward_values': result['values'],
+                    'charged_usd': measured_cost,
+                    'cost_source': 'router_usage_rows' if measured_cost is not None else 'missing_usage_rows',
+                    'usage_rows': row_count,
+                }
+                passed = result['exit'] == 0 and result['values'] == ['1'] and measured_cost is not None
+                failed = failed or not passed
+                report = {'sha': SHA, 'run_id': RUN_ID, 'jobs': results,
+                          'reserved_upper_usd': relay.budget.reserved, 'requests': relay.budget.calls}
+                (ROOT / 'result.json').write_text(json.dumps(report, indent=2) + '\n')
+            if failed:
+                raise RuntimeError('one or more HARBOR-02…06 live cells failed or had no measured usage rows')
 finally:
     if proc:
         proc.terminate()

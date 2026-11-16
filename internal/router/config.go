@@ -108,12 +108,15 @@ type KeyHygieneConfig struct {
 }
 
 const defaultMaxSSELineBytes = 8 << 20
+const defaultMaxInflightSSELineBytes = 64 << 20
 const minMaxSSELineBytes = 64 << 10
 const maxMaxSSELineBytes = 32 << 20
+const maxMaxInflightSSELineBytes = 1 << 30
 
 type StreamingConfig struct {
-	MaxSSELineBytes int    `yaml:"max_sse_line_bytes" json:"maxSseLineBytes"`
-	Translator      string `yaml:"translator" json:"translator"`
+	MaxSSELineBytes      int    `yaml:"max_sse_line_bytes" json:"maxSseLineBytes"`
+	MaxInflightLineBytes int    `yaml:"max_inflight_line_bytes" json:"maxInflightLineBytes"`
+	Translator           string `yaml:"translator" json:"translator"`
 }
 
 // Model identity modes for server.responses.model_identity. Upstream reports
@@ -154,18 +157,19 @@ type ServerConfig struct {
 	Security     SecurityEventsConfig `yaml:"security" json:"security,omitempty"`
 	// AdminAPI is the `admin.api` block of the /admin/v1 contract. The documented defaults
 	// apply when it is absent.
-	AdminAPI          AdminAPIConfig           `yaml:"admin_api" json:"admin_api"`
-	ClientIP          ClientIPConfig           `yaml:"client_ip" json:"client_ip"`
-	Cache             CacheConfig              `yaml:"cache"`
-	Logging           LoggingConfig            `yaml:"logging"`
-	UsageDB           UsageDBConfig            `yaml:"usage_db"`
-	ConfigSource      ConfigSourceConfig       `yaml:"config_source" json:"config_source"`
-	Upstream          UpstreamConfig           `yaml:"upstream"`
-	Diagnostics       DiagnosticsConfig        `yaml:"diagnostics"`
-	ContentCapture    ContentCaptureConfig     `yaml:"content_capture"`
-	Retention         RetentionConfig          `yaml:"retention"`
-	DecisionTelemetry DecisionTelemetryConfig  `yaml:"decision_telemetry"`
-	TrafficShape      ServerTrafficShapeConfig `yaml:"traffic_shape" json:"traffic_shape"`
+	AdminAPI                    AdminAPIConfig                    `yaml:"admin_api" json:"admin_api"`
+	ClientIP                    ClientIPConfig                    `yaml:"client_ip" json:"client_ip"`
+	Cache                       CacheConfig                       `yaml:"cache"`
+	Logging                     LoggingConfig                     `yaml:"logging"`
+	UsageDB                     UsageDBConfig                     `yaml:"usage_db"`
+	ProviderUsageReconciliation ProviderUsageReconciliationConfig `yaml:"provider_usage_reconciliation" json:"providerUsageReconciliation,omitempty"`
+	ConfigSource                ConfigSourceConfig                `yaml:"config_source" json:"config_source"`
+	Upstream                    UpstreamConfig                    `yaml:"upstream"`
+	Diagnostics                 DiagnosticsConfig                 `yaml:"diagnostics"`
+	ContentCapture              ContentCaptureConfig              `yaml:"content_capture"`
+	Retention                   RetentionConfig                   `yaml:"retention"`
+	DecisionTelemetry           DecisionTelemetryConfig           `yaml:"decision_telemetry"`
+	TrafficShape                ServerTrafficShapeConfig          `yaml:"traffic_shape" json:"traffic_shape"`
 	// ExperimentProfiles holds opt-in, scoped TTFT delay and delivered-token
 	// pacing profiles for endpoint-bound agent studies (#379). They are off by
 	// default, must be scoped to experiment callers/groups/targets, and never
@@ -442,9 +446,10 @@ type RetentionClassConfig struct {
 }
 
 type CacheConfig struct {
-	Enabled    bool          `yaml:"enabled"`
-	MaxBytes   int64         `yaml:"max_bytes"`
-	DefaultTTL time.Duration `yaml:"default_ttl"`
+	Enabled            bool          `yaml:"enabled"`
+	MaxBytes           int64         `yaml:"max_bytes"`
+	DefaultTTL         time.Duration `yaml:"default_ttl"`
+	UpstreamSaltKeyEnv string        `yaml:"upstream_salt_key_env,omitempty" json:"upstreamSaltKeyEnv,omitempty"`
 }
 
 type LoggingConfig struct {
@@ -460,6 +465,27 @@ type UsageDBConfig struct {
 	DSN             string `yaml:"dsn"`
 	Enable          *bool  `yaml:"enabled"`
 	MigrationPolicy string `yaml:"migration_policy"`
+}
+
+// ProviderUsageReconciliationConfig enables a bounded daily comparison with provider billing data.
+type ProviderUsageReconciliationConfig struct {
+	Enabled         bool                               `yaml:"enabled" json:"enabled,omitempty"`
+	ThresholdUSD    float64                            `yaml:"threshold_usd" json:"thresholdUsd,omitempty"`
+	TimeoutMS       int                                `yaml:"timeout_ms" json:"timeoutMs,omitempty"`
+	MaxPages        int                                `yaml:"max_pages" json:"maxPages,omitempty"`
+	ScheduleHourUTC *int                               `yaml:"schedule_hour_utc" json:"scheduleHourUtc,omitempty"`
+	MaxCatchUpDays  int                                `yaml:"max_catch_up_days" json:"maxCatchUpDays,omitempty"`
+	Providers       []ProviderUsageReconciliationEntry `yaml:"providers" json:"providers,omitempty"`
+}
+
+// ProviderUsageReconciliationEntry maps one router provider to its vendor billing identity.
+type ProviderUsageReconciliationEntry struct {
+	Provider      string `yaml:"provider" json:"provider"`
+	Kind          string `yaml:"kind" json:"kind"`
+	CredentialEnv string `yaml:"credential_env" json:"credentialEnv,omitempty"`
+	ProviderKeyID string `yaml:"provider_key_id" json:"providerKeyId,omitempty"`
+	AWSRegion     string `yaml:"aws_region" json:"awsRegion,omitempty"`
+	AWSRoleARN    string `yaml:"aws_role_arn" json:"awsRoleArn,omitempty"`
 }
 
 // ConfigSourceConfig selects whether the router serves from a local YAML file
@@ -1249,12 +1275,13 @@ type UserConfig struct {
 }
 
 type ProjectConfig struct {
-	ID           string                     `yaml:"id" json:"id"`
-	Name         string                     `yaml:"name" json:"name"`
-	Status       string                     `yaml:"status" json:"status"`
-	Description  string                     `yaml:"description" json:"description"`
-	Environments []ProjectEnvironmentConfig `yaml:"environments,omitempty" json:"environments,omitempty"`
-	Budget       ProjectBudgetConfig        `yaml:"budget,omitempty" json:"budget,omitempty"`
+	ID                      string                     `yaml:"id" json:"id"`
+	Name                    string                     `yaml:"name" json:"name"`
+	Status                  string                     `yaml:"status" json:"status"`
+	Description             string                     `yaml:"description" json:"description"`
+	Environments            []ProjectEnvironmentConfig `yaml:"environments,omitempty" json:"environments,omitempty"`
+	Budget                  ProjectBudgetConfig        `yaml:"budget,omitempty" json:"budget,omitempty"`
+	ShareCacheWithinProject bool                       `yaml:"share_cache_within_project,omitempty" json:"shareCacheWithinProject,omitempty"`
 }
 
 type ProjectBudgetConfig struct {
@@ -1684,6 +1711,9 @@ func (c *Config) setDefaults() {
 	if c.Server.Streaming.MaxSSELineBytes == 0 {
 		c.Server.Streaming.MaxSSELineBytes = defaultMaxSSELineBytes
 	}
+	if c.Server.Streaming.MaxInflightLineBytes == 0 {
+		c.Server.Streaming.MaxInflightLineBytes = defaultMaxInflightSSELineBytes
+	}
 	if c.Server.Streaming.Translator == "" {
 		c.Server.Streaming.Translator = "incremental"
 	}
@@ -1947,6 +1977,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 	if n := c.Server.Streaming.MaxSSELineBytes; n != 0 && (n < minMaxSSELineBytes || n > maxMaxSSELineBytes) {
 		return fmt.Errorf("server.streaming.max_sse_line_bytes must be between %d and %d (zero selects %d)", minMaxSSELineBytes, maxMaxSSELineBytes, defaultMaxSSELineBytes)
 	}
+	if n := c.Server.Streaming.MaxInflightLineBytes; n != 0 && (n < minMaxSSELineBytes || n > maxMaxInflightSSELineBytes) {
+		return fmt.Errorf("server.streaming.max_inflight_line_bytes must be between %d and %d (zero selects %d)", minMaxSSELineBytes, maxMaxInflightSSELineBytes, defaultMaxInflightSSELineBytes)
+	}
 	switch c.Server.Streaming.Translator {
 	case "", "incremental", "synthesized":
 	default:
@@ -2030,6 +2063,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 	if err := validateAdminReports(c.Server.AdminReports, c.Server.AdminAuth, c.Server.UsageDB); err != nil {
 		return err
 	}
+	if err := validateProviderUsageReconciliation(c.Server.ProviderUsageReconciliation, c.Provider, c.Server.UsageDB, c.Server.AdminReports.Security.Enabled, requireAdminKeyEnv); err != nil {
+		return err
+	}
 	if err := validateMCPGateway(c.MCP, requireAdminKeyEnv); err != nil {
 		return err
 	}
@@ -2093,6 +2129,8 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 	if err := validateMCPPolicyReferences(c.MCP, c.Callers, c.Projects, c.Models); err != nil {
 		return err
 	}
+	cacheSaltProviderConfigured := false
+	unsupportedCacheSaltProviderConfigured := false
 	for name, p := range c.Provider {
 		breaker := p.SpendBreaker
 		if breaker.HourlyUSD < 0 || breaker.DailyUSD < 0 || math.IsNaN(breaker.HourlyUSD) || math.IsNaN(breaker.DailyUSD) || math.IsInf(breaker.HourlyUSD, 0) || math.IsInf(breaker.DailyUSD, 0) {
@@ -2107,8 +2145,18 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		if normalizeDialect(p.Dialect) == "" {
 			return fmt.Errorf("provider %s has unsupported dialect %q", name, p.Dialect)
 		}
-		if p.UpstreamKind != "" && p.UpstreamKind != "router" {
+		if p.UpstreamKind != "" && p.UpstreamKind != "router" && p.UpstreamKind != "vllm" && p.UpstreamKind != "sglang" {
 			return fmt.Errorf("provider %s has unsupported upstream_kind %q", name, p.UpstreamKind)
+		}
+		if p.UpstreamKind == "vllm" {
+			cacheSaltProviderConfigured = true
+			dialect := normalizeDialect(p.Dialect)
+			if dialect != "openai-chat" && dialect != "openai-responses" {
+				return fmt.Errorf("provider %s cache salting requires an OpenAI-compatible dialect", name)
+			}
+		}
+		if p.UpstreamKind == "sglang" {
+			unsupportedCacheSaltProviderConfigured = true
 		}
 		if p.UpstreamKind == "router" && isBedrock(p) {
 			return fmt.Errorf("provider %s cannot use upstream_kind router with bedrock", name)
@@ -2181,6 +2229,15 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 				return err
 			}
 		}
+	}
+	if unsupportedCacheSaltProviderConfigured && c.Server.Cache.UpstreamSaltKeyEnv != "" {
+		return fmt.Errorf("server.cache.upstream_salt_key_env supports vllm only; SGLang prefix-cache isolation is not supported")
+	}
+	if cacheSaltProviderConfigured && !validEnvName(c.Server.Cache.UpstreamSaltKeyEnv) {
+		return fmt.Errorf("server.cache.upstream_salt_key_env is required for vllm providers")
+	}
+	if !cacheSaltProviderConfigured && c.Server.Cache.UpstreamSaltKeyEnv != "" && !validEnvName(c.Server.Cache.UpstreamSaltKeyEnv) {
+		return fmt.Errorf("server.cache.upstream_salt_key_env must name an environment variable")
 	}
 	if len(c.Models) == 0 {
 		return fmt.Errorf("at least one model group is required")

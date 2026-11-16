@@ -262,6 +262,12 @@ func addReportPlaceholderHandlers(registry *AdminV1Registry, handlers map[string
 		out[key] = handler
 	}
 	for _, op := range registry.Operations() {
+		if _, ok := out[op.HandlerKey]; !ok && strings.HasPrefix(op.HandlerKey, "admin.") {
+			opID := op.ID
+			out[op.HandlerKey] = func(w http.ResponseWriter, r *http.Request) {
+				writeJSON(w, http.StatusOK, map[string]any{"operation": opID})
+			}
+		}
 		if op.Adapter != "reports" {
 			continue
 		}
@@ -312,6 +318,7 @@ func TestAdminV1RouteConformance(t *testing.T) {
 		probe = strings.ReplaceAll(probe, "{group}", "g1")
 		probe = strings.ReplaceAll(probe, "{set_id}", "set-1")
 		probe = strings.ReplaceAll(probe, "{request_id}", "req-1")
+		probe = strings.ReplaceAll(probe, "{operation_id}", "operation-1")
 		probe = strings.ReplaceAll(probe, "{id}", "caller-1")
 		probe = strings.ReplaceAll(probe, "{provider}", "provider-1")
 		probe = strings.ReplaceAll(probe, "{project}", "project-1")
@@ -343,6 +350,7 @@ func TestAdminV1SingleDecisionPoint(t *testing.T) {
 		target = strings.ReplaceAll(target, "{group}", "g1")
 		target = strings.ReplaceAll(target, "{set_id}", "set-1")
 		target = strings.ReplaceAll(target, "{request_id}", "req-1")
+		target = strings.ReplaceAll(target, "{operation_id}", "operation-1")
 		target = strings.ReplaceAll(target, "{id}", "caller-1")
 		target = strings.ReplaceAll(target, "{provider}", "provider-1")
 		target = strings.ReplaceAll(target, "{project}", "project-1")
@@ -1086,6 +1094,10 @@ func TestAdminV1ServiceHandlerComposition(t *testing.T) {
 		CallerAdminDeps{},
 		noop,
 		map[string]http.HandlerFunc{
+			"admin.operations.get":    noop,
+			"admin.backup.start":      noop,
+			"admin.backup.download":   noop,
+			"admin.backup.restore":    noop,
 			"training.export":         noop,
 			"training.outcomes.label": noop,
 			"metrics.scrape":          noop,

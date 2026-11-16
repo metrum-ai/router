@@ -66,6 +66,9 @@ The NVIDIA and AMD reference pins moved to the official `vllm/vllm-openai:v0.33.
 NVIDIA and AMD Kubernetes deployment examples and provisioning intents use the
 digest-pinned official vLLM v0.33.0 images, matching the reference
 configurations. Update copied examples from older releases before deploying them.
+### Tenant cache isolation
+
+Response-cache entries and vLLM prefix-cache salts remain isolated by caller and project by default. Project-level sharing is opt-in with `projects[].share_cache_within_project`; enabling it lets callers in that project share response entries and vLLM prefix-cache entries. Self-hosted vLLM providers receive salts when `providers[].upstream_kind: vllm` and `server.cache.upstream_salt_key_env` are configured; provide the environment key through the deployment secret manager on every router replica. SGLang prefix-cache isolation is not supported in v5.0.0. See [Tenant cache isolation](/docs/security-governance/cache-isolation) for the config example, compatibility behavior and key requirements.
 
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
 
@@ -90,6 +93,10 @@ The denylist write, revision notification, and audit records commit together.
 Rotate the caller token to issue a new verifier and restore access; then update
 clients with the new bearer token. Only rotation restores access; the old
 verifier remains refused.
+## v5.0.0 streaming line-buffer budget
+
+Streaming now caps total in-flight SSE line-buffer capacity per router process with `server.streaming.max_inflight_line_bytes` (default 64 MiB). Set an explicit value from 64 KiB to 1 GiB if needed. Exhaustion fails a stream with `upstream_stream_buffer_limit`; pre-commit requests can use existing fallback. Monitor `metrum_ai_router_sse_line_buffer_bytes`, `metrum_ai_router_sse_line_buffer_limit_bytes` and `metrum_ai_router_sse_line_buffer_rejections_total`.
+
 ## Security dependency update
 
 The v5.0.0 build pins `golang.org/x/crypto` to the upstream fix for GO-2026-5932. The fix removes the unused OpenPGP packages from the module; router configuration and runtime behavior do not change. When the next tagged `x/crypto` release includes this fix, routine dependency maintenance should replace the temporary pseudo-version.
@@ -325,10 +332,24 @@ database-backed configuration mode and a current `If-Match` revision. Provider
 API-key environment references and headers are write-only and do not appear in
 responses. Shortening retention requires the separate `config:force`
 permission. The existing config revision notifier and poller propagate changes
-to other serving replicas. No database migration is required for these routes.
+to other serving replicas. The provider, project, quota and retention routes do
+not add schema; the operations endpoints described below do.
 Project budget counters are per process and reset on restart; ceilings are
 approximate across replicas. Removing or raising a ceiling, or waiting for its
 UTC budget window to reset, restores admission after a trip.
+
+Admin operation tracking and control-plane backup/restore add the configuration
+database schema version 16 operations table. Before enabling these endpoints,
+run the non-serving migration CLI (host or the packaged Kubernetes Job) and
+verify the configuration database is current. The admin API never applies
+migrations. Backups contain key verifiers and audit records; store files with
+restricted access. `routerctl control-plane backup --out FILE` creates a new
+mode-0600 output file, and `routerctl control-plane restore --in FILE` restores
+only to a clean migrated replica. Grant `admin:backup/read` only to backup
+operators and keep `admin:operations/read` separate; operation status reads do
+not expose the backup bundle. Atomic target batches are available through
+`routerctl groups bulk-targets GROUP --change add=provider/model_ref` and commit
+one configuration revision or none.
 
 ## Compatibility and operations (v4.4.0)
 
@@ -821,6 +842,10 @@ For a package whose release contract includes a migration, stop or drain the ser
 
 Use `--dsn-env=ROUTER_USAGE_DB_DSN` for PostgreSQL and the documented non-serving container `--entrypoint` for Compose. Do not put a database connection string in commands, tickets, screenshots, or logs.
 
+The admin migration report reads the existing ledger without changing it. Run
+migration plans and upgrades through `metrum-ai-router-migrate` on the host or
+in a non-serving Kubernetes Job; the API cannot execute migrations.
+
 Releases containing usage migration `2026090901` add optional diagnostics
 through the non-null text column
 `request_usage.target_region` with an empty default for historical and
@@ -901,6 +926,23 @@ Signed webhook callers do not need an ETag or idempotency header. Their nonce
 reservation is durable for at least twice the configured timestamp window and
 expired reservations are pruned hourly.
 
+## Provider usage reconciliation
+
+Daily report-mode reconciliation is disabled by default. To enable it, configure
+`server.provider_usage_reconciliation`, the usage database, and
+`server.admin_reports.security.enabled`. OpenAI and Anthropic require a
+read-only usage API credential environment reference using the
+`ROUTER_PROVIDER_USAGE_` prefix and a provider key ID. Keep the value in the
+deployment secret environment; config stores only the reference.
+Bedrock uses CloudWatch metrics in its configured AWS region and compares at
+account scope; its USD total is estimated from the router model catalog prices.
+The job runs at 06:00 UTC by default, supports bounded restart catch-up with
+`max_catch_up_days`, and waits for provider `data_refreshed_at` watermarks when
+available. Use one Bedrock entry per AWS account and region to avoid counting
+the same CloudWatch metrics more than once.
+See [Provider usage reconciliation](../security-governance/provider-usage-reconciliation.md)
+for configuration and operating details.
+
 ## MCP gateway
 
 MCP is disabled by default, so existing v4.8 configurations continue to load
@@ -925,3 +967,4 @@ can resume them before their TTL. Actions expire at their configured TTL.
 ## Security event stream
 
 The OCSF 1.4.0 JSON Lines stream is disabled by default. To enable it, set `server.security.events.enabled`, choose stdout or file output, and optionally configure an HTTPS webhook with `webhook_allow_hosts` and a 32-byte-or-longer secret supplied through the environment. Webhook signatures cover the timestamp, a random nonce, and the exact body; receivers must enforce a timestamp window and reject nonce replay. Detector signals and failures use the configured detector ID and bounded signal metadata; evidence request IDs use the finding UID, capped at 256 characters. Containment events use Account Change Disable/Enable and include the target caller and acting principal. Database-backed changes to this config require a router restart. Firewall-hold (#891) and honeytoken (#884) source integrations follow when those PRs merge; keep #885 open until then. See [Security event stream](../security-governance/security-events) for full verification and queue behavior.
+The prompt-injection detector is an optional external example. It is off unless a detector is configured, and it receives no segment text unless its own `include_segments` list explicitly opts in. Prompts and user messages are never sent in v5.0.0.

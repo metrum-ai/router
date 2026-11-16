@@ -1835,3 +1835,20 @@ func TestUsageHistoricalValidationMigrationRequiresRestoreForPriorBinary(t *test
 		t.Fatalf("restored Stage 2 snapshot must support the prior binary: status=%+v err=%v", restoredStatus, err)
 	}
 }
+
+func TestMigrationRunnerStatusReadOnlyDoesNotBootstrapLedger(t *testing.T) {
+	db, err := openUsageDB(UsageDBConfig{Driver: "sqlite", Path: filepath.Join(t.TempDir(), "readonly-status.sqlite")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner, err := newUsageMigrationRunner(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runner.StatusReadOnly(); err == nil {
+		t.Fatal("read-only status should fail when no ledger exists")
+	}
+	if db.Migrator().HasTable("schema_migration_ledger") {
+		t.Fatal("read-only status created the migration ledger")
+	}
+}
