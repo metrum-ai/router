@@ -4,9 +4,9 @@
 
 ### Fixed
 
-- Mixed reasoning rejection reasons now return `unsupported_capability` with `param: reasoning` when removing the explicit reasoning request leaves an otherwise eligible target.
 - `router-migrate --json` keeps stdout valid JSON by directing GORM diagnostics
   to stderr.
+- Mixed reasoning rejection reasons now return `unsupported_capability` with `param: reasoning` when removing the explicit reasoning request leaves an otherwise eligible target.
 
 All notable changes to Metrum AI Router are documented in this file.
 
