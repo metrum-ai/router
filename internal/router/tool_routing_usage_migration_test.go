@@ -73,16 +73,20 @@ func TestToolRoutingUsageSchema21UpgradeDownAndRoundTrip(t *testing.T) {
 			_ = store.Close()
 		}
 	})
-	status, err := store.migrationStatus()
-	if err != nil || status.SchemaVersion != 21 || !status.Compatible {
-		t.Fatalf("status=%+v err=%v", status, err)
-	}
 	if err := verifyToolRoutingUsageMigration(store.db); err != nil {
 		t.Fatal(err)
 	}
 	when := time.Now().UTC()
 	if err := store.db.Create(recordFromRow(usageRow{RequestID: "legacy-tool-row", TS: when})).Error; err != nil {
 		t.Fatal(err)
+	}
+	if err := revertHierarchyAuditMigration(store.db); err != nil {
+		t.Fatal(err)
+	}
+	clearHierarchyAuditMigrationLedger(t, store.db)
+	status, err := store.migrationStatus()
+	if err != nil || status.SchemaVersion != 21 || !status.Compatible {
+		t.Fatalf("status after reverting hierarchy migration=%+v err=%v", status, err)
 	}
 	if err := revertToolRoutingUsageMigration(store.db); err != nil {
 		t.Fatal(err)
@@ -110,6 +114,10 @@ func TestToolRoutingUsageSchema21UpgradeDownAndRoundTrip(t *testing.T) {
 	if err := verifyToolRoutingUsageMigration(runner.db); err != nil {
 		t.Fatal(err)
 	}
+	if err := revertHierarchyAuditMigration(runner.db); err != nil {
+		t.Fatal(err)
+	}
+	clearHierarchyAuditMigrationLedger(t, runner.db)
 	status, err = runner.Status()
 	if err != nil || status.SchemaVersion != 21 || !status.Compatible {
 		t.Fatalf("upgraded status=%+v err=%v", status, err)
@@ -126,7 +134,7 @@ func TestToolRoutingUsageSchema21UpgradeDownAndRoundTrip(t *testing.T) {
 	if row.ToolCallCount != 3 || row.ToolFirstFailureClass != toolFailureMissingRequired || row.ToolRetries != 1 || row.ToolEscalations != 1 || row.ToolReliabilityBucket != "valid" || row.ToolReliabilitySource != "live" {
 		t.Fatalf("row=%+v", row)
 	}
-	if err := runner.db.Create(recordFromRow(row)).Error; err != nil {
+	if err := runner.db.Omit("OrganizationID", "TeamID").Create(recordFromRow(row)).Error; err != nil {
 		t.Fatal(err)
 	}
 	var persisted usageRecord
@@ -139,7 +147,7 @@ func TestToolRoutingUsageSchema21UpgradeDownAndRoundTrip(t *testing.T) {
 	}
 	priorDefinitions := make([]MigrationDefinition, 0, len(usageMigrationDefinitions)-1)
 	for _, definition := range usageMigrationDefinitions {
-		if definition.ID != toolRoutingUsageMigrationID {
+		if definition.ID != toolRoutingUsageMigrationID && definition.ID != usageHierarchyAuditMigrationID {
 			priorDefinitions = append(priorDefinitions, definition)
 		}
 	}
