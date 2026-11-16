@@ -7,10 +7,11 @@ doc_type: reference
 
 For v5.0.0, `metrum-ai-router-migrate --json` writes one JSON document to stdout. Database diagnostics are sent to stderr.
 
-OpenAI groups keep targets that declare both reasoning support and a compatible effort control when a caller supplies `reasoning_effort`. Mixed weighted and failover groups route to those targets; if all targets reject reasoning, the router returns HTTP 400 `unsupported_capability` with `param: reasoning` when removing reasoning leaves an otherwise eligible target. For Anthropic output, reasoning requires `control: token_budget` or active default thinking.
 Targets that ignore caller sampling controls can declare `temperature` or `top_p` in `request_shape_support.unsupported_request_features`; the router omits each declared field from both the translated request and its raw field map, and records the omission on the attempt. OpenAI Chat Completions translations now forward `top_p`. Pre-commit HTTP 400/422 refusals fall back only when the structured provider error identifies `temperature` or `top_p` with a supported unsupported-value/parameter code (or no code). Free-form message text and other 4xx responses do not trigger this fallback.
 
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
+
+OpenAI groups keep targets that declare both reasoning support and a compatible effort control when a caller supplies `reasoning_effort`. Mixed weighted and failover groups route to those targets; if all targets reject reasoning, the router returns HTTP 400 `unsupported_capability` with `param: reasoning` when removing reasoning leaves an otherwise eligible target. For Anthropic output, reasoning requires `control: token_budget` or active default thinking.
 
 ## Security dependency update
 
