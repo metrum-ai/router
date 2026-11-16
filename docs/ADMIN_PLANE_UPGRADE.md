@@ -156,7 +156,7 @@ without waiting for the next UTC window. `routerctl admin-resource` provides
 HTTP access to the versioned resource endpoints.
 
 Before enabling asynchronous operations, backups, or restores, apply the
-non-serving usage and router-config migrations through schema 18 using the
+non-serving usage and router-config migrations through schema 23 and schema 19, respectively, using the
 two-scope Job in [DATA_MIGRATIONS.md](DATA_MIGRATIONS.md). The restore API
 requires the separate `admin:restore:write` grant. It updates the configuration
 and usage databases sequentially; it is not an atomic cross-database operation.

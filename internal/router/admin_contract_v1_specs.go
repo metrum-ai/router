@@ -357,7 +357,7 @@ var adminV1OperationSpecs = []Operation{
 		ID: "getConfigStatus", Method: "GET", Path: "/admin/v1/config/status", LegacyPath: "/admin/config/status",
 		Summary: "Read control-plane and replica revision status",
 		Object:  authzObjectAdminConfig, Action: authzActionRead, Domain: AdminDomainGlobal,
-		Response:  adminOpenObject{Members: []string{"mode", "runtime_scope", "driver", "revision", "active_set_id", "replica"}},
+		Response:  adminOpenObject{Members: []string{"mode", "runtime_scope", "driver", "revision", "active_set_id", "replica", "apply_modes"}},
 		RateClass: AdminRateClassRead, HandlerKey: "config.status",
 	},
 	{

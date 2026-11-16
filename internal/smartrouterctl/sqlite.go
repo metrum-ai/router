@@ -48,11 +48,25 @@ func BackupSQLiteUsage(cfg *router.Config, destPath string, confirmOffline bool)
 	if err != nil {
 		return nil, err
 	}
+	lock, err := router.AcquireUsageRuntimeLock(path, true)
+	if err != nil {
+		return nil, err
+	}
+	defer lock.Close()
+	if err := checkSQLiteOfflineOperationCapacity(path); err != nil {
+		return nil, err
+	}
 	if err := copySQLiteFamily(path, destPath); err != nil {
 		return nil, err
 	}
 	ok, err := integrityCheck(destPath)
 	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, fmt.Errorf("backup integrity_check failed")
+	}
+	if err := recordSQLiteOfflineOperation(path, "usage backup"); err != nil {
 		return nil, err
 	}
 	return &UsageBackupResult{
@@ -74,6 +88,11 @@ func RestoreSQLiteUsage(cfg *router.Config, sourcePath string, confirmOffline bo
 	if err != nil {
 		return nil, err
 	}
+	lock, err := router.AcquireUsageRuntimeLock(path, true)
+	if err != nil {
+		return nil, err
+	}
+	defer lock.Close()
 	if _, err := os.Stat(sourcePath); err != nil {
 		return nil, fmt.Errorf("backup source: %w", err)
 	}
@@ -91,6 +110,12 @@ func RestoreSQLiteUsage(cfg *router.Config, sourcePath string, confirmOffline bo
 	if err != nil {
 		return nil, err
 	}
+	if !ok {
+		return nil, fmt.Errorf("restored database integrity_check failed")
+	}
+	if err := recordSQLiteOfflineOperation(path, "usage restore"); err != nil {
+		return nil, err
+	}
 	return &UsageRestoreResult{
 		Schema:             "metrum.ai/smartrouter-usage-restore/v1",
 		Driver:             driver,
@@ -101,6 +126,32 @@ func RestoreSQLiteUsage(cfg *router.Config, sourcePath string, confirmOffline bo
 		ConfirmOfflineUsed: true,
 		NextStep:           "Run router-migrate --action=verify-serving --driver=sqlite --db=<usage path> before serving.",
 	}, nil
+}
+
+func recordSQLiteOfflineOperation(dbPath, command string) error {
+	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		return err
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		return err
+	}
+	defer sqlDB.Close()
+	return router.RecordOfflineUsageMaintenance(db, command, "operator")
+}
+
+func checkSQLiteOfflineOperationCapacity(dbPath string) error {
+	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		return err
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		return err
+	}
+	defer sqlDB.Close()
+	return router.CheckOfflineUsageMarkerCapacity(db)
 }
 
 func sqliteUsagePath(cfg *router.Config) (driver, path string, err error) {
