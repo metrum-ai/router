@@ -514,7 +514,6 @@ func TestAdminAuthenticationEvents(t *testing.T) {
 		"callers.list":               func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
 		"callers.containment":        func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
 		"containment.webhook":        func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
-		"callers.quota.update":       func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
 	})
 	for _, key := range []string{"config.diff", "config.sets.import", "config.sets.activate", "config.sets.rollback",
 		"config.group.targets.replace", "config.group.targets.add", "config.group.targets.remove",
@@ -973,17 +972,6 @@ func adminAuditFixture(t *testing.T, harness *adminAuditHarness, op Operation) (
 		target = strings.ReplaceAll(op.Path, "{id}", "alice")
 	case "containCaller":
 		body = map[string]any{"caller_id": "alice", "action": "suspend", "reason": "security_test"}
-	case "updateCallerQuota":
-		target = strings.ReplaceAll(op.Path, "{id}", "alice")
-		body = map[string]any{"quota": map[string]any{"day": map[string]any{"requests": 10}}}
-	case "putProvider":
-		body = map[string]any{"base_url": "https://beta.example/v1", "dialect": "openai-chat", "api_key_env": "BETA_API_KEY", "models": map[string]any{"b-one": map[string]any{"model": "beta-model-1"}}}
-	case "validateProvider":
-		body = map[string]any{"base_url": "https://beta.example/v1", "dialect": "openai-chat", "models": map[string]any{"b-one": map[string]any{"model": "beta-model-1"}}}
-	case "putProjectEnvironmentMembership":
-		body = map[string]any{"user_id": "alice", "role": "member", "status": "active"}
-	case "putProject":
-		body = map[string]any{"name": "Search", "status": "active", "environments": []any{map[string]any{"id": "dev", "name": "Development", "status": "active"}}}
 	case "replaceConfigGroupTargets", "validateConfigGroupTargets":
 		body = map[string]any{"targets": []any{map[string]any{"provider": "alpha", "model_ref": "a-two"}}, "dry_run": op.ID == "validateConfigGroupTargets"}
 	case "addConfigGroupTarget":
@@ -1006,6 +994,17 @@ func adminAuditFixture(t *testing.T, harness *adminAuditHarness, op Operation) (
 	case "rollbackConfigSet":
 		setID := harness.preparedSetID
 		body = map[string]any{"set_id": setID, "reason": "audit"}
+	case "updateCallerQuota":
+		target = strings.ReplaceAll(op.Path, "{id}", "alice")
+		body = map[string]any{"quota": map[string]any{"day": map[string]any{"requests": 10}}}
+	case "putProvider":
+		body = map[string]any{"base_url": "https://beta.example/v1", "dialect": "openai-chat", "api_key_env": "BETA_API_KEY", "models": map[string]any{"b-one": map[string]any{"model": "beta-model-1"}}}
+	case "validateProvider":
+		body = map[string]any{"base_url": "https://beta.example/v1", "dialect": "openai-chat", "models": map[string]any{"b-one": map[string]any{"model": "beta-model-1"}}}
+	case "putProjectEnvironmentMembership":
+		body = map[string]any{"user_id": "alice", "role": "member", "status": "active"}
+	case "putProject":
+		body = map[string]any{"name": "Search", "status": "active", "environments": []any{map[string]any{"id": "dev", "name": "Development", "status": "active"}}}
 	}
 	return op.Method, target, body
 }
