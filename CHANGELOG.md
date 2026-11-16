@@ -39,7 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Direct `model` targets inherit provider-catalog capabilities for matching model IDs. When mixed rejection reasons leave the `unsupported_capability` parameter unset but removing requested reasoning makes a target eligible, the error identifies the caller field (for example, `reasoning_effort` for Chat Completions).
+- Direct `model` targets inherit catalog capabilities (reasoning, tools, modalities, and request-shape/bridge support) for matching model IDs while retaining their configured dialect, pricing, and routing values. Ambiguous model IDs across dialects do not inherit capabilities unless one catalog entry matches the target dialect. Mixed reasoning rejections identify the caller field (such as `reasoning_effort` for Chat Completions) when the error parameter is otherwise unset.
 
 ### Added
 

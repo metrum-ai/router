@@ -176,8 +176,8 @@ func TestReasoningEffortDirectModelMixedWeightedAndAllIncapable(t *testing.T) {
 	t.Run("mixed-weighted", func(t *testing.T) {
 		cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
 		chatSupport := RequestShapeSupport{SupportedInboundDialects: []string{"openai-chat"}, ValidationStatus: "passed"}
-		cfg.Provider["openai"] = ProviderConfig{BaseURL: upstream.URL + "/v1", Dialect: "openai-responses", APIKey: "provider-key", Models: map[string]ProviderModel{
-			"gpt-6-luna": {Model: "gpt-6-luna", Dialect: "openai-responses", RequestShapeSupport: chatSupport, Reasoning: ReasoningSupport{Supported: true, Mode: reasoningModeOptIn, Control: reasoningControlEffortEnum}},
+		cfg.Provider["openai"] = ProviderConfig{BaseURL: upstream.URL + "/v1", Dialect: "openai-chat", APIKey: "provider-key", Models: map[string]ProviderModel{
+			"gpt-6-luna": {Model: "gpt-6-luna", Dialect: "openai-chat", RequestShapeSupport: chatSupport, Reasoning: ReasoningSupport{Supported: true, Mode: reasoningModeOptIn, Control: reasoningControlEffortEnum}},
 		}}
 		cfg.Provider["compatible"] = ProviderConfig{BaseURL: upstream.URL + "/v1", Dialect: "openai", APIKey: "provider-key", Models: map[string]ProviderModel{
 			"plain": {Model: "plain-chat", Dialect: "openai-chat", RequestShapeSupport: chatSupport},
