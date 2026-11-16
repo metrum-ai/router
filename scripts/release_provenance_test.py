@@ -37,7 +37,14 @@ def validate(workflow):
     assert ai_step["env"]["REVIEW_BASE"] == "${{ needs.resolve.outputs.previous_tag }}"
     assert ai_step["env"]["ANTHROPIC_API_KEY"] == "${{ secrets.ANTHROPIC_API_KEY }}"
     assert "--artifact-cache" in ai_step["run"] and "--artifact-output" in ai_step["run"]
-    assert any(step.get("name") == "Restore review artifact for this commit range" for step in ai_review["steps"])
+    restore = next(step for step in ai_review["steps"] if step.get("name") == "Restore review artifact for this commit range")
+    assert restore["uses"] == "actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9"
+    assert restore["with"]["key"] == "${{ steps.review-range.outputs.artifact_name }}"
+    assert restore["with"]["path"] == "${{ runner.temp }}/review-cache/review.json"
+    save = next(step for step in ai_review["steps"] if step.get("name") == "Store review artifact for reruns of this commit range")
+    assert save["uses"] == "actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9"
+    assert save["with"]["key"] == "${{ steps.review-range.outputs.artifact_name }}"
+    assert save.get("if", "").startswith("always() &&")
     assert any(step.get("name") == "Store review artifact for reruns of this commit range" for step in ai_review["steps"])
     review_key = next(step["run"] for step in ai_review["steps"] if step.get("name") == "Derive immutable review artifact name")
     assert "release_review_artifact_key.py" in review_key
@@ -170,6 +177,14 @@ class ProvenanceWorkflowTest(unittest.TestCase):
         self.assertIn("make package", all_runs)
         dry_run_steps = jobs["dry-run"]["steps"]
         dry_run_names = [step.get("name") for step in dry_run_steps]
+        review_restore = dry_run_steps[dry_run_names.index("Restore review artifact for this commit range")]
+        review_save = dry_run_steps[dry_run_names.index("Store review artifact for reruns of this commit range")]
+        self.assertEqual(review_restore["uses"], "actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9")
+        self.assertEqual(review_restore["with"]["key"], "${{ steps.review-range.outputs.artifact_name }}")
+        self.assertEqual(review_restore["with"]["path"], "${{ runner.temp }}/review-cache/review.json")
+        self.assertEqual(review_save["uses"], "actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9")
+        self.assertEqual(review_save["with"]["key"], "${{ steps.review-range.outputs.artifact_name }}")
+        self.assertTrue(review_save.get("if", "").startswith("always() &&"))
         preserve = dry_run_names.index("Preserve first build output")
         reset = dry_run_names.index("Reset generated package outputs before clean-cache rebuild")
         rebuild = dry_run_names.index("Rebuild with clean Go caches")

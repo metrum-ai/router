@@ -234,11 +234,10 @@ jobs:
           key="$(python3 scripts/release_review_artifact_key.py --base "${REVIEW_BASE}" --head "${REVIEW_HEAD}")"
           printf 'artifact_name=release-review-%s\n' "${key}" >> "${GITHUB_OUTPUT}"
       - name: Restore review artifact for this commit range
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          name: ${{ steps.review-range.outputs.artifact_name }}
-          path: ${{ runner.temp }}/review-cache
-          if-no-files-found: ignore
+          key: ${{ steps.review-range.outputs.artifact_name }}
+          path: ${{ runner.temp }}/review-cache/review.json
       - name: Review release diff and documentation
         id: review
         env:
@@ -259,12 +258,10 @@ jobs:
             --output "${RUNNER_TEMP}/review-output/AI-release-review.md"
       - name: Store review artifact for reruns of this commit range
         if: always() && steps.review.outputs.cache_hit != 'true'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          name: ${{ steps.review-range.outputs.artifact_name }}
+          key: ${{ steps.review-range.outputs.artifact_name }}
           path: ${{ runner.temp }}/review-output/review.json
-          if-no-files-found: error
-          retention-days: 90
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
