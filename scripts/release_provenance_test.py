@@ -190,12 +190,18 @@ class ProvenanceWorkflowTest(unittest.TestCase):
         self.assertNotIn("crane push", all_runs)
         self.assertNotIn("cosign", all_runs)
         self.assertNotIn("gh release create", all_runs)
-        self.assertNotIn("secrets.ANTHROPIC_API_KEY", DRY_RUN_WORKFLOW.read_text(encoding="utf-8"))
+        self.assertEqual(dry_run.get("environment"), "release-review")
+        review_step = next(step for step in dry_run_steps if step.get("id") == "review")
+        self.assertEqual(review_step.get("env"), {"ANTHROPIC_API_KEY": "${{ secrets.ANTHROPIC_API_KEY }}"})
+        for step in dry_run_steps:
+            if step is not review_step:
+                self.assertNotIn("ANTHROPIC_API_KEY", step.get("env", {}))
         self.assertIn("release_review_artifact_key.py", all_runs)
-        for job in jobs.values():
+        for name, job in jobs.items():
             self.assertEqual(job.get("if"), "github.ref == 'refs/heads/main' && inputs.dry_run")
             self.assertEqual(job.get("permissions"), {"contents": "read"})
-            self.assertNotIn("environment", job)
+            if name != "dry-run":
+                self.assertNotIn("environment", job)
             for step in job.get("steps", []):
                 if step.get("uses", "").startswith("actions/checkout@"):
                     self.assertEqual(step.get("with", {}).get("ref"), "main")
