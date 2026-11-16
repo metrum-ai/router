@@ -2,10 +2,6 @@
 
 ## Unreleased
 
-### Added
-
-- Add versioned provider and model-catalog reads, provider validation and create/update/disable, project environments, project-environment memberships, project USD budgets with alert thresholds, caller quota updates, and retention policy writes. Writes use configuration revisions; shortening retention requires `config:force`, and provider credential references and headers never appear in responses.
-
 ### Fixed
 
 - Migrate the API compatibility suite to Anthropic Python SDK 2.3.0 and test API-key and bearer authentication with separate clients.
@@ -35,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Add caller key containment through `/admin/v1/containment`, `routerctl contain` and `routerctl release`, plus an optional HMAC-SHA256 SOAR/EDR webhook. Webhook writes use signed nonce replay protection without ETag headers; containment can resume only containment-originated suspensions.
+
+- Add versioned provider and model-catalog reads, provider validation and create/update/disable, project environments, project-environment memberships, project USD budgets with alert thresholds, caller quota updates, and retention policy writes. Writes use configuration revisions; shortening retention requires `config:force`, and provider credential references and headers never appear in responses.
 
 ### Security
 
