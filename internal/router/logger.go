@@ -43,6 +43,11 @@ type logRecord struct {
 	UsageSource                  string   `json:"usage_source"`
 	TS                           string   `json:"ts"`
 	RequestID                    string   `json:"request_id"`
+	TraceID                      string   `json:"trace_id,omitempty"`
+	SpanID                       string   `json:"span_id,omitempty"`
+	ParentSpanID                 string   `json:"parent_span_id,omitempty"`
+	OrganizationID               string   `json:"organization_id,omitempty"`
+	TeamID                       string   `json:"team_id,omitempty"`
 	CallerID                     string   `json:"caller_id"`
 	CallerUser                   string   `json:"caller_user"`
 	CallerProject                string   `json:"caller_project"`

@@ -18,5 +18,5 @@ func applyUsageEndpointMigration(db *gorm.DB) error {
 }
 
 func verifyUsageEndpointMigration(db *gorm.DB) error {
-	return ensureUsageRelationalSchema(db)
+	return ensureUsageRelationalSchemaExcept(db, mergeUsageExcludedColumns())
 }

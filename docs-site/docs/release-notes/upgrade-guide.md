@@ -5,6 +5,18 @@ doc_type: reference
 
 # Upgrade Guide
 
+## v5.0.0 request trace correlation
+
+Trace propagation is opt-in. Existing callers and deployments that do not
+configure a trusted parent continue to receive a new trace for every inbound
+request. To preserve a trace across routers, configure `server.trace.trusted_parent_cidrs`
+for the immediate parent network, or enable `trust_traceparent` only on an
+authenticated child-router caller. Schema 16 adds scalar trace, span, and
+parent-span columns to the usage table and an index on `trace_id`; existing rows
+remain valid with empty values. The migration is additive and is applied by the
+deployment migration job. See [router configuration](../configuration/router-config#request-trace-correlation)
+for trust boundaries and examples.
+
 ## Detector service boundary (v5.0.0)
 
 Custom detector strategies run as separate services behind the versioned
@@ -49,6 +61,32 @@ does not fail over to another provider until the window resets. Use
 also enter security access events when
 `server.admin_reports.security.enabled` is true; structured log events remain
 available otherwise.
+
+## v5.0.0 hierarchy governance
+
+Hierarchy governance is opt-in. Existing configurations without
+`server.hierarchy` retain their current behavior. Configure a parent with a
+child-to-caller mapping and configure the child with the parent's HTTPS URL, a
+secret environment-variable name and a bounded policy-cache TTL. The child
+uses that same bearer credential for policy reads and inference. See
+[Hierarchy governance](/operations/hierarchy-governance) for configuration,
+policy behavior, failure recovery and the governance test matrix.
+
+Usage schema version 18 adds `organization_id` and `team_id` attribution beside trace/span
+metadata. The request report exposes `organizationId`, `teamId`, `traceId`, `hopId` and
+`parentHopId`, and accepts `organization_id`, `team_id` and `hop_id` filters. Existing rows retain
+empty hierarchy attribution; new hierarchy requests record the scope applied by each router.
+
+The parent's caller day/month quotas are the authoritative organization
+budgets. All child callers assigned to one organization must use identical
+quota values; their requests share persisted organization counters at that
+parent. A child's own quota remains an additional local limit. Parent budgets
+are per router process because quota state is stored in the configured state
+file; use one parent replica unless shared quota storage has been separately
+validated. On parent outage, the child serves the last validated policy only
+until its TTL expires, then returns HTTP 503 before inference. Restore parent
+reachability or correct the child's credential/URL to recover; no manual cache
+reset is needed.
 
 ## v5.0.0 trusted proxy client IP resolution
 

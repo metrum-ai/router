@@ -99,6 +99,9 @@ type machinePlanePublication struct {
 	Config *Config
 	// Callers is the prepared caller directory that belongs to Config.
 	Callers map[string]*callerRuntime
+	// HierarchyPolicy is the prepared parent snapshot client associated with Config.
+	HierarchyPolicy    *hierarchyPolicyRuntime
+	SetHierarchyPolicy bool
 	// APIKeys is the prepared serving-port key catalogue that belongs to Config.
 	APIKeys map[string]*adminAPIKeyRuntime
 	// MaxStaleness is the configured policy freshness window (zero: unchanged).
@@ -160,7 +163,7 @@ func (s *Service) publishMachinePlane(prepare func(machinePlaneSnapshot) (*machi
 		if published == nil || pub.Generation.authorizer != published {
 			return errors.New("machine generation is not pinned to the authorizer being published")
 		}
-	} else if pub.Authorizer == nil && pub.Config == nil && pub.Callers == nil && pub.APIKeys == nil && pub.MaxStaleness == 0 && pub.Policy == nil {
+	} else if pub.Authorizer == nil && pub.Config == nil && pub.Callers == nil && pub.APIKeys == nil && pub.MaxStaleness == 0 && pub.Policy == nil && !pub.SetHierarchyPolicy {
 		return errors.New("empty machine plane publication")
 	}
 	// Installation starts here. Nothing below returns an error: the reload,
@@ -183,6 +186,9 @@ func (s *Service) publishMachinePlane(prepare func(machinePlaneSnapshot) (*machi
 		if pub.APIKeys != nil {
 			s.adminAPIKeys = pub.APIKeys
 		}
+	}
+	if pub.SetHierarchyPolicy {
+		s.hierarchyPolicy.Store(pub.HierarchyPolicy)
 	}
 	if pub.MaxStaleness > 0 && s.policyFreshness != nil {
 		s.policyFreshness.mu.Lock()
