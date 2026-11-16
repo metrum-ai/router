@@ -189,6 +189,21 @@ access to `agent-small`. The edge and datacenter hierarchy reference configs set
 `admin.enabled: false` because each router uses one listener; deployments that
 need the authenticated admin listener should enable and configure it explicitly.
 
+## v5.0.0 tool-call firewall
+
+`server.tool_firewall` is off by default. Review the [Tool Call Firewall
+configuration](../configuration/tool-firewall) before enabling `shadow` or
+`enforce`. Sequence counters and pending approvals are process-local; with
+multiple replicas, route each conversation and its approval request to the same
+router process. Configure `admin:tool_approvals:resolve` only for principals
+that may release held tool calls. Hold rules return an immediate pending
+result; after an administrator releases the hold, the agent retries the same
+request. Enforced streamed tool calls are held automatically until inspection completes,
+using 30-second and 1 MiB per-stream bounds when the model group does not set
+explicit bounds. Schema validation still runs only when the group opts in to
+`streaming.hold_until_validated`.
+
+
 ## v5.0.0 caller-token hygiene
 
 Newly generated caller tokens append a `v2` marker and checksum to the existing
