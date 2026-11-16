@@ -7,7 +7,7 @@ import { TokenUsageBreakdown, tokenUsageParts, costUsageParts } from "./TokenUsa
 
 describe("token usage breakdown", () => {
  it("does not call reported zero tokens missing when the denominator is zero",()=>{
-  const html=renderToStaticMarkup(<TokenUsageBreakdown summary={{requests:1,inputTokens:0,outputTokens:0,reasoningTokens:0,cachedInputTokens:0,reasoningReportedRequests:1,cachedInputReportedRequests:1}}/>);
+  const html=renderToStaticMarkup(<TokenUsageBreakdown summary={{requests:1,inputTokens:0,outputTokens:0,reasoningTokens:0,cachedInputTokens:0,recomputedInputTokens:0,recomputedInputReportedRequests:1,reasoningReportedRequests:1,cachedInputReportedRequests:1}}/>);
   expect(html).toContain("No output");expect(html).toContain("No input");expect(html).not.toContain("Not reported");
  });
  it("partitions cache writes and reasoning without double-counting billed cost",()=>{
@@ -28,6 +28,12 @@ describe("token usage breakdown", () => {
   const html = renderToStaticMarkup(<TokenUsageBreakdown summary={{requests:3,inputTokens:100,outputTokens:40,reasoningTokens:20,cachedInputTokens:60,reasoningReportedRequests:2,cachedInputReportedRequests:2}} />);
   expect(html).toContain("50.0%");
   expect(html).toContain("60.0%");
+  expect(html).toContain("2 / 3 requests reported");
+ });
+ it("shows recomputed input share with its reporting coverage", () => {
+  const html = renderToStaticMarkup(<TokenUsageBreakdown summary={{requests:3,inputTokens:100,outputTokens:40,reasoningTokens:20,cachedInputTokens:60,cachedInputReportedRequests:2,recomputedInputTokens:40,recomputedInputReportedRequests:2,reasoningReportedRequests:2}} />);
+  expect(html).toContain("Recomputed input share");
+  expect(html).toContain("40.0%");
   expect(html).toContain("2 / 3 requests reported");
  });
  it("does not turn missing coverage into a reported zero share", () => {

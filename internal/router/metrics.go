@@ -63,6 +63,8 @@ type metricValues struct {
 	CacheHits                int64
 	CacheMisses              int64
 	CacheBypass              int64
+	BackendCacheHitRequests  int64
+	BackendCacheReported     int64
 	Attempts                 int64
 	Fallbacks                int64
 	ToolCallsValid           int64
@@ -114,7 +116,13 @@ func (m *metricsStore) Observe(rec logRecord) {
 	if rec.ReasoningCoverageMeasured {
 		reasoningTokens = rec.ReasoningTokens
 	}
-	values.UsageTokenBreakdown.addUsage(usageRow{ReasoningTokens: reasoningTokens, CachedInputTokens: rec.Usage.CachedInputTokens, CacheWriteInputTokens: rec.Usage.CacheWriteInputTokens, ReasoningAttemptCount: rec.ReasoningAttemptCount, ReasoningSuccessfulAttemptCount: rec.ReasoningSuccessfulAttemptCount, ReasoningReportedAttemptCount: rec.ReasoningReportedAttemptCount})
+	values.UsageTokenBreakdown.addUsage(usageRow{InputTokens: rec.Usage.InputTokens, ReasoningTokens: reasoningTokens, CachedInputTokens: rec.Usage.CachedInputTokens, CacheWriteInputTokens: rec.Usage.CacheWriteInputTokens, ReasoningAttemptCount: rec.ReasoningAttemptCount, ReasoningSuccessfulAttemptCount: rec.ReasoningSuccessfulAttemptCount, ReasoningReportedAttemptCount: rec.ReasoningReportedAttemptCount})
+	if rec.Cache != "hit" && rec.Usage.CachedInputTokens != nil {
+		values.BackendCacheReported++
+		if *rec.Usage.CachedInputTokens > 0 {
+			values.BackendCacheHitRequests++
+		}
+	}
 	if rec.Cache != "hit" {
 		cachedCost := 0.0
 		if rec.Usage.CachedInputTokens != nil && *rec.Usage.CachedInputTokens >= 0 && *rec.Usage.CachedInputTokens <= rec.Usage.InputTokens {
@@ -242,6 +250,8 @@ func (m *metricsStore) Prometheus(trafficShape *trafficShapeManager, migration M
 	writeHelp(&b, "metrum_ai_router_reasoning_tokens_total", "Reported reasoning tokens (a subset of output).")
 	writeHelp(&b, "metrum_ai_router_cache_write_input_tokens_total", "Reported cache-write input tokens (a subset of input).")
 	writeHelp(&b, "metrum_ai_router_cached_input_tokens_total", "Reported cache-read input tokens (a subset of input).")
+	writeHelp(&b, "metrum_ai_router_backend_cache_hit_requests_total", "Requests with at least one backend-reported cached input token.")
+	writeHelp(&b, "metrum_ai_router_backend_cache_reported_requests_total", "Requests whose backend reported cached input tokens, including zero.")
 	writeHelp(&b, "metrum_ai_router_cost_usd_total", "Billed request cost in USD by component.")
 	writeHelp(&b, "metrum_ai_router_input_tokens_total", "Total input tokens by usage_source (reported, partial, estimated, or none).")
 	writeHelp(&b, "metrum_ai_router_output_tokens_total", "Total output tokens by usage_source (reported, partial, estimated, or none).")
@@ -330,6 +340,8 @@ func (m *metricsStore) Prometheus(trafficShape *trafficShapeManager, migration M
 		labelText := prometheusLabels(labels)
 		writeMetric(&b, "metrum_ai_router_reasoning_tokens_total", labelText, values.ReasoningTokens)
 		writeMetric(&b, "metrum_ai_router_cached_input_tokens_total", labelText, values.CachedInputTokens)
+		writeMetric(&b, "metrum_ai_router_backend_cache_hit_requests_total", labelText, values.BackendCacheHitRequests)
+		writeMetric(&b, "metrum_ai_router_backend_cache_reported_requests_total", labelText, values.BackendCacheReported)
 		writeMetric(&b, "metrum_ai_router_cache_write_input_tokens_total", labelText, values.CacheWriteInputTokens)
 		for _, component := range []struct {
 			name string

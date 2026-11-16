@@ -1,0 +1,158 @@
+{
+  "mode": "pair",
+  "note": "Same dynamic_score group and target set, affinity off versus on; only response usage fields are recorded. The short off arm routes 2 requests to each provider; affinity-on routes all 4 short requests to Fireworks. Each arm includes a provider-reported 32,000+ input-token tiered request. Costs use dated configured endpoint rates and are not invoice reconciliations.",
+  "summary": [
+    {
+      "arm": "affinity_off",
+      "group": "comparison",
+      "affinity_enabled": false,
+      "requests": 5,
+      "provider_distribution": {
+        "fireworks": 3,
+        "openrouter": 2
+      },
+      "short_provider_distribution": {
+        "fireworks": 2,
+        "openrouter": 2
+      },
+      "cache_hit_rate": 0.2,
+      "cache_reported_requests": 5,
+      "short_cache_hit_rate": 0.25,
+      "short_ttfb_ms_p50": 651.5,
+      "short_ttfb_ms_p95": 1176,
+      "ttfb_ms_mean": 813.4,
+      "recomputed_input_tokens": 95070
+    },
+    {
+      "arm": "affinity_on",
+      "group": "comparison",
+      "affinity_enabled": true,
+      "requests": 5,
+      "provider_distribution": {
+        "fireworks": 5
+      },
+      "short_provider_distribution": {
+        "fireworks": 4
+      },
+      "cache_hit_rate": 0.4,
+      "cache_reported_requests": 5,
+      "short_cache_hit_rate": 0.5,
+      "short_ttfb_ms_p50": 916.5,
+      "short_ttfb_ms_p95": 1151,
+      "ttfb_ms_mean": 1082.6,
+      "recomputed_input_tokens": 92513
+    }
+  ],
+  "requests": [
+    {
+      "arm": "affinity_off",
+      "kind": "short",
+      "provider": "fireworks",
+      "model": "deepseek-v4.1-flash",
+      "input_tokens": 15659,
+      "cached_input_tokens": 0,
+      "recomputed_input_tokens": 15659,
+      "output_tokens": 16,
+      "ttfb_ms": 828
+    },
+    {
+      "arm": "affinity_off",
+      "kind": "short",
+      "provider": "openrouter",
+      "model": "deepseek/deepseek-v4.1-flash-1017",
+      "input_tokens": 15659,
+      "cached_input_tokens": 0,
+      "recomputed_input_tokens": 15659,
+      "output_tokens": 16,
+      "ttfb_ms": 475
+    },
+    {
+      "arm": "affinity_off",
+      "kind": "short",
+      "provider": "fireworks",
+      "model": "deepseek-v4.1-flash",
+      "input_tokens": 15659,
+      "cached_input_tokens": 0,
+      "recomputed_input_tokens": 15659,
+      "output_tokens": 16,
+      "ttfb_ms": 1176
+    },
+    {
+      "arm": "affinity_off",
+      "kind": "short",
+      "provider": "openrouter",
+      "model": "deepseek/deepseek-v4.1-flash-1017",
+      "input_tokens": 15659,
+      "cached_input_tokens": 15616,
+      "recomputed_input_tokens": 43,
+      "output_tokens": 16,
+      "ttfb_ms": 307
+    },
+    {
+      "arm": "affinity_off",
+      "kind": "tiered_32000",
+      "provider": "fireworks",
+      "model": "deepseek-v4.1-flash",
+      "input_tokens": 48050,
+      "cached_input_tokens": 0,
+      "recomputed_input_tokens": 48050,
+      "output_tokens": 16,
+      "ttfb_ms": 1281
+    },
+    {
+      "arm": "affinity_on",
+      "kind": "short",
+      "provider": "fireworks",
+      "model": "deepseek-v4.1-flash",
+      "input_tokens": 15659,
+      "cached_input_tokens": 0,
+      "recomputed_input_tokens": 15659,
+      "output_tokens": 16,
+      "ttfb_ms": 1036
+    },
+    {
+      "arm": "affinity_on",
+      "kind": "short",
+      "provider": "fireworks",
+      "model": "deepseek-v4.1-flash",
+      "input_tokens": 15659,
+      "cached_input_tokens": 9086,
+      "recomputed_input_tokens": 6573,
+      "output_tokens": 16,
+      "ttfb_ms": 797
+    },
+    {
+      "arm": "affinity_on",
+      "kind": "short",
+      "provider": "fireworks",
+      "model": "deepseek-v4.1-flash",
+      "input_tokens": 15659,
+      "cached_input_tokens": 0,
+      "recomputed_input_tokens": 15659,
+      "output_tokens": 16,
+      "ttfb_ms": 1151
+    },
+    {
+      "arm": "affinity_on",
+      "kind": "short",
+      "provider": "fireworks",
+      "model": "deepseek-v4.1-flash",
+      "input_tokens": 15659,
+      "cached_input_tokens": 9086,
+      "recomputed_input_tokens": 6573,
+      "output_tokens": 16,
+      "ttfb_ms": 796
+    },
+    {
+      "arm": "affinity_on",
+      "kind": "tiered_32000",
+      "provider": "fireworks",
+      "model": "deepseek-v4.1-flash",
+      "input_tokens": 48049,
+      "cached_input_tokens": 0,
+      "recomputed_input_tokens": 48049,
+      "output_tokens": 16,
+      "ttfb_ms": 1633
+    }
+  ]
+}

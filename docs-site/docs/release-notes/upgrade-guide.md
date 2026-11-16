@@ -29,8 +29,11 @@ deliberately dropped and never forwarded. A trusted proxy or ingress CIDR trusts
 every client behind it, so trust only the immediate router network. Schema 18
 adds scalar trace, span, and
 parent-span columns to the usage table and an index on `trace_id`; existing rows
-remain valid with empty values. The migration is additive and is applied by the
-deployment migration job. See [router configuration](../configuration/router-config#request-trace-correlation)
+remain valid with empty values. Schema 19 adds mission task and owner
+attribution after trace-correlation schema 18. Schema 20 records recomputed
+input tokens and rollup coverage after schema 19; migration `2026111614` depends
+on mission-attribution migration `2026111607`. The migration is additive and is
+applied by the deployment migration job. See [router configuration](../configuration/router-config#request-trace-correlation)
 for trust boundaries and examples.
 
 ## Security hardening
@@ -233,6 +236,12 @@ arguments are held until inspection completes. Secret matches are redacted in
 bounded hold, tool-bearing streams on a DLP-enabled group fail with HTTP 400
 `secret-dlp-stream-inspection-required`. Streams with custom rules remain
 fail-closed because the rolling text filter cannot infer a safe match bound.
+
+## v5.0.0 KV-cache routing and metering
+
+The additive usage-schema migration adds nullable `request_usage.recomputed_input_tokens` and scalar coverage fields to usage rollups. It backfills recomputed tokens only for historical rows with reported cached-token counts; rows without that evidence remain unknown. The router computes new values as `max(input_tokens - cached_input_tokens, 0)`. Reports now include cached and recomputed token totals and coverage.
+
+Existing routing config keeps its behavior unless a target sets `tiered_kv_cache: true` or a dynamic-score request supplies `metadata.session_id`. Tiered-cache preference applies at an estimated input length of 32,000 tokens and only among targets already eligible for the request. Dynamic-score affinity remains process-local and bounded; restarting clears pins. Remove the target attribute or restore the prior group config to roll back routing behavior. Schema rollback follows the restore-required migration contract.
 
 ## v5.0.0 trusted proxy client IP resolution
 
