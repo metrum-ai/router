@@ -21,6 +21,11 @@ class SetupTests(unittest.TestCase):
                 config=json.loads((state/(arm+'.json')).read_text())
                 self.assertNotIn('token_sha256',json.dumps(config));self.assertTrue(all(v not in json.dumps(config) for v in values))
                 self.assertEqual(len(config['callers']),4)
+                if arm=='experts':
+                    group=config['models']['expert-study']
+                    self.assertEqual(group['strategy'],'external')
+                    self.assertTrue(group['external_policy']['include_request'])
+                    self.assertNotIn('script',group)
                 subprocess.run(['go','run','./cmd/metrum-ai-routerctl','config','validate','--config',str(state/(arm+'.json'))],cwd=setup.ROOT,
                                check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=180)
             for name in setup.PERSONAS:self.assertEqual((tokens/name).stat().st_mode & 0o777,0o600)

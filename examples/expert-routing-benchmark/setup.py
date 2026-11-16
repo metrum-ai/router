@@ -14,7 +14,7 @@ secure=importlib.util.module_from_spec(spec);spec.loader.exec_module(secure)
 PERSONAS=('biomedical','finance','math','coding')
 
 
-def build(state, tokens):
+def build(state, tokens, policy_url='http://127.0.0.1:18427/route'):
     if not tokens.resolve().is_relative_to(Path('/dev/shm').resolve()): raise ValueError('tokens must be in tmpfs')
     state.mkdir(mode=0o700,parents=False,exist_ok=False);tokens.mkdir(mode=0o700,parents=False,exist_ok=False)
     users=[];projects=[];memberships=[];callers=[];ctl=secure.prepare(ROOT)
@@ -34,7 +34,8 @@ def build(state, tokens):
                for name,port in [('biomedical',8001),('finance',8002),('math',8003),('coding',8004),('baseline',8000)]}
     targets=[{'provider':name,'model':name+'-ft','context_tokens':8192,'weight':1,
               'tool_support':{'openai_chat':['tools','tool_choice']}} for name in PERSONAS]
-    model_group={'strategy':'script','script':str((HERE/'policy.ts').resolve()),'script_max_concurrent':64,'targets':targets}
+    model_group={'strategy':'external','external_policy':{'url':policy_url,'allow_hosts':['127.0.0.1'],
+        'timeout_ms':1000,'max_response_bytes':4096,'include_request':True,'on_error':'fail_closed'},'targets':targets}
     base={'server':{'listen':'127.0.0.1:18426','default_model_group':'expert-study','identifiers':{'mode':'passthrough'},
           'cache':{'enabled':False},'decision_telemetry':{'enabled':True},
           'usage_db':{'enabled':True,'driver':'sqlite','path':str(state/'usage.sqlite'),'migration_policy':'auto-safe'}},
