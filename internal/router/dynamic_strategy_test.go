@@ -6,13 +6,158 @@ package router
 import (
 	"bufio"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
+
+func TestCPUSmallWorkEligibilityAndEscalationHTTP(t *testing.T) {
+	configPath := filepath.Join("..", "..", "deploy", "reference", "hierarchy", "config", "dc.yaml")
+	rawConfig, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range envReferenceNames(rawConfig) {
+		t.Setenv(name, "fixture-provider-value")
+	}
+	t.Setenv("CPU_MODEL", "cpu-small")
+	t.Setenv("FRONTIER_MODEL", "frontier")
+	t.Setenv("CPU_ATTEMPT_TIMEOUT_MS", "75") // short deterministic timeout for the fixture
+	t.Setenv("ROUTER_ID_TRANSFORM_KEY", strings.Repeat("ab", 64))
+	t.Setenv("ROUTER_ID_TRANSFORM_KEY_ID", "fixture")
+	t.Setenv("DC_USAGE_DRIVER", "sqlite")
+	t.Setenv("DC_USAGE_PATH", filepath.Join(t.TempDir(), "usage.sqlite"))
+	t.Setenv("DC_USAGE_DSN", "")
+	t.Setenv("DC_CALLER_RPM", "1200")
+	t.Setenv("DC_CALLER_TPM", "1000000")
+	t.Setenv("DC_CALLER_CONCURRENT", "64")
+	tokenHash, err := HashCallerToken("fixture-token", strings.NewReader(strings.Repeat("s", 32)), callerTokenHashMinIterations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("DC_CALLER_TOKEN_HASH", tokenHash)
+	t.Setenv("DC_CALLER_TOKEN_ID", "fixture-caller")
+	t.Setenv("DC_CALLER_ID", "fixture-caller")
+	t.Setenv("DC_OWNER_USER", "ops")
+	t.Setenv("DC_PROJECT", "fixture")
+	t.Setenv("DC_ENVIRONMENT", "test")
+	t.Setenv("DC_ROUTER_TOKEN", "fixture-token")
+	t.Setenv("EDGE_ROUTER_URL", "http://127.0.0.1:2/v1")
+	t.Setenv("DC_STATE_PATH", filepath.Join(t.TempDir(), "state.json"))
+	t.Setenv("DC_LOG_PATH", filepath.Join(t.TempDir(), "router.log"))
+	t.Setenv("MAX_ROUTER_HOPS", "4")
+	t.Setenv("DC_UPSTREAM_TIMEOUT_MS", "10000")
+	t.Setenv("FRONTIER_BASE_URL", "http://127.0.0.1:1/v1")
+	t.Setenv("FRONTIER_API_KEY", "fixture")
+	t.Setenv("FRONTIER_INPUT_PRICE_USD_PER_MTOK", "0")
+	t.Setenv("FRONTIER_OUTPUT_PRICE_USD_PER_MTOK", "0")
+	t.Setenv("FRONTIER_PRICING_SOURCE", "fixture")
+	t.Setenv("FRONTIER_PRICING_UPDATED_AT", "2026-11-16")
+	t.Setenv("CPU_BASE_URL", "http://127.0.0.1:1/v1")
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	group, ok := cfg.Models["agent-small"]
+	if !ok {
+		t.Fatal("reference config has no agent-small group")
+	}
+	if group.RoutingPolicy.DynamicScore.Thresholds.MaxTTFBMS == nil || *group.RoutingPolicy.DynamicScore.Thresholds.MaxTTFBMS != 1000 {
+		t.Fatalf("reference latency budget=%+v, want max_ttfb_ms=1000", group.RoutingPolicy.DynamicScore.Thresholds)
+	}
+	for i := range group.Targets {
+		group.Targets[i].Provider = "mock"
+	}
+
+	var cpuMode atomic.Int32
+	const (
+		cpuOK int32 = iota
+		cpuDown
+		cpuTimeout
+	)
+	seen := make(chan string, 20)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Model string `json:"model"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		seen <- body.Model
+		if body.Model == "cpu-small" {
+			switch cpuMode.Load() {
+			case cpuDown:
+				http.Error(w, "cpu unavailable", http.StatusBadGateway)
+				return
+			case cpuTimeout:
+				time.Sleep(250 * time.Millisecond)
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprintf(w, `{"id":"reply","object":"chat.completion","model":%q,"choices":[{"index":0,"message":{"role":"assistant","content":%q},"finish_reason":"stop"}],"usage":{"prompt_tokens":4,"completion_tokens":2,"total_tokens":6}}`, body.Model, body.Model)
+	}))
+	defer upstream.Close()
+	svc := newTestService(t, upstream.URL, "provider-key")
+	defer svc.Close()
+	for name, provider := range svc.cfg.Provider {
+		provider.BaseURL = upstream.URL
+		svc.cfg.Provider[name] = provider
+	}
+	svc.cfg.Models["default"] = group
+	router := httptest.NewServer(svc.Handler())
+	defer router.Close()
+	call := func(maxTokens int) (int, string) {
+		t.Helper()
+		payload := fmt.Sprintf(`{"model":"default","max_tokens":%d,"messages":[{"role":"user","content":"classify receipt"}]}`, maxTokens)
+		req, _ := http.NewRequest(http.MethodPost, router.URL+"/v1/chat/completions", strings.NewReader(payload))
+		req.Header.Set("Authorization", "Bearer "+testToken)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		got, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(got)
+	}
+	assertLatest := func(want string) {
+		t.Helper()
+		select {
+		case got := <-seen:
+			if got != want {
+				t.Fatalf("upstream model=%q, want %q", got, want)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("upstream was not called; want %q", want)
+		}
+	}
+	if status, body := call(16); status != http.StatusOK || !strings.Contains(body, `"content":"cpu-small"`) {
+		t.Fatalf("compact request status=%d body=%s, want CPU response", status, body)
+	}
+	assertLatest("cpu-small")
+	if status, body := call(256); status != http.StatusOK || !strings.Contains(body, `"content":"frontier"`) {
+		t.Fatalf("over-budget request status=%d body=%s, want frontier response", status, body)
+	}
+	assertLatest("frontier")
+	cpuMode.Store(cpuDown)
+	if status, body := call(16); status != http.StatusOK || !strings.Contains(body, `"content":"frontier"`) {
+		t.Fatalf("CPU-down fallback status=%d body=%s", status, body)
+	}
+	assertLatest("cpu-small")
+	assertLatest("frontier")
+	svc.observations = newDynamicObservationStore() // isolate the timeout case from failure-threshold adaptation
+	cpuMode.Store(cpuTimeout)
+	if status, body := call(16); status != http.StatusOK || !strings.Contains(body, `"content":"frontier"`) {
+		t.Fatalf("CPU-timeout fallback status=%d body=%s", status, body)
+	}
+	assertLatest("cpu-small")
+	assertLatest("frontier")
+}
 
 func TestDynamicScoreColdStartUsesConfiguredWeightsDeterministically(t *testing.T) {
 	svc := newTestService(t, "http://127.0.0.1:1", "provider-key")

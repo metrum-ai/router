@@ -17,6 +17,11 @@
 - Added a release checklist and a bounded package upgrade-and-rollback check.
 - Retain AI review findings by exact commit range and artifact digest, scope the review credential to the tag-only review environment, and attest the release manifests and review evidence.
 
+- Add an opt-in CPU-first small-work model group to the hierarchy reference. It
+  uses the official pinned vLLM CPU image, limits the CPU candidate to 800
+  estimated input tokens and 128 requested output tokens, and falls back to the
+  frontier candidate on upstream failure or timeout.
+
 ### Security
 
 - Keep the version-pinned Grype exception for the TypeScript 7 build-time compiler: stable `typescript` 7.0.2 still embeds `golang.org/x/text` v0.38.0, which a fresh Grype database reports as GO-2026-5970 (High). The exception applies only to the compiler binary under `node_modules`; revisit when a stable release embeds fixed Go and x/text v0.41.0 or later.
