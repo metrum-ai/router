@@ -333,6 +333,10 @@ func requestShapeFilterReason(target Target, req *IRRequest, callerDialect, outD
 	}
 	for _, feature := range support.UnsupportedRequestFeatures {
 		normalized := strings.ToLower(strings.TrimSpace(feature))
+		// Sampling controls declared unsupported are dropped per target during encoding.
+		if normalized == "temperature" || normalized == "top_p" {
+			continue
+		}
 		// Translated Chat omits store for providers that reject it, relying on
 		// their declared default; Messages does not have this response resource.
 		if normalized == "store" && normalizeDialect(callerDialect) == "openai-responses" {
@@ -455,6 +459,10 @@ func requestFeaturePresent(req *IRRequest, feature string) bool {
 		return req.Stream
 	case "stream_options":
 		return rawValuePresent(req.Raw, "stream_options")
+	case "temperature":
+		return req.Temperature != nil
+	case "top_p":
+		return req.TopP != nil
 	default:
 		return false
 	}
