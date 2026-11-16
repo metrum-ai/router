@@ -65,6 +65,7 @@ type Service struct {
 	imageURLLookup     egressLookupIPFunc
 	imageURLDNSTimeout time.Duration
 	callerAuth         *callerAuthState
+	cacheSaltKey       []byte
 	adminBasic         map[string]adminBasicRuntime
 	adminAPIKeys       map[string]*adminAPIKeyRuntime
 	adminOIDC          *adminOIDCRuntime
@@ -311,6 +312,10 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
+	cacheSaltKey, err := resolveCacheSaltKey(cfg.Server.Cache, os.LookupEnv)
+	if err != nil {
+		return nil, err
+	}
 	tlsManager, err := NewListenerTLSManager(cfg.Server.TLS.ListenerTLSConfig, tlsacme.ListenerServing, "server.tls")
 	if err != nil {
 		return nil, err
@@ -383,6 +388,7 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		imageURLLookup:     defaultImageURLLookup,
 		imageURLDNSTimeout: defaultImageURLDNSTimeout,
 		callerAuth:         newCallerAuthState(),
+		cacheSaltKey:       cacheSaltKey,
 		adminBasic:         map[string]adminBasicRuntime{},
 		adminSession:       newAdminSessionStore(cfg.Server.AdminAuth.Sessions),
 		quota:              quota,
@@ -2115,12 +2121,12 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 			}
 		}
 	}
-	callerID, project := cacheCallerScope(rc)
+	callerID, project := cacheCallerScope(rc, s.cfg)
 	key := targetCacheKey(req, s.cfg.Provider[dec.Target.Provider], dec.Target, callerID, project, dialect)
 	// PII normalization can collapse instruction boundaries that the selected
 	// provider receives distinctly. Until cache identity is target-bound,
 	// never read a response cached under a PII-enabled group.
-	if cacheable(req) && !group.PIIFilter.Enabled {
+	if rc.caller != nil && cacheable(req) && !group.PIIFilter.Enabled {
 		if cached, ok := s.cache.Get(key); ok {
 			ensureResponseID(cached)
 			captureCached := *cached
@@ -2320,8 +2326,8 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		// Cache only after successful settlement so a quota-state error cannot
 		// leave an undisclosed cache/usage inconsistency. Use the pre-restore
 		// payload so PII placeholders remain redacted in cache.
-		if cacheable(req) && !group.PIIFilter.Enabled {
-			putCaller, putProject := cacheCallerScope(rc)
+		if rc.caller != nil && cacheable(req) && !group.PIIFilter.Enabled {
+			putCaller, putProject := cacheCallerScope(rc, s.cfg)
 			s.cache.Put(targetCacheKey(req, s.cfg.Provider[served.Provider], served, putCaller, putProject, dialect), cacheResp)
 		}
 		rc.rec.QuotaState = quotaState
@@ -2578,11 +2584,15 @@ func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) 
 	return rc, true
 }
 
-func cacheCallerScope(rc *requestContext) (callerID, project string) {
+func cacheCallerScope(rc *requestContext, cfg *Config) (callerID, project string) {
 	if rc == nil || rc.caller == nil {
 		return "", ""
 	}
-	return rc.caller.cfg.ID, callerProject(rc.caller.cfg)
+	project = callerProject(rc.caller.cfg)
+	if projectSharesCache(cfg, project) {
+		return "", project
+	}
+	return rc.caller.cfg.ID, project
 }
 
 func (s *Service) finish(rc *requestContext, status int, code *string) {
@@ -3555,6 +3565,21 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		return nil, attempt, upstreamError{Class: "endpoint_error", Message: err.Error(), Err: err}
 	}
 	s.recordTranslationShapeTelemetry(rc, req, target, provider, outDialect, endpoint, attemptIndex, upReqBody)
+	if provider.UpstreamKind == "vllm" {
+		if outDialect != "openai-chat" && outDialect != "openai-responses" {
+			attempt.ErrorClass = "encode_error"
+			attempt.ErrorMessage = "upstream cache isolation requires an OpenAI-compatible request"
+			return nil, attempt, upstreamError{Class: attempt.ErrorClass, Message: attempt.ErrorMessage}
+		}
+		shareWithinProject := projectSharesCache(s.cfg, callerProject(rc.caller.cfg))
+		upReqBody, err = injectTenantCacheSalt(upReqBody, provider, rc.caller, s.cacheSaltKey, shareWithinProject)
+		if err != nil {
+			attempt.ErrorClass = "encode_error"
+			attempt.ErrorMessage = "upstream cache isolation unavailable"
+			return nil, attempt, upstreamError{Class: "encode_error", Message: attempt.ErrorMessage}
+		}
+		attempt.RequestBytes = int64(len(upReqBody))
+	}
 	attemptCtx := ctx
 	var cancel context.CancelFunc
 	if attempt.AttemptTimeoutMS > 0 {

@@ -122,6 +122,7 @@ const sidebars = {
         "security-governance/hardening",
         "security-governance/compromise-runbook",
         "security-governance/detectors",
+        "security-governance/cache-isolation",
         "evaluation/overview",
         "evaluation/performance-overhead",
         "evaluation/tool-call-proof",
