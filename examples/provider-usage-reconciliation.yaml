@@ -13,6 +13,8 @@ server:
     threshold_usd: 1.00
     timeout_ms: 10000
     max_pages: 20
+    schedule_hour_utc: 6
+    max_catch_up_days: 7
     providers:
       - provider: openai-primary
         kind: openai
@@ -21,7 +23,7 @@ server:
       - provider: anthropic-primary
         kind: anthropic
         credential_env: ROUTER_PROVIDER_USAGE_ANTHROPIC_ADMIN_KEY
-        provider_key_id: key_abc123
+        provider_key_id: apikey_example123
       - provider: bedrock-primary
         kind: bedrock
         aws_region: us-east-1

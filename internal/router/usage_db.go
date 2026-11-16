@@ -393,6 +393,9 @@ type securityAccessEvent struct {
 	StatusCode          int
 	Outcome             string
 	ReasonCode          string
+	Object              string
+	Action              string
+	OperationID         string
 	AuthSubject         string
 	AuthSource          string
 	CallerID            string
@@ -3617,6 +3620,9 @@ func securityAccessRecordFromEvent(event securityAccessEvent) *securityAccessEve
 		StatusCode:          event.StatusCode,
 		Outcome:             event.Outcome,
 		ReasonCode:          event.ReasonCode,
+		Object:              event.Object,
+		Action:              event.Action,
+		OperationID:         event.OperationID,
 		AuthSubject:         event.AuthSubject,
 		AuthSource:          event.AuthSource,
 		CallerID:            event.CallerID,
@@ -3660,6 +3666,9 @@ func securityAccessEventFromRecord(record securityAccessEventRecord) (securityAc
 		StatusCode:          record.StatusCode,
 		Outcome:             record.Outcome,
 		ReasonCode:          record.ReasonCode,
+		Object:              record.Object,
+		Action:              record.Action,
+		OperationID:         record.OperationID,
 		AuthSubject:         record.AuthSubject,
 		AuthSource:          record.AuthSource,
 		CallerID:            record.CallerID,

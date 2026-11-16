@@ -26,6 +26,11 @@ func TestValidateProviderUsageReconciliation(t *testing.T) {
 	if err := validateProviderUsageReconciliation(valid, providers, usage, true, true); err != nil {
 		t.Fatalf("valid config rejected: %v", err)
 	}
+	anthropic := valid
+	anthropic.Providers = []ProviderUsageReconciliationEntry{{Provider: "primary", Kind: "anthropic", CredentialEnv: "ROUTER_PROVIDER_USAGE_OPENAI_KEY", ProviderKeyID: "key_123"}}
+	if err := validateProviderUsageReconciliation(anthropic, providers, usage, true, true); err == nil || !strings.Contains(err.Error(), "apikey_") {
+		t.Fatalf("Anthropic non-apikey key ID error = %v", err)
+	}
 
 	tests := []struct {
 		name   string

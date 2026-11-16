@@ -6,12 +6,14 @@ package router
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -59,6 +61,7 @@ func TestProviderUsageDailyJobAppliesConfiguredProviderTimeout(t *testing.T) {
 	}
 	defer store.Close()
 	service := &Service{usage: store, cfg: &Config{Server: ServerConfig{
+		AdminReports:                AdminReportsConfig{Security: AdminSecurityReportsConfig{Enabled: true}},
 		ProviderUsageReconciliation: ProviderUsageReconciliationConfig{Enabled: true, TimeoutMS: 250, Providers: []ProviderUsageReconciliationEntry{{Provider: "primary"}}},
 	}}}
 	source := &deadlineProviderUsageSource{}
@@ -77,6 +80,7 @@ func TestProviderUsageDailyJobRecordsSafeTimeoutStatus(t *testing.T) {
 	}
 	defer store.Close()
 	service := &Service{usage: store, cfg: &Config{Server: ServerConfig{
+		AdminReports:                AdminReportsConfig{Security: AdminSecurityReportsConfig{Enabled: true}},
 		ProviderUsageReconciliation: ProviderUsageReconciliationConfig{Enabled: true, TimeoutMS: 5, Providers: []ProviderUsageReconciliationEntry{{Provider: "primary"}}},
 	}}}
 	if err := service.runProviderUsageReconciliation(context.Background(), blockingProviderUsageSource{}, time.Now()); err == nil {
@@ -101,6 +105,7 @@ func TestProviderUsageDailyJobLogDoesNotExposeCredential(t *testing.T) {
 	}
 	defer store.Close()
 	service := &Service{usage: store, cfg: &Config{Server: ServerConfig{
+		AdminReports:                AdminReportsConfig{Security: AdminSecurityReportsConfig{Enabled: true}},
 		ProviderUsageReconciliation: ProviderUsageReconciliationConfig{Enabled: true, Providers: []ProviderUsageReconciliationEntry{{Provider: "primary"}}},
 	}}}
 	var captured bytes.Buffer
@@ -123,13 +128,13 @@ func TestProviderUsageClientsFilterKeyAndBoundPagination(t *testing.T) {
 				t.Errorf("OpenAI API-key filter = %q", got)
 			}
 			if openAICalls == 1 {
-				_, _ = w.Write([]byte(`{"data":[{"results":[{"amount":{"value":1.25,"currency":"usd"}}]}],"has_more":true,"next_page":"page-2"}`))
+				_, _ = w.Write([]byte(`{"data_refreshed_at":"2026-11-17T00:00:00Z","data":[{"results":[{"amount":{"value":1.25,"currency":"usd"}}]}],"has_more":true,"next_page":"page-2"}`))
 				return
 			}
 			if r.URL.Query().Get("page") != "page-2" {
 				t.Errorf("OpenAI cursor = %q", r.URL.Query().Get("page"))
 			}
-			_, _ = w.Write([]byte(`{"data":[{"results":[{"amount":{"value":2.5,"currency":"usd"}}]}],"has_more":false}`))
+			_, _ = w.Write([]byte(`{"data_refreshed_at":"2026-11-18T00:00:00Z","data":[{"results":[{"amount":{"value":2.5,"currency":"usd"}}]}],"has_more":false}`))
 			return
 		}
 		if r.Header.Get("x-api-key") != "admin-secret-token" {
@@ -139,7 +144,7 @@ func TestProviderUsageClientsFilterKeyAndBoundPagination(t *testing.T) {
 		if got := r.URL.Query().Get("api_key_ids[]"); got != "key-123" {
 			t.Errorf("Anthropic API-key filter = %q", got)
 		}
-		_, _ = w.Write([]byte(`{"data":[{"cost":{"amount":"250.5","currency":"USD"}}],"has_more":false}`))
+		_, _ = w.Write([]byte(`{"data_refreshed_at":"2026-11-18T00:00:00Z","data":[{"cost":{"amount":"250.5","currency":"USD"}}],"has_more":false}`))
 	}))
 	defer server.Close()
 	client := newProviderUsageClient(ProviderUsageReconciliationConfig{
@@ -152,13 +157,13 @@ func TestProviderUsageClientsFilterKeyAndBoundPagination(t *testing.T) {
 	}
 	client.openAIEndpoint, client.anthropicEndpoint = endpoint.String(), endpoint.String()
 	from := time.Date(2026, 11, 15, 0, 0, 0, 0, time.UTC)
-	openAICost, err := client.ProviderCost(context.Background(), "openai", from, from.Add(24*time.Hour))
-	if err != nil || openAICost != 3.75 || openAICalls != 2 {
-		t.Fatalf("OpenAI cost=%v calls=%d err=%v", openAICost, openAICalls, err)
+	openAIResult, err := client.ProviderCostWithWatermark(context.Background(), "openai", from, from.Add(24*time.Hour))
+	if err != nil || openAIResult.CostUSD != 3.75 || openAIResult.DataRefreshedAt.Format(time.RFC3339) != "2026-11-17T00:00:00Z" || openAICalls != 2 {
+		t.Fatalf("OpenAI result=%+v calls=%d err=%v", openAIResult, openAICalls, err)
 	}
-	anthropicCost, err := client.ProviderCost(context.Background(), "anthropic", from, from.Add(24*time.Hour))
-	if err != nil || anthropicCost != 2.505 || anthropicCalls != 1 {
-		t.Fatalf("Anthropic cost=%v calls=%d err=%v", anthropicCost, anthropicCalls, err)
+	anthropicResult, err := client.ProviderCostWithWatermark(context.Background(), "anthropic", from, from.Add(24*time.Hour))
+	if err != nil || anthropicResult.CostUSD != 2.505 || anthropicResult.DataRefreshedAt.IsZero() || anthropicCalls != 1 {
+		t.Fatalf("Anthropic result=%+v calls=%d err=%v", anthropicResult, anthropicCalls, err)
 	}
 }
 
@@ -289,11 +294,11 @@ func TestProviderUsageDailyJobReportsGapAndContinuesAfterProviderFailure(t *test
 	if err := store.db.Where("event_type = ?", "provider_usage_gap").Find(&events).Error; err != nil {
 		t.Fatal(err)
 	}
-	if len(events) != 1 || events[0].ModelGroup != "provider-b" {
+	if len(events) != 1 || events[0].Object != "provider-b" || events[0].StatusCode != 0 {
 		t.Fatalf("events after provider failure = %+v", events)
 	}
 	var failure securityAccessEventRecord
-	if err := store.db.Where("event_type = ? AND model_group = ?", "provider_usage_failure", "provider-a").First(&failure).Error; err != nil {
+	if err := store.db.Where("event_type = ? AND object = ?", "provider_usage_failure", "provider-a").First(&failure).Error; err != nil {
 		t.Fatalf("provider failure status event missing: %v", err)
 	}
 	if failure.StatusCode != 502 || failure.ReasonCode != "provider_usage_source_failed" || failure.Outcome != "failed" {
@@ -403,7 +408,7 @@ func TestProviderUsageGapWritesSecuritySignalWithoutAmounts(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	svc := &Service{usage: store}
+	svc := &Service{usage: store, cfg: &Config{Server: ServerConfig{AdminReports: AdminReportsConfig{Security: AdminSecurityReportsConfig{Enabled: true}}}}}
 	from := time.Date(2026, 11, 15, 0, 0, 0, 0, time.UTC)
 	if err := svc.recordProviderUsageGap(providerUsageGap{Provider: "provider", WindowFrom: from, WindowTo: from.Add(24 * time.Hour), RouterUSD: 1, ProviderUSD: 9, GapUSD: 8}); err != nil {
 		t.Fatal(err)
@@ -412,7 +417,154 @@ func TestProviderUsageGapWritesSecuritySignalWithoutAmounts(t *testing.T) {
 	if err := store.db.Where("event_type = ?", "provider_usage_gap").First(&event).Error; err != nil {
 		t.Fatalf("provider usage signal missing: %v", err)
 	}
-	if event.ModelGroup != "provider" || event.ReasonCode != "provider_usage_above_router_usage" || strings.Contains(event.RequestedModel, "9") || strings.Contains(event.RequestedModel, "8") {
+	if event.Object != "provider" || event.OperationID == "" || event.StatusCode != 0 || event.ReasonCode != "provider_usage_above_router_usage" || event.ModelGroup != "" || event.RequestedModel != "" {
 		t.Fatalf("unexpected or sensitive provider usage signal: %+v", event)
+	}
+}
+
+type watermarkProviderUsageSource struct {
+	result ProviderUsageResult
+	err    error
+}
+
+func (s watermarkProviderUsageSource) ProviderCost(context.Context, string, time.Time, time.Time) (float64, error) {
+	return s.result.CostUSD, s.err
+}
+func (s watermarkProviderUsageSource) ProviderCostWithWatermark(context.Context, string, time.Time, time.Time) (ProviderUsageResult, error) {
+	return s.result, s.err
+}
+
+func TestProviderUsagePartialWatermarkDoesNotAdvanceCheckpoint(t *testing.T) {
+	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	service := &Service{usage: store, cfg: &Config{Server: ServerConfig{AdminReports: AdminReportsConfig{Security: AdminSecurityReportsConfig{Enabled: true}}, ProviderUsageReconciliation: ProviderUsageReconciliationConfig{Enabled: true, Providers: []ProviderUsageReconciliationEntry{{Provider: "primary"}}}}}}
+	day := time.Date(2026, 11, 15, 0, 0, 0, 0, time.UTC)
+	source := watermarkProviderUsageSource{result: ProviderUsageResult{CostUSD: 20, DataRefreshedAt: day.Add(23 * time.Hour)}}
+	if err := service.runProviderUsageReconciliation(context.Background(), source, day.Add(24*time.Hour)); !errors.Is(err, errProviderUsagePartialData) {
+		t.Fatalf("run error = %v, want partial data", err)
+	}
+	var count int64
+	store.db.Model(&securityAccessEventRecord{}).Where("event_type = ?", "provider_usage_reconciled").Count(&count)
+	if count != 0 {
+		t.Fatalf("partial day was checkpointed: %d", count)
+	}
+	if err := store.db.Where("event_type = ?", "provider_usage_partial").First(&securityAccessEventRecord{}).Error; err != nil {
+		t.Fatalf("partial-data event missing: %v", err)
+	}
+}
+
+func TestProviderUsageScheduleDelayAndCatchUpCheckpoint(t *testing.T) {
+	got := nextProviderUsageRun(time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC), providerUsageDefaultScheduleHour)
+	if !got.Equal(time.Date(2026, 11, 16, 6, 0, 0, 0, time.UTC)) {
+		t.Fatalf("next run = %s", got)
+	}
+	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	service := &Service{usage: store, cfg: &Config{Server: ServerConfig{AdminReports: AdminReportsConfig{Security: AdminSecurityReportsConfig{Enabled: true}}, ProviderUsageReconciliation: ProviderUsageReconciliationConfig{Enabled: true, Providers: []ProviderUsageReconciliationEntry{{Provider: "primary"}}}}}}
+	start := time.Date(2026, 11, 12, 0, 0, 0, 0, time.UTC)
+	if err := service.recordProviderUsageCheckpoint("primary", start); err != nil {
+		t.Fatal(err)
+	}
+	source := &countingProviderUsageSource{}
+	if err := service.runProviderUsageReconciliation(context.Background(), source, time.Date(2026, 11, 16, 6, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	if source.calls != 3 {
+		t.Fatalf("catch-up calls = %d, want 3 missed completed days", source.calls)
+	}
+}
+
+type countingProviderUsageSource struct{ calls int }
+
+func (s *countingProviderUsageSource) ProviderCost(context.Context, string, time.Time, time.Time) (float64, error) {
+	s.calls++
+	return 0, nil
+}
+
+type transientProviderUsageSource struct{ calls int }
+
+func (s *transientProviderUsageSource) ProviderCost(context.Context, string, time.Time, time.Time) (float64, error) {
+	s.calls++
+	if s.calls < 3 {
+		return 0, errors.New("transient provider response")
+	}
+	return 0, nil
+}
+
+func TestProviderUsageRetriesTransientFailuresWithBoundedAttempts(t *testing.T) {
+	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	service := &Service{usage: store, cfg: &Config{Server: ServerConfig{AdminReports: AdminReportsConfig{Security: AdminSecurityReportsConfig{Enabled: true}}, ProviderUsageReconciliation: ProviderUsageReconciliationConfig{Enabled: true, Providers: []ProviderUsageReconciliationEntry{{Provider: "primary"}}}}}}
+	source := &transientProviderUsageSource{}
+	if err := service.runProviderUsageReconciliation(context.Background(), source, time.Date(2026, 11, 16, 6, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatal(err)
+	}
+	if source.calls != 3 {
+		t.Fatalf("retry calls = %d, want bounded retries then success", source.calls)
+	}
+}
+
+func TestProviderUsageDefaultClientUsesAllowListedDirectEgress(t *testing.T) {
+	client := newProviderUsageClient(ProviderUsageReconciliationConfig{}, nil, nil)
+	transport, ok := client.httpClient.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("provider client transport=%T, want direct egress transport", client.httpClient.Transport)
+	}
+	proxy, err := transport.Proxy(httptest.NewRequest(http.MethodGet, "https://api.openai.com", nil))
+	if err != nil || proxy != nil {
+		t.Fatalf("provider client proxy=%v err=%v, want direct egress", proxy, err)
+	}
+	t.Setenv("ROUTER_PROVIDER_USAGE_TEST_TOKEN", "secret")
+	client.entries["openai"] = ProviderUsageReconciliationEntry{Provider: "openai", Kind: "openai", CredentialEnv: "ROUTER_PROVIDER_USAGE_TEST_TOKEN", ProviderKeyID: "key_example"}
+	client.openAIEndpoint = "http://127.0.0.1/v1/costs"
+	_, err = client.ProviderCost(context.Background(), "openai", time.Now().Add(-24*time.Hour), time.Now())
+	if err == nil || !strings.Contains(err.Error(), "HTTPS") {
+		t.Fatalf("cleartext endpoint error = %v, want HTTPS rejection", err)
+	}
+	client.openAIEndpoint = "https://not-allowed.invalid/v1/costs"
+	_, err = client.ProviderCost(context.Background(), "openai", time.Now().Add(-24*time.Hour), time.Now())
+	if err == nil {
+		t.Fatal("non-allowlisted provider API host was accepted")
+	}
+}
+
+func TestProviderUsageGapReachesSecurityEventStream(t *testing.T) {
+	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	path := filepath.Join(t.TempDir(), "security.jsonl")
+	stream, err := newSecurityEventStream(SecurityEventStreamConfig{Output: "file", Path: path}, os.Getenv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := &Service{securityEventStream: stream, usage: store, cfg: &Config{Server: ServerConfig{AdminReports: AdminReportsConfig{Security: AdminSecurityReportsConfig{Enabled: true}}}}}
+	from := time.Date(2026, 11, 15, 0, 0, 0, 0, time.UTC)
+	service.recordProviderUsageGap(providerUsageGap{Provider: "provider-a", WindowFrom: from, WindowTo: from.Add(24 * time.Hour), GapUSD: 5})
+	stream.close()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var event map[string]any
+	if err := json.Unmarshal(bytes.TrimSpace(data), &event); err != nil {
+		t.Fatal(err)
+	}
+	if event["class_uid"] != float64(2004) {
+		t.Fatalf("security stream class = %v", event["class_uid"])
+	}
+	unmapped, ok := event["unmapped"].(map[string]any)
+	if !ok || unmapped["provider"] != "provider-a" || unmapped["window"] != formatUsageTime(from)+"/"+formatUsageTime(from.Add(24*time.Hour)) {
+		t.Fatalf("stream missing provider/window fields: %#v", event["unmapped"])
 	}
 }

@@ -12,7 +12,7 @@ import (
 
 func validateProviderUsageReconciliation(cfg ProviderUsageReconciliationConfig, providers map[string]ProviderConfig, usage UsageDBConfig, securityEventsEnabled, requireEnv bool) error {
 	if !cfg.Enabled {
-		if cfg.ThresholdUSD != 0 || cfg.TimeoutMS != 0 || cfg.MaxPages != 0 || len(cfg.Providers) != 0 {
+		if cfg.ThresholdUSD != 0 || cfg.TimeoutMS != 0 || cfg.MaxPages != 0 || cfg.ScheduleHourUTC != nil || cfg.MaxCatchUpDays != 0 || len(cfg.Providers) != 0 {
 			return fmt.Errorf("server.provider_usage_reconciliation fields require enabled")
 		}
 		return nil
@@ -31,6 +31,12 @@ func validateProviderUsageReconciliation(cfg ProviderUsageReconciliationConfig, 
 	}
 	if cfg.MaxPages < 0 || cfg.MaxPages > 100 {
 		return fmt.Errorf("server.provider_usage_reconciliation.max_pages must be zero or between 1 and 100")
+	}
+	if cfg.ScheduleHourUTC != nil && (*cfg.ScheduleHourUTC < 0 || *cfg.ScheduleHourUTC > 23) {
+		return fmt.Errorf("server.provider_usage_reconciliation.schedule_hour_utc must be between 0 and 23")
+	}
+	if cfg.MaxCatchUpDays < 0 || cfg.MaxCatchUpDays > 30 {
+		return fmt.Errorf("server.provider_usage_reconciliation.max_catch_up_days must be zero or between 1 and 30")
 	}
 	if len(cfg.Providers) == 0 || len(cfg.Providers) > 100 {
 		return fmt.Errorf("server.provider_usage_reconciliation.providers must contain between 1 and 100 entries")
@@ -51,6 +57,9 @@ func validateProviderUsageReconciliation(cfg ProviderUsageReconciliationConfig, 
 			env := strings.TrimSpace(entry.CredentialEnv)
 			if !validEnvName(env) || !strings.HasPrefix(env, "ROUTER_PROVIDER_USAGE_") || strings.TrimSpace(entry.ProviderKeyID) == "" {
 				return fmt.Errorf("server.provider_usage_reconciliation provider %q requires a ROUTER_PROVIDER_USAGE_ credential_env and provider_key_id", name)
+			}
+			if kind == "anthropic" && !strings.HasPrefix(strings.TrimSpace(entry.ProviderKeyID), "apikey_") {
+				return fmt.Errorf("server.provider_usage_reconciliation Anthropic provider %q requires an apikey_ provider_key_id", name)
 			}
 			if value, ok := os.LookupEnv(env); requireEnv && (!ok || strings.TrimSpace(value) == "") {
 				return fmt.Errorf("server.provider_usage_reconciliation credential_env %q is unset", env)

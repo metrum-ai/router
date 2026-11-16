@@ -4,10 +4,10 @@
 package router
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"math"
 	"net/http"
@@ -36,6 +36,7 @@ type providerUsageClient struct {
 	openAIEndpoint    string
 	anthropicEndpoint string
 	cloudWatchFactory func(context.Context, ProviderUsageReconciliationEntry) (cloudWatchGetMetricDataAPI, error)
+	httpsOnly         bool
 }
 
 func newProviderUsageClient(cfg ProviderUsageReconciliationConfig, providers map[string]ProviderConfig, client *http.Client) *providerUsageClient {
@@ -47,14 +48,63 @@ func newProviderUsageClient(cfg ProviderUsageReconciliationConfig, providers map
 	if maxPages == 0 {
 		maxPages = providerUsageDefaultPages
 	}
+	httpsOnly := client == nil
 	if client == nil {
 		timeout := cfg.TimeoutMS
 		if timeout == 0 {
 			timeout = 10000
 		}
-		client = &http.Client{Timeout: time.Duration(timeout) * time.Millisecond, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+		client = newEgressHTTPClientWithOptions(egressHTTPClientOptions{Timeout: time.Duration(timeout) * time.Millisecond, AllowHosts: []string{"api.openai.com", "api.anthropic.com"}, Label: "provider usage", Proxy: func(*http.Request) (*url.URL, error) { return nil, nil }})
+		client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	}
-	return &providerUsageClient{entries: entries, providers: providers, maxPages: maxPages, httpClient: client, openAIEndpoint: openAIOrganizationCostsURL, anthropicEndpoint: anthropicAnalyticsCostsURL, cloudWatchFactory: newBedrockCloudWatchClient}
+	return &providerUsageClient{entries: entries, providers: providers, maxPages: maxPages, httpClient: client, openAIEndpoint: openAIOrganizationCostsURL, anthropicEndpoint: anthropicAnalyticsCostsURL, cloudWatchFactory: newBedrockCloudWatchClient, httpsOnly: httpsOnly}
+}
+
+type providerUsageWatermarkTransport struct {
+	base      http.RoundTripper
+	watermark *time.Time
+}
+
+func (t providerUsageWatermarkTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	response, err := t.base.RoundTrip(req)
+	if err != nil || response == nil || response.Body == nil {
+		return response, err
+	}
+	body, readErr := io.ReadAll(io.LimitReader(response.Body, providerUsageMaxResponseBytes+1))
+	_ = response.Body.Close()
+	if readErr != nil || len(body) > providerUsageMaxResponseBytes {
+		return nil, errors.New("provider usage response could not be read")
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(body, &fields) == nil && len(fields["data_refreshed_at"]) > 0 {
+		var stamp string
+		if json.Unmarshal(fields["data_refreshed_at"], &stamp) != nil {
+			return nil, errors.New("provider usage refresh watermark is invalid")
+		}
+		parsed, parseErr := time.Parse(time.RFC3339, stamp)
+		if parseErr != nil {
+			return nil, errors.New("provider usage refresh watermark is invalid")
+		}
+		if t.watermark.IsZero() || parsed.Before(*t.watermark) {
+			*t.watermark = parsed
+		}
+	}
+	response.Body = io.NopCloser(bytes.NewReader(body))
+	return response, nil
+}
+
+func (c *providerUsageClient) ProviderCostWithWatermark(ctx context.Context, provider string, from, to time.Time) (ProviderUsageResult, error) {
+	clone := *c
+	watermark := time.Time{}
+	base := c.httpClient.Transport
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	httpClient := *c.httpClient
+	httpClient.Transport = providerUsageWatermarkTransport{base: base, watermark: &watermark}
+	clone.httpClient = &httpClient
+	cost, err := clone.ProviderCost(ctx, provider, from, to)
+	return ProviderUsageResult{CostUSD: cost, DataRefreshedAt: watermark}, err
 }
 
 func (c *providerUsageClient) ProviderCost(ctx context.Context, provider string, from, to time.Time) (float64, error) {
@@ -89,6 +139,9 @@ func (c *providerUsageClient) openAICost(ctx context.Context, credential, keyID 
 		parsed, err := url.Parse(c.openAIEndpoint)
 		if err != nil {
 			return 0, errors.New("provider usage endpoint is invalid")
+		}
+		if c.httpsOnly && parsed.Scheme != "https" {
+			return 0, errors.New("provider usage endpoint must use HTTPS")
 		}
 		query := parsed.Query()
 		query.Set("start_time", strconv.FormatInt(from.Unix(), 10))
@@ -144,6 +197,9 @@ func (c *providerUsageClient) anthropicCost(ctx context.Context, credential, key
 		parsed, err := url.Parse(c.anthropicEndpoint)
 		if err != nil {
 			return 0, errors.New("provider usage endpoint is invalid")
+		}
+		if c.httpsOnly && parsed.Scheme != "https" {
+			return 0, errors.New("provider usage endpoint must use HTTPS")
 		}
 		query := parsed.Query()
 		query.Set("starting_at", from.Format(time.RFC3339))
@@ -230,11 +286,4 @@ func readProviderUsageBody(response *http.Response) ([]byte, error) {
 		return nil, errors.New("provider usage response could not be read")
 	}
 	return body, nil
-}
-
-func providerUsageRequestError(err error) error {
-	if err == nil {
-		return nil
-	}
-	return fmt.Errorf("provider usage request failed")
 }

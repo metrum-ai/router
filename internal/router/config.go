@@ -465,11 +465,13 @@ type UsageDBConfig struct {
 
 // ProviderUsageReconciliationConfig enables a bounded daily comparison with provider billing data.
 type ProviderUsageReconciliationConfig struct {
-	Enabled      bool                               `yaml:"enabled" json:"enabled,omitempty"`
-	ThresholdUSD float64                            `yaml:"threshold_usd" json:"thresholdUsd,omitempty"`
-	TimeoutMS    int                                `yaml:"timeout_ms" json:"timeoutMs,omitempty"`
-	MaxPages     int                                `yaml:"max_pages" json:"maxPages,omitempty"`
-	Providers    []ProviderUsageReconciliationEntry `yaml:"providers" json:"providers,omitempty"`
+	Enabled         bool                               `yaml:"enabled" json:"enabled,omitempty"`
+	ThresholdUSD    float64                            `yaml:"threshold_usd" json:"thresholdUsd,omitempty"`
+	TimeoutMS       int                                `yaml:"timeout_ms" json:"timeoutMs,omitempty"`
+	MaxPages        int                                `yaml:"max_pages" json:"maxPages,omitempty"`
+	ScheduleHourUTC *int                               `yaml:"schedule_hour_utc" json:"scheduleHourUtc,omitempty"`
+	MaxCatchUpDays  int                                `yaml:"max_catch_up_days" json:"maxCatchUpDays,omitempty"`
+	Providers       []ProviderUsageReconciliationEntry `yaml:"providers" json:"providers,omitempty"`
 }
 
 // ProviderUsageReconciliationEntry maps one router provider to its vendor billing identity.

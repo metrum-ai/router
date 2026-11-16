@@ -10,7 +10,27 @@ import (
 	"time"
 )
 
-const providerUsageReconciliationMaxRun = 15 * time.Minute
+const (
+	providerUsageReconciliationMaxRun = 15 * time.Minute
+	providerUsageDefaultScheduleHour  = 6
+	providerUsageDefaultCatchUpDays   = 7
+)
+
+func providerUsageScheduleHour(cfg ProviderUsageReconciliationConfig) int {
+	if cfg.ScheduleHourUTC == nil {
+		return providerUsageDefaultScheduleHour
+	}
+	return *cfg.ScheduleHourUTC
+}
+
+func nextProviderUsageRun(now time.Time, hour int) time.Time {
+	now = now.UTC()
+	next := time.Date(now.Year(), now.Month(), now.Day(), hour, 0, 0, 0, time.UTC)
+	if !next.After(now) {
+		next = next.Add(24 * time.Hour)
+	}
+	return next
+}
 
 func (s *Service) startProviderUsageReconciliation() {
 	if s == nil || s.cfg == nil || s.usage == nil {
@@ -24,8 +44,16 @@ func (s *Service) startProviderUsageReconciliation() {
 	s.providerUsageStop = cancel
 	go func() {
 		for {
-			now := time.Now().UTC()
-			next := now.Truncate(24 * time.Hour).Add(24 * time.Hour)
+			runtime := s.providerUsageRuntimeConfig()
+			if runtime == nil || !runtime.Server.ProviderUsageReconciliation.Enabled {
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(time.Minute):
+					continue
+				}
+			}
+			next := nextProviderUsageRun(time.Now(), providerUsageScheduleHour(runtime.Server.ProviderUsageReconciliation))
 			timer := time.NewTimer(time.Until(next))
 			select {
 			case <-ctx.Done():
@@ -33,7 +61,7 @@ func (s *Service) startProviderUsageReconciliation() {
 				return
 			case <-timer.C:
 			}
-			runtime := s.providerUsageRuntimeConfig()
+			runtime = s.providerUsageRuntimeConfig()
 			if runtime == nil || !runtime.Server.ProviderUsageReconciliation.Enabled {
 				continue
 			}
@@ -54,13 +82,13 @@ func (s *Service) runProviderUsageReconciliation(parent context.Context, source 
 	if runtime == nil || s.usage == nil || source == nil || !runtime.Server.ProviderUsageReconciliation.Enabled {
 		return nil
 	}
+	cfg := runtime.Server.ProviderUsageReconciliation
 	dayEnd := now.UTC().Truncate(24 * time.Hour)
-	dayStart := dayEnd.Add(-24 * time.Hour)
 	ctx, cancel := context.WithTimeout(parent, providerUsageReconciliationMaxRun)
 	defer cancel()
-	var firstErr error
-	providers := runtime.Server.ProviderUsageReconciliation.Providers
-	providerTimeout := time.Duration(runtime.Server.ProviderUsageReconciliation.TimeoutMS) * time.Millisecond
+	firstErr := error(nil)
+	providers := cfg.Providers
+	providerTimeout := time.Duration(cfg.TimeoutMS) * time.Millisecond
 	if providerTimeout <= 0 {
 		providerTimeout = 10 * time.Second
 	}
@@ -68,52 +96,85 @@ func (s *Service) runProviderUsageReconciliation(parent context.Context, source 
 	if providerTimeout > maximumShare {
 		providerTimeout = maximumShare
 	}
+	catchUp := cfg.MaxCatchUpDays
+	if catchUp == 0 {
+		catchUp = providerUsageDefaultCatchUpDays
+	}
+	oldest := dayEnd.Add(-24 * time.Hour)
+	catchUpFloor := dayEnd.Add(-time.Duration(catchUp) * 24 * time.Hour)
 	for _, entry := range providers {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		perProvider, stop := context.WithTimeout(ctx, providerTimeout)
-		reconciler := providerUsageReconciler{
-			usage: s.usage, source: source,
-			threshold: runtime.Server.ProviderUsageReconciliation.ThresholdUSD,
-			onGap:     s.recordProviderUsageGap,
-		}
-		_, err := reconciler.reconcile(perProvider, entry.Provider, dayStart, dayEnd)
-		timedOut := perProvider.Err() != nil
-		stop()
-		if err != nil && firstErr == nil {
-			firstErr = err
-		}
-		if errors.Is(err, errProviderUsageSourceFailed) {
-			statusCode, reasonCode := 502, "provider_usage_source_failed"
-			if timedOut {
-				statusCode, reasonCode = 504, "provider_usage_timeout"
+		start := oldest
+		var checkpoint securityAccessEventRecord
+		if err := s.usage.db.WithContext(ctx).Where("event_type = ? AND object = ?", "provider_usage_reconciled", entry.Provider).Order("operation_id DESC").First(&checkpoint).Error; err == nil {
+			if last, parseErr := time.Parse("2006-01-02", checkpoint.OperationID); parseErr == nil {
+				start = last.Add(24 * time.Hour)
 			}
-			_ = s.recordProviderUsageFailure(entry.Provider, dayStart, dayEnd, statusCode, reasonCode)
+		}
+		if start.Before(catchUpFloor) {
+			start = catchUpFloor
+		}
+		for dayStart := start; dayStart.Before(dayEnd); dayStart = dayStart.Add(24 * time.Hour) {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			dayTo := dayStart.Add(24 * time.Hour)
+			var err error
+			var timedOut bool
+			for attempt := 0; attempt < 3; attempt++ {
+				perProvider, stop := context.WithTimeout(ctx, providerTimeout)
+				reconciler := providerUsageReconciler{usage: s.usage, source: source, threshold: cfg.ThresholdUSD, onGap: s.recordProviderUsageGap}
+				_, err = reconciler.reconcile(perProvider, entry.Provider, dayStart, dayTo)
+				timedOut = perProvider.Err() != nil
+				stop()
+				if err == nil || errors.Is(err, errProviderUsagePartialData) {
+					break
+				}
+				if attempt < 2 {
+					select {
+					case <-ctx.Done():
+						return ctx.Err()
+					case <-time.After(time.Duration(1<<attempt) * 100 * time.Millisecond):
+					}
+				}
+			}
+			if err != nil {
+				if firstErr == nil {
+					firstErr = err
+				}
+				status, reason := 502, "provider_usage_source_failed"
+				if timedOut {
+					status, reason = 504, "provider_usage_timeout"
+				}
+				if errors.Is(err, errProviderUsagePartialData) {
+					status, reason = 0, "provider_usage_data_partial"
+				}
+				_ = s.recordProviderUsageFailure(entry.Provider, dayStart, dayTo, status, reason)
+				break
+			}
+			_ = s.recordProviderUsageCheckpoint(entry.Provider, dayStart)
 		}
 	}
 	return firstErr
+}
+
+func (s *Service) recordProviderUsageCheckpoint(provider string, day time.Time) error {
+	s.recordSecurityAccessEvent(securityAccessEvent{TS: time.Now().UTC(), EventType: "provider_usage_reconciled", Surface: "provider_usage_reconciliation", HTTPMethod: "scheduled", PathTemplate: "daily", Outcome: "success", ReasonCode: "provider_usage_window_reconciled", Object: provider, Action: "reconcile", OperationID: day.UTC().Format("2006-01-02")})
+	return nil
 }
 
 func (s *Service) recordProviderUsageFailure(provider string, from, to time.Time, statusCode int, reasonCode string) error {
 	if s == nil || s.usage == nil || s.usage.db == nil {
 		return errors.New("provider usage failure event store is unavailable")
 	}
-	if provider == "" || !to.After(from) || (statusCode != 502 && statusCode != 504) || (reasonCode != "provider_usage_source_failed" && reasonCode != "provider_usage_timeout") {
+	valid := (statusCode == 502 && reasonCode == "provider_usage_source_failed") || (statusCode == 504 && reasonCode == "provider_usage_timeout") || (statusCode == 0 && reasonCode == "provider_usage_data_partial")
+	if provider == "" || !to.After(from) || !valid {
 		return errors.New("provider usage failure event is invalid")
 	}
-	s.usage.EmitSecurityAccessEvent(securityAccessEvent{
-		TS:             time.Now().UTC(),
-		EventType:      "provider_usage_failure",
-		Surface:        "provider_usage_reconciliation",
-		HTTPMethod:     "scheduled",
-		PathTemplate:   "daily",
-		StatusCode:     statusCode,
-		Outcome:        "failed",
-		ReasonCode:     reasonCode,
-		ModelGroup:     provider,
-		RequestedModel: formatUsageTime(from) + "/" + formatUsageTime(to),
-	})
+	eventType := "provider_usage_failure"
+	if statusCode == 0 {
+		eventType = "provider_usage_partial"
+	}
+	s.recordSecurityAccessEvent(securityAccessEvent{TS: time.Now().UTC(), EventType: eventType, Surface: "provider_usage_reconciliation", HTTPMethod: "scheduled", PathTemplate: "daily", StatusCode: statusCode, Outcome: "failed", ReasonCode: reasonCode, Object: provider, Action: "reconcile", OperationID: formatUsageTime(from) + "/" + formatUsageTime(to)})
 	return nil
 }
 

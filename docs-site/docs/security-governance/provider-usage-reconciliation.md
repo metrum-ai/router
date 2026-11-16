@@ -25,11 +25,17 @@ server:
     threshold_usd: 1.00
     timeout_ms: 10000
     max_pages: 20
+    schedule_hour_utc: 6
+    max_catch_up_days: 7
     providers:
       - provider: openai-primary
         kind: openai
         credential_env: ROUTER_PROVIDER_USAGE_OPENAI_ADMIN_KEY
         provider_key_id: key_abc123
+      - provider: anthropic-primary
+        kind: anthropic
+        credential_env: ROUTER_PROVIDER_USAGE_ANTHROPIC_ADMIN_KEY
+        provider_key_id: apikey_example123
       - provider: bedrock-primary
         kind: bedrock
         aws_region: us-east-1
@@ -55,18 +61,29 @@ router provider model catalog. Include each Bedrock model used in that account
 in the configured provider catalog so its usage can be priced; no more than 50
 models may be configured per Bedrock provider.
 
-When enabled at service start, the daily runner reads the active configuration
-and compares each configured provider's previous complete UTC day. Config
-reloads apply on the next daily run; disabling skips the next run, and a later
-re-enable resumes the runner. Enabling this feature after starting with it
-disabled requires a restart. Each service replica runs its own check, so a
-reported gap may produce one event per replica. Each process permits one
-in-flight run. OpenAI and Anthropic pagination is bounded by `max_pages`;
-provider API calls have `timeout_ms` bounds. Provider failures do
-not stop other providers from being checked. Failures write a safe status-only
-event (`502` for source failures, `504` for timeouts); logs and events do not
-contain credentials, API response bodies, or spend amounts. Gap and failure
-events record only the provider identifier and time window.
+Configure only one Bedrock reconciliation entry for each AWS account and
+region. CloudWatch metrics are account/region scoped; adding multiple router
+providers backed by that same account and region counts the same metrics more
+than once.
+
+The runner checks at `schedule_hour_utc` (default 06:00 UTC), after the prior
+UTC day has time to settle. It records completed provider-days in the security
+event store and catches up missed days after restart, bounded by
+`max_catch_up_days` (default 7; maximum 30). Transient provider failures retry
+up to two times with bounded backoff. When an API returns `data_refreshed_at`,
+the runner skips a window whose watermark does not reach its end and emits a
+partial-data event; the next scheduled run retries that day. Provider failures
+and partial windows emit safe events. Logs/events exclude credentials,
+response bodies and spend amounts; gap/failure events carry provider and window
+in dedicated event fields. Provider API egress permits only HTTPS to
+`api.openai.com` and `api.anthropic.com`, without environment proxies.
+
+When started with reconciliation enabled, config reloads apply on the next
+daily run; disabling pauses it and later re-enabling resumes it without a
+restart. Enabling it after startup requires a restart. Each service replica
+runs its own check, so a gap may produce one event per replica. Each process
+permits one in-flight run. OpenAI and Anthropic pagination is bounded by
+`max_pages`; API calls have `timeout_ms` bounds.
 
 The event is emitted only when `provider_usd - router_usd` is strictly greater
 than `threshold_usd`. This is a report signal; it does not suspend a provider

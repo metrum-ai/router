@@ -18,6 +18,17 @@ type ProviderUsageSource interface {
 	ProviderCost(context.Context, string, time.Time, time.Time) (float64, error)
 }
 
+type ProviderUsageResult struct {
+	CostUSD         float64
+	DataRefreshedAt time.Time
+}
+
+type providerUsageWatermarkSource interface {
+	ProviderCostWithWatermark(context.Context, string, time.Time, time.Time) (ProviderUsageResult, error)
+}
+
+var errProviderUsagePartialData = errors.New("provider usage data is not refreshed through the requested window")
+
 var errProviderUsageSourceFailed = errors.New("provider usage source request failed")
 
 type providerUsageGap struct {
@@ -52,9 +63,22 @@ func (r *providerUsageReconciler) reconcile(ctx context.Context, provider string
 		Scan(&routerUSD).Error; err != nil {
 		return false, fmt.Errorf("read router usage aggregate: %w", err)
 	}
-	providerUSD, err := r.source.ProviderCost(ctx, provider, from, to)
-	if err != nil {
-		return false, errProviderUsageSourceFailed
+	var providerUSD float64
+	if source, ok := r.source.(providerUsageWatermarkSource); ok {
+		result, sourceErr := source.ProviderCostWithWatermark(ctx, provider, from, to)
+		if sourceErr != nil {
+			return false, errProviderUsageSourceFailed
+		}
+		if !result.DataRefreshedAt.IsZero() && result.DataRefreshedAt.Before(to) {
+			return false, errProviderUsagePartialData
+		}
+		providerUSD = result.CostUSD
+	} else {
+		var sourceErr error
+		providerUSD, sourceErr = r.source.ProviderCost(ctx, provider, from, to)
+		if sourceErr != nil {
+			return false, errProviderUsageSourceFailed
+		}
 	}
 	if math.IsNaN(providerUSD) || math.IsInf(providerUSD, 0) || providerUSD < 0 || math.IsNaN(routerUSD) || math.IsInf(routerUSD, 0) || routerUSD < 0 {
 		return false, errors.New("provider usage source returned an invalid cost")
@@ -66,7 +90,7 @@ func (r *providerUsageReconciler) reconcile(ctx context.Context, provider string
 	if r.onGap == nil {
 		return false, errors.New("provider usage gap signal is unavailable")
 	}
-	err = r.onGap(providerUsageGap{Provider: provider, WindowFrom: from, WindowTo: to, RouterUSD: routerUSD, ProviderUSD: providerUSD, GapUSD: gap})
+	err := r.onGap(providerUsageGap{Provider: provider, WindowFrom: from, WindowTo: to, RouterUSD: routerUSD, ProviderUSD: providerUSD, GapUSD: gap})
 	return err == nil, err
 }
 
@@ -79,17 +103,18 @@ func (s *Service) recordProviderUsageGap(gap providerUsageGap) error {
 	}
 	// The event carries only bounded provider/window identifiers. Cost details stay
 	// out of the general security event until the incident contract is versioned.
-	s.usage.EmitSecurityAccessEvent(securityAccessEvent{
-		TS:             time.Now().UTC(),
-		EventType:      "provider_usage_gap",
-		Surface:        "provider_usage_reconciliation",
-		HTTPMethod:     "scheduled",
-		PathTemplate:   "daily",
-		StatusCode:     200,
-		Outcome:        "reported",
-		ReasonCode:     "provider_usage_above_router_usage",
-		ModelGroup:     gap.Provider,
-		RequestedModel: formatUsageTime(gap.WindowFrom) + "/" + formatUsageTime(gap.WindowTo),
+	s.recordSecurityAccessEvent(securityAccessEvent{
+		TS:           time.Now().UTC(),
+		EventType:    "provider_usage_gap",
+		Surface:      "provider_usage_reconciliation",
+		HTTPMethod:   "scheduled",
+		PathTemplate: "daily",
+		StatusCode:   0,
+		Outcome:      "reported",
+		ReasonCode:   "provider_usage_above_router_usage",
+		Object:       gap.Provider,
+		Action:       "reconcile",
+		OperationID:  formatUsageTime(gap.WindowFrom) + "/" + formatUsageTime(gap.WindowTo),
 	})
 	return nil
 }
