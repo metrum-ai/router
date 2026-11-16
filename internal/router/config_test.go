@@ -206,7 +206,7 @@ func TestV5AdminConfigMigration(t *testing.T) {
 				t.Fatal(err)
 			}
 			_, err := LoadConfig(path)
-			if err == nil || !strings.Contains(err.Error(), "removed in v5.0.0") || !strings.Contains(err.Error(), "/admin/v1") {
+			if err == nil || !strings.Contains(err.Error(), "removed in v5.0.0") || !strings.Contains(err.Error(), "/admin/v1") || !strings.Contains(err.Error(), "metrum-ai-router-migrate --scope router-config --action apply") {
 				t.Fatalf("LoadConfig error = %v, want migration guidance", err)
 			}
 		})

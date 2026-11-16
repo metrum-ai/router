@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strings"
 
+	"gopkg.in/yaml.v3"
 	"gorm.io/gorm"
 )
 
@@ -214,6 +215,26 @@ func LoadActiveConfigFromDB(db *gorm.DB, runtimeScope string, identifiers ...Ide
 		Listen:            server.Listen,
 		DefaultModelGroup: server.DefaultModelGroup,
 	}, StatePath: server.StatePath, Provider: map[string]ProviderConfig{}, Models: map[string]ModelGroup{}}
+	// The relational projection intentionally excludes listener-only settings.
+	// When a canonical document exists, retain its admin block before defaults
+	// are applied so an explicit enabled: false survives this legacy load path.
+	var canonical configControlPlaneDocumentRow
+	if err := db.Where("config_set_id = ?", set.ID).First(&canonical).Error; err == nil {
+		raw := []byte(canonical.CanonicalYAML)
+		if err := validateRemovedScriptConfig(raw); err != nil {
+			return nil, err
+		}
+		var canonicalConfig Config
+		if err := yaml.Unmarshal(raw, &canonicalConfig); err != nil {
+			return nil, fmt.Errorf("parse active canonical YAML: %w", err)
+		}
+		if err := applyV5AdminConfig(raw, &canonicalConfig); err != nil {
+			return nil, fmt.Errorf("parse active canonical YAML: %w", err)
+		}
+		cfg.Admin = canonicalConfig.Admin
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("load active canonical YAML: %w", err)
+	}
 	var providers []providerRow
 	if err := db.Where("config_set_id = ?", set.ID).Order("provider_name ASC").Find(&providers).Error; err != nil {
 		return nil, err

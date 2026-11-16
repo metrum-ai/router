@@ -909,8 +909,8 @@ func (p *AdminPlane) ShutdownTimeout() time.Duration {
 }
 
 // initAdminPlane builds the admin route registry and handler for this service.
-// It is a no-op unless admin.enabled is true, which keeps v4.7 configurations
-// byte-identical.
+// It is a no-op unless admin.enabled is true. The v5 default enables this
+// listener on loopback; explicit admin.enabled: false disables it.
 func (s *Service) initAdminPlane() {
 	if s == nil || s.cfg == nil || !s.cfg.Admin.Enabled {
 		return

@@ -276,8 +276,9 @@ func TestAdminMetricsStayOnServingPortUntilAdminServesIt(t *testing.T) {
 	}
 }
 
-// An absent admin block enables the v5 authenticated loopback listener.
-func TestAdminAbsentBlockDefaultsEnabledListener(t *testing.T) {
+// Programmatic configs without an admin block use the same v5 loopback
+// default as file configs.
+func TestAdminAbsentBlockProgrammaticDefaults(t *testing.T) {
 	cfg := minimalConfig(t)
 	cfg.setDefaults()
 	if !cfg.Admin.Enabled || cfg.Admin.Listen != defaultAdminListenAddr {

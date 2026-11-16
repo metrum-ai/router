@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Defaults for the admin control plane (ACP-001, ACP-002, ACP-007, ACP-N02).
@@ -41,7 +43,8 @@ const (
 // File configuration enables the listener by default. The serving port keeps
 // the human reports UI it already serves.
 type AdminPlaneConfig struct {
-	Enabled bool `yaml:"enabled" json:"enabled"`
+	Enabled    bool `yaml:"enabled" json:"enabled"`
+	enabledSet bool
 	// Listen is the admin listener address. Loopback by default; remote
 	// binding is an explicit opt-in that also needs TLS or the plaintext
 	// override below.
@@ -60,6 +63,28 @@ type AdminPlaneConfig struct {
 	// whole plane configures in one place, and consumes the client-CA material
 	// for TLS handshake verification.
 	Authentication AdminAuthenticationConfig `yaml:"authentication" json:"authentication"`
+}
+
+// UnmarshalYAML records whether enabled was present. A plain bool cannot
+// distinguish omission (which defaults on) from an explicit false, and this
+// config is decoded again during DB-backed writes, rollback, and shadow runs.
+func (c *AdminPlaneConfig) UnmarshalYAML(node *yaml.Node) error {
+	type plain AdminPlaneConfig
+	var decoded plain
+	if err := node.Decode(&decoded); err != nil {
+		return err
+	}
+	*c = AdminPlaneConfig(decoded)
+	c.enabledSet = false
+	if node.Kind == yaml.MappingNode {
+		for i := 0; i+1 < len(node.Content); i += 2 {
+			if node.Content[i].Value == "enabled" {
+				c.enabledSet = true
+				break
+			}
+		}
+	}
+	return nil
 }
 
 // AdminTLSConfig configures how the admin listener terminates TLS. The

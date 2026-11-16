@@ -72,3 +72,27 @@ func TestV5AdminConfigCleanupMigrationRemovesRemovedKeys(t *testing.T) {
 		t.Fatal("stored config content hash was not refreshed")
 	}
 }
+
+func TestLoadActiveCanonicalConfigNamesAdminMigrationCommand(t *testing.T) {
+	db := configAdminTestDB(t)
+	raw, err := LoadActiveCanonicalYAML(db, "prod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw = append(raw, []byte("\nadmin:\n  legacy_routes_on_serving_port: false\n")...)
+	var activeID string
+	if err := db.Raw(`SELECT active_set_id FROM router_config_runtime WHERE runtime_scope = ?`, "prod").Row().Scan(&activeID); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&configControlPlaneDocumentRow{}).Where("config_set_id = ?", activeID).Update("canonical_yaml", string(raw)).Error; err != nil {
+		t.Fatal(err)
+	}
+	_, err = LoadActiveCanonicalConfig(db, "prod")
+	if err == nil || !strings.Contains(err.Error(), "metrum-ai-router-migrate --scope router-config --action apply") || !strings.Contains(err.Error(), "--action maintenance") {
+		t.Fatalf("DB active-config error = %v, want migration command", err)
+	}
+	_, err = LoadActiveConfigFromDB(db, "prod", IdentifierConfig{Mode: "passthrough"})
+	if err == nil || !strings.Contains(err.Error(), "metrum-ai-router-migrate --scope router-config --action apply") || !strings.Contains(err.Error(), "--action maintenance") {
+		t.Fatalf("DB relational load error = %v, want migration command", err)
+	}
+}

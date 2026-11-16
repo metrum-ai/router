@@ -69,7 +69,7 @@ Use the key as a bearer token on admin routes:
 
 ```bash
 curl -fsS -H "Authorization: Bearer $(cat ops-primary.key)" \
-  "$ROUTER_BASE_URL/admin/config/groups"
+  "$ROUTER_BASE_URL/admin/v1/config/groups"
 ```
 
 Never pass the raw key as a CLI flag value; the `routerctl groups … --api`
@@ -82,7 +82,7 @@ mutations:
 
 | Permission | Grants |
 |---|---|
-| `config:read` | `GET /admin/config/...` (groups, sets, diff, status, history) |
+| `config:read` | `GET /admin/v1/config/...` (groups, sets, diff, status, history) |
 | `config:write` | Group target writes: swap, add, remove, `:validate`, dry runs |
 | `config:activate` | Set import/activate and rollback operations |
 | `config:force` | `force: true` overrides of the `require_validation_status` policy |
@@ -129,11 +129,12 @@ key is unused before deleting it.
 
 ## Migration from browser admin only
 
-Existing deployments keep working: HTTP Basic and OIDC behave exactly as
-before when `api_keys` is empty, and `/admin/auth/check`, `/admin/reports`,
-`/admin/callers`, and `/admin/training` are unchanged. To adopt admin keys,
-add one `api_keys` entry with the permissions your automation needs and point
-automation at `Authorization: Bearer rtr_admin_…`. No caller tokens change.
+HTTP Basic and OIDC remain available for browser access when `api_keys` is
+empty. Machine admin operations must use `/admin/v1` on the dedicated admin
+listener; the former serving-port routes such as `/admin/callers` and
+`/admin/training` have been removed. To adopt admin keys, add one `api_keys`
+entry with the permissions your automation needs and point automation at
+`Authorization: Bearer rtr_admin_…`. No caller tokens change.
 
 Note: `GET /admin/auth/check` accepts admin keys that hold
 `admin:auth:read`; the Basic challenge behavior for browsers is unchanged.

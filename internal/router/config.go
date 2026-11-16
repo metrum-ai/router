@@ -39,16 +39,15 @@ type Config struct {
 	Server      ServerConfig      `yaml:"server"`
 	// Admin is the control plane's own listener (#809). File configuration
 	// enables it by default; explicit false keeps one listener.
-	Admin                AdminPlaneConfig `yaml:"admin" json:"admin"`
-	adminEnabledExplicit bool
-	Users                []UserConfig              `yaml:"users"`
-	Projects             []ProjectConfig           `yaml:"projects"`
-	ProjectMemberships   []ProjectMembershipConfig `yaml:"project_memberships"`
-	Provider             map[string]ProviderConfig `yaml:"providers"`
-	Models               map[string]ModelGroup     `yaml:"models"`
-	Callers              []CallerConfig            `yaml:"callers"`
-	StatePath            string                    `yaml:"state_path"`
-	baseDir              string
+	Admin              AdminPlaneConfig          `yaml:"admin" json:"admin"`
+	Users              []UserConfig              `yaml:"users"`
+	Projects           []ProjectConfig           `yaml:"projects"`
+	ProjectMemberships []ProjectMembershipConfig `yaml:"project_memberships"`
+	Provider           map[string]ProviderConfig `yaml:"providers"`
+	Models             map[string]ModelGroup     `yaml:"models"`
+	Callers            []CallerConfig            `yaml:"callers"`
+	StatePath          string                    `yaml:"state_path"`
+	baseDir            string
 	// secretEnvRefs names the environment variables expanded into this
 	// config (${NAME} references and env.json keys) so later errors can be
 	// redacted by name. See secret_redaction.go.
@@ -1280,7 +1279,7 @@ func applyV5AdminConfig(raw []byte, cfg *Config) error {
 		return err
 	}
 	if cfg != nil {
-		cfg.adminEnabledExplicit = adminEnabledSet
+		cfg.Admin.enabledSet = adminEnabledSet
 	}
 	return nil
 }
@@ -1553,7 +1552,7 @@ func (c *Config) attemptChainBudgetMS() int {
 }
 
 func (c *Config) setDefaults() {
-	if !c.adminEnabledExplicit {
+	if !c.Admin.enabledSet {
 		c.Admin.Enabled = true
 	}
 	defaultAdminPlaneConfig(&c.Admin)

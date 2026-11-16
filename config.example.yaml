@@ -22,7 +22,7 @@ admin:
     # for loopback plaintext (mode: off).
     # certificate_source: files
     # cert_file: /etc/router/admin.crt
-    # key_file: /etc/router/admin.key # off (loopback plaintext) | router | proxy
+    # key_file: /etc/router/admin.key
     # For router mode, add certificate_source: files and cert_file/key_file,
     # or use certificate_source: acme with an acme block.
     # acme:                   # automated issuance (#810); router mode only
