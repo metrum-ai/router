@@ -51,10 +51,12 @@ server:
                 placeholder_prefix: EMAIL
 ```
 
-The parent caller's day and month quota values define the parent budget. If several child callers
-belong to one organization, configure the same quota values for each. Use a different organization
-identifier to maintain a separate budget. The quota status view for a mapped child caller reports
-the shared organization counters; rate limits and lifetime key limits stay caller-specific.
+The parent caller's day and month quota values define the budget the parent enforces when it serves
+requests. If several child callers belong to one organization, configure the same quota values for
+each. Use a different organization identifier to maintain a separate parent budget. The quota
+status view for a mapped child caller reports the shared organization counters; rate limits and
+lifetime key limits stay caller-specific. The child applies its own local quotas independently and
+does not combine the parent's quota with its local cap.
 
 Example child configuration:
 
@@ -89,10 +91,11 @@ Within the cache TTL, a previously validated snapshot remains usable during a pa
 the TTL, the child makes one shared refresh attempt; on failure, it may use the last validated
 snapshot for up to 30 additional seconds. After that grace period, a failed, malformed, oversized or
 timed-out fetch returns HTTP 503 before inference dispatch. The policy cache is process-local and
-reload/restart drops it, so the next request must fetch a fresh snapshot. Only the parent charges
-its shared organization counter for requests it serves. The parent counter survives restart in the
-configured state file. It is per router process: run one parent replica for an authoritative
-organization budget unless the deployment has separately validated shared quota storage.
+reload/restart drops it, so the next request must fetch a fresh snapshot. Only the parent charges its
+organization counter for requests it serves. The parent's daily and monthly counters survive restart
+in the configured state file, while in-flight reservations are process-local. Run one parent replica
+for an authoritative organization budget unless the deployment has separately validated shared
+quota storage.
 
 The serving router exposes `GET /internal/v1/governance/policy`. It requires the mapped caller's
 normal bearer authentication, returns `Cache-Control: no-store`, and has no browser or administrative

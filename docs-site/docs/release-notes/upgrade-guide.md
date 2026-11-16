@@ -219,9 +219,11 @@ Hierarchy governance is opt-in. Existing configurations without
 child-to-caller mapping and configure the child with the parent's HTTPS URL, a
 machine credential source, and a bounded policy cache TTL. The parent fetch
 endpoint is authenticated and versioned. Child policies may narrow inherited
-model-group, tool and PII permissions, never widen them. Organization request
-and token budgets are shared across the parent and its mapped child callers;
-child-local quotas continue to apply separately.
+model-group, tool and PII permissions, never widen them. For requests the parent
+serves, it applies the mapped caller's organization request and token quota;
+mapped callers in one organization share the parent's daily and monthly usage
+counters. The child applies its own local quotas independently and does not
+combine the parent's quota with its local cap.
 
 Use the same exact model-group names in the parent caller allow list, hierarchy
 mapping and child model configuration. A mismatch fails closed. Set
@@ -231,8 +233,9 @@ child router to preserve one trace ID through the chain.
 Hierarchy audit rows add organization and team IDs to the existing trace/span
 join fields. Reports can filter by those IDs and include hop-level details.
 The child policy cache is process-local; reload or restart drops it and the
-next request fetches a new snapshot. The shared parent quota counter is also
-process-local, so use one parent replica unless shared quota storage has been
+next request fetches a new snapshot. Parent daily and monthly usage counters
+persist in the configured state file, while in-flight quota reservations are
+process-local. Use one parent replica unless shared quota storage has been
 separately validated. On parent outage, the child serves its last validated
 policy through the configured TTL and for at most 30 additional seconds. After
 that grace period, it returns HTTP 503 before inference. Restore parent
