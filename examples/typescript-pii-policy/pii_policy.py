@@ -11,19 +11,28 @@ import re
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
 
-PII_PATTERNS = tuple(re.compile(pattern) for pattern in (
-    r"(?i:\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b)",
+PII_PATTERNS = tuple(re.compile(pattern, re.IGNORECASE) for pattern in (
+    r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b",
     r"\b(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?)\d{3}[-.\s]?\d{4}\b",
     r"\b\d{3}-\d{2}-\d{4}\b",
     r"\b(?:\d[ -]*?){13,19}\b",
-    r"(?i:\b\d{1,5}\s+[A-Z0-9][A-Z0-9.'-]*(?:\s+[A-Z0-9][A-Z0-9.'-]*){0,5}\s+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Drive|Dr|Lane|Ln|Court|Ct|Way|Place|Pl)\b)",
-    r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3}\b",
-    r"(?i:\b(?:DOB|date of birth|birthdate)\s*[:=-]?\s*(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|[A-Z][a-z]+\s+\d{1,2},\s+\d{4})\b)",
-    r"(?i:\b(?:MRN|medical record|patient id)\s*[:#-]?\s*)[A-Z0-9-]{4,}\b",
-    r"(?i:\b(?:account|acct|routing)\s*(?:number|no\.?|#)?\s*[:#-]?\s*)\d{6,17}\b",
-    r"(?i:\b(?:passport|driver'?s license|license)\s*(?:number|no\.?|#)?\s*[:#-]?\s*)[A-Z0-9-]{5,}\b",
+    r"\b\d{1,5}\s+[A-Z0-9][A-Z0-9.'-]*(?:\s+[A-Z0-9][A-Z0-9.'-]*){0,5}\s+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Drive|Dr|Lane|Ln|Court|Ct|Way|Place|Pl)\b",
+    r"\b(?:DOB|date of birth|birthdate)\s*[:=-]?\s*(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|[A-Z][a-z]+\s+\d{1,2},\s+\d{4})\b",
+    r"\b(?:MRN|medical record|patient id)\s*[:#-]?\s*[A-Z0-9-]{4,}\b",
+    r"\b(?:account|acct|routing)\s*(?:number|no\.?|#)?\s*[:#-]?\s*\d{6,17}\b",
+    r"\b(?:passport|driver'?s license|license)\s*(?:number|no\.?|#)?\s*[:#-]?\s*[A-Z0-9-]{5,}\b",
 ))
-MAX_TEXT_CHARS = 8192
+# Names use capitalization as their signal; keep this pattern case-sensitive
+# so ordinary lowercase prompts are not classified as containing a name.
+NAME_PATTERN = re.compile(r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3}\b")
+MAX_SCAN_CHARS = 8192
+
+
+def _bounded_scan_text(text: str) -> str:
+    if len(text) <= MAX_SCAN_CHARS:
+        return text
+    half = MAX_SCAN_CHARS // 2
+    return text[:half] + " " + text[-half:]
 
 
 class NoSensitiveTarget(Exception):
@@ -44,8 +53,7 @@ def route(payload: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError("request must be a JSON object")
     text = str(payload.get("text") or "")
-    if len(text) > MAX_TEXT_CHARS:
-        raise ValueError("request text too large")
+    scan_text = _bounded_scan_text(text)
     targets = payload.get("targets") or []
     eligible = [
         (index, target)
@@ -53,7 +61,9 @@ def route(payload: dict[str, Any]) -> dict[str, Any]:
         if target.get("keyConfigured") and int(target.get("weight") or 0) > 0
     ]
     fallback = eligible[0][0] if eligible else 0
-    has_pii = any(pattern.search(text) for pattern in PII_PATTERNS)
+    has_pii = NAME_PATTERN.search(scan_text) is not None or any(
+        pattern.search(scan_text) for pattern in PII_PATTERNS
+    )
     if has_pii:
         sensitive = [(index, target) for index, target in eligible if _is_sensitive(target)]
         if not sensitive:

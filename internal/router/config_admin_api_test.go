@@ -510,6 +510,31 @@ func TestConfigAdminImportRejectsRemovedScriptStrategy(t *testing.T) {
 	}
 }
 
+func TestConfigAdminGroupWriteRejectsRemovedScriptStrategy(t *testing.T) {
+	db := configAdminTestDB(t)
+	mux := configAdminTestMux(t, db, nil)
+	status := configAdminRequest(t, mux, http.MethodGet, "/admin/config/status", nil, adminHeaders("adminkey:ops", "config:read"))
+	if status.Code != http.StatusOK {
+		t.Fatalf("config status=%d body=%s", status.Code, status.Body.String())
+	}
+	var current struct {
+		Revision int64 `json:"revision"`
+	}
+	if err := json.Unmarshal(status.Body.Bytes(), &current); err != nil {
+		t.Fatal(err)
+	}
+	headers := adminHeaders("adminkey:ops", "config:read", "config:write")
+	headers["If-Match"] = fmt.Sprint(current.Revision)
+	headers["Idempotency-Key"] = "script-group-write-rejected"
+	rr := configAdminRequest(t, mux, http.MethodPut, "/admin/config/groups/agent-default/targets", map[string]any{
+		"strategy": "script",
+		"targets":  []map[string]any{{"provider": "alpha", "model_ref": "a-one"}},
+	}, headers)
+	if rr.Code != http.StatusUnprocessableEntity || !strings.Contains(rr.Body.String(), "strategy: script was removed in v5.0.0") {
+		t.Fatalf("script group write status=%d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestConfigAdminValidationStatusPolicyAndForce(t *testing.T) {
 	db := configAdminTestDB(t)
 	mux := http.NewServeMux()

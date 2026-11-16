@@ -2817,7 +2817,10 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 			ContractReason:  defaultString(contractResult.reason, "contract-quality-floor"),
 		}
 	}
-	strategy := strings.ToLower(group.Strategy)
+	strategy := normalizeModelStrategy(group.Strategy)
+	if strategy == "" {
+		return decision{}, fmt.Errorf("unknown strategy %s", strings.ToLower(strings.TrimSpace(group.Strategy)))
+	}
 	var label *string
 	switch strategy {
 	case "static", "failover":

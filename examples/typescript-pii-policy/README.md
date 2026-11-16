@@ -13,6 +13,11 @@ This policy needs request text, so the model group must explicitly set
 service authorized to receive that content. Routing does not redact outbound
 requests; use the router's `pii_filter` for redaction or fail-on-match behavior.
 
+The policy scans at most 8,192 text characters: for longer prompts it scans the
+first and last 4,096 characters. The HTTP endpoint rejects bodies over 1 MiB.
+PII located only in the unscanned middle of a longer prompt will not affect
+routing.
+
 ```yaml
 models:
   pii-aware:

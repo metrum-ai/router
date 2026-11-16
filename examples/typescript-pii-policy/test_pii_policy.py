@@ -37,8 +37,8 @@ class PIIPolicyTest(unittest.TestCase):
         for text in (
             "ship to 12 main street", "Ship to 12 MAIN STREET", "dob: march 3, 2001",
             "Contact Jane Doe", "call 212-555-1212", "SSN 123-45-6789",
-            "card 4111 1111 1111 1111", "MRN: ABCD-1234", "account number 123456789",
-            "passport number X12345678",
+            "card 4111 1111 1111 1111", "MRN: ABCD-1234", "mrn: abc12345",
+            "account number 123456789", "passport number X12345678", "passport number xk12345",
         ):
             with self.subTest(text=text):
                 result = route({"text": text, "targets": [target("normal"), target("sensitive")]})
@@ -49,11 +49,19 @@ class PIIPolicyTest(unittest.TestCase):
             route({"text": "jane@example.com", "targets": [target("non-private")]})
 
     def test_long_address_input_is_bounded(self):
-        text = "12 " + ("main " * 3000) + "street"
+        text = "12 " + ("main " * 50000) + "not-an-address jane@example.com"
         started = time.monotonic()
-        with self.assertRaisesRegex(ValueError, "text too large"):
-            route({"text": text, "targets": [target("normal"), target("sensitive")]})
+        result = route({"text": text, "targets": [target("normal"), target("sensitive")]})
         self.assertLess(time.monotonic() - started, 1.0)
+        self.assertEqual(result["targetIndex"], 1)
+
+    def test_long_prompt_scans_prefix_and_suffix_without_rejecting(self):
+        prefix = "Ship to 12 MAIN STREET. " + ("ordinary words " * 10000)
+        suffix = ("ordinary words " * 10000) + " passport number xk12345"
+        for index, text in enumerate((prefix, suffix)):
+            with self.subTest(position="prefix" if index == 0 else "suffix"):
+                result = route({"text": text, "targets": [target("normal"), target("sensitive")]})
+                self.assertEqual(result["targetIndex"], 1)
 
     def test_long_address_like_input_scans_in_bounded_time(self):
         text = "12 " + ("main " * 1200) + "not-an-address"

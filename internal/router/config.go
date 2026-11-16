@@ -1923,11 +1923,10 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		if m.Strategy == "" {
 			return fmt.Errorf("model group %s missing strategy", name)
 		}
-		switch strings.ToLower(strings.TrimSpace(m.Strategy)) {
-		case "static", "weighted", "failover", "dynamic_score", "intelligent", "tool_aware", "external":
-		case "script":
-			return fmt.Errorf("strategy: script was removed in v5.0.0; migrate to strategy: external and configure external_policy")
-		default:
+		if normalizeModelStrategy(m.Strategy) == "" {
+			if strings.EqualFold(strings.TrimSpace(m.Strategy), "script") {
+				return fmt.Errorf("strategy: script was removed in v5.0.0; migrate to strategy: external and configure external_policy")
+			}
 			return fmt.Errorf("model group %s has unsupported strategy %q", name, m.Strategy)
 		}
 		if strings.EqualFold(m.Strategy, "external") {

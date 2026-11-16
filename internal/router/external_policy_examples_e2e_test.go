@@ -54,6 +54,7 @@ func TestPythonPolicyExamplesRouteThroughRouter(t *testing.T) {
 	for _, tc := range []struct {
 		name, example, userText, wantModel string
 		includeRequest                     bool
+		callerProject, callerTokenID       string
 		targets                            []Target
 	}{
 		{
@@ -65,6 +66,11 @@ func TestPythonPolicyExamplesRouteThroughRouter(t *testing.T) {
 			name: "PII", example: "examples/typescript-pii-policy/pii_policy.py",
 			userText: "ship to 12 main street", wantModel: "sensitive-model", includeRequest: true,
 			targets: []Target{{Provider: "mock", Model: "normal-model", Tier: "normal", Weight: 1}, {Provider: "mock", Model: "sensitive-model", Tier: "sensitive", Weight: 1}},
+		},
+		{
+			name: "caller-bound canary", example: "examples/fine-tune-qwen3p8-27b/router-loop/canary_policy.py",
+			userText: "hello", wantModel: "canary-model", callerProject: "acme-support", callerTokenID: "rtr_acme-support",
+			targets: []Target{{Provider: "teacher", Model: "teacher-model", Weight: 1}, {Provider: "ft-canary", Model: "canary-model", Weight: 1}},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -82,6 +88,17 @@ func TestPythonPolicyExamplesRouteThroughRouter(t *testing.T) {
 				t.Fatal(err)
 			}
 			cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
+			for _, target := range tc.targets {
+				if _, exists := cfg.Provider[target.Provider]; !exists {
+					provider := cfg.Provider["mock"]
+					provider.BaseURL = upstream.URL
+					cfg.Provider[target.Provider] = provider
+				}
+			}
+			if tc.callerProject != "" {
+				cfg.Callers[0].Project = tc.callerProject
+				cfg.Callers[0].TokenID = tc.callerTokenID
+			}
 			cfg.Models["example-policy"] = ModelGroup{Strategy: "external", ExternalPolicy: ExternalPolicyConfig{URL: policyURL + "/route", AllowHosts: []string{parsed.Hostname()}, TimeoutMS: 1000, IncludeRequest: tc.includeRequest}, Targets: tc.targets}
 			cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "example-policy")
 			svc, err := New(cfg)

@@ -95,12 +95,24 @@ func TestV4StoredScriptFieldsWithZeroValuesLoad(t *testing.T) {
 }
 
 func TestKubernetesExampleEmptyScriptFieldsRemainLoadCompatible(t *testing.T) {
-	raw, err := os.ReadFile("../../deploy/kubernetes/overlays/nvidia-local-serving/config.example.yaml")
+	path := "../../deploy/kubernetes/overlays/nvidia-local-serving/config.example.yaml"
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := validateRemovedScriptConfig(raw); err != nil {
 		t.Fatalf("v4-shaped Kubernetes example rejected empty script compatibility fields: %v", err)
+	}
+	// The manifest intentionally omits identifiers.transform.key_id; set the
+	// example's harmless local-mode default so full loading reaches validation
+	// of the v4 script fields under test.
+	loadPath := filepath.Join(t.TempDir(), "config.example.yaml")
+	loadable := strings.Replace(string(raw), "    listen: :8080", "    listen: :8080\n    identifiers:\n        mode: passthrough", 1)
+	if err := os.WriteFile(loadPath, []byte(loadable), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadConfig(loadPath); err != nil {
+		t.Fatalf("full LoadConfig rejected the v4-shaped Kubernetes example: %v", err)
 	}
 }
 
@@ -112,6 +124,37 @@ func TestRemovedScriptStrategyRejectedByValidation(t *testing.T) {
 	err := cfg.Validate()
 	if err == nil || !strings.Contains(err.Error(), "strategy: script was removed in v5.0.0") {
 		t.Fatalf("Config.Validate() error = %v, want script migration message", err)
+	}
+}
+
+func TestEveryDispatchedModelStrategyPassesValidation(t *testing.T) {
+	for _, strategy := range supportedModelStrategies {
+		t.Run(strategy, func(t *testing.T) {
+			cfg := minimalConfig(t)
+			group := cfg.Models["default"]
+			group.Strategy = strategy
+			switch strategy {
+			case "tool_aware":
+				group.ToolRouting = ToolRoutingConfig{Mode: toolRoutingModeObserve}
+			case "external":
+				group.ExternalPolicy = ExternalPolicyConfig{URL: "https://policy.example/route", AllowHosts: []string{"policy.example"}}
+			case "intelligent":
+				cfg.Provider["mock"] = func() ProviderConfig {
+					provider := cfg.Provider["mock"]
+					provider.Models = map[string]ProviderModel{"decision": {Model: "mock-decision", Dialect: "openai-chat"}}
+					return provider
+				}()
+				group.IntelligentRouting = IntelligentRoutingConfig{
+					Mode: "simulate", DecisionModel: IntelligentDecisionModel{Provider: "mock", ModelRef: "decision"},
+					TimeoutMS: 1000, MaxOutputTokens: 32, MaxConcurrent: 1, MaxDecisionCostUSD: 0.01,
+					ContextMode: "scalar_only", OnError: "fail_closed", SchemaVersion: "test-v1",
+				}
+			}
+			cfg.Models["default"] = group
+			if err := cfg.Validate(); err != nil {
+				t.Fatalf("Config.Validate rejected dispatched strategy %q: %v", strategy, err)
+			}
+		})
 	}
 }
 
