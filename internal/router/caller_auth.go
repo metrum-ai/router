@@ -152,6 +152,9 @@ func (st *callerAuthState) lookup(token string) (*callerRuntime, string) {
 	}
 	idx := st.index.Load()
 	if entry := idx.candidate(token); entry != nil && st.verify(entry, token) {
+		if entry.caller.cfg.RevokedTokenHash != "" && subtle.ConstantTimeCompare([]byte(entry.caller.cfg.RevokedTokenHash), []byte(entry.tokenHash)) == 1 {
+			return nil, ""
+		}
 		return entry.caller, publicTokenID(entry.caller.cfg.TokenID)
 	}
 	if len(idx.legacyBySHA256) == 0 {
@@ -160,6 +163,9 @@ func (st *callerAuthState) lookup(token string) (*callerRuntime, string) {
 	sumHex := legacyCallerTokenSHA256Hex(token)
 	for configured, caller := range idx.legacyBySHA256 {
 		if subtle.ConstantTimeCompare([]byte(configured), []byte(sumHex)) == 1 {
+			if caller.cfg.RevokedTokenHash != "" && subtle.ConstantTimeCompare([]byte(caller.cfg.RevokedTokenHash), []byte(caller.cfg.TokenSHA256)) == 1 {
+				return nil, ""
+			}
 			label := "sha256:" + sumHex[:12]
 			if caller.cfg.TokenID != "" {
 				label = publicTokenID(caller.cfg.TokenID)

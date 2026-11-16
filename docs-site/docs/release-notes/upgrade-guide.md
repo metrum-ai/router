@@ -17,8 +17,15 @@ Previously issued tokens continue to authenticate. Config load warns when token
 entropy is unknown or a caller uses a development environment. Rotate old keys
 before setting `security.key_hygiene.enforce: true`; enforcement rejects both
 conditions. A leaked token can revoke itself through
-`POST /v1/security/leaked-keys`. That endpoint requires persistent quota state
-and audit storage; it returns `503` when either cannot record the revocation.
+`POST /v1/security/leaked-keys`. The verifier is revoked in the caller
+configuration store and checked during authentication on every serving
+endpoint. Database-backed replicas receive the change through the configuration
+revision reload path. The revocation and its audit records commit together.
+Rotate the caller token to issue a new verifier and restore access; the old
+token remains refused. The route is enabled for database-backed caller
+configuration and is absent in YAML-only mode. The revocation is not stored in
+`state_path`.
+
 ## v5.0.0 provider spend breaker
 
 Provider `spend_breaker` is optional. Existing configurations keep their prior

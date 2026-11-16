@@ -315,9 +315,9 @@ func (h *callerAdminHandler) handleIssue(w http.ResponseWriter, r *http.Request)
 		if existing > 0 {
 			return errCallerAdminConflict
 		}
-		insertSQL := `INSERT INTO router_config_callers (config_set_id, caller_id, owner_user, project, environment, status, token_sha256, token_id, metrics_admin, content_admin, rpm, tpm, concurrent) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		insertSQL := `INSERT INTO router_config_callers (config_set_id, caller_id, owner_user, project, environment, status, token_sha256, token_id, metrics_admin, content_admin, rpm, tpm, concurrent, token_format_version, token_entropy_bits, revoked_token_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '')`
 		if err := tx.Exec(insertSQL,
-			set.ID, row.CallerID, row.OwnerUser, row.Project, row.Environment, row.Status, row.TokenSHA256, row.TokenID, row.MetricsAdmin, row.ContentAdmin, row.RPM, row.TPM, row.Concurrent).Error; err != nil {
+			set.ID, row.CallerID, row.OwnerUser, row.Project, row.Environment, row.Status, row.TokenSHA256, row.TokenID, row.MetricsAdmin, row.ContentAdmin, row.RPM, row.TPM, row.Concurrent, caller.TokenFormatVersion, caller.TokenEntropyBits).Error; err != nil {
 			return err
 		}
 		for _, group := range caller.Allow {
@@ -336,6 +336,8 @@ func (h *callerAdminHandler) handleIssue(w http.ResponseWriter, r *http.Request)
 				TokenHash:    caller.TokenHash,
 				TokenSHA256:  caller.TokenSHA256,
 				TokenID:      row.TokenID,
+				TokenFormatVersion: caller.TokenFormatVersion,
+				TokenEntropyBits: caller.TokenEntropyBits,
 				Allow:        append([]string(nil), caller.Allow...),
 				MetricsAdmin: row.MetricsAdmin,
 				ContentAdmin: row.ContentAdmin,
@@ -438,8 +440,8 @@ func (h *callerAdminHandler) handleRotate(w http.ResponseWriter, r *http.Request
 		if err := ensureConfigControlPlaneRuntimeTables(tx); err != nil {
 			return err
 		}
-		if err := tx.Exec(`UPDATE router_config_callers SET token_sha256 = ?, token_id = ? WHERE config_set_id = ? AND caller_id = ?`,
-			storedCallerTokenVerifier(generated.Caller), generated.TokenID, set.ID, callerID).Error; err != nil {
+		if err := tx.Exec(`UPDATE router_config_callers SET token_sha256 = ?, token_id = ?, token_format_version = ?, token_entropy_bits = ?, revoked_token_hash = '' WHERE config_set_id = ? AND caller_id = ?`,
+			storedCallerTokenVerifier(generated.Caller), generated.TokenID, generated.Caller.TokenFormatVersion, generated.Caller.TokenEntropyBits, set.ID, callerID).Error; err != nil {
 			return err
 		}
 		// Sync the canonical document with the rotated token hash.
@@ -449,6 +451,9 @@ func (h *callerAdminHandler) handleRotate(w http.ResponseWriter, r *http.Request
 					callers[i].TokenHash = generated.TokenHash
 					callers[i].TokenSHA256 = generated.TokenSHA256
 					callers[i].TokenID = generated.TokenID
+					callers[i].TokenFormatVersion = generated.Caller.TokenFormatVersion
+					callers[i].TokenEntropyBits = generated.Caller.TokenEntropyBits
+					callers[i].RevokedTokenHash = ""
 					break
 				}
 			}

@@ -822,7 +822,11 @@ func (s *Service) routes() {
 	s.mux.HandleFunc("GET /v1/models/{model...}", s.handleModelGet)
 	s.mux.HandleFunc("GET /v1/codex/models.json", s.handleCodexModels)
 	s.mux.HandleFunc("GET /v1/usage", s.handleUsage)
-	s.mux.HandleFunc("POST /v1/security/leaked-keys", s.handleLeakedKeySelfRevoke)
+	if s.configControlPlane != nil {
+		// Self-revocation is available only when caller credentials are stored in
+		// the shared configuration control plane and can propagate to replicas.
+		s.mux.HandleFunc("POST /v1/security/leaked-keys", s.handleLeakedKeySelfRevoke)
+	}
 	// ACP-007: /metrics stays on the serving port with v4.7 caller-token
 	// authorization until the admin listener serves it. Moving it earlier would
 	// leave monitoring with no exposition, so validation refuses that config.

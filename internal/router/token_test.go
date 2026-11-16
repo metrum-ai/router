@@ -91,6 +91,20 @@ func TestGenerateCallerTokenWithUnderscoreSecret(t *testing.T) {
 	}
 }
 
+func TestCallerAuthLegacyTokenLookupAndRevocation(t *testing.T) {
+	token := "legacy-router-token"
+	caller := &callerRuntime{cfg: CallerConfig{ID: "legacy", TokenSHA256: legacyCallerTokenSHA256Hex(token), TokenID: "legacy"}}
+	auth := newCallerAuthState()
+	auth.rebuild([]*callerRuntime{caller})
+	if got, _ := auth.lookup(token); got == nil {
+		t.Fatal("legacy token did not authenticate")
+	}
+	caller.cfg.RevokedTokenHash = caller.cfg.TokenSHA256
+	if got, _ := auth.lookup(token); got != nil {
+		t.Fatal("revoked legacy token authenticated")
+	}
+}
+
 func TestGenerateCallerTokenRequiresAllow(t *testing.T) {
 	_, err := GenerateCallerToken(TokenGenerateOptions{
 		User:    "alice",
@@ -114,7 +128,7 @@ func TestGenerateCallerTokenDefaultsMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if generated.TokenID != "rtr_metrum_alice_example-project_dev_k20260613" {
+	if generated.TokenID != "rtr_metrum_alice_example-project_prod_k20260613" {
 		t.Fatalf("default token id=%q", generated.TokenID)
 	}
 	if len(generated.Caller.Allow) != 1 || generated.Caller.Allow[0] != "example-basic" {

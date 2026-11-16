@@ -63,7 +63,7 @@ func GenerateCallerToken(opts TokenGenerateOptions) (GeneratedToken, error) {
 		return GeneratedToken{}, fmt.Errorf("project is required")
 	}
 	if environment == "" {
-		environment = "dev"
+		environment = "prod"
 	}
 	keySlug := slugify(opts.KeySlug)
 	if keySlug == "" {
@@ -182,6 +182,11 @@ func validCallerTokenChecksum(token string) bool {
 		return false
 	}
 	body := token[:marker]
+	for _, c := range token[marker+len(tokenV2Marker):] {
+		if !(c >= '0' && c <= '9' || c >= 'a' && c <= 'f') {
+			return false
+		}
+	}
 	tokenID := publicTokenID(body)
 	if len(tokenID) >= len(body) || !strings.HasPrefix(body, tokenID+"_") || len(body)-len(tokenID)-1 != 43 {
 		return false

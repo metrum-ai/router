@@ -504,6 +504,10 @@ func TestKeyHygieneConfigEnforcement(t *testing.T) {
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("strong production key rejected: %v", err)
 	}
+	cfg.Callers[0].TokenFormatVersion = 1
+	if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "token_format_version must be 2 when set") {
+		t.Fatalf("version 1 error=%v, want the documented version-2 error", err)
+	}
 	cfg.Callers[0].TokenID = "rtr_metrum_alice_example_prod_key1"
 	cfg.Callers[0].TokenFormatVersion = 0
 	cfg.Callers[0].TokenEntropyBits = 0

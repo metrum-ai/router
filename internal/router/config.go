@@ -1120,6 +1120,7 @@ type CallerConfig struct {
 	TokenID            string               `yaml:"token_id" json:"token_id"`
 	TokenFormatVersion int                  `yaml:"token_format_version,omitempty" json:"token_format_version,omitempty"`
 	TokenEntropyBits   int                  `yaml:"token_entropy_bits,omitempty" json:"token_entropy_bits,omitempty"`
+	RevokedTokenHash   string               `yaml:"revoked_token_hash,omitempty" json:"revoked_token_hash,omitempty"`
 	Allow              []string             `yaml:"allow" json:"allow"`
 	MetricsAdmin       bool                 `yaml:"metrics_admin" json:"metrics_admin"`
 	ContentAdmin       bool                 `yaml:"content_admin" json:"content_admin"`
@@ -2077,7 +2078,7 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		}
 		callerIDs[caller.ID] = caller.ID
 		entropyBits := caller.TokenEntropyBits
-		if caller.TokenFormatVersion < 0 || caller.TokenFormatVersion > 2 {
+		if caller.TokenFormatVersion != 0 && caller.TokenFormatVersion != 2 {
 			return fmt.Errorf("caller %s token_format_version must be 2 when set", caller.ID)
 		}
 		if entropyBits < 0 || entropyBits > 256 {
@@ -2149,6 +2150,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 				return fmt.Errorf("duplicate caller token_sha256 for callers %s and %s", previousCallerID, caller.ID)
 			}
 			callerTokenHashes[tokenHashKey] = caller.ID
+		}
+		if caller.RevokedTokenHash != "" && caller.RevokedTokenHash != caller.TokenHash && !strings.EqualFold(caller.RevokedTokenHash, caller.TokenSHA256) {
+			return fmt.Errorf("caller %s revoked_token_hash must match its stored token verifier", caller.ID)
 		}
 		if caller.TokenID != "" {
 			if previousCallerID, ok := callerTokenIDs[caller.TokenID]; ok {
