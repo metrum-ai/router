@@ -142,6 +142,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   use `--offline` for deliberate direct database access while the router is stopped. The default
   Admin API endpoint is `http://127.0.0.1:8081`; non-loopback endpoints require HTTPS. Reports use
   `/admin/v1/reports`, and the former `/admin/reports` `--reports-prefix` value is rejected.
+- Offline config import, activate, rollback, emergency operations, and SQLite backup/restore require
+  every router to be stopped. Read-only offline config export uses a shared lock and can run while
+  routers serve. Offline config maintenance is refused on Windows. v4.8 replicas do not take the
+  runtime lock, so upgrade every replica before relying on offline exclusion. PostgreSQL session
+  advisory locks require session pooling and do not protect operations through PgBouncer transaction
+  pooling. Offline operation provenance is consumed into the admin audit at the next serving startup.
 
 ### Admin operations
 
@@ -152,6 +158,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | Migration id | Scope | Schema version | Change | Maintenance | Data job | Rollback class |
 | --- | --- | --- | --- | --- | --- | --- |
 | `2026111601` | `router-config` | 13 | remove v4 serving-port admin settings from stored configs | maintenance | none | `restore-required` |
+| `2026111616` | `router-config` | 18 | add bounded offline-operation provenance markers | online | none | `restore-required` |
+| `2026111616` | `usage` | 19 | add bounded offline-operation provenance markers | online | none | `restore-required` |
 | `2026111610` | `router-config` | 17 | add admin client and credential registry, lifecycle audit fields, and deduplicated unused-warning state | online | none | `restore-required` |
 
 ### Fixed

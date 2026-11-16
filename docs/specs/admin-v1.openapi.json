@@ -4306,7 +4306,7 @@
               "application/json": {
                 "schema": {
                   "additionalProperties": true,
-                  "description": "Open object. Documented members: mode, runtime_scope, driver, revision, active_set_id, replica.",
+                  "description": "Open object. Documented members: mode, runtime_scope, driver, revision, active_set_id, replica, apply_modes.",
                   "type": "object"
                 }
               }
