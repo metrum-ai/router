@@ -244,6 +244,7 @@ type requestContext struct {
 	maxSSELineBytes        int
 	lineBufferBudget       *lineBufferBudget
 	chatStreamIncludeUsage bool
+	streamToolCallHold     *streamToolCallHold
 	detectorTinyRequest    bool
 	traceSeq               int
 	// wrapStreamFrame binds opaque reasoning values in streamed frames (#622).
@@ -2064,11 +2065,12 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	if req.Stream && group.PIIFilter.Enabled && group.PIIFilter.SecretsEnabled {
 		rc.secretStreamDLP = &secretStreamDLP{state: piiResult.state, mode: normalizePIIFilterMode(group.PIIFilter), failOnMatch: group.PIIFilter.FailOnMatch}
 	}
-	if group.PIIFilter.Enabled && group.PIIFilter.SecretsEnabled && req.Stream && (len(req.Tools) > 0 || len(group.PIIFilter.Rules) > 0) {
-		// Tool-bearing streams stay closed until the bounded #929 hold can inspect
-		// the completed call before releasing it. Custom expressions have no
-		// declared maximum match length, so only the bounded built-in pack can use
-		// the rolling text filter safely.
+	if group.PIIFilter.Enabled && group.PIIFilter.SecretsEnabled && req.Stream &&
+		((len(req.Tools) > 0 && !group.ToolRouting.Streaming.HoldUntilValidated) || len(group.PIIFilter.Rules) > 0) {
+		// Tool-bearing streams require the bounded #929 hold so complete
+		// arguments can be inspected before release. Custom expressions have no
+		// declared maximum match length, so custom-rule-enabled streams remain
+		// unsupported by the rolling text filter.
 		code := "secret-dlp-stream-inspection-required"
 		rc.trace("secret_dlp_stream_blocked", "", Target{}, 0, http.StatusBadRequest, code, false, 0)
 		s.writeError(w, rc, http.StatusBadRequest, code)
@@ -3969,11 +3971,20 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		// body after stream_idle_timeout_ms without a read, which ends the
 		// response with a clear attempt error instead of a silent stall.
 		streamBody := httpResp.Body
+		if group, ok := s.cfg.Models[groupName]; ok && group.ToolRouting.Streaming.HoldUntilValidated && len(req.Tools) > 0 {
+			rc.streamToolCallHold = newStreamToolCallHold(group.ToolRouting.Streaming, req.Tools, group.ToolRouting.validationOptions(), s.lineBufferBudget)
+			if rc.secretStreamDLP != nil {
+				rc.streamToolCallHold.inspectors = append(rc.streamToolCallHold.inspectors, secretDLPToolCallInspector{dlp: rc.secretStreamDLP})
+			}
+		}
 		streamIdle := s.streamIdleTimeout()
 		var idleBody *streamIdleReader
-		if streamIdle > 0 {
+		if streamIdle > 0 || rc.streamToolCallHold != nil {
 			idleBody = newStreamIdleReader(httpResp.Body, streamIdle)
 			streamBody = idleBody
+		}
+		if idleBody != nil && rc.streamToolCallHold != nil {
+			rc.streamToolCallHold.bindIdleReader(idleBody, streamIdle)
 		}
 		rc.maxSSELineBytes = s.cfg.Server.Streaming.MaxSSELineBytes
 		rc.lineBufferBudget = s.lineBufferBudget
@@ -3996,7 +4007,12 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		attempt.ReasoningTokens = streamResult.Response.Usage.ReasoningTokens
 		if streamErr != nil {
 			upErr := classifyError(streamErr)
-			if errors.Is(streamErr, errStreamIdleTimeout) {
+			if errors.Is(streamErr, errStreamToolCallHoldTimeout) {
+				upErr = upstreamError{
+					Class: "tool_call_hold_timeout", Message: "tool-call inspection hold timed out",
+					TimedOut: true, Fallbackable: false, Err: streamErr,
+				}
+			} else if errors.Is(streamErr, errStreamIdleTimeout) {
 				// A clear, classifiable timeout with its own message; the
 				// attempt and usage rows record it.
 				upErr = upstreamError{
@@ -5840,6 +5856,12 @@ func upstreamFailureResponse(err upstreamError, rc *requestContext) (string, int
 	switch {
 	case err.Class == "upstream_loop_detected":
 		return "upstream-loop-detected", http.StatusLoopDetected
+	case err.Class == "tool_call_hold_timeout":
+		return "tool-call-hold-timeout", http.StatusGatewayTimeout
+	case err.Class == "tool_call_hold_too_large":
+		return "tool-call-hold-too-large", http.StatusBadGateway
+	case err.Class == "tool_call_hold_validation_failed":
+		return "tool-call-validation-failed", http.StatusBadGateway
 	case err.Class == "upstream_protocol_error" || err.Class == "upstream_frame_too_large" || err.Class == "upstream_stream_buffer_limit":
 		return err.Class, http.StatusBadGateway
 	case err.Class == "response_affinity_store_failed":
@@ -5929,6 +5951,12 @@ func callerUpstreamFailureReason(class string) (string, string) {
 		return class, "upstream provider quota, credits, or billing were exhausted"
 	case "upstream_timeout":
 		return class, "upstream timed out"
+	case "tool_call_hold_timeout":
+		return class, "tool-call inspection exceeded its configured timeout"
+	case "tool_call_hold_too_large":
+		return class, "tool-call inspection exceeded its configured size limit"
+	case "tool_call_hold_validation_failed":
+		return class, "streamed tool-call validation failed"
 	case "upstream_loop_detected":
 		return class, "an upstream loop was detected"
 	case "image_url_dns_timeout":
