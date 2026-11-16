@@ -9,6 +9,23 @@ For v5.0.0, `metrum-ai-router-migrate --json` writes one JSON document to stdout
 
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
 
+## v5.0.0 provider spend breaker
+
+Provider `spend_breaker` is optional. Existing configurations keep their prior
+routing behavior. Set `hourly_usd` and/or `daily_usd` under a provider to cap
+estimated spend; each window resets at the next UTC boundary. The counters are
+in memory and reset on router restart, so configure ceilings with that limit
+in mind. Counters are per router process; with `N` replicas the effective
+ceiling can reach `N` times the configured value. The router records only safe
+scalar trip/reset events and does not write provider keys to logs, events or
+usage rows. With `on_trip: stop`, a request whose group includes the tripped
+provider returns HTTP 503 with error code `provider_spend_breaker`; the router
+does not fail over to another provider until the window resets. Use
+`on_trip: failover` to reroute to another eligible provider. Trip/reset records
+also enter security access events when
+`server.admin_reports.security.enabled` is true; structured log events remain
+available otherwise.
+
 ## Pre-Upgrade Checklist
 
 1. Read the release notes for operator impact, database changes, license changes, and caller-visible behavior.
