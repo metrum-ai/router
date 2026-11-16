@@ -383,7 +383,7 @@ def tier_dirs(root: Path) -> list[Path]:
         for child in root.iterdir()
         if child.is_dir()
         and not child.name.startswith((".", "_"))
-        and child.name != "harness"
+        and child.name not in {"harness", "hierarchy"}
         and ((child / "images.lock").is_file() or (child / "SIZING.md").is_file())
     )
 
