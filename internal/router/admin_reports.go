@@ -4,6 +4,7 @@
 package router
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/rand"
@@ -16,6 +17,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"math"
 	"net/http"
@@ -1008,7 +1010,23 @@ func (s *Service) handleAdminReports(w http.ResponseWriter, r *http.Request) {
 	}
 	_, _, deniedGlobal := s.reportsAuthorize(r, subject, object, action, true)
 	globalReports := !deniedGlobal
-	s.recordAdminSecurityAccess(r, subject, http.StatusOK, "", object, action)
+	if containmentWrite {
+		recorder := &adminReportStatusWriter{ResponseWriter: w}
+		w = recorder
+		defer func() {
+			status := recorder.status
+			if status == 0 {
+				status = http.StatusOK
+			}
+			reason := ""
+			if status >= http.StatusBadRequest {
+				reason = "containment-write-failed"
+			}
+			s.recordAdminSecurityAccess(r, subject, status, reason, object, action)
+		}()
+	} else {
+		s.recordAdminSecurityAccess(r, subject, http.StatusOK, "", object, action)
+	}
 	s.setAdminReportHeaders(w, strings.HasPrefix(r.URL.Path, prefix+"/static/"))
 	scalarSpec, scalarOK := adminScalarEndpointSpecs(strings.TrimPrefix(r.URL.Path, prefix))
 	switch {
@@ -1168,7 +1186,38 @@ func (s *Service) validAdminReportsCSRF(w http.ResponseWriter, r *http.Request, 
 	return true
 }
 
+type adminReportStatusWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *adminReportStatusWriter) WriteHeader(status int) {
+	if w.status != 0 {
+		return
+	}
+	w.status = status
+	w.ResponseWriter.WriteHeader(status)
+}
+
+func (w *adminReportStatusWriter) Write(body []byte) (int, error) {
+	if w.status == 0 {
+		w.WriteHeader(http.StatusOK)
+	}
+	return w.ResponseWriter.Write(body)
+}
+
 func (s *Service) handleAdminReportsContainment(w http.ResponseWriter, r *http.Request, subject adminAuthSubject) {
+	raw, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 16<<10))
+	if err != nil {
+		writeCallerAdminError(w, http.StatusBadRequest, "containment-invalid-request")
+		return
+	}
+	var request callerContainmentRequest
+	if err := json.Unmarshal(raw, &request); err != nil || strings.TrimSpace(request.Action) != "suspend" {
+		writeCallerAdminError(w, http.StatusBadRequest, "containment-invalid-request")
+		return
+	}
+	r.Body = io.NopCloser(bytes.NewReader(raw))
 	if s.configControlPlane == nil {
 		writeCallerAdminError(w, http.StatusServiceUnavailable, "containment-config-set-unavailable")
 		return

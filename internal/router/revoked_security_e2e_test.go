@@ -80,9 +80,9 @@ func TestRevokedKeyScopedSecurityLocalhostE2E(t *testing.T) {
 		}
 		return rec.Result().Cookies()[0], payload.Token
 	}
-	postContain := func(username string, cookie *http.Cookie, token string) *httptest.ResponseRecorder {
+	postContain := func(username string, cookie *http.Cookie, token, action string) *httptest.ResponseRecorder {
 		t.Helper()
-		req := httptest.NewRequest(http.MethodPost, "http://reports.example/admin/reports/api/security/containment", strings.NewReader(`{"caller_id":"alice","action":"suspend","reason":"e2e-test"}`))
+		req := httptest.NewRequest(http.MethodPost, "http://reports.example/admin/reports/api/security/containment", strings.NewReader(`{"caller_id":"alice","action":"`+action+`","reason":"e2e-test"}`))
 		req.Host = "reports.example"
 		req.Header.Set("Origin", "http://reports.example")
 		req.Header.Set("Content-Type", "application/json")
@@ -98,16 +98,31 @@ func TestRevokedKeyScopedSecurityLocalhostE2E(t *testing.T) {
 		return rec
 	}
 	scopedCookie, scopedToken := csrf("scoped")
-	if got := postContain("scoped", scopedCookie, ""); got.Code != http.StatusForbidden {
+	if got := postContain("scoped", scopedCookie, "", "suspend"); got.Code != http.StatusForbidden {
 		t.Fatalf("containment without CSRF status=%d body=%s", got.Code, got.Body.String())
 	}
 	otherCookie, otherToken := csrf("other")
-	if got := postContain("other", otherCookie, otherToken); got.Code != http.StatusForbidden {
+	if got := postContain("other", otherCookie, otherToken, "suspend"); got.Code != http.StatusForbidden {
 		t.Fatalf("containment without permission status=%d body=%s", got.Code, got.Body.String())
 	}
-	allowedContainment := postContain("scoped", scopedCookie, scopedToken)
+	flushUsageForTest(t, svc)
+	var deniedAccess securityAccessEventRecord
+	if err := svc.usage.db.Where("event_type = ? AND admin_subject = ? AND requested_model = ?", "admin_access", "basic:other", authzActionContain).Order("id DESC").First(&deniedAccess).Error; err != nil {
+		t.Fatalf("denied containment access event missing: %v", err)
+	}
+	if deniedAccess.StatusCode != http.StatusForbidden || deniedAccess.Outcome != "forbidden" {
+		t.Fatalf("denied containment logged as allowed: status=%d outcome=%q reason=%q", deniedAccess.StatusCode, deniedAccess.Outcome, deniedAccess.ReasonCode)
+	}
+	allowedContainment := postContain("scoped", scopedCookie, scopedToken, "suspend")
 	if allowedContainment.Code != http.StatusOK {
 		t.Fatalf("allowed serving-port containment status=%d body=%s", allowedContainment.Code, allowedContainment.Body.String())
+	}
+	if got := postContain("scoped", scopedCookie, scopedToken, "resume"); got.Code != http.StatusBadRequest {
+		t.Fatalf("serving-port resume status=%d body=%s", got.Code, got.Body.String())
+	}
+	var resumeAudits int64
+	if err := svc.configControlPlane.Model(&configControlPlaneChangeEventRow{}).Where("action = ?", "caller_containment_resume").Count(&resumeAudits).Error; err != nil || resumeAudits != 0 {
+		t.Fatalf("serving-port resume changed state: resume audit count=%d err=%v", resumeAudits, err)
 	}
 	statusReq := httptest.NewRequest(http.MethodGet, "http://reports.example/admin/reports/api/security/containment-status?caller_id=alice", nil)
 	statusReq.Host = "reports.example"
