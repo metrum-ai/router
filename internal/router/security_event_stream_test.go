@@ -136,8 +136,8 @@ func TestOCSFSecurityEventsValidateAgainstPinned140Classes(t *testing.T) {
 		{TS: time.Unix(5, 0), RequestID: "activity-1", EventType: "api_request", StatusCode: 200, IPAddress: "192.0.2.1"},
 		{TS: time.Unix(6, 0), RequestID: "approval-1", EventType: "firewall_hold", StatusCode: 200, Outcome: "pending", ReasonCode: "approval_pending:approval_0123456789abcdef0123456789abcdef"},
 		{TS: time.Unix(7, 0), RequestID: "approval-2", EventType: "firewall_block", StatusCode: 200, Outcome: "denied", ReasonCode: "approval_denied:approval_0123456789abcdef0123456789abcdef"},
-		{TS: time.Unix(8, 0), RequestID: "honey-1", EventType: "security_honeytoken_used", CallerID: "caller-1", Outcome: "critical"},
-		{TS: time.Unix(9, 0), RequestID: "canary-1", EventType: "security_canary_group_used", CallerID: "caller-1", Outcome: "critical", ModelGroup: "canary"},
+		{TS: time.Unix(8, 0), RequestID: "honey-1", EventType: "security_honeytoken_used", CallerID: "caller-1", IPAddress: "192.0.2.24", Outcome: "critical"},
+		{TS: time.Unix(9, 0), RequestID: "canary-1", EventType: "security_canary_group_used", CallerID: "caller-1", IPAddress: "192.0.2.25", Outcome: "critical", ModelGroup: "canary"},
 	} {
 		line, err := marshalOCSFSecurityEvent(source)
 		if err != nil {
@@ -154,6 +154,28 @@ func TestOCSFSecurityEventsValidateAgainstPinned140Classes(t *testing.T) {
 		if source.EventType == "security_detector_signal" {
 			if event["uid"] != strings.Repeat("x", 256) || event["finding_info"].(map[string]any)["uid"] != strings.Repeat("x", 256) {
 				t.Errorf("external evidence request ID was not capped in finding UIDs: %s", line)
+			}
+		}
+		if source.EventType == "security_honeytoken_used" || source.EventType == "security_canary_group_used" {
+			if event["severity_id"] != float64(5) {
+				t.Errorf("%s severity_id=%v; want critical (5)", source.EventType, event["severity_id"])
+			}
+			evidences, _ := event["evidences"].([]any)
+			if len(evidences) != 1 {
+				t.Fatalf("%s finding evidence count=%d; want one", source.EventType, len(evidences))
+			}
+			evidence, _ := evidences[0].(map[string]any)
+			actor, _ := evidence["actor"].(map[string]any)
+			actorUser, _ := actor["user"].(map[string]any)
+			if actorUser["uid"] != source.CallerID {
+				t.Errorf("%s actor caller=%v; want %q", source.EventType, actorUser["uid"], source.CallerID)
+			}
+			if _, exists := actorUser["name"]; exists {
+				t.Errorf("%s actor assigns a router name to the caller", source.EventType)
+			}
+			endpoint, _ := evidence["src_endpoint"].(map[string]any)
+			if endpoint["ip"] != source.IPAddress {
+				t.Errorf("%s source IP=%v; want %q", source.EventType, endpoint["ip"], source.IPAddress)
 			}
 		}
 		if strings.HasPrefix(source.EventType, "firewall_") && !isSecurityStreamEvent(source.EventType) {
@@ -702,6 +724,8 @@ func TestSecuritySigmaRulesMatchSyntheticTraces(t *testing.T) {
 		{TS: time.Unix(4, 0), RequestID: "containment-resume", EventType: "caller_released", StatusCode: http.StatusOK, Outcome: "allowed"},
 		{TS: time.Unix(5, 0), RequestID: "unrelated-api", EventType: "api_request", StatusCode: http.StatusOK},
 		{TS: time.Unix(6, 0), RequestID: "suspended-refusal", EventType: "caller_suspended", StatusCode: http.StatusForbidden, Outcome: "forbidden"},
+		{TS: time.Unix(8, 0), RequestID: "honeytoken-use", EventType: "security_honeytoken_used", CallerID: "caller-honey", IPAddress: "192.0.2.30", Outcome: "critical"},
+		{TS: time.Unix(9, 0), RequestID: "canary-use", EventType: "security_canary_group_used", CallerID: "caller-canary", IPAddress: "192.0.2.31", Outcome: "critical", ModelGroup: "canary"},
 	} {
 		line, err := marshalOCSFSecurityEvent(input)
 		if err != nil {
@@ -722,7 +746,7 @@ func TestSecuritySigmaRulesMatchSyntheticTraces(t *testing.T) {
 		t.Fatal(err)
 	}
 	traces = append(traces, negative)
-	for _, name := range []string{"authentication-failure.yml", "detection-finding.yml", "containment-action.yml"} {
+	for _, name := range []string{"authentication-failure.yml", "detection-finding.yml", "security-finding.yml", "containment-action.yml"} {
 		t.Run(name, func(t *testing.T) {
 			var rule struct {
 				Detection struct {
@@ -763,6 +787,19 @@ func TestSecuritySigmaRulesMatchSyntheticTraces(t *testing.T) {
 			}
 			if len(selections) == 0 || len(matched) == 0 {
 				t.Fatalf("rule %s did not match a synthetic trace", name)
+			}
+			if name == "detection-finding.yml" {
+				for _, uid := range []string{"honeytoken-use", "canary-use"} {
+					if !matched[uid] {
+						t.Errorf("detection finding rule did not match positive %s trace", uid)
+					}
+				}
+				if matched["detection-finding"] {
+					t.Error("critical detection finding rule matched the medium-severity DLP trace")
+				}
+			}
+			if name == "security-finding.yml" && !matched["detection-finding"] {
+				t.Error("standard security finding rule did not match the medium-severity DLP trace")
 			}
 			if name == "containment-action.yml" {
 				for _, uid := range []string{"containment-suspend", "containment-resume"} {

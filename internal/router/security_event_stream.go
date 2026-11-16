@@ -283,6 +283,9 @@ func marshalOCSFSecurityEvent(event securityAccessEvent) ([]byte, error) {
 	if classUID == 2004 || event.StatusCode == http.StatusUnauthorized || event.StatusCode == http.StatusForbidden || strings.Contains(strings.ToLower(event.EventType), "detector") {
 		severityID = 3
 	}
+	if event.EventType == "security_honeytoken_used" || event.EventType == "security_canary_group_used" {
+		severityID = 5
+	}
 	uid := safeOCSFValue(event.RequestID)
 	if uid == "" {
 		var raw [16]byte
@@ -314,6 +317,20 @@ func marshalOCSFSecurityEvent(event securityAccessEvent) ([]byte, error) {
 			}
 		}
 		obj["finding_info"] = findingInfo
+		if event.EventType == "security_honeytoken_used" || event.EventType == "security_canary_group_used" {
+			evidence := map[string]any{}
+			actorUser := map[string]any{}
+			if callerID := safeOCSFValue(event.CallerID); callerID != "" {
+				actorUser["uid"] = callerID
+				evidence["actor"] = map[string]any{"user": actorUser}
+			}
+			if endpoint := ocsfEndpoint(event.IPAddress); len(endpoint) != 0 {
+				evidence["src_endpoint"] = endpoint
+			}
+			if len(evidence) != 0 {
+				obj["evidences"] = []any{evidence}
+			}
+		}
 		if event.Object != "" || event.OperationID != "" {
 			obj["unmapped"] = map[string]any{"provider": safeOCSFValue(event.Object), "window": safeOCSFValue(event.OperationID), "action": safeOCSFValue(event.Action)}
 		}

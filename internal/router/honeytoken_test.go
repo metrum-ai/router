@@ -85,6 +85,7 @@ func TestHoneytokenAndCanaryNeverReachUpstream(t *testing.T) {
 	call := func(path, token, body string) *httptest.ResponseRecorder {
 		t.Helper()
 		r := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+		r.RemoteAddr = "192.0.2.20:4242"
 		r.Header.Set("Authorization", "Bearer "+token)
 		w := httptest.NewRecorder()
 		svc.Handler().ServeHTTP(w, r)
@@ -220,6 +221,8 @@ func TestHoneytokenAndCanaryNeverReachUpstream(t *testing.T) {
 	if svc.honeytokenEventDrops.Load() == 0 {
 		t.Fatal("duplicate honeytoken/canary events were not counted")
 	}
+	assertHoneytokenStreamEvent(t, streamPath, "security_honeytoken_used", generated.Caller.ID, "192.0.2.20", generated.Token)
+	assertHoneytokenStreamEvent(t, streamPath, "security_canary_group_used", generated.Caller.ID, "192.0.2.20", generated.Token)
 	var honeyEvents, canaryEvents int
 	for _, event := range events {
 		if event.Outcome != "critical" {
@@ -292,6 +295,57 @@ func waitForHoneytokenEvents(t *testing.T, svc *Service, eventType, group string
 	}
 }
 
+func enableHoneytokenStream(t *testing.T, cfg *Config) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "security-events.jsonl")
+	cfg.Server.Security.Events = SecurityEventStreamConfig{Enabled: true, Version: "1.4.0", Output: "file", Path: path}
+	return path
+}
+
+func assertHoneytokenStreamEvent(t *testing.T, path, eventType, callerID, sourceIP, token string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		body, _ := os.ReadFile(path)
+		for _, line := range strings.Split(string(body), "\n") {
+			var event map[string]any
+			if json.Unmarshal([]byte(line), &event) != nil {
+				continue
+			}
+			finding, _ := event["finding_info"].(map[string]any)
+			if finding["title"] != eventType {
+				continue
+			}
+			if event["severity_id"] != float64(5) {
+				t.Fatalf("%s stream severity_id=%v; want critical (5)", eventType, event["severity_id"])
+			}
+			evidences, _ := event["evidences"].([]any)
+			if len(evidences) != 1 {
+				t.Fatalf("%s stream evidence count=%d; want one", eventType, len(evidences))
+			}
+			evidence, _ := evidences[0].(map[string]any)
+			actor, _ := evidence["actor"].(map[string]any)
+			user, _ := actor["user"].(map[string]any)
+			if user["uid"] != callerID {
+				t.Fatalf("%s stream actor caller ID did not match", eventType)
+			}
+			if _, exists := user["name"]; exists {
+				t.Fatalf("%s stream labels the caller with a non-caller name", eventType)
+			}
+			endpoint, _ := evidence["src_endpoint"].(map[string]any)
+			if endpoint["ip"] != sourceIP {
+				t.Fatalf("%s stream source IP=%v; want %s", eventType, endpoint["ip"], sourceIP)
+			}
+			if token != "" && strings.Contains(line, token) {
+				t.Fatalf("%s stream contains raw token material", eventType)
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("%s event did not appear in OCSF stream", eventType)
+}
+
 func TestHoneytokenUseRecordedWhenAccountPolicyRejects(t *testing.T) {
 	generated, err := GenerateCallerToken(TokenGenerateOptions{OwnerUser: "security", Project: "decoys", Environment: "test", KeySlug: "suspended", HoneytokenLabel: "suspended test"})
 	if err != nil {
@@ -300,6 +354,7 @@ func TestHoneytokenUseRecordedWhenAccountPolicyRejects(t *testing.T) {
 	generated.Caller.Status = accountStatusSuspended
 	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(t.TempDir(), "suspended-honeytoken.sqlite"))
+	streamPath := enableHoneytokenStream(t, cfg)
 	cfg.Callers = append(cfg.Callers, generated.Caller)
 	svc, err := New(cfg)
 	if err != nil {
@@ -307,6 +362,7 @@ func TestHoneytokenUseRecordedWhenAccountPolicyRejects(t *testing.T) {
 	}
 	defer svc.Close()
 	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	req.RemoteAddr = "192.0.2.41:4242"
 	req.Header.Set("Authorization", "Bearer "+generated.Token)
 	w := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(w, req)
@@ -317,6 +373,7 @@ func TestHoneytokenUseRecordedWhenAccountPolicyRejects(t *testing.T) {
 	if count != 1 {
 		t.Fatalf("suspended honeytoken event count=%d err=%v", count, err)
 	}
+	assertHoneytokenStreamEvent(t, streamPath, "security_honeytoken_used", generated.Caller.ID, "192.0.2.41", generated.Token)
 }
 
 func TestHoneytokenUseRecordedWhenCallerBindingRejects(t *testing.T) {
@@ -327,6 +384,7 @@ func TestHoneytokenUseRecordedWhenCallerBindingRejects(t *testing.T) {
 	generated.Caller.Binding = CallerBindingConfig{Mode: "enforce", AllowedCIDRs: []string{"198.51.100.0/24"}}
 	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(t.TempDir(), "binding-honeytoken.sqlite"))
+	streamPath := enableHoneytokenStream(t, cfg)
 	cfg.Callers = append(cfg.Callers, generated.Caller)
 	svc, err := New(cfg)
 	if err != nil {
@@ -344,6 +402,7 @@ func TestHoneytokenUseRecordedWhenCallerBindingRejects(t *testing.T) {
 	if count := waitForHoneytokenEvents(t, svc, "security_honeytoken_used", "", 1); count != 1 {
 		t.Fatalf("binding-rejected honeytoken event count=%d, want one", count)
 	}
+	assertHoneytokenStreamEvent(t, streamPath, "security_honeytoken_used", generated.Caller.ID, "192.0.2.9", generated.Token)
 }
 
 func TestHoneytokenMCPRequestIsRecordedAndNeverDispatched(t *testing.T) {
@@ -359,6 +418,7 @@ func TestHoneytokenMCPRequestIsRecordedAndNeverDispatched(t *testing.T) {
 	defer upstream.Close()
 	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(t.TempDir(), "mcp-honeytoken.sqlite"))
+	streamPath := enableHoneytokenStream(t, cfg)
 	cfg.Callers = append(cfg.Callers, generated.Caller)
 	cfg.MCP = MCPGatewayConfig{Enabled: true, Servers: []MCPServerConfig{{Name: "demo", URL: upstream.URL, AllowHosts: []string{"127.0.0.1"}}}, Policies: []MCPPolicyConfig{{Project: generated.Caller.Project, Tools: []string{"demo/read"}}}}
 	svc, err := New(cfg)
@@ -367,6 +427,7 @@ func TestHoneytokenMCPRequestIsRecordedAndNeverDispatched(t *testing.T) {
 	}
 	defer svc.Close()
 	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"demo/read","arguments":{}}}`))
+	req.RemoteAddr = "192.0.2.43:4242"
 	req.Header.Set("Authorization", "Bearer "+generated.Token)
 	w := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(w, req)
@@ -380,6 +441,7 @@ func TestHoneytokenMCPRequestIsRecordedAndNeverDispatched(t *testing.T) {
 	if count != 1 {
 		t.Fatalf("MCP honeytoken event count=%d err=%v", count, err)
 	}
+	assertHoneytokenStreamEvent(t, streamPath, "security_honeytoken_used", generated.Caller.ID, "192.0.2.43", generated.Token)
 }
 
 func TestHoneytokenAdminReportDenialRecordsUse(t *testing.T) {
@@ -389,11 +451,13 @@ func TestHoneytokenAdminReportDenialRecordsUse(t *testing.T) {
 	}
 	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
 	cfg.Server.AdminReports.Enabled = true
+	cfg.Server.AdminReports.Security.Enabled = true
 	const passwordHashEnv = "ROUTER_ADMIN_BASIC_HONEYTOKEN_TEST"
 	t.Setenv(passwordHashEnv, mustBcryptHash(t, "test-password"))
 	cfg.Server.AdminAuth.Basic = AdminBasicAuthConfig{Enabled: true, AllowInsecureHTTP: true, Users: []AdminBasicAuthUser{{Username: "admin", PasswordHashEnv: passwordHashEnv, Subject: "basic:admin", Domain: "local/test"}}}
 	cfg.Server.AdminAuth.Authorization = AdminAuthorizationConfig{Enabled: true, Source: "static", Policy: []string{"p, basic:admin, local/test, admin:reports, read"}}
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(t.TempDir(), "report-honeytoken.sqlite"))
+	streamPath := enableHoneytokenStream(t, cfg)
 	cfg.Callers = append(cfg.Callers, generated.Caller)
 	svc, err := New(cfg)
 	if err != nil {
@@ -401,6 +465,7 @@ func TestHoneytokenAdminReportDenialRecordsUse(t *testing.T) {
 	}
 	defer svc.Close()
 	req := httptest.NewRequest(http.MethodGet, "/admin/reports", nil)
+	req.RemoteAddr = "192.0.2.44:4242"
 	req.Header.Set("Authorization", "Bearer "+generated.Token)
 	w := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(w, req)
@@ -411,6 +476,7 @@ func TestHoneytokenAdminReportDenialRecordsUse(t *testing.T) {
 	if count != 1 {
 		t.Fatalf("admin report honeytoken event count=%d err=%v", count, err)
 	}
+	assertHoneytokenStreamEvent(t, streamPath, "security_honeytoken_used", generated.Caller.ID, "192.0.2.44", generated.Token)
 }
 
 func TestHoneytokenSinkholeSurvivesUnavailableEventStore(t *testing.T) {
@@ -420,6 +486,7 @@ func TestHoneytokenSinkholeSurvivesUnavailableEventStore(t *testing.T) {
 	}
 	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
 	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(t.TempDir(), "down-honeytoken.sqlite"))
+	streamPath := enableHoneytokenStream(t, cfg)
 	cfg.Callers = append(cfg.Callers, generated.Caller)
 	svc, err := New(cfg)
 	if err != nil {
@@ -429,6 +496,7 @@ func TestHoneytokenSinkholeSurvivesUnavailableEventStore(t *testing.T) {
 	store := svc.usage
 	svc.usage = nil // Model the event sink being unavailable.
 	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"unknown-model","messages":[{"role":"user","content":"private"}]}`))
+	req.RemoteAddr = "192.0.2.45:4242"
 	req.Header.Set("Authorization", "Bearer "+generated.Token)
 	w := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(w, req)
@@ -436,6 +504,7 @@ func TestHoneytokenSinkholeSurvivesUnavailableEventStore(t *testing.T) {
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), honeytokenCompletionText) {
 		t.Fatalf("event-store failure changed sinkhole response status=%d body=%s", w.Code, w.Body.String())
 	}
+	assertHoneytokenStreamEvent(t, streamPath, "security_honeytoken_used", generated.Caller.ID, "192.0.2.45", generated.Token)
 }
 
 func TestHoneytokenEventDedupeIncludesCanaryGroup(t *testing.T) {

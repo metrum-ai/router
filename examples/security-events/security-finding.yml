@@ -1,0 +1,15 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+
+title: Router Security Detection Finding
+id: 01b82458-c313-4d07-94d4-8e098ffb1201
+status: stable
+logsource:
+  product: metrum-ai-router
+  service: security-events
+detection:
+  selection:
+    class_uid: 2004
+    severity_id: 3
+  condition: selection
+level: high
