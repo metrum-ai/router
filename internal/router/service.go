@@ -105,7 +105,6 @@ type Service struct {
 	adminIdempotency   atomic.Value
 	trafficShape       *trafficShapeManager
 	bridgeSessions     *bridgeSessionBackends
-	scripts            map[string]*scriptStrategy
 	observations       *dynamicObservationStore
 	toolReliability    *toolReliabilityStore
 	affinity           *dynamicAffinityStore
@@ -374,7 +373,6 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		metrics:            newMetricsStore(),
 		trafficShape:       newTrafficShapeManager(),
 		bridgeSessions:     bridgeSessions,
-		scripts:            map[string]*scriptStrategy{},
 		observations:       newDynamicObservationStore(),
 		toolReliability:    newToolReliabilityStore(),
 		affinity:           newDynamicAffinityStore(),
@@ -443,13 +441,6 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 			bridgeSessions.Close()
 			return nil, err
 		}
-	}
-	if err := s.loadScripts(); err != nil {
-		_ = quota.Close()
-		_ = logger.Close()
-		_ = usage.Close()
-		bridgeSessions.Close()
-		return nil, err
 	}
 	s.loadExternalPolicies()
 	s.callerAuth.rebuild(callerRuntimesInConfigOrder(cfg, quota.callers))
@@ -2678,9 +2669,15 @@ func (c *callerRuntime) authPolicyError() error {
 	if c == nil {
 		return authPolicyError{status: http.StatusUnauthorized, code: "unauthorized"}
 	}
+	keyStatus := normalizeStatusDefault(c.keyStatus)
+	if keyStatus == accountStatusSuspended && strings.TrimSpace(c.cfg.ContainmentExpiresAt) != "" {
+		if expiresAt, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(c.cfg.ContainmentExpiresAt)); err == nil && !time.Now().UTC().Before(expiresAt) {
+			keyStatus = accountStatusActive
+		}
+	}
 	switch {
-	case normalizeStatusDefault(c.keyStatus) != accountStatusActive:
-		return authPolicyError{status: http.StatusForbidden, code: statusAuthCode("key", normalizeStatusDefault(c.keyStatus))}
+	case keyStatus != accountStatusActive:
+		return authPolicyError{status: http.StatusForbidden, code: statusAuthCode("key", keyStatus)}
 	case normalizeStatusDefault(c.ownerUserStatus) != accountStatusActive:
 		return authPolicyError{status: http.StatusForbidden, code: statusAuthCode("user", normalizeStatusDefault(c.ownerUserStatus))}
 	case normalizeStatusDefault(c.projectStatus) != accountStatusActive:
@@ -2831,7 +2828,10 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 			ContractReason:  defaultString(contractResult.reason, "contract-quality-floor"),
 		}
 	}
-	strategy := strings.ToLower(group.Strategy)
+	strategy := normalizeModelStrategy(group.Strategy)
+	if strategy == "" {
+		return decision{}, fmt.Errorf("unknown strategy %s", strings.ToLower(strings.TrimSpace(group.Strategy)))
+	}
 	var label *string
 	switch strategy {
 	case "static", "failover":
@@ -2892,19 +2892,6 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 		targets = s.orderToolAwareTargets(groupName, group.ToolRouting, targets, len(req.Tools) > 0)
 	case "dynamic_score":
 		return s.pickDynamicScore(rc, groupName, group, req, callerDialect, caller, targets)
-	case "script":
-		strat := s.scripts[groupName]
-		if strat == nil {
-			err := fmt.Errorf("script strategy %s not loaded", groupName)
-			return decision{}, policyFailure(groupName, "script", "typescript", "load_error", err, 0, len(targets), len(group.Targets))
-		}
-		start := time.Now()
-		dec, err := strat.Pick(requestContextOrBackground(rc), groupName, req, group.Contract, targets, s.cfg.Provider, caller, tokenID)
-		if err != nil {
-			return decision{}, policyFailure(groupName, "script", "typescript", "", err, time.Since(start).Milliseconds(), len(targets), len(group.Targets))
-		}
-		dec.DynamicScoreTerms = append(dec.DynamicScoreTerms, policyOutputRankingTelemetry(dec.Strategy, dec.Target, dec.Fallbacks, s.cfg.Provider)...)
-		return dec, nil
 	case "external":
 		strat := s.externalPolicies[groupName]
 		if strat == nil {
@@ -2950,20 +2937,6 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 		label = safePolicyClassLabel(*label)
 	}
 	return decision{Target: targets[0], Fallbacks: targets[1:], ClassLabel: label, Strategy: strategy, GroupName: groupName, DynamicScoreTerms: simpleStrategyRankingTelemetry(strategy, targets, s.cfg.Provider)}, nil
-}
-
-func (s *Service) loadScripts() error {
-	for name, group := range s.cfg.Models {
-		if !strings.EqualFold(group.Strategy, "script") {
-			continue
-		}
-		strat, err := loadScriptStrategy(s.cfg.baseDir, group.Script, group.ScriptMaxConcurrent, group.ScriptHTTP)
-		if err != nil {
-			return fmt.Errorf("load script for model group %s: %w", name, err)
-		}
-		s.scripts[name] = strat
-	}
-	return nil
 }
 
 func (s *Service) loadExternalPolicies() {
