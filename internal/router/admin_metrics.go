@@ -61,17 +61,27 @@ var adminDurationBucketsMS = []float64{5, 10, 25, 50, 100, 250, 500, 1000, 2500,
 const adminDurationBucketCount = 10
 
 type adminMetricsStore struct {
-	mu           sync.Mutex
-	requests     map[adminMetricKey]*adminMetricValues
-	durations    map[string]*adminDurationValues
-	denials      map[adminDenialKey]int64
-	rateLimited  map[string]int64
-	authOutcomes map[adminAuthKey]int64
-	replays      map[string]int64
-	auditFailurs map[string]int64
+	mu                       sync.Mutex
+	requests                 map[adminMetricKey]*adminMetricValues
+	durations                map[string]*adminDurationValues
+	denials                  map[adminDenialKey]int64
+	rateLimited              map[string]int64
+	authOutcomes             map[adminAuthKey]int64
+	replays                  map[string]int64
+	auditFailurs             map[string]int64
+	adminCredentialsExpiring int64
 	// policyGuardRefusals counts configuration/credential changes refused because
 	// they would leave no enabled normal policy administrator (cross-store guard).
 	policyGuardRefusals int64
+}
+
+func (m *adminMetricsStore) SetAdminCredentialsExpiring(count int64) {
+	if m == nil {
+		return
+	}
+	m.mu.Lock()
+	m.adminCredentialsExpiring = count
+	m.mu.Unlock()
 }
 
 func newAdminMetricsStore() *adminMetricsStore {
@@ -326,6 +336,12 @@ func (m *adminMetricsStore) Prometheus(freshness AdminFreshnessSource) string {
 	refusals := m.policyGuardRefusals
 	m.mu.Unlock()
 	fmt.Fprintf(&out, "router_admin_policy_guard_refusals_total %d\n", refusals)
+	m.mu.Lock()
+	credentialsExpiring := m.adminCredentialsExpiring
+	m.mu.Unlock()
+	out.WriteString("# HELP metrum_ai_router_admin_credentials_expiring_30d Active registered admin credentials expiring within 30 days.\n")
+	out.WriteString("# TYPE metrum_ai_router_admin_credentials_expiring_30d gauge\n")
+	fmt.Fprintf(&out, "metrum_ai_router_admin_credentials_expiring_30d %d\n", credentialsExpiring)
 	out.WriteString("# HELP router_admin_audit_write_failures_total Failed admin audit writes.\n")
 	out.WriteString("# TYPE router_admin_audit_write_failures_total counter\n")
 	for _, kind := range auditKeys {

@@ -201,6 +201,8 @@ type AdminCredentialEvent struct {
 	EventID      string
 	At           time.Time
 	Kind         string
+	ClientID     string
+	Actor        string
 	CredentialID string
 	Subject      string
 	Issuer       string

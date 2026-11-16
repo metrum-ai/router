@@ -4,6 +4,7 @@
 
 ### Added
 
+- Add machine-client registration, credential metadata and revocation, effective-grant access review, and expiring-credential warnings. Client credentials are checked against the shared control-plane store on authentication; credential secrets are not stored or returned.
 - Add nightly evaluation aggregation across the previous 30 runs, with expected-missing cells reported separately from gate failures.
 - Added a release checklist and a bounded package upgrade-and-rollback check.
 - Retain AI review findings by exact commit range and artifact digest, scope the review credential to the tag-only review environment, and attest the release manifests and review evidence.
@@ -38,6 +39,8 @@
 - Partition response-cache entries and vLLM prefix-cache salts by caller and project by default, add opt-in sharing inside a project, and forward stable salts only to explicitly configured vLLM providers. SGLang prefix-cache isolation is not supported in v5.0.0.
 
 ### Fixed
+
+- Bind client credential metadata to configured identities; enforce client status, expiry and revocation across replicas; refuse lifecycle writes that remove the last policy administrator; exclude expired and revoked bindings from access-review grants.
 
 - Roll back failed automatic suspensions so they release their action-cap slot; exempting a caller during config refresh releases an active automatic throttle before its TTL.
 - Migrate the API compatibility suite to Anthropic Python SDK 2.3.0 and test API-key and bearer authentication with separate clients.
@@ -125,6 +128,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | Migration id | Scope | Schema version | Change | Maintenance | Data job | Rollback class |
 | --- | --- | --- | --- | --- | --- | --- |
 | `2026111601` | `router-config` | 13 | remove v4 serving-port admin settings from stored configs | maintenance | none | `restore-required` |
+| `2026111605` | `router-config` | 16 | add admin client and credential registry; add client and actor lifecycle audit fields | online | none | `restore-required` |
 
 ### Fixed
 

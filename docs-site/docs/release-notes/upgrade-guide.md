@@ -962,3 +962,14 @@ can resume them before their TTL. Actions expire at their configured TTL.
 
 The OCSF 1.4.0 JSON Lines stream is disabled by default. To enable it, set `server.security.events.enabled`, choose stdout or file output, and optionally configure an HTTPS webhook with `webhook_allow_hosts` and a 32-byte-or-longer secret supplied through the environment. Webhook signatures cover the timestamp, a random nonce, and the exact body; receivers must enforce a timestamp window and reject nonce replay. Detector signals and failures use the configured detector ID and bounded signal metadata; evidence request IDs use the finding UID, capped at 256 characters. Containment events use Account Change Disable/Enable and include the target caller and acting principal. Database-backed changes to this config require a router restart. Firewall-hold (#891) and honeytoken (#884) source integrations follow when those PRs merge; keep #885 open until then. See [Security event stream](../security-governance/security-events) for full verification and queue behavior.
 The prompt-injection detector is an optional external example. It is off unless a detector is configured, and it receives no segment text unless its own `include_segments` list explicitly opts in. Prompts and user messages are never sent in v5.0.0.
+
+## v5.0.0 admin client identities
+
+The router-config control-plane schema 16 migration adds the admin client and credential-binding
+tables and extends credential lifecycle audit records with client ID and actor. Apply it with the
+packaged non-serving migration job before starting serving replicas; follow the backup, apply,
+verify, and status steps in [Data Migrations](https://github.com/metrum-ai/router/blob/main/docs/DATA_MIGRATIONS.md). Client endpoints return
+unavailable until the migration is applied. Bindings are checked against the active configured
+admin identity, including its subject and stable mTLS SAN or SPIFFE identity. Disabled/deleted
+clients and revoked/expired credentials lose access. Re-register replacement credentials to restore
+a disabled client; deleted IDs cannot be re-enabled, so create a new ID.

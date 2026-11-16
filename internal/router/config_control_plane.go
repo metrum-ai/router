@@ -142,7 +142,7 @@ var configControlPlaneMigrationDefinitions = []MigrationDefinition{
 
 func init() {
 	// Append the exported phase-6 definition after phase 5 so MaxSchema stays aligned.
-	configControlPlaneMigrationDefinitions = append(configControlPlaneMigrationDefinitions, ConfigControlPlanePhase6MigrationDefinition(), configCacheWriteMigration(), ConfigControlPlanePhase8MigrationDefinition(), ConfigControlPlanePhase9MigrationDefinition(), ConfigControlPlanePhase10MigrationDefinition(), ConfigControlPlanePhase11MigrationDefinition(), adminKeyMigrationDefinition(configControlPlanePhase11MigrationID, 12), v5AdminConfigCleanupMigration(), callerTokenMetadataMigrationDefinition(), callerTokenRevocationMigrationDefinition(), adminOperationsMigrationDefinition())
+	configControlPlaneMigrationDefinitions = append(configControlPlaneMigrationDefinitions, ConfigControlPlanePhase6MigrationDefinition(), configCacheWriteMigration(), ConfigControlPlanePhase8MigrationDefinition(), ConfigControlPlanePhase9MigrationDefinition(), ConfigControlPlanePhase10MigrationDefinition(), ConfigControlPlanePhase11MigrationDefinition(), adminKeyMigrationDefinition(configControlPlanePhase11MigrationID, 12), v5AdminConfigCleanupMigration(), callerTokenMetadataMigrationDefinition(), callerTokenRevocationMigrationDefinition(), adminClientMigrationDefinition(callerTokenRevocationMigrationID, 16), adminOperationsMigrationDefinition())
 	for i := range configControlPlaneMigrationDefinitions {
 		configControlPlaneMigrationDefinitions[i] = FinalizeMigrationDefinition(configControlPlaneMigrationDefinitions[i])
 	}

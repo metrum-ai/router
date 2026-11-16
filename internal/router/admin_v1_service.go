@@ -106,6 +106,11 @@ func (s *Service) adminV1Handlers(registry *AdminV1Registry, policyMounted, keyS
 			handlers[key] = handler
 		}
 	}
+	if s != nil {
+		for key, handler := range s.adminClientHandlers() {
+			handlers[key] = handler
+		}
+	}
 	if !policyMounted || s.usage == nil {
 		return handlers
 	}
