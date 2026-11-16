@@ -33,6 +33,22 @@ remain valid with empty values. The migration is additive and is applied by the
 deployment migration job. See [router configuration](../configuration/router-config#request-trace-correlation)
 for trust boundaries and examples.
 
+## v5.0.0 tool-routing usage fields
+
+Usage schema 20 adds six scalar fields to `request_usage` for tool calls, first
+failure class, retries, escalations, per-request reliability outcome, and its
+source. Existing rows keep empty/default values. The migration is additive,
+online, and applied by the deployment migration job. Raw tool arguments,
+schemas, and outputs are not stored. The reliability source records the evidence
+that affected ordering (`compat-suite` or `live`); it reports `live` for observed
+outcomes when no scored evidence changed the order. The compatibility matrix
+currently has no provider/model-attributed failure counts, so its version 1 seed
+is empty, routing starts neutral, and observed usage supplies live counts. To
+load a future seed, add provider/model-attributed failure counts and matrix cell
+links to the versioned seed manifest, then validate it with the existing seed
+loader tests. Binary rollback across this schema requires restoring a compatible
+pre-upgrade usage database backup; package rollback does not reverse the migration.
+
 ## Security hardening
 
 Review the [Router Hardening Guide](../security-governance/hardening), [Threat Summary](../security-governance/threat-model-v5), and [Compromise Runbook](../security-governance/compromise-runbook) before production rollout. These docs use existing v5.0.0 settings; no config migration is required.

@@ -8,10 +8,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func sequenceUpstream(t *testing.T, responses ...string) *httptest.Server {
@@ -109,6 +111,91 @@ func TestEnforceRetriesSameTargetAndDeliversTheValidCall(t *testing.T) {
 	}
 	if record["attempts"].(float64) != 2 {
 		t.Fatalf("request attempts=%v, want 2", record["attempts"])
+	}
+}
+
+func TestEnforceToolUsagePersistsInRequestReportAndEvidence(t *testing.T) {
+	upstream := sequenceUpstream(t, chatToolCallBody(t, `{"path":`), chatToolCallBody(t, `{"path":"notes.txt"}`))
+	defer upstream.Close()
+	dir := t.TempDir()
+	cfg := enforceConfig(t, upstream.URL, dir, 1, 0, 1)
+	hash := mustBcryptHash(t, "yell-yell-yum")
+	t.Setenv("SMART_ROUTER_ADMIN_PASSWORD_HASH_TEST", hash)
+	cfg.Server.AdminAuth.Basic = AdminBasicAuthConfig{Enabled: true, AllowInsecureHTTP: true, Users: []AdminBasicAuthUser{{
+		Username: "admin", PasswordHashEnv: "SMART_ROUTER_ADMIN_PASSWORD_HASH_TEST", Subject: "basic:admin", Domain: "metrum-insights/test",
+	}}}
+	cfg.Server.AdminAuth.Authorization = AdminAuthorizationConfig{Enabled: true, Policy: []string{"p, basic:admin, metrum-insights/test, admin:reports, read|export|drilldown"}}
+	cfg.Server.AdminReports = AdminReportsConfig{Enabled: true, DefaultSince: "24h", MaxRange: "31d", MaxRows: 100}
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	response := serveToolRouting(t, svc, "agent-tools")
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	requestID := response.Header().Get("X-Request-Id")
+	if requestID == "" {
+		t.Fatal("request ID missing")
+	}
+	flushUsageForTest(t, svc)
+	var persisted usageRecord
+	if err := svc.usage.db.Where("request_id = ?", requestID).First(&persisted).Error; err != nil {
+		t.Fatal(err)
+	}
+	if persisted.ToolCallCount != 2 || persisted.ToolFirstFailureClass != toolFailureInvalidJSON || persisted.ToolRetries != 1 || persisted.ToolReliabilityBucket != "valid" || persisted.ToolReliabilitySource != "live" {
+		t.Fatalf("tool usage row=%+v", persisted)
+	}
+
+	requests := httptest.NewRequest(http.MethodGet, "/admin/reports/api/requests?since=1h", nil)
+	requests.SetBasicAuth("admin", "yell-yell-yum")
+	requestsResponse := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(requestsResponse, requests)
+	if requestsResponse.Code != http.StatusOK {
+		t.Fatalf("requests status=%d body=%s", requestsResponse.Code, requestsResponse.Body.String())
+	}
+	requestReport := mustJSONMap(t, requestsResponse.Body.String())
+	rows, ok := requestReport["requests"].([]any)
+	if !ok {
+		t.Fatalf("request report has no requests array: %#v", requestReport)
+	}
+	var found map[string]any
+	for _, raw := range rows {
+		row := raw.(map[string]any)
+		if row["requestId"] == requestID {
+			found = row
+			break
+		}
+	}
+	if found == nil || found["toolCallCount"] != float64(2) || found["toolFirstFailureClass"] != toolFailureInvalidJSON || found["toolRetries"] != float64(1) || found["toolReliabilityBucket"] != "valid" || found["toolReliabilitySource"] != "live" {
+		t.Fatalf("tool request report row=%#v response=%s", found, requestsResponse.Body.String())
+	}
+
+	evidence := httptest.NewRequest(http.MethodGet, "/admin/reports/api/request-evidence?request_id="+requestID, nil)
+	evidence.SetBasicAuth("admin", "yell-yell-yum")
+	evidenceResponse := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(evidenceResponse, evidence)
+	if evidenceResponse.Code != http.StatusOK {
+		t.Fatalf("evidence status=%d body=%s", evidenceResponse.Code, evidenceResponse.Body.String())
+	}
+	evidenceBundle := mustJSONMap(t, evidenceResponse.Body.String())["evidenceBundle"].(map[string]any)
+	toolEvidence := evidenceBundle["toolRouting"].(map[string]any)
+	if toolEvidence["calls"] != float64(2) || toolEvidence["firstFailureClass"] != toolFailureInvalidJSON || toolEvidence["retries"] != float64(1) || toolEvidence["reliabilitySource"] != "live" {
+		t.Fatalf("tool evidence=%#v", toolEvidence)
+	}
+	logBytes, err := os.ReadFile(filepath.Join(dir, "requests.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for label, body := range map[string]string{
+		"request report":  requestsResponse.Body.String(),
+		"evidence report": evidenceResponse.Body.String(),
+		"request log":     string(logBytes),
+	} {
+		if strings.Contains(body, "notes.txt") || (label != "request log" && strings.Contains(body, "read_file")) {
+			t.Fatalf("tool schema or arguments leaked in %s: %s", label, body)
+		}
 	}
 }
 
@@ -280,6 +367,100 @@ func TestRecoveryRetriesTheFallbackThatServedTheResponse(t *testing.T) {
 	}
 	if third["selected"] != true {
 		t.Fatalf("retried attempt must be selected: %#v", third)
+	}
+}
+
+func TestEnforceEscalationCountIncludesSuccessfulRecovery(t *testing.T) {
+	upstream := sequenceUpstream(t, chatToolCallBody(t, `{`), chatToolCallBody(t, `{"path":"notes.txt"}`))
+	defer upstream.Close()
+	dir := t.TempDir()
+	cfg := enforceConfig(t, upstream.URL, dir, 0, 1, 2)
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := serveToolRouting(t, svc, "agent-tools")
+	if response.Code != http.StatusOK {
+		svc.Close()
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	flushUsageForTest(t, svc)
+	var persisted usageRecord
+	if err := svc.usage.db.Where("request_id = ?", response.Header().Get("X-Request-Id")).First(&persisted).Error; err != nil {
+		svc.Close()
+		t.Fatal(err)
+	}
+	svc.Close()
+	if persisted.ToolEscalations != 1 || persisted.ToolRetries != 0 || persisted.ToolReliabilityBucket != "valid" {
+		t.Fatalf("usage row must record successful escalation: %+v", persisted)
+	}
+}
+
+func TestFailedAndTimedOutRecoveryRetriesRemainInUsage(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		timeout bool
+	}{
+		{name: "upstream failure"},
+		{name: "timeout", timeout: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var mu sync.Mutex
+			calls := 0
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mu.Lock()
+				calls++
+				call := calls
+				mu.Unlock()
+				if call == 1 {
+					_, _ = w.Write([]byte(chatToolCallBody(t, `{`)))
+					return
+				}
+				if tc.timeout {
+					select {
+					case <-r.Context().Done():
+					case <-time.After(500 * time.Millisecond):
+					}
+					return
+				}
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte(`{"error":"failed recovery"}`))
+			}))
+			defer upstream.Close()
+			dir := t.TempDir()
+			cfg := enforceConfig(t, upstream.URL, dir, 1, 0, 1)
+			if tc.timeout {
+				group := cfg.Models["agent-tools"]
+				group.AttemptTimeoutMS = 100
+				cfg.Models["agent-tools"] = group
+			}
+			svc, err := New(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			response := serveToolRouting(t, svc, "agent-tools")
+			if response.Code != http.StatusOK {
+				svc.Close()
+				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+			flushUsageForTest(t, svc)
+			var persisted usageRecord
+			if err := svc.usage.db.Where("request_id = ?", response.Header().Get("X-Request-Id")).First(&persisted).Error; err != nil {
+				svc.Close()
+				t.Fatal(err)
+			}
+			svc.Close()
+			if persisted.ToolRetries != 1 || persisted.ToolCallCount != 1 {
+				t.Fatalf("failed recovery retry must be counted without fabricated tool calls: %+v", persisted)
+			}
+			if tc.timeout {
+				logRecord := readToolRoutingLog(t, filepath.Join(dir, "requests.jsonl"))
+				attempts, _ := logRecord["attempts_detail"].([]any)
+				if len(attempts) != 2 || attempts[1].(map[string]any)["timed_out"] != true {
+					t.Fatalf("recovery timeout was not recorded: %#v", attempts)
+				}
+			}
+		})
 	}
 }
 

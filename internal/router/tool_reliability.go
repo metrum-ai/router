@@ -16,8 +16,9 @@ import (
 // hot target costs the same as a cold one. State is process-local, exactly like
 // dynamic-score observations, and is rebuilt from the window after a restart.
 type toolReliabilityStore struct {
-	mu      sync.Mutex
-	records map[string]toolReliabilityCounters
+	mu          sync.Mutex
+	records     map[string]toolReliabilityCounters
+	seedRecords map[string]toolReliabilitySeedTarget
 }
 
 type toolReliabilityCounters struct {
@@ -37,10 +38,15 @@ type toolReliabilityScore struct {
 	Calls   int
 	Valid   int
 	Invalid int
+	Source  string
 }
 
-func newToolReliabilityStore() *toolReliabilityStore {
-	return &toolReliabilityStore{records: map[string]toolReliabilityCounters{}}
+func newToolReliabilityStore(seed ...toolReliabilitySeedTarget) *toolReliabilityStore {
+	store := &toolReliabilityStore{records: map[string]toolReliabilityCounters{}, seedRecords: map[string]toolReliabilitySeedTarget{}}
+	for _, target := range seed {
+		store.seedRecords[toolReliabilityKey(target.Group, target.Provider, target.Model)] = target
+	}
+	return store
 }
 
 func toolReliabilityKey(groupName, provider, model string) string {
@@ -113,6 +119,33 @@ func (s *toolReliabilityStore) score(key string, window time.Duration, now time.
 		Calls:   record.Calls,
 		Valid:   record.Valid,
 		Invalid: record.Invalid,
+		Source:  "live",
+	}
+}
+
+// routingScore uses live request observations once they meet minSamples. Until
+// then, it may use a separately stored compat-suite seed. The two sources are
+// never added together; an empty seed leaves the router in its neutral order.
+func (s *toolReliabilityStore) routingScore(key string, minSamples int, window time.Duration, now time.Time) toolReliabilityScore {
+	live := s.score(key, window, now)
+	if live.Valid+live.Invalid >= minSamples {
+		return live
+	}
+	if s == nil {
+		return live
+	}
+	s.mu.Lock()
+	seed, ok := s.seedRecords[key]
+	s.mu.Unlock()
+	if !ok || seed.Valid+seed.Invalid < minSamples {
+		return live
+	}
+	return toolReliabilityScore{
+		Score:   wilsonLowerBound(seed.Valid, seed.Valid+seed.Invalid),
+		Calls:   seed.Valid + seed.Invalid,
+		Valid:   seed.Valid,
+		Invalid: seed.Invalid,
+		Source:  compatibilityToolReliabilitySeedSource,
 	}
 }
 
@@ -164,8 +197,13 @@ func wilsonLowerBound(successes, total int) float64 {
 // A target without enough samples keeps its configured position: the score is
 // only trusted after min_samples outcomes in the window.
 func (s *Service) orderToolAwareTargets(groupName string, cfg ToolRoutingConfig, targets []Target, hasTools bool) []Target {
+	ordered, _ := s.orderToolAwareTargetsWithSource(groupName, cfg, targets, hasTools)
+	return ordered
+}
+
+func (s *Service) orderToolAwareTargetsWithSource(groupName string, cfg ToolRoutingConfig, targets []Target, hasTools bool) ([]Target, string) {
 	if s == nil || s.toolReliability == nil || !hasTools {
-		return append([]Target(nil), targets...)
+		return append([]Target(nil), targets...), ""
 	}
 	minSamples := cfg.minSamples()
 	window := toolReliabilityWindow(cfg)
@@ -178,7 +216,7 @@ func (s *Service) orderToolAwareTargets(groupName string, cfg ToolRoutingConfig,
 	}
 	rankedTargets := make([]ranked, 0, len(targets))
 	for index, target := range targets {
-		score := s.toolReliability.score(toolReliabilityKey(groupName, target.Provider, target.Model), window, now)
+		score := s.toolReliability.routingScore(toolReliabilityKey(groupName, target.Provider, target.Model), minSamples, window, now)
 		rankedTargets = append(
 			rankedTargets,
 			ranked{target: target, score: score, ready: score.Valid+score.Invalid >= minSamples, index: index},
@@ -192,7 +230,7 @@ func (s *Service) orderToolAwareTargets(groupName string, cfg ToolRoutingConfig,
 	}
 	if ready < 2 {
 		// Cold start, or only one target with evidence: nothing to reorder.
-		return append([]Target(nil), targets...)
+		return append([]Target(nil), targets...), ""
 	}
 	sort.SliceStable(rankedTargets, func(i, j int) bool {
 		left, right := rankedTargets[i], rankedTargets[j]
@@ -211,5 +249,5 @@ func (s *Service) orderToolAwareTargets(groupName string, cfg ToolRoutingConfig,
 	for _, candidate := range rankedTargets {
 		out = append(out, candidate.target)
 	}
-	return out
+	return out, rankedTargets[0].score.Source
 }

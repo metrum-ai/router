@@ -23,9 +23,6 @@ func clearTraceCorrelationMigrationLedger(t *testing.T, db *gorm.DB) {
 
 func clearMissionAttributionMigrationLedger(t *testing.T, db *gorm.DB) {
 	t.Helper()
-	// These additive columns remain valid on the schema 17 shape; only remove
-	// their ledger entries so this test can exercise the intervening schema 18
-	// migration on the real current model.
 	if err := db.Where("scope = ? AND migration_id = ?", usageMigrationScope, usageMissionAttributionMigrationID).Delete(&migrationAttemptRecord{}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +31,7 @@ func clearMissionAttributionMigrationLedger(t *testing.T, db *gorm.DB) {
 	}
 }
 
-func TestTraceCorrelationSchema18SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) {
+func TestTraceCorrelationSchema20SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) {
 	cfg := uncachedSQLiteUsageDBConfigForTest(filepath.Join(t.TempDir(), "usage.sqlite"))
 	store, err := OpenUsageStore(cfg)
 	if err != nil {
@@ -43,11 +40,17 @@ func TestTraceCorrelationSchema18SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) 
 	if err := store.db.Create(recordFromRow(rowFromRecord(logRecord{RequestID: "legacy-trace-row", TS: time.Now().UTC().Format(time.RFC3339)}))).Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := revertToolRoutingUsageMigration(store.db); err != nil {
+		t.Fatal(err)
+	}
+	clearToolRoutingUsageLedger(t, store.db)
 	clearMissionAttributionMigrationLedger(t, store.db)
 	if err := revertTraceCorrelationMigration(store.db); err != nil {
 		t.Fatal(err)
 	}
 	clearTraceCorrelationMigrationLedger(t, store.db)
+	// Mission attribution columns remain harmless on this older ledger shape;
+	// clearing its ledger lets this test cover the trace and tool migrations.
 	if err := verifySecurityPostureReportMigration(store.db); err != nil {
 		t.Fatalf("schema 17 postcondition: %v", err)
 	}
@@ -64,30 +67,33 @@ func TestTraceCorrelationSchema18SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) 
 	if err != nil || before.SchemaVersion != 17 {
 		t.Fatalf("before: %+v err=%v", before, err)
 	}
-	if err := runner.ApplyPending("trace-correlation-schema-test"); err != nil {
+	if err := runner.ApplyPending("trace-and-tool-routing-schema-test"); err != nil {
 		t.Fatal(err)
 	}
 	if err := verifyTraceCorrelationMigration(runner.db); err != nil {
 		t.Fatal(err)
 	}
+	if err := verifyToolRoutingUsageMigration(runner.db); err != nil {
+		t.Fatal(err)
+	}
 	status, err := runner.Status()
-	if err != nil || status.SchemaVersion != currentUsageSchemaVersion() || !status.Compatible {
+	if err != nil || status.SchemaVersion != currentUsageSchemaVersion() || status.SchemaVersion != 20 || !status.Compatible {
 		t.Fatalf("after: %+v err=%v", status, err)
 	}
 	var legacy usageRecord
-	if err := runner.db.First(&legacy, "request_id = ?", "legacy-trace-row").Error; err != nil || legacy.TraceID != "" || legacy.SpanID != "" || legacy.ParentSpanID != "" {
+	if err := runner.db.First(&legacy, "request_id = ?", "legacy-trace-row").Error; err != nil || legacy.TraceID != "" || legacy.SpanID != "" || legacy.ParentSpanID != "" || legacy.ToolCallCount != 0 {
 		t.Fatalf("legacy row=%+v err=%v", legacy, err)
 	}
-	row := recordFromRow(rowFromRecord(logRecord{RequestID: "traced-row", TS: time.Now().UTC().Format(time.RFC3339), TraceID: "4bf92f3577b34da6a3ce929d0e0e4736", SpanID: "a1b2c3d4e5f60718", ParentSpanID: "00f067aa0ba902b7"}))
+	row := recordFromRow(rowFromRecord(logRecord{RequestID: "traced-row", TS: time.Now().UTC().Format(time.RFC3339), TraceID: "4bf92f3577b34da6a3ce929d0e0e4736", SpanID: "a1b2c3d4e5f60718", ParentSpanID: "00f067aa0ba902b7", AttemptsDetail: []attemptLogRecord{{Selected: true, ToolValidation: &toolValidationLogRecord{Calls: 1, Valid: 1, Action: "observed"}}}}))
 	if err := runner.db.Create(row).Error; err != nil {
 		t.Fatal(err)
 	}
 	var got usageRecord
-	if err := runner.db.First(&got, "request_id = ?", "traced-row").Error; err != nil || got.TraceID != row.TraceID || got.SpanID != row.SpanID || got.ParentSpanID != row.ParentSpanID {
-		t.Fatalf("trace row=%+v want=%+v err=%v", got, row, err)
+	if err := runner.db.First(&got, "request_id = ?", "traced-row").Error; err != nil || got.TraceID != row.TraceID || got.SpanID != row.SpanID || got.ParentSpanID != row.ParentSpanID || got.ToolCallCount != 1 {
+		t.Fatalf("trace/tool row=%+v want=%+v err=%v", got, row, err)
 	}
 
-	previousDefinitions := make([]MigrationDefinition, 0, len(usageMigrationDefinitions)-1)
+	previousDefinitions := make([]MigrationDefinition, 0, len(usageMigrationDefinitions))
 	for _, definition := range usageMigrationDefinitions {
 		if definition.SchemaVersion <= 17 {
 			previousDefinitions = append(previousDefinitions, definition)
@@ -101,6 +107,10 @@ func TestTraceCorrelationSchema18SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) 
 	if err != nil || oldStatus.Compatible || oldStatus.State != "incompatible" {
 		t.Fatalf("schema 17 binary should reject the upgraded schema: %+v err=%v", oldStatus, err)
 	}
+	if err := revertToolRoutingUsageMigration(runner.db); err != nil {
+		t.Fatal(err)
+	}
+	clearToolRoutingUsageLedger(t, runner.db)
 	clearMissionAttributionMigrationLedger(t, runner.db)
 	if err := revertTraceCorrelationMigration(runner.db); err != nil {
 		t.Fatal(err)
