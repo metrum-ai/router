@@ -17,7 +17,7 @@ For admin authentication, admin authorization, and PII filtering, see the canoni
 
 The top-level config shape is:
 
-- `admin`: the opt-in admin control-plane listener (`/admin/v1`), its TLS and client-certificate material, hardening limits, the legacy-route flag and the `/metrics` placement. See [Admin Listener](./admin-listener).
+- `admin`: the admin control-plane listener (`/admin/v1`), enabled by default at `127.0.0.1:8081`, its TLS and client-certificate material, hardening limits, and `/metrics` placement. See [Admin Listener](./admin-listener). The v4 `legacy_routes_on_serving_port` and `legacy_sunset` keys were removed in v5.0.0.
 - `server`: listener, default model group, cache, logging, usage persistence, license enforcement, decision telemetry, upstream timeouts, diagnostics, traffic shaping, admin auth, content capture, retention, and admin reports.
 - `state_path`: local router state path.
 - `providers`: upstream provider skins, credentials, model catalog metadata, capability metadata, pricing metadata, and shared provider traffic shaping.

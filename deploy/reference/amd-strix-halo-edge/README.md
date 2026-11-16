@@ -5,7 +5,7 @@
 
 One Strix Halo mini-workstation (Ryzen AI MAX+ 395, 128 GB unified memory)
 serving a small always-resident model and a 30B-class sparse model on the
-official ROCm vLLM image, with the router in front and an escalation group for
+official upstream vLLM ROCm image, with the router in front and an escalation group for
 work that should not stay on the desk.
 
 ## Hardware
@@ -15,10 +15,10 @@ work that should not stay on the desk.
 | System | 1× AMD Ryzen AI MAX+ 395 (Strix Halo, gfx1151, RDNA 3.5) with 128 GB unified LPDDR5X |
 | GPU memory window | `amdgpu` GTT window large enough for ~110 GB (see `SIZING.md`); BIOS/firmware with a small VRAM carve-out and the rest reachable through GTT |
 | Disk | ≥ 150 GB free for the checkpoint download, the image and the weight cache (`hf-cache` volume) |
-| Driver | `amdgpu` kernel driver with ROCm 7.x userspace for gfx1151; `/dev/kfd` and `/dev/dri` present |
+| Driver | `amdgpu` kernel driver compatible with the container's ROCm runtime for gfx1151; `/dev/kfd` and `/dev/dri` present |
 | Runtime | Docker Engine 27+ and Compose v2; the container gets `/dev/kfd`, `/dev/dri`, and the `video` and `render` groups |
 | Network | Outbound HTTPS to `huggingface.co` and the escalation endpoint; inbound only to the router port |
-| OS | Tested target: Ubuntu 24.04 LTS with ROCm 7.13 userspace |
+| OS | Target: Ubuntu 24.04 LTS; the container supplies its ROCm userspace |
 | Power | Mini-workstation envelope; no datacenter cooling or PDU work |
 
 Bill of materials: the Strix Halo mini-workstation (128 GB configuration — the
@@ -28,12 +28,12 @@ Bill of materials: the Strix Halo mini-workstation (128 GB configuration — the
 
 | Role | Image | Digest |
 |---|---|---|
-| Model server (both slots) | `rocm/vllm:rocm7.13.0_gfx1151_ubuntu24.04_py3.13_pytorch_2.10.0_vllm_0.19.1` | `sha256:394194d36edcf9b36bcb563e143b21b80e64e7d04f33a447b448c0c0c00c04a8` |
+| Model server (both slots) | `vllm/vllm-openai-rocm:v0.33.0` | `sha256:4fcd39b758b660c4e9c345c021e2ea8f0ccdb31e3c32507d676cc3005ae83fba` |
 | Router | operator-supplied `metrum-ai-router:<version>-linux-amd64` | digest of the release you deploy |
 
-The tag names gfx1151, so the pin cannot resolve to a build for another GPU
-family. It carries vLLM 0.19.1, which is older than the NVIDIA tier's pin; see
-Limits.
+The official upstream image carries vLLM 0.33.0 and is outside the affected
+range of GHSA-v97p-wpxp-px84. The pin moved from v0.25.0 for security
+advisories; hardware revalidation on v0.33.0 is pending.
 
 | Slot | Model | Revision |
 |---|---|---|
@@ -65,8 +65,7 @@ cp config.yaml config/config.yaml
 # The runtime image runs as uid/gid 65532, so the directories it writes must
 # belong to that identity (see DOCKER_COMPOSE_INSTALL.md).
 sudo chown -R 65532:65532 config state logs
-# The pinned ROCm image has no `render` group in its /etc/group, so the container
-# needs the numeric host GIDs of the device nodes rather than group names.
+# Numeric host GIDs keep device access aligned with the host device-node owners.
 export RENDER_GID="$(stat -c %g /dev/dri/renderD128)"
 export VIDEO_GID="$(stat -c %g /dev/dri/card0)"
 
@@ -144,8 +143,10 @@ direct-lane baseline; nothing but the router listens on a non-loopback address.
 ## Measured results
 
 **One hardware run so far, at commit `dd1d5aad` (before the edge bundle's container-listen
-fix, which this tier does not use).** The functional suite passed 8/0/2 (8 pass, 0 fail,
-2 skipped) on the Strix Halo box. The concurrency sweep did **not** reach the 8 s target on
+fix, which this tier does not use).** That run used image v0.25.0. The checked-in pin moved
+to v0.33.0 for security advisories; hardware revalidation on v0.33.0 is pending. The
+functional suite passed 8/0/2 (8 pass, 0 fail, 2 skipped) on the Strix Halo box. The
+concurrency sweep did **not** reach the 8 s target on
 this profile: the default `local-chat` sweep sustained **0 workers at the 8 s target**, and
 a single worker measured **p95 9 494 ms through the router against 9 492 ms direct** — a
 2 ms difference, so the miss is the model-server profile and the hardware, not routing
@@ -180,8 +181,7 @@ outstanding. No cost is claimed before it is known.
 
 ## Limits
 
-- The pinned ROCm image carries vLLM 0.19.1 while the NVIDIA tier pins 0.33.0;
-  feature differences between those versions apply here.
+- The vLLM 0.33.0 image pin moved for security advisories. Hardware revalidation on this image is pending.
 - BF16 only: gfx1151 does not have the FP8 path this configuration would need for
   a second 30B-class slot, so there is no `local-coder` group.
 - Unified memory is shared with the desktop and the CPU. A box also used for
@@ -197,6 +197,7 @@ outstanding. No cost is claimed before it is known.
 - Anthropic Messages inbound to the local groups is not declared for these models
   (no `request_shape_support` evidence), so Claude-Code-style clients are out of
   scope until that is validated on this box.
+- The vLLM 0.33.0 image has not been revalidated on this box yet.
 - Digest pins were resolved on the date in `images.lock` and are not updated
   automatically.
 

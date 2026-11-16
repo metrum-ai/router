@@ -10,15 +10,13 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Defaults for the admin control plane (ACP-001, ACP-002, ACP-007, ACP-N02).
-// An absent or disabled admin block keeps the v4.7 surface untouched: no
-// second listener, legacy /admin/* on the serving port, /metrics on the
-// serving port.
 const (
 	defaultAdminListenAddr          = "127.0.0.1:8081"
-	defaultAdminLegacySunset        = "2027-03-01T00:00:00Z"
 	defaultAdminMaxBodyBytes        = 1 << 20 // 1 MiB
 	defaultAdminMaxHeaderBytes      = 64 << 10
 	defaultAdminReadHeaderTimeoutMS = 5000
@@ -36,22 +34,17 @@ const (
 	adminTLSMinVersion13            = "1.3"
 	adminCertificateSourceFiles     = "files"
 	adminCertificateSourceACME      = "acme"
-	// adminLegacySunsetFloor is the earliest Sunset date a v4.8.0 deployment
-	// may advertise: the v4.8.0 release date plus the 90-day minimum the epic
-	// requires before legacy removal in v5.0.0.
-	adminLegacySunsetFloor = "2027-02-18T00:00:00Z"
 )
 
 // AdminPlaneConfig is the top-level `admin:` block: the control plane's own
 // listener (ACP-001), its TLS and client-certificate material (ACP-002/003),
-// hardening limits (ACP-N02), the legacy-route flag (ACP-009) and the
-// /metrics placement flag (ACP-007).
+// hardening limits (ACP-N02) and the /metrics placement flag (ACP-007).
 //
-// The block is opt-in: an absent block is exactly v4.7 behaviour. Enabling it
-// adds a listener and moves /metrics to it by default; the serving port keeps
+// File configuration enables the listener by default. The serving port keeps
 // the human reports UI it already serves.
 type AdminPlaneConfig struct {
-	Enabled bool `yaml:"enabled" json:"enabled"`
+	Enabled    bool `yaml:"enabled" json:"enabled"`
+	enabledSet bool
 	// Listen is the admin listener address. Loopback by default; remote
 	// binding is an explicit opt-in that also needs TLS or the plaintext
 	// override below.
@@ -59,12 +52,6 @@ type AdminPlaneConfig struct {
 	// AllowPlaintextNonLoopback permits a non-loopback bind without TLS. It
 	// exists for controlled test networks and logs a startup warning.
 	AllowPlaintextNonLoopback bool `yaml:"allow_plaintext_non_loopback" json:"allowPlaintextNonLoopback"`
-	// LegacyRoutesOnServingPort keeps the legacy machine admin routes on the
-	// serving port (ACP-009). Default true in v4.8.0. It never covers the
-	// human reports UI, which is not part of the control plane.
-	LegacyRoutesOnServingPort *bool `yaml:"legacy_routes_on_serving_port" json:"legacyRoutesOnServingPort,omitempty"`
-	// LegacySunset is the Sunset header value advertised on legacy routes.
-	LegacySunset string `yaml:"legacy_sunset" json:"legacySunset,omitempty"`
 	// ExternalURL is the configured base URL of the admin plane. It is the
 	// only source of absolute request-URL construction (for example DPoP htu
 	// in #814); the listener never derives it from Host or Forwarded headers.
@@ -76,6 +63,28 @@ type AdminPlaneConfig struct {
 	// whole plane configures in one place, and consumes the client-CA material
 	// for TLS handshake verification.
 	Authentication AdminAuthenticationConfig `yaml:"authentication" json:"authentication"`
+}
+
+// UnmarshalYAML records whether enabled was present. A plain bool cannot
+// distinguish omission (which defaults on) from an explicit false, and this
+// config is decoded again during DB-backed writes, rollback, and shadow runs.
+func (c *AdminPlaneConfig) UnmarshalYAML(node *yaml.Node) error {
+	type plain AdminPlaneConfig
+	var decoded plain
+	if err := node.Decode(&decoded); err != nil {
+		return err
+	}
+	*c = AdminPlaneConfig(decoded)
+	c.enabledSet = false
+	if node.Kind == yaml.MappingNode {
+		for i := 0; i+1 < len(node.Content); i += 2 {
+			if node.Content[i].Value == "enabled" {
+				c.enabledSet = true
+				break
+			}
+		}
+	}
+	return nil
 }
 
 // AdminTLSConfig configures how the admin listener terminates TLS. The
@@ -138,15 +147,7 @@ func defaultAdminPlaneConfig(cfg *AdminPlaneConfig) {
 	if cfg == nil {
 		return
 	}
-	if cfg.LegacyRoutesOnServingPort == nil {
-		enabled := true
-		cfg.LegacyRoutesOnServingPort = &enabled
-	}
-	if strings.TrimSpace(cfg.LegacySunset) == "" {
-		cfg.LegacySunset = defaultAdminLegacySunset
-	}
-	// A disabled block keeps the v4.7 surface. Only enabled planes get listener
-	// defaults, so "block present but disabled" stays visibly a no-op.
+	// Only enabled planes get listener defaults.
 	if !cfg.Enabled {
 		return
 	}
@@ -185,17 +186,6 @@ func defaultAdminPlaneConfig(cfg *AdminPlaneConfig) {
 	}
 }
 
-// legacyRoutesEnabled reports whether the legacy machine admin routes stay on
-// the serving port. It is independent of Enabled: disabling the plane never
-// silently changes the serving-port surface (ACP-005), and enabling it never
-// forces the legacy routes off (ACP-009).
-func (c *AdminPlaneConfig) legacyRoutesEnabled() bool {
-	if c == nil || c.LegacyRoutesOnServingPort == nil {
-		return true
-	}
-	return *c.LegacyRoutesOnServingPort
-}
-
 // adminMetricsHandlerAvailable reports whether the admin listener serves
 // /metrics. The admin-side handler (admin identity with metrics read) is not
 // part of this release yet, so /metrics must stay on the serving port until it
@@ -216,17 +206,6 @@ func (c *AdminPlaneConfig) metricsOnServingPort() bool {
 		return *c.Metrics.OnServingPort
 	}
 	return !c.Enabled
-}
-
-func (c *AdminPlaneConfig) legacySunsetTime() time.Time {
-	if c == nil {
-		return time.Time{}
-	}
-	parsed, err := time.Parse(time.RFC3339, strings.TrimSpace(c.LegacySunset))
-	if err != nil {
-		return time.Time{}
-	}
-	return parsed.UTC()
 }
 
 func (c *AdminPlaneConfig) externalBaseURL() *url.URL {
@@ -357,16 +336,6 @@ func validateAdminPlane(cfg *AdminPlaneConfig) error {
 			return fmt.Errorf("admin.external_url must not contain userinfo, a query or a fragment")
 		}
 	}
-	if sunset := strings.TrimSpace(cfg.LegacySunset); sunset != "" {
-		parsed, err := time.Parse(time.RFC3339, sunset)
-		if err != nil {
-			return fmt.Errorf("admin.legacy_sunset must be an RFC3339 timestamp")
-		}
-		floor, _ := time.Parse(time.RFC3339, adminLegacySunsetFloor)
-		if parsed.Before(floor) {
-			return fmt.Errorf("admin.legacy_sunset must be on or after %s (v4.8.0 plus the 90-day minimum before legacy removal)", adminLegacySunsetFloor)
-		}
-	}
 	if _, err := prepareAdminMachineRuntimeSettings(cfg.Authentication, cfg.ExternalURL); err != nil {
 		return err
 	}
@@ -431,8 +400,7 @@ func validateAdminTrustedProxyCIDR(raw string) error {
 }
 
 // adminPlaneBlockLooksConfigured reports whether the operator set anything
-// beyond enabled/legacy_routes_on_serving_port, so a disabled block is visibly
-// a no-op instead of a silent surprise.
+// beyond enabled, so a disabled block is visibly a no-op.
 func adminPlaneBlockLooksConfigured(cfg *AdminPlaneConfig) bool {
 	listen := strings.TrimSpace(cfg.Listen)
 	return (listen != "" && listen != defaultAdminListenAddr) ||

@@ -5,6 +5,7 @@ uv run --with bcrypt --with jsonschema python local.py --binary /path/router --t
 All generated state, credentials and traces stay outside Git. Stops its router.
 """
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -52,14 +53,25 @@ def config(out, env):
     env['TRACE_ADMIN_USER'] = 'trace-admin'
     env['TRACE_ADMIN_PASSWORD'] = secrets.token_urlsafe(32)
     env['TRACE_ADMIN_HASH'] = bcrypt.hashpw(env['TRACE_ADMIN_PASSWORD'].encode(), bcrypt.gensalt()).decode()
-    return {'server': {'listen': '127.0.0.1:18410', 'default_model_group': 'support-agent',
+    env['TRACE_ADMIN_KEY'] = 'rtr_admin_trace-test_' + secrets.token_urlsafe(32)
+    salt = secrets.token_bytes(32)
+    derived = hashlib.pbkdf2_hmac('sha3_512', env['TRACE_ADMIN_KEY'].encode(), salt, 20000, dklen=64)
+    verifier = 'pbkdf2-sha3-512:i=20000:' + base64.urlsafe_b64encode(salt).rstrip(b'=').decode() + ':' + base64.urlsafe_b64encode(derived).rstrip(b'=').decode()
+    env['TRACE_ADMIN_KEY_HASH'] = verifier
+    return {'admin': {'enabled': True, 'listen': '127.0.0.1:18412'},
+        'server': {'listen': '127.0.0.1:18410', 'default_model_group': 'support-agent',
         'identifiers': {'mode': 'passthrough'}, 'cache': {'enabled': False},
         'logging': {'path': str(out / 'requests.jsonl')},
         'usage_db': {'enabled': True, 'driver': 'sqlite', 'path': str(out / 'usage.sqlite'), 'migration_policy': 'auto-safe'},
+        'admin_api': {'rate_limit': {'read_rps': 100, 'read_burst': 1000, 'write_rps': 100,
+                                     'write_burst': 1000, 'max_identities': 32}},
         'admin_reports': {'enabled': True, 'security': {'enabled': True, 'retention_days': 7}},
         'admin_auth': {'basic': {'enabled': True, 'allow_insecure_http': True,
              'users': [{'username': 'trace-admin', 'password_hash_env': 'TRACE_ADMIN_HASH', 'subject': 'basic:trace-admin', 'domain': '*'}]},
-             'authorization': {'enabled': True, 'policy': ['p, basic:trace-admin, *, content:training, export|label']}}},
+             'api_keys': [{'key_id': 'trace-test', 'key_hash_env': 'TRACE_ADMIN_KEY_HASH', 'domain': '*',
+                           'permissions': ['admin:training:export', 'admin:training:label']}],
+             'authorization': {'enabled': True, 'policy': ['p, basic:trace-admin, *, content:training, export|label',
+                                                           'p, adminkey:trace-test, *, content:training, export|label']}}},
         'state_path': str(out / 'state.json'),
         'providers': {'teacher': {'dialect': 'openai-chat', 'base_url': 'https://api.fireworks.ai/inference/v1',
                                  'api_key': '${FIREWORKS_API_KEY}', 'api_key_env': 'FIREWORKS_API_KEY'}},

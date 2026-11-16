@@ -31,7 +31,9 @@ import (
 	"time"
 
 	"github.com/metrum-ai/router/internal/buildinfo"
+	detect "github.com/metrum-ai/router/internal/security/detect"
 	"github.com/metrum-ai/router/internal/tlsacme"
+	"github.com/metrum-ai/router/pkg/detector"
 
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -102,22 +104,28 @@ type Service struct {
 	adminAuditSink       func(AdminAuditEvent)
 	// adminAuthorizeFn is the authorization seam the admin listener installs; the reports
 	// surface uses it so its per-domain decisions carry the request context.
-	adminAuthorizeFn   func(context.Context, Principal, string, string, string) error
-	adminIdempotency   atomic.Value
-	trafficShape       *trafficShapeManager
-	bridgeSessions     *bridgeSessionBackends
-	observations       *dynamicObservationStore
-	toolReliability    *toolReliabilityStore
-	affinity           *dynamicAffinityStore
-	responsesAffinity  *responsesAffinities
-	shaping            *upstreamShapeManager
-	providerSpend      *providerSpendBreaker
-	contentCaptureKeys contentCaptureKeyResolver
-	reportCursor       [32]byte
-	tlsManager         *tlsacme.Manager
-	configControlPlane *gorm.DB
-	configSnapshot     *ConfigSnapshot
-	configDBCloser     func() error
+	adminAuthorizeFn       func(context.Context, Principal, string, string, string) error
+	adminIdempotency       atomic.Value
+	trafficShape           *trafficShapeManager
+	bridgeSessions         *bridgeSessionBackends
+	observations           *dynamicObservationStore
+	toolReliability        *toolReliabilityStore
+	affinity               *dynamicAffinityStore
+	responsesAffinity      *responsesAffinities
+	detectorDispatcher     *detect.Dispatcher
+	detectors              []detectorRuntime
+	detectorMu             sync.RWMutex
+	detectorDropped        atomic.Uint64
+	detectorMetricsEnabled atomic.Bool
+	detectorResultConsumer func(detect.Result)
+	shaping                *upstreamShapeManager
+	providerSpend          *providerSpendBreaker
+	contentCaptureKeys     contentCaptureKeyResolver
+	reportCursor           [32]byte
+	tlsManager             *tlsacme.Manager
+	configControlPlane     *gorm.DB
+	configSnapshot         *ConfigSnapshot
+	configDBCloser         func() error
 	// adminAuditJanitorStop stops the retention purge jobs at shutdown, and
 	// adminAuditJanitorDone reports when each janitor goroutine has exited.
 	adminAuditJanitorStop chan struct{}
@@ -143,6 +151,7 @@ type Service struct {
 	adminCASource     AdminClientCASource
 	adminAuthMu       sync.Mutex
 	adminAuthenticate Authenticator
+	projectBudgets    *projectBudgetManager
 }
 
 // configLoadedState records which control-plane revision this replica
@@ -211,10 +220,12 @@ type requestContext struct {
 	bridgeSessionHeaders   map[string]string
 	via                    []string
 	securityRecorded       bool
+	securityReason         string
 	pacedUpstreamStream    bool
 	maxSSELineBytes        int
 	lineBufferBudget       *lineBufferBudget
 	chatStreamIncludeUsage bool
+	detectorTinyRequest    bool
 	traceSeq               int
 	// wrapStreamFrame binds opaque reasoning values in streamed frames (#622).
 	wrapStreamFrame func([]byte) []byte
@@ -234,6 +245,7 @@ type requestContext struct {
 	// affinityTerminal records the final lifecycle state of a streamed stored
 	// response, once its id has been captured.
 	affinityTerminal func(state string)
+	detectorSegments []detector.Segment
 }
 
 type upstreamError struct {
@@ -293,7 +305,7 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	tlsManager, err := NewListenerTLSManager(cfg.Server.TLS, tlsacme.ListenerServing, "server.tls")
+	tlsManager, err := NewListenerTLSManager(cfg.Server.TLS.ListenerTLSConfig, tlsacme.ListenerServing, "server.tls")
 	if err != nil {
 		return nil, err
 	}
@@ -379,6 +391,7 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		affinity:           newDynamicAffinityStore(),
 		shaping:            newUpstreamShapeManager(),
 		providerSpend:      newProviderSpendBreaker(),
+		projectBudgets:     newProjectBudgetManager(),
 		contentCaptureKeys: contentCaptureKeys,
 		configSnapshot:     NewConfigSnapshot(),
 		configInstanceID:   newConfigAdminInstanceID(),
@@ -445,7 +458,16 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		}
 	}
 	s.loadExternalPolicies()
-	s.callerAuth.rebuild(callerRuntimesInConfigOrder(cfg, quota.callers))
+	if err := s.initDetectors(); err != nil {
+		s.Close()
+		return nil, err
+	}
+	revokedCallerTokens, err := loadRevokedCallerTokenHashes(s.configControlPlane)
+	if err != nil {
+		s.Close()
+		return nil, fmt.Errorf("load revoked caller tokens: %w", err)
+	}
+	s.callerAuth.rebuild(callerRuntimesInConfigOrder(cfg, quota.callers), revokedCallerTokens)
 	for _, user := range cfg.Server.AdminAuth.Basic.Users {
 		subject := strings.TrimSpace(user.Subject)
 		if subject == "" {
@@ -493,6 +515,20 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 	}
 	s.routes()
 	s.initAdminPlane()
+	// Admin v1 is mounted only after machine auth has been initialized. A
+	// listener with no configured authenticator remains health-only and fails
+	// closed instead of making otherwise valid non-admin service configs fail
+	// during construction.
+	if s.adminPlaneEnabled() && s.AdminAuthenticator() != nil {
+		var mountErr error
+		s.RegisterAdminRoutes(func(m *AdminMux) {
+			mountErr = s.MountAdminV1(m, s.AdminAuthenticator(), s.Authorize)
+		})
+		if mountErr != nil {
+			s.Close()
+			return nil, fmt.Errorf("mount admin v1: %w", mountErr)
+		}
+	}
 	// Admin audit retention runs once per database that holds admin audit tables, and stops
 	// with the service.
 	s.StartAdminAuditJanitors()
@@ -512,11 +548,6 @@ func (s *Service) Handler() http.Handler {
 	// Event streams get a progress deadline instead of the server's absolute
 	// write deadline; unary responses are untouched (#759).
 	var h http.Handler = s.withStreamProgressDeadline(s.mux)
-	if s.cfg != nil && s.cfg.Admin.legacyRoutesEnabled() {
-		// The legacy machine admin routes keep their v4.7 handlers and decisions
-		// and only gain Deprecation/Sunset headers (ACP-009).
-		h = s.withLegacyAdminDeprecation(h)
-	}
 	return h
 }
 
@@ -550,6 +581,14 @@ func (s *Service) Close() {
 	if s.policySyncStop != nil {
 		s.policySyncStop()
 		s.policySyncStop = nil
+	}
+	s.detectorMu.Lock()
+	detectorDispatcher := s.detectorDispatcher
+	s.detectorDispatcher = nil
+	s.detectors = nil
+	s.detectorMu.Unlock()
+	if detectorDispatcher != nil {
+		detectorDispatcher.Close()
 	}
 	_ = s.quota.Close()
 	_ = s.logger.Close()
@@ -652,6 +691,10 @@ func (s *Service) reloadActiveConfigFromDB() error {
 	if err := newCfg.Validate(); err != nil {
 		return fmt.Errorf("reload active config: validate: %w", err)
 	}
+	revokedCallerTokens, err := loadRevokedCallerTokenHashes(s.configControlPlane)
+	if err != nil {
+		return fmt.Errorf("reload active config: load revoked caller tokens: %w", err)
+	}
 	// Rebuild quota caller runtimes before swapping the config so any
 	// validation failure leaves the existing state untouched.
 	if s.quota == nil {
@@ -726,19 +769,23 @@ func (s *Service) reloadActiveConfigFromDB() error {
 			}
 		}
 		return &machinePlanePublication{
-			Generation:   generation,
-			Authorizer:   preparedPolicy.authorizer,
-			Config:       newCfg,
-			Callers:      preparedCallers,
-			APIKeys:      newAdminKeys,
-			MaxStaleness: maxStaleness,
-			Policy:       preparedPolicy.observation,
+			Generation:    generation,
+			Authorizer:    preparedPolicy.authorizer,
+			Config:        newCfg,
+			Callers:       preparedCallers,
+			RevokedTokens: revokedCallerTokens,
+			APIKeys:       newAdminKeys,
+			MaxStaleness:  maxStaleness,
+			Policy:        preparedPolicy.observation,
 		}, nil
 	}); err != nil {
 		return fmt.Errorf("reload active config: publish machine plane: %w", err)
 	}
 	s.recordLoadedConfigRevision()
 	s.loadShadowRunsFromDB()
+	if err := s.replaceDetectorConfig(newCfg.Server.Detectors); err != nil {
+		return fmt.Errorf("reload active config: rebuild detectors: %w", err)
+	}
 	if adminListenerSettingsDiffer(s.cfg.Admin, newCfg.Admin) {
 		// The admin listener binds once; a reload cannot rebind it. Say so
 		// instead of leaving a half-applied control plane.
@@ -816,6 +863,11 @@ func (s *Service) routes() {
 	s.mux.HandleFunc("GET /v1/models/{model...}", s.handleModelGet)
 	s.mux.HandleFunc("GET /v1/codex/models.json", s.handleCodexModels)
 	s.mux.HandleFunc("GET /v1/usage", s.handleUsage)
+	if s.configControlPlane != nil {
+		// Self-revocation is available only when caller credentials are stored in
+		// the shared configuration control plane and can propagate to replicas.
+		s.mux.HandleFunc("POST /v1/security/leaked-keys", s.handleLeakedKeySelfRevoke)
+	}
 	// ACP-007: /metrics stays on the serving port with v4.7 caller-token
 	// authorization until the admin listener serves it. Moving it earlier would
 	// leave monitoring with no exposition, so validation refuses that config.
@@ -829,13 +881,6 @@ func (s *Service) routes() {
 	s.mux.HandleFunc("GET /admin/auth/check", s.handleAdminAuthCheck)
 	s.mux.HandleFunc("GET /admin/reports", s.handleAdminReports)
 	s.mux.HandleFunc("GET /admin/reports/", s.handleAdminReports)
-	// The legacy machine admin routes stay on the serving port behind
-	// admin.legacy_routes_on_serving_port (ACP-009). The browser reports UI and
-	// the /admin/auth/* session routes are registered above and are not part of
-	// the control plane, so the flag never removes them.
-	if s.cfg.Admin.legacyRoutesEnabled() {
-		s.registerLegacyMachineAdminRoutes()
-	}
 	s.mux.HandleFunc("DELETE /v1/content-captures/{request_id}", s.handleContentCaptureDelete)
 	s.mux.HandleFunc("POST /v1/content-captures/purge-expired", s.handleContentCapturePurgeExpired)
 	s.mux.HandleFunc("POST /anthropic/v1/messages/count_tokens", s.handleCountTokens)
@@ -886,7 +931,19 @@ func (s *Service) routes() {
 		}
 	}
 	s.mux.HandleFunc("GET /.well-known/security.txt", securityTextHandler)
-	s.mux.Handle("GET /", docsHandler())
+	docs := docsHandler()
+	s.mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/admin/") {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", http.MethodGet)
+			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+			return
+		}
+		docs.ServeHTTP(w, r)
+	}))
 }
 
 func healthPayload(ok bool, errorText string) map[string]any {
@@ -1329,6 +1386,9 @@ func (s *Service) writeMetricsPayload(w http.ResponseWriter, r *http.Request, rc
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.WriteString(w, s.metrics.Prometheus(s.trafficShape, migration))
+	if enabled, detectorDrops := s.detectorDropMetrics(); enabled {
+		_, _ = fmt.Fprintf(w, "# HELP metrum_ai_router_detector_dropped_total Detector events dropped because the bounded queue was full.\n# TYPE metrum_ai_router_detector_dropped_total counter\nmetrum_ai_router_detector_dropped_total %d\n", detectorDrops)
+	}
 	if s.tlsManager != nil {
 		// Empty unless a listener terminates TLS itself, so a v4.7 configuration keeps
 		// byte-identical /metrics output.
@@ -1604,6 +1664,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		s.writeError(w, rc, http.StatusBadRequest, "invalid-body")
 		return
 	}
+	rc.detectorTinyRequest = len(body) <= 256
 	body, err = decodeIdentifierFields(body, s.identifiers)
 	if err != nil {
 		rc.trace("identifier_decode", err.Error(), Target{}, 0, http.StatusBadRequest, err.Error(), false, 0)
@@ -1681,6 +1742,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		if exists {
 			reason = "model-not-allowed"
 		}
+		s.dispatchSecurityDetectorEvent(detector.Event{SchemaVersion: detector.SchemaVersion, RequestID: rc.id, CallerID: rc.caller.cfg.ID, Kind: "model_denied", ObservedAt: time.Now().UTC().Format(time.RFC3339Nano), KeyID: opaqueDetectorKeyID(rc.rec.TokenID), DeniedGroup: req.Model, SourceIP: rc.clientIP.Address})
 		if dialect == "openai-chat" || dialect == "openai-responses" {
 			s.writeModelNotFound(w, rc, req.Model, reason)
 		} else if dialect == "anthropic" {
@@ -1888,6 +1950,9 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		rc.rec.Warnings = appendWarning(rc.rec.Warnings, "pii-filter-applied")
 		rc.rec.Warnings = append(rc.rec.Warnings, piiResult.Warnings...)
 		rc.trace("pii_filter_applied", fmt.Sprintf("replacements=%d rules=%d", piiResult.Replacements, piiRuleCount(piiResult)), Target{}, 0, 0, "", false, 0)
+	}
+	if s.detectorSegmentsEnabled() {
+		rc.detectorSegments = extractDetectorSegments(req)
 	}
 	captureDecision := s.contentCaptureFor(rc.caller, req.Model, group)
 	s.captureRequestContent(rc, req, r.Header, captureDecision)
@@ -2288,6 +2353,8 @@ func usageEndpoint(r *http.Request) string {
 	switch r.Method {
 	case http.MethodPost:
 		switch path {
+		case "/v1/security/leaked-keys":
+			return "security.leaked_keys"
 		case "/v1/chat/completions":
 			return "chat.completions"
 		case "/v1/responses":
@@ -2406,7 +2473,20 @@ func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) 
 	}
 	caller, tokenID, err := s.authenticate(r.Header.Get("Authorization"), r.Header.Get("X-API-Key"))
 	ipInfo := resolveClientIP(r, s.cfg.Server.ClientIP)
+	securityReason := ""
+	if err == nil {
+		bindingIPConfig := s.cfg.Server.ClientIP
+		bindingIPConfig.StoreIP = nil
+		err = enforceCallerBinding(caller, r, resolveClientIP(r, bindingIPConfig), s.cfg.Server.ClientIP)
+	}
+	if err != nil {
+		var policyErr authPolicyError
+		if errors.As(err, &policyErr) {
+			securityReason = policyErr.securityReason
+		}
+	}
 	rc := s.newRequestContext(r, dialect, id, receiveAt, ipInfo)
+	rc.securityReason = securityReason
 	rc.caller = caller
 	// Mark count requests before authentication errors can be recorded.
 	switch r.URL.Path {
@@ -2434,6 +2514,13 @@ func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) 
 			code = policyErr.code
 		}
 		rc.trace("auth_rejected", err.Error(), Target{}, 0, status, code, false, 0)
+		if status == http.StatusUnauthorized {
+			keyID := ""
+			if tokenID != "missing-token" && tokenID != "invalid-token" {
+				keyID = opaqueDetectorKeyID(tokenID)
+			}
+			s.dispatchSecurityDetectorEvent(detector.Event{SchemaVersion: detector.SchemaVersion, RequestID: rc.id, CallerID: rc.rec.CallerID, Kind: "auth_failure", ObservedAt: time.Now().UTC().Format(time.RFC3339Nano), SourceIP: rc.clientIP.Address, KeyID: keyID})
+		}
 		s.writeError(w, rc, status, code)
 		return nil, false
 	}
@@ -2466,6 +2553,11 @@ func (s *Service) finish(rc *requestContext, status int, code *string) {
 	populateThroughput(&rc.rec)
 	populateCosts(&rc.rec)
 	s.providerSpend.add(rc.rec.TargetProvider, s.cfg.Provider[rc.rec.TargetProvider].SpendBreaker, rc.rec.TotalCostUSD)
+	if rc.caller != nil {
+		if budget, ok := s.projectBudgetConfig(rc.caller.project); ok {
+			s.projectBudgets.add(rc.caller.project, budget, rc.rec.TotalCostUSD)
+		}
+	}
 	if rc.rec.Status == 0 {
 		rc.rec.Status = status
 	}
@@ -2484,6 +2576,7 @@ func (s *Service) finish(rc *requestContext, status int, code *string) {
 	s.logger.Emit(rc.rec)
 	s.usage.Emit(rc.rec)
 	s.dispatchExternalPolicyFeedback(rc)
+	s.dispatchCompletedRequestDetectors(rc)
 	if !rc.securityRecorded {
 		codeText := ""
 		if rc.rec.Error != nil {
@@ -2495,6 +2588,9 @@ func (s *Service) finish(rc *requestContext, status int, code *string) {
 }
 
 func (s *Service) recordProviderSpendEvent(provider, action, window string, ceiling float64) {
+	if action == "trip" {
+		s.dispatchBuiltinDetectorEvent(detect.EventSpendBreakerTripped, "", "", provider)
+	}
 	if !s.securityReportsEnabled() {
 		return
 	}
@@ -2655,8 +2751,9 @@ func (s *Service) authenticate(header, apiKey string) (*callerRuntime, string, e
 }
 
 type authPolicyError struct {
-	status int
-	code   string
+	status         int
+	code           string
+	securityReason string
 }
 
 func (e authPolicyError) Error() string {
@@ -2804,6 +2901,10 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 					break
 				}
 			}
+		}
+		if err.ErrorCode == "" && hasFilterReason(rejectedReasons, "project-budget-exceeded") {
+			err.ErrorCode = "project_budget_exceeded"
+			err.StatusCode = http.StatusServiceUnavailable
 		}
 		if err.ErrorCode == "" && len(group.Targets) > 0 && (callerDialect == "openai-chat" || callerDialect == "openai-responses" || callerDialect == "anthropic") {
 			err.CapabilityMismatch = true
@@ -4299,6 +4400,13 @@ func (s *Service) filterTargetsForRequest(rc *requestContext, targets []Target, 
 	var rejected [][]string
 	stopRouting := false
 	for _, target := range targets {
+		if rc != nil && rc.caller != nil {
+			if budget, ok := s.projectBudgetConfig(rc.caller.project); ok && !s.projectBudgets.allow(rc.caller.project, budget) {
+				rejected = append(rejected, []string{"project-budget-exceeded"})
+				stopRouting = true
+				continue
+			}
+		}
 		outDialect := targetDialect(s.cfg.Provider[target.Provider], target)
 		reasons := s.targetEligibilityReasons(target, req, callerDialect, outDialect, estimate)
 		if len(reasons) != 0 {
@@ -4319,6 +4427,18 @@ func (s *Service) filterTargetsForRequest(rc *requestContext, targets []Target, 
 		return nil, rejected
 	}
 	return out, rejected
+}
+
+func (s *Service) projectBudgetConfig(project string) (ProjectBudgetConfig, bool) {
+	if s == nil || s.cfg == nil || project == "" {
+		return ProjectBudgetConfig{}, false
+	}
+	for _, item := range s.cfg.Projects {
+		if normalizeAccountID(item.ID) == normalizeAccountID(project) {
+			return item.Budget, true
+		}
+	}
+	return ProjectBudgetConfig{}, false
 }
 
 func isChatToResponsesDialectPair(callerDialect, outDialect string) bool {

@@ -10,24 +10,28 @@ machine-to-machine only: it accepts no HTTP Basic, no cookies and no browser ses
 no HTML or UI assets. The human browser reports UI stays on the serving port with its current login
 and is not part of the control plane.
 
-The listener is opt-in. A configuration without an `admin:` block behaves exactly like v4.7: one
-listener, the legacy `/admin/*` routes on the serving port and `/metrics` on the serving port.
+The listener starts by default on `127.0.0.1:8081` and requires admin authentication, including
+when the YAML omits the entire `admin:` block. Set `admin.enabled: false` to keep a single listener.
+When several replicas share a host, assign each replica a unique `admin.listen`; the default address
+can only be bound once on that host. Legacy machine `/admin/*` routes are removed from
+the serving port in v5.0.0; clients must use `/admin/v1` on the admin listener. The reports UI and
+`/admin/auth/*` browser session routes remain on the serving port.
 
 ## Configuration
 
 ```yaml title="config.example.yaml"
 admin:
-  enabled: false
+  enabled: true
   listen: 127.0.0.1:8081
   allow_plaintext_non_loopback: false
-  legacy_routes_on_serving_port: true
-  legacy_sunset: "2027-03-01T00:00:00Z"
   external_url: ""
   tls:
     mode: off
-    certificate_source: files
-    cert_file: ""
-    key_file: ""
+    # Router certificates are valid only with mode: router; leave these unset
+    # for loopback plaintext (mode: off).
+    # certificate_source: files
+    # cert_file: /etc/router/admin.crt
+    # key_file: /etc/router/admin.key
     # acme:
     #   domains: [admin.example.com]
     #   email: ops@example.com
@@ -52,11 +56,9 @@ admin:
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `enabled` | `false` | Starts the second listener. `false` keeps the v4.7 surface. |
+| `enabled` | `true` | Starts the admin listener. `false` keeps a single listener. |
 | `listen` | `127.0.0.1:8081` | Listener address. Loopback by default; a remote bind is an explicit opt-in. |
 | `allow_plaintext_non_loopback` | `false` | Allows a non-loopback bind without TLS. It logs a startup warning. |
-| `legacy_routes_on_serving_port` | `true` | Keeps the legacy machine `/admin/*` routes on the serving port with `Deprecation`/`Sunset` headers. It never covers the reports UI. |
-| `legacy_sunset` | `2027-03-01T00:00:00Z` | `Sunset` header value. It must be at least 90 days after the v4.8.0 release. |
 | `external_url` | unset | Absolute base URL of the plane. The only source of absolute request URLs; the router never derives them from `Host` or `X-Forwarded-*`. |
 | `tls.mode` | `off` | `off`, `router` (the router serves its own certificate) or `proxy` (a reverse proxy terminates TLS). |
 | `tls.certificate_source` | `files` | `files` (serve `cert_file`/`key_file`) or `acme` (automated issuance; requires `tls.mode: router` and an `tls.acme` block). |
@@ -114,18 +116,19 @@ transport-level rejections; no handler, credential check or authorization decisi
 The admin listener starts after the serving listener and drains independently:
 `limits.shutdown_timeout_ms` bounds its drain, and a failed or stopped admin listener never changes
 serving readiness. An admin bind failure at startup stops the process, because a plane the operator
-enabled must not be missing silently.
+enabled must not be missing silently. If replicas share a host, assign a different `admin.listen`
+address to each; a second replica cannot bind the default `127.0.0.1:8081`.
 
 ## Migrating from v4.7
 
-1. Leave `admin.enabled: false` to keep the current surface, or set it to `true` to start the
-   listener.
+1. The listener starts by default. Set `admin.enabled: false` to keep one listener.
 2. Keep scraping `/metrics` on the serving port with the caller token that has `metrics` read. The
    move to the admin listener lands with its own handler; `admin.metrics.on_serving_port: false` is
    refused until then.
-3. Move automation to `/admin/v1`. The legacy machine routes stay on the serving port while
-   `legacy_routes_on_serving_port` is `true` and advertise `Deprecation` and `Sunset` headers.
-4. The browser reports UI is unchanged: it stays on the serving port with its current login.
+3. Use `/admin/v1` on the admin listener. v5.0.0 removes legacy machine routes from the serving
+   port; configs containing `legacy_routes_on_serving_port` or `legacy_sunset` fail with migration
+   guidance.
+4. The browser reports UI and `/admin/auth/*` routes remain on the serving port.
 
 ## Limits
 

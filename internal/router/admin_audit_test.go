@@ -523,6 +523,11 @@ func TestAdminAuthenticationEvents(t *testing.T) {
 		"training.export", "training.outcomes.label", "metrics.scrape", "content.captures.delete", "content.captures.purge"} {
 		handlers[key] = func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) }
 	}
+	for _, op := range registry.Operations() {
+		if handlers[op.HandlerKey] == nil {
+			handlers[op.HandlerKey] = func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) }
+		}
+	}
 	err = RegisterAdminV1(mux, AdminV1Deps{
 		Registry:      registry,
 		Authenticate:  authenticator,
@@ -939,6 +944,30 @@ func prepareAdminAuditFixture(t *testing.T, harness *adminAuditHarness, op Opera
 		if body.SetID != "" {
 			harness.preparedSetID = body.SetID
 		}
+	case "putProjectEnvironmentMembership":
+		recorder := write(http.MethodPut, "/admin/v1/projects/search", map[string]any{"name": "Search", "status": "active", "environments": []any{map[string]any{"id": "dev", "name": "Development", "status": "active"}}}, "pre-project")
+		if recorder.Code != http.StatusOK && recorder.Code != http.StatusCreated {
+			t.Fatalf("preparing membership: %d (%s)", recorder.Code, recorder.Body.String())
+		}
+	case "deleteProject":
+		recorder := write(http.MethodPut, "/admin/v1/projects/audit-unused", map[string]any{"name": "Unused", "status": "active", "environments": []any{map[string]any{"id": "prod", "name": "Production", "status": "active"}}}, "pre-delete-project")
+		if recorder.Code != http.StatusOK && recorder.Code != http.StatusCreated {
+			t.Fatalf("preparing deleteProject: %d (%s)", recorder.Code, recorder.Body.String())
+		}
+	case "deleteProjectEnvironment":
+		recorder := write(http.MethodPut, "/admin/v1/projects/audit-unused", map[string]any{"name": "Unused", "status": "active", "environments": []any{map[string]any{"id": "dev", "name": "Development", "status": "active"}, map[string]any{"id": "prod", "name": "Production", "status": "active"}}}, "pre-delete-environment")
+		if recorder.Code != http.StatusOK && recorder.Code != http.StatusCreated {
+			t.Fatalf("preparing deleteProjectEnvironment: %d (%s)", recorder.Code, recorder.Body.String())
+		}
+	case "deleteProjectEnvironmentMembership":
+		recorder := write(http.MethodPut, "/admin/v1/projects/audit-unused", map[string]any{"name": "Unused", "status": "active", "environments": []any{map[string]any{"id": "dev", "name": "Development", "status": "active"}}}, "pre-delete-membership-project")
+		if recorder.Code != http.StatusOK && recorder.Code != http.StatusCreated {
+			t.Fatalf("preparing membership-delete project: %d (%s)", recorder.Code, recorder.Body.String())
+		}
+		recorder = write(http.MethodPost, "/admin/v1/projects/audit-unused/environments/dev/memberships", map[string]any{"user_id": "alice", "role": "member", "status": "active"}, "pre-delete-membership")
+		if recorder.Code != http.StatusOK && recorder.Code != http.StatusCreated {
+			t.Fatalf("preparing membership delete: %d (%s)", recorder.Code, recorder.Body.String())
+		}
 	}
 }
 
@@ -949,6 +978,9 @@ func adminAuditFixture(t *testing.T, harness *adminAuditHarness, op Operation) (
 	target = strings.ReplaceAll(target, "{set_id}", "set-1")
 	target = strings.ReplaceAll(target, "{request_id}", "req-1")
 	target = strings.ReplaceAll(target, "{id}", "caller-1")
+	target = strings.ReplaceAll(target, "{project}", "search")
+	target = strings.ReplaceAll(target, "{environment}", "dev")
+	target = strings.ReplaceAll(target, "{provider}", "beta")
 	target = strings.ReplaceAll(target, "{target_id...}", "alpha/a-one")
 	body := map[string]any{}
 	switch op.ID {
@@ -981,6 +1013,23 @@ func adminAuditFixture(t *testing.T, harness *adminAuditHarness, op Operation) (
 	case "rollbackConfigSet":
 		setID := harness.preparedSetID
 		body = map[string]any{"set_id": setID, "reason": "audit"}
+	case "updateCallerQuota":
+		target = strings.ReplaceAll(op.Path, "{id}", "alice")
+		body = map[string]any{"quota": map[string]any{"day": map[string]any{"requests": 10}}}
+	case "putProvider":
+		body = map[string]any{"base_url": "https://beta.example/v1", "dialect": "openai-chat", "api_key_env": "BETA_API_KEY", "models": map[string]any{"b-one": map[string]any{"model": "beta-model-1"}}}
+	case "validateProvider":
+		body = map[string]any{"base_url": "https://beta.example/v1", "dialect": "openai-chat", "models": map[string]any{"b-one": map[string]any{"model": "beta-model-1"}}}
+	case "putProjectEnvironmentMembership":
+		body = map[string]any{"user_id": "alice", "role": "member", "status": "active"}
+	case "putProject":
+		body = map[string]any{"name": "Search", "status": "active", "environments": []any{map[string]any{"id": "dev", "name": "Development", "status": "active"}}}
+	case "deleteProject":
+		target = strings.ReplaceAll(op.Path, "{project}", "audit-unused")
+	case "deleteProjectEnvironment":
+		target = strings.ReplaceAll(strings.ReplaceAll(op.Path, "{project}", "audit-unused"), "{environment}", "dev")
+	case "deleteProjectEnvironmentMembership":
+		target = strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(op.Path, "{project}", "audit-unused"), "{environment}", "dev"), "{user_id}", "alice")
 	}
 	return op.Method, target, body
 }
