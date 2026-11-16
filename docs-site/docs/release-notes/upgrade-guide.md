@@ -828,3 +828,13 @@ administrator or by legacy configuration require all caller write permissions
 Signed webhook callers do not need an ETag or idempotency header. Their nonce
 reservation is durable for at least twice the configured timestamp window and
 expired reservations are pruned hourly.
+
+Automatic detector containment is a separate opt-in feature. It is off by
+default. Before setting `server.auto_containment.mode` to `shadow` or
+`enforce`, run `router-migrate` to create the automatic action tables. Start
+in `shadow` mode, set a low `max_actions_per_minute`, and list emergency
+caller IDs under `exempt_callers`. Throttle rules must set
+`unlimited_throttle_limit` to provide a finite base for callers with unlimited
+configured quotas. Enforced suspend rules require database config mode and
+are recorded as containment-made so the containment role or an administrator
+can resume them before their TTL. Actions expire at their configured TTL.

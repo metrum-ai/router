@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -125,6 +126,7 @@ type callerRuntime struct {
 	inFlightReservedTokens int64
 	reqTimes               []time.Time
 	tokenTimes             []tokenEvent
+	autoContainment        atomic.Pointer[automaticContainmentState]
 }
 
 type tokenEvent struct {
@@ -246,11 +248,11 @@ func (q *quotaStore) Admit(c *callerRuntime, estTokens int) admission {
 		}
 		return admission{Status: http.StatusForbidden, Reason: "key-exhausted", QuotaState: "ok", KeyState: "exhausted"}
 	}
-	if c.cfg.Rate.Concurrent > 0 && c.inFlight >= c.cfg.Rate.Concurrent {
+	if limit := c.effectiveRateLimit(c.cfg.Rate.Concurrent); limit > 0 && c.inFlight >= limit {
 		return admission{Status: http.StatusTooManyRequests, Reason: "concurrency-exceeded", RetryAfter: "1", QuotaState: "ok", KeyState: keyState}
 	}
 	c.reqTimes = pruneTimes(c.reqTimes, now.Add(-time.Minute))
-	if c.cfg.Rate.RPM > 0 && len(c.reqTimes) >= c.cfg.Rate.RPM {
+	if limit := c.effectiveRateLimit(c.cfg.Rate.RPM); limit > 0 && len(c.reqTimes) >= limit {
 		return admission{Status: http.StatusTooManyRequests, Reason: "rpm-exceeded", RetryAfter: "60", QuotaState: "ok", KeyState: keyState}
 	}
 	c.tokenTimes = pruneTokens(c.tokenTimes, now.Add(-time.Minute))
@@ -309,7 +311,7 @@ func (q *quotaStore) AcquireConcurrency(c *callerRuntime) admission {
 		}
 		return admission{Status: http.StatusForbidden, Reason: "key-exhausted", QuotaState: "ok", KeyState: "exhausted"}
 	}
-	if c.cfg.Rate.Concurrent > 0 && c.inFlight >= c.cfg.Rate.Concurrent {
+	if limit := c.effectiveRateLimit(c.cfg.Rate.Concurrent); limit > 0 && c.inFlight >= limit {
 		return admission{Status: http.StatusTooManyRequests, Reason: "concurrency-exceeded", RetryAfter: "1", QuotaState: "ok", KeyState: keyState}
 	}
 	c.inFlight++
@@ -456,7 +458,7 @@ func (q *quotaStore) reserveTokensLocked(c *callerRuntime, st *callerState, estT
 	reservedBefore := c.inFlightReservedTokens
 	keyState := q.keyState(c.cfg, st, reservedBefore)
 	c.tokenTimes = pruneTokens(c.tokenTimes, now.Add(-time.Minute))
-	if c.cfg.Rate.TPM > 0 && int64(sumTokenEvents(c.tokenTimes)+estTokens)+reservedBefore > int64(c.cfg.Rate.TPM) {
+	if limit := c.effectiveRateLimit(c.cfg.Rate.TPM); limit > 0 && int64(sumTokenEvents(c.tokenTimes)+estTokens)+reservedBefore > int64(limit) {
 		return nil, admission{Status: http.StatusTooManyRequests, Reason: "tpm-exceeded", RetryAfter: "60", QuotaState: "ok", KeyState: keyState}
 	}
 	reservedEstimate := reservedBefore + int64(estTokens)
