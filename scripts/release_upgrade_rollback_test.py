@@ -20,6 +20,9 @@ SPEC.loader.exec_module(MODULE)
 
 
 class StrictJSONTests(unittest.TestCase):
+    def test_expected_router_config_schema_includes_offline_markers(self):
+        self.assertEqual(MODULE.ROUTER_CONFIG_SCHEMA_VERSION, 19)
+
     def test_v48_legacy_caller_config_migrates_with_real_commands(self):
         root = Path(__file__).parents[1]
         token_id = "rtr_metrum_migration_prod_v48_k1"

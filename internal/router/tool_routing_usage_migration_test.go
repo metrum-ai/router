@@ -21,6 +21,21 @@ func clearToolRoutingUsageLedger(t *testing.T, db *gorm.DB) {
 	}
 }
 
+func clearOfflineOperationMarkerUsageMigration(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	if db.Migrator().HasTable(&offlineMaintenanceRecord{}) {
+		if err := db.Migrator().DropTable(&offlineMaintenanceRecord{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.Where("scope = ? AND migration_id = ?", usageMigrationScope, offlineOperationMarkerMigrationID).Delete(&migrationAttemptRecord{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Where("scope = ? AND migration_id = ?", usageMigrationScope, offlineOperationMarkerMigrationID).Delete(&migrationLedgerRecord{}).Error; err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestToolRoutingUsageSummaryAndEvidence(t *testing.T) {
 	attempts := []attemptLogRecord{
 		{ToolValidation: &toolValidationLogRecord{Calls: 1, Invalid: 1, FirstFailure: toolFailureInvalidJSON, Action: "retried"}},
@@ -73,6 +88,10 @@ func TestToolRoutingUsageSchema21UpgradeDownAndRoundTrip(t *testing.T) {
 			_ = store.Close()
 		}
 	})
+	status, err := store.migrationStatus()
+	if err != nil || status.SchemaVersion != currentUsageSchemaVersion() || !status.Compatible {
+		t.Fatalf("status=%+v err=%v", status, err)
+	}
 	if err := verifyToolRoutingUsageMigration(store.db); err != nil {
 		t.Fatal(err)
 	}
@@ -80,13 +99,14 @@ func TestToolRoutingUsageSchema21UpgradeDownAndRoundTrip(t *testing.T) {
 	if err := store.db.Create(recordFromRow(usageRow{RequestID: "legacy-tool-row", TS: when})).Error; err != nil {
 		t.Fatal(err)
 	}
+	clearOfflineOperationMarkerUsageMigration(t, store.db)
 	if err := revertHierarchyAuditMigration(store.db); err != nil {
 		t.Fatal(err)
 	}
 	clearHierarchyAuditMigrationLedger(t, store.db)
-	status, err := store.migrationStatus()
+	status, err = store.migrationStatus()
 	if err != nil || status.SchemaVersion != 21 || !status.Compatible {
-		t.Fatalf("status after reverting hierarchy migration=%+v err=%v", status, err)
+		t.Fatalf("status after reverting later migrations=%+v err=%v", status, err)
 	}
 	if err := revertToolRoutingUsageMigration(store.db); err != nil {
 		t.Fatal(err)
@@ -114,14 +134,11 @@ func TestToolRoutingUsageSchema21UpgradeDownAndRoundTrip(t *testing.T) {
 	if err := verifyToolRoutingUsageMigration(runner.db); err != nil {
 		t.Fatal(err)
 	}
+	clearOfflineOperationMarkerUsageMigration(t, runner.db)
 	if err := revertHierarchyAuditMigration(runner.db); err != nil {
 		t.Fatal(err)
 	}
 	clearHierarchyAuditMigrationLedger(t, runner.db)
-	status, err = runner.Status()
-	if err != nil || status.SchemaVersion != 21 || !status.Compatible {
-		t.Fatalf("upgraded status=%+v err=%v", status, err)
-	}
 	var legacy usageRecord
 	if err := runner.db.First(&legacy, "request_id = ?", "legacy-tool-row").Error; err != nil || legacy.ToolCallCount != 0 || legacy.ToolFirstFailureClass != "" || legacy.ToolRetries != 0 || legacy.ToolEscalations != 0 || legacy.ToolReliabilityBucket != "" || legacy.ToolReliabilitySource != "" {
 		t.Fatalf("legacy usage row=%+v err=%v", legacy, err)
@@ -145,9 +162,9 @@ func TestToolRoutingUsageSchema21UpgradeDownAndRoundTrip(t *testing.T) {
 	if err != nil || roundTrip.ToolCallCount != 3 || roundTrip.ToolFirstFailureClass != toolFailureMissingRequired || roundTrip.ToolRetries != 1 || roundTrip.ToolEscalations != 1 || roundTrip.ToolReliabilityBucket != "valid" || roundTrip.ToolReliabilitySource != "live" {
 		t.Fatalf("roundTrip=%+v err=%v", roundTrip, err)
 	}
-	priorDefinitions := make([]MigrationDefinition, 0, len(usageMigrationDefinitions)-1)
+	priorDefinitions := make([]MigrationDefinition, 0, len(usageMigrationDefinitions)-2)
 	for _, definition := range usageMigrationDefinitions {
-		if definition.ID != toolRoutingUsageMigrationID && definition.ID != usageHierarchyAuditMigrationID {
+		if definition.ID != toolRoutingUsageMigrationID && definition.ID != usageHierarchyAuditMigrationID && definition.ID != offlineOperationMarkerMigrationID {
 			priorDefinitions = append(priorDefinitions, definition)
 		}
 	}
@@ -157,8 +174,13 @@ func TestToolRoutingUsageSchema21UpgradeDownAndRoundTrip(t *testing.T) {
 	}
 	oldStatus, err := old.Status()
 	if err != nil || oldStatus.Compatible || oldStatus.State != "incompatible" {
-		t.Fatalf("schema 20 binary should reject schema 21: %+v err=%v", oldStatus, err)
+		t.Fatalf("schema 20 binary should reject the newer schema: %+v err=%v", oldStatus, err)
 	}
+	clearOfflineOperationMarkerUsageMigration(t, runner.db)
+	if err := revertHierarchyAuditMigration(runner.db); err != nil {
+		t.Fatal(err)
+	}
+	clearHierarchyAuditMigrationLedger(t, runner.db)
 	if err := revertToolRoutingUsageMigration(runner.db); err != nil {
 		t.Fatal(err)
 	}

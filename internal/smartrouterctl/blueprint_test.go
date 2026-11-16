@@ -4,13 +4,17 @@
 package smartrouterctl_test
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/glebarez/sqlite"
 	"github.com/metrum-ai/router/internal/router"
 	"github.com/metrum-ai/router/internal/smartrouterctl"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 func TestRenderBlueprintNvidiaLLMDCompat(t *testing.T) {
@@ -176,10 +180,25 @@ func TestRenderBlueprintNvidiaLocalServing(t *testing.T) {
 	}
 }
 
-func TestSQLiteBackupRestoreRoundTrip(t *testing.T) {
+func TestSQLiteBackupRestoreV48Fixture(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "usage.sqlite")
-	if err := smartrouterctl.OpenEmptySQLite(dbPath); err != nil {
+	legacy, err := loadV48UsageFixture(t, dbPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var markerTable int64
+	if err := legacy.Raw("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='router_offline_operation_markers'").Scan(&markerTable).Error; err != nil {
+		t.Fatal(err)
+	}
+	if markerTable != 0 {
+		t.Fatal("v4.8 fixture unexpectedly contains the v5 offline marker migration")
+	}
+	rawLegacy, err := legacy.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := rawLegacy.Close(); err != nil {
 		t.Fatal(err)
 	}
 	cfgPath := filepath.Join(dir, "config.yaml")
@@ -246,6 +265,49 @@ callers:
 	if _, err := os.Stat(dbPath); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func loadV48UsageFixture(t *testing.T, dbPath string) (*gorm.DB, error) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
+		return nil, err
+	}
+	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)})
+	if err != nil {
+		return nil, err
+	}
+	rawDB, err := db.DB()
+	if err != nil {
+		return nil, err
+	}
+	rawDB.SetMaxOpenConns(1)
+	fixture, err := os.ReadFile(filepath.Join("..", "router", "testdata", "usage-v4.8.0-schema.sql"))
+	if err != nil {
+		_ = rawDB.Close()
+		return nil, err
+	}
+	var statement strings.Builder
+	for _, line := range strings.Split(string(fixture), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "--") {
+			continue
+		}
+		statement.WriteString(line)
+		statement.WriteByte('\n')
+		if !strings.HasSuffix(trimmed, ";") {
+			continue
+		}
+		if err := db.Exec(statement.String()).Error; err != nil {
+			_ = rawDB.Close()
+			return nil, err
+		}
+		statement.Reset()
+	}
+	if statement.Len() != 0 {
+		_ = rawDB.Close()
+		return nil, fmt.Errorf("v4.8 usage fixture ends with an unterminated statement")
+	}
+	return db, nil
 }
 
 func TestFileOwnedProviderAndModelUpsert(t *testing.T) {

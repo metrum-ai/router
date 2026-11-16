@@ -956,6 +956,7 @@ func (h *configAdminHandler) handleConfigStatus(w http.ResponseWriter, r *http.R
 			"loaded_set_id":   loadedSet,
 			"loaded_at":       loadedAt.UTC().Format(time.RFC3339Nano),
 		},
+		"apply_modes": ConfigApplyModes(),
 	}
 	if mode == "database" {
 		revision, err := currentRevisionForScope(h.deps.DB, h.deps.RuntimeScope)
