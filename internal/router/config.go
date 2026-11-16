@@ -80,7 +80,8 @@ type ResponsesConfig struct {
 }
 
 type ServerConfig struct {
-	Streaming StreamingConfig `yaml:"streaming" json:"streaming"`
+	Detectors []DetectorConfig `yaml:"detectors,omitempty" json:"detectors,omitempty"`
+	Streaming StreamingConfig  `yaml:"streaming" json:"streaming"`
 	// HTTP server deadlines (#759). Zero selects the default. The write
 	// deadline is absolute, so it defaults above the upstream budget; event
 	// streams additionally get a progress deadline (StreamIdleTimeoutMS).
@@ -132,6 +133,20 @@ type ContainmentWebhookConfig struct {
 	Enabled         bool   `yaml:"enabled" json:"enabled,omitempty"`
 	SecretEnv       string `yaml:"secret_env" json:"secretEnv,omitempty"`
 	TimestampWindow string `yaml:"timestamp_window" json:"timestampWindow,omitempty"`
+}
+
+// DetectorConfig configures one external or built-in security detector.
+type DetectorConfig struct {
+	ID              string   `yaml:"id" json:"id"`
+	URL             string   `yaml:"url,omitempty" json:"url,omitempty"`
+	AllowHosts      []string `yaml:"allow_hosts,omitempty" json:"allowHosts,omitempty"`
+	AllowHTTP       bool     `yaml:"allow_http,omitempty" json:"allowHttp,omitempty"`
+	Builtin         string   `yaml:"builtin,omitempty" json:"builtin,omitempty"`
+	Mode            string   `yaml:"mode,omitempty" json:"mode,omitempty"`
+	TimeoutMS       int      `yaml:"timeout_ms,omitempty" json:"timeoutMs,omitempty"`
+	OnError         string   `yaml:"on_error,omitempty" json:"onError,omitempty"`
+	SampleRate      float64  `yaml:"sample_rate,omitempty" json:"sampleRate,omitempty"`
+	IncludeSegments []string `yaml:"include_segments,omitempty" json:"includeSegments,omitempty"`
 }
 
 // ReasoningProvenanceConfig controls opaque reasoning provenance binding.
@@ -486,12 +501,9 @@ type ReasoningSupport struct {
 }
 
 type ModelGroup struct {
-	Strategy            string                   `yaml:"strategy"`
-	Script              string                   `yaml:"script"`
-	ScriptMaxConcurrent int                      `yaml:"script_max_concurrent" json:"scriptMaxConcurrent,omitempty"`
-	ScriptHTTP          ScriptHTTPConfig         `yaml:"script_http"`
-	ExternalPolicy      ExternalPolicyConfig     `yaml:"external_policy"`
-	IntelligentRouting  IntelligentRoutingConfig `yaml:"intelligent_routing"`
+	Strategy           string                   `yaml:"strategy"`
+	ExternalPolicy     ExternalPolicyConfig     `yaml:"external_policy"`
+	IntelligentRouting IntelligentRoutingConfig `yaml:"intelligent_routing"`
 	// ToolRouting opts a `tool_aware` group into tool-call validation telemetry.
 	// It is inert (and rejected) on every other strategy.
 	ToolRouting    ToolRoutingConfig    `yaml:"tool_routing" json:"toolRouting,omitempty"`
@@ -698,15 +710,6 @@ type PIIFilterRule struct {
 	Name              string `yaml:"name" json:"name"`
 	Expression        string `yaml:"expression" json:"expression"`
 	PlaceholderPrefix string `yaml:"placeholder_prefix" json:"placeholderPrefix"`
-}
-
-type ScriptHTTPConfig struct {
-	Enabled          bool              `yaml:"enabled" json:"enabled"`
-	AllowHosts       []string          `yaml:"allow_hosts" json:"allowHosts"`
-	AllowHTTP        bool              `yaml:"allow_http" json:"allowHttp"`
-	TimeoutMS        int               `yaml:"timeout_ms" json:"timeoutMs"`
-	MaxResponseBytes int64             `yaml:"max_response_bytes" json:"maxResponseBytes"`
-	Headers          map[string]string `yaml:"headers" json:"headers"`
 }
 
 type ExternalPolicyConfig struct {
@@ -1215,7 +1218,16 @@ func LoadConfig(path string) (*Config, error) {
 		redactor.addConfig(cfg)
 		return cfg, redactConfigError(err, redactor)
 	}
+	warnDetectorSegmentOptIn(cfg.Server.Detectors)
 	return cfg, nil
+}
+
+func warnDetectorSegmentOptIn(configs []DetectorConfig) {
+	for _, detector := range configs {
+		if len(detector.IncludeSegments) > 0 && detector.Mode != "off" {
+			log.Printf("WARNING: detector %s is configured to send only selected tool_result/document text to its allowlisted endpoint; prompts and user messages are never sent", detector.ID)
+		}
+	}
 }
 
 func loadConfigFile(path string, redactor *secretRedactor) (*Config, error) {
@@ -1248,6 +1260,9 @@ func loadConfigFile(path string, redactor *secretRedactor) (*Config, error) {
 	if hadDeprecatedLicense {
 		return nil, fmt.Errorf("config key server.license is rejected in 4.0.0; remove the server.license block")
 	}
+	if err := validateRemovedScriptConfig(cleaned); err != nil {
+		return nil, err
+	}
 	var cfg Config
 	if err := yaml.Unmarshal(cleaned, &cfg); err != nil {
 		return nil, err
@@ -1256,6 +1271,106 @@ func loadConfigFile(path string, redactor *secretRedactor) (*Config, error) {
 	cfg.baseDir = filepath.Dir(path)
 	cfg.secretEnvRefs = envRefs
 	return &cfg, cfg.Validate()
+}
+
+func validateRemovedScriptConfig(raw []byte) error {
+	var root yaml.Node
+	if err := yaml.Unmarshal(raw, &root); err != nil {
+		return err
+	}
+	if root.Kind != yaml.DocumentNode || len(root.Content) == 0 || root.Content[0].Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(root.Content[0].Content); i += 2 {
+		if root.Content[0].Content[i].Value != "models" || root.Content[0].Content[i+1].Kind != yaml.MappingNode {
+			continue
+		}
+		for j := 0; j+1 < len(root.Content[0].Content[i+1].Content); j += 2 {
+			group := root.Content[0].Content[i+1].Content[j+1]
+			if group.Kind != yaml.MappingNode {
+				continue
+			}
+			for k := 0; k+1 < len(group.Content); k += 2 {
+				key, value := group.Content[k].Value, group.Content[k+1]
+				if key == "strategy" && strings.EqualFold(strings.TrimSpace(value.Value), "script") {
+					return fmt.Errorf("strategy: script was removed in v5.0.0; migrate to strategy: external and configure external_policy")
+				}
+				switch key {
+				case "script", "script_max_concurrent", "script_http":
+					if yamlNodeHasNonZeroValue(value) {
+						return fmt.Errorf("config key models.<group>.%s was removed in v5.0.0; migrate to strategy: external and external_policy", key)
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+func yamlNodeHasNonZeroValue(node *yaml.Node) bool {
+	if node == nil {
+		return false
+	}
+	switch node.Kind {
+	case yaml.MappingNode:
+		for i := 1; i < len(node.Content); i += 2 {
+			if yamlNodeHasNonZeroValue(node.Content[i]) {
+				return true
+			}
+		}
+		return false
+	case yaml.SequenceNode:
+		for _, child := range node.Content {
+			if yamlNodeHasNonZeroValue(child) {
+				return true
+			}
+		}
+		return false
+	case yaml.ScalarNode:
+		value := strings.ToLower(strings.TrimSpace(node.Value))
+		return value != "" && value != "null" && value != "~" && value != "false" && value != "0" && value != "0.0"
+	default:
+		return false
+	}
+}
+
+func stripEmptyRemovedScriptFields(raw []byte) ([]byte, error) {
+	var root yaml.Node
+	if err := yaml.Unmarshal(raw, &root); err != nil {
+		return nil, err
+	}
+	if root.Kind != yaml.DocumentNode || len(root.Content) == 0 || root.Content[0].Kind != yaml.MappingNode {
+		return raw, nil
+	}
+	changed := false
+	for i := 0; i+1 < len(root.Content[0].Content); i += 2 {
+		if root.Content[0].Content[i].Value != "models" || root.Content[0].Content[i+1].Kind != yaml.MappingNode {
+			continue
+		}
+		for _, group := range root.Content[0].Content[i+1].Content {
+			if group.Kind != yaml.MappingNode {
+				continue
+			}
+			filtered := make([]*yaml.Node, 0, len(group.Content))
+			for j := 0; j+1 < len(group.Content); j += 2 {
+				key, value := group.Content[j], group.Content[j+1]
+				if (key.Value == "script" || key.Value == "script_max_concurrent" || key.Value == "script_http") && !yamlNodeHasNonZeroValue(value) {
+					changed = true
+					continue
+				}
+				filtered = append(filtered, key, value)
+			}
+			group.Content = filtered
+		}
+	}
+	if !changed {
+		return raw, nil
+	}
+	cleaned, err := yaml.Marshal(&root)
+	if err != nil {
+		return nil, err
+	}
+	return cleaned, nil
 }
 
 // discardDeprecatedServerLicenseYAML reports a legacy server.license mapping.
@@ -1397,6 +1512,21 @@ func (c *Config) attemptChainBudgetMS() int {
 
 func (c *Config) setDefaults() {
 	defaultAdminPlaneConfig(&c.Admin)
+	for i := range c.Server.Detectors {
+		detector := &c.Server.Detectors[i]
+		if detector.Mode == "" {
+			detector.Mode = "off"
+		}
+		if detector.TimeoutMS == 0 {
+			detector.TimeoutMS = 500
+		}
+		if detector.OnError == "" {
+			detector.OnError = "fallback"
+		}
+		if detector.SampleRate == 0 {
+			detector.SampleRate = 1
+		}
+	}
 	if c.Server.Streaming.MaxSSELineBytes == 0 {
 		c.Server.Streaming.MaxSSELineBytes = defaultMaxSSELineBytes
 	}
@@ -1631,6 +1761,9 @@ func (c *Config) ValidateForImport() error {
 }
 
 func (c *Config) validate(requireAdminKeyEnv bool) error {
+	if err := validateDetectorConfigs(c.Server.Detectors); err != nil {
+		return err
+	}
 	if n := c.Server.Streaming.MaxSSELineBytes; n != 0 && (n < minMaxSSELineBytes || n > maxMaxSSELineBytes) {
 		return fmt.Errorf("server.streaming.max_sse_line_bytes must be between %d and %d (zero selects %d)", minMaxSSELineBytes, maxMaxSSELineBytes, defaultMaxSSELineBytes)
 	}
@@ -1869,14 +2002,11 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		if m.Strategy == "" {
 			return fmt.Errorf("model group %s missing strategy", name)
 		}
-		if strings.EqualFold(m.Strategy, "script") && m.Script == "" {
-			return fmt.Errorf("model group %s uses script strategy but has no script path", name)
-		}
-		if m.ScriptMaxConcurrent < 0 || m.ScriptMaxConcurrent > scriptMaxConcurrentLimit {
-			return fmt.Errorf("model group %s script_max_concurrent must be between 0 and %d", name, scriptMaxConcurrentLimit)
-		}
-		if m.ScriptMaxConcurrent != 0 && !strings.EqualFold(m.Strategy, "script") {
-			return fmt.Errorf("model group %s configures script_max_concurrent but does not use script strategy", name)
+		if normalizeModelStrategy(m.Strategy) == "" {
+			if strings.EqualFold(strings.TrimSpace(m.Strategy), "script") {
+				return fmt.Errorf("strategy: script was removed in v5.0.0; migrate to strategy: external and configure external_policy")
+			}
+			return fmt.Errorf("model group %s has unsupported strategy %q", name, m.Strategy)
 		}
 		if strings.EqualFold(m.Strategy, "external") {
 			if strings.TrimSpace(m.ExternalPolicy.URL) == "" {
@@ -1892,7 +2022,7 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 			if policyURL.Scheme != "http" && policyURL.Scheme != "https" {
 				return fmt.Errorf("model group %s external_policy.url scheme must be http or https", name)
 			}
-			if !scriptHostAllowed(policyURL.Hostname(), m.ExternalPolicy.AllowHosts) {
+			if !externalPolicyHostAllowed(policyURL.Hostname(), m.ExternalPolicy.AllowHosts) {
 				return fmt.Errorf("model group %s external_policy.url host %s is not in allow_hosts", name, policyURL.Hostname())
 			}
 			if policyURL.Scheme == "http" && !m.ExternalPolicy.AllowHTTP && !egressHostIsTrustedLocal(policyURL.Hostname()) {
@@ -1921,7 +2051,7 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 				return fmt.Errorf("model group %s external_policy on_error must be fail_closed or fallback", name)
 			}
 			for header := range m.ExternalPolicy.Headers {
-				if !scriptConfigHeaderAllowed(header) {
+				if !externalPolicyConfigHeaderAllowed(header) {
 					return fmt.Errorf("model group %s external_policy header %s is not allowed", name, header)
 				}
 			}
@@ -1960,28 +2090,6 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		}
 		if err := validateContentCapture("model group "+name+" content_capture", m.ContentCapture); err != nil {
 			return err
-		}
-		if m.ScriptHTTP.Enabled {
-			if !strings.EqualFold(m.Strategy, "script") {
-				return fmt.Errorf("model group %s configures script_http but does not use script strategy", name)
-			}
-			if len(m.ScriptHTTP.AllowHosts) == 0 {
-				return fmt.Errorf("model group %s enables script_http but has no allow_hosts", name)
-			}
-			if m.ScriptHTTP.TimeoutMS < 0 {
-				return fmt.Errorf("model group %s has negative script_http timeout_ms", name)
-			}
-			if m.ScriptHTTP.TimeoutMS > 5000 {
-				return fmt.Errorf("model group %s script_http timeout_ms must be <= 5000", name)
-			}
-			if m.ScriptHTTP.MaxResponseBytes < 0 {
-				return fmt.Errorf("model group %s has negative script_http max_response_bytes", name)
-			}
-			for header := range m.ScriptHTTP.Headers {
-				if !scriptConfigHeaderAllowed(header) {
-					return fmt.Errorf("model group %s script_http header %s is not allowed", name, header)
-				}
-			}
 		}
 		if len(m.Targets) == 0 {
 			return fmt.Errorf("model group %s has no targets", name)
@@ -2167,6 +2275,68 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		}
 	}
 	return nil
+}
+
+func validateDetectorConfigs(configs []DetectorConfig) error {
+	seen := map[string]bool{}
+	for _, config := range configs {
+		id := strings.TrimSpace(config.ID)
+		if !safeDetectorID(id) || seen[id] {
+			return fmt.Errorf("detector id %q is invalid or duplicated", id)
+		}
+		seen[id] = true
+		if config.Mode != "off" && config.Mode != "report" && config.Mode != "enforce" {
+			return fmt.Errorf("detector %s mode must be off, report, or enforce", id)
+		}
+		if config.TimeoutMS < 1 || config.TimeoutMS > 5000 {
+			return fmt.Errorf("detector %s timeout_ms must be between 1 and 5000", id)
+		}
+		if math.IsNaN(config.SampleRate) || math.IsInf(config.SampleRate, 0) || config.SampleRate <= 0 || config.SampleRate > 1 {
+			return fmt.Errorf("detector %s sample_rate must be greater than 0 and at most 1", id)
+		}
+		if config.OnError != "fail_closed" && config.OnError != "fallback" {
+			return fmt.Errorf("detector %s on_error must be fail_closed or fallback", id)
+		}
+		seenSegments := map[string]bool{}
+		for _, kind := range config.IncludeSegments {
+			if (kind != "tool_result" && kind != "document") || seenSegments[kind] {
+				return fmt.Errorf("detector %s include_segments supports unique tool_result and document entries", id)
+			}
+			seenSegments[kind] = true
+		}
+		if config.Builtin != "" {
+			if config.Builtin != "honeytoken" && config.Builtin != "spend_breaker" {
+				return fmt.Errorf("detector %s builtin must be honeytoken or spend_breaker", id)
+			}
+			if id != config.Builtin {
+				return fmt.Errorf("detector %s id must match builtin name %s", id, config.Builtin)
+			}
+			if config.URL != "" || len(config.AllowHosts) != 0 || config.AllowHTTP || len(config.IncludeSegments) != 0 {
+				return fmt.Errorf("detector %s built-in configuration cannot set URL, allow_hosts, allow_http, or include_segments", id)
+			}
+			continue
+		}
+		u, err := url.Parse(config.URL)
+		if err != nil || u.Path != "/v1/detect" || u.Hostname() == "" || len(config.AllowHosts) == 0 {
+			return fmt.Errorf("detector %s requires a URL ending in /v1/detect and allow_hosts", id)
+		}
+		if err := validateEgressURL(u, config.AllowHosts, config.AllowHTTP, "detector "+id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func safeDetectorID(id string) bool {
+	if len(id) == 0 || len(id) > 64 {
+		return false
+	}
+	for _, r := range id {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("_.:-", r)) {
+			return false
+		}
+	}
+	return true
 }
 
 func validateSecurityEvents(cfg SecurityEventStreamConfig) error {
@@ -3902,7 +4072,7 @@ func requestShapeFeatureAllowed(feature string) bool {
 	switch strings.ToLower(strings.TrimSpace(feature)) {
 	case "tools", "tool_choice", "forced_tool_choice", "structured_output", "response_format",
 		"previous_response_id", "function_call_output", "tool_result", "include", "truncation",
-		"metadata", "store", "reasoning", "image", "audio", "video", "stream", "stream_options":
+		"metadata", "store", "reasoning", "image", "audio", "video", "stream", "stream_options", "temperature", "top_p":
 		return true
 	default:
 		return false
@@ -4218,7 +4388,7 @@ func validateExternalPolicyFeedback(group string, policy ExternalPolicyConfig) e
 	if len(allowHosts) == 0 {
 		return fmt.Errorf("model group %s external_policy.feedback requires allow_hosts", group)
 	}
-	if !scriptHostAllowed(parsed.Hostname(), allowHosts) {
+	if !externalPolicyHostAllowed(parsed.Hostname(), allowHosts) {
 		return fmt.Errorf("model group %s external_policy.feedback.url host %s is not in allow_hosts", group, parsed.Hostname())
 	}
 	allowHTTP := cfg.AllowHTTP || policy.AllowHTTP
@@ -4246,7 +4416,7 @@ func validateExternalPolicyFeedback(group string, policy ExternalPolicyConfig) e
 		return fmt.Errorf("model group %s external_policy.feedback on_delivery_failure must be log or ignore", group)
 	}
 	for header := range cfg.Headers {
-		if !scriptConfigHeaderAllowed(header) {
+		if !externalPolicyConfigHeaderAllowed(header) {
 			return fmt.Errorf("model group %s external_policy.feedback header %s is not allowed", group, header)
 		}
 	}

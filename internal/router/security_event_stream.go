@@ -197,7 +197,17 @@ func marshalOCSFSecurityEvent(event securityAccessEvent) ([]byte, error) {
 	if classUID == 2004 {
 		obj["status"] = "New"
 		obj["status_id"] = 1
-		obj["finding_info"] = map[string]any{"uid": uid, "title": safeOCSFValue(event.EventType), "product": map[string]any{"name": "Metrum AI Router"}}
+		title := safeOCSFValue(event.EventType)
+		findingInfo := map[string]any{"uid": uid, "title": title, "product": map[string]any{"name": "Metrum AI Router"}}
+		if event.EventType == "security_detector_signal" || event.EventType == "security_detector_failure" {
+			if detectorID := safeOCSFValue(event.RequestedModel); detectorID != "" {
+				findingInfo["title"] = detectorID
+			}
+			if reason := safeOCSFValue(event.ReasonCode); reason != "" {
+				findingInfo["desc"] = reason
+			}
+		}
+		obj["finding_info"] = findingInfo
 	} else {
 		obj["actor"] = map[string]any{"user": map[string]any{"name": "router"}}
 		if classUID == 3002 {
@@ -225,7 +235,7 @@ func ocsfSecurityClass(eventType string) (classUID, categoryUID int, name string
 			activity = 2 // Logoff
 		}
 		return 3002, 3, "Authentication", activity
-	case "detector_signal", "dlp_hit", "firewall_block", "firewall_hold", "caller_quota_exhausted", "spend_breaker_trip", "provider_spend_breaker_trip", "provider_spend_breaker_reset", "honeytoken_use", "incident":
+	case "detector_signal", "security_detector_signal", "security_detector_failure", "dlp_hit", "firewall_block", "firewall_hold", "caller_quota_exhausted", "spend_breaker_trip", "provider_spend_breaker_trip", "provider_spend_breaker_reset", "honeytoken_use", "incident":
 		return 2004, 2, "Detection Finding", 1
 	default:
 		activity := 2

@@ -4,7 +4,7 @@
 
 ### Added
 
-- Add an opt-in OCSF 1.4.0 JSON Lines security-event stream for stdout, append-only files, and signed HTTPS webhooks, with bounded asynchronous delivery and Prometheus queue/failure counters. Caller quota exhaustion is emitted separately from provider spend-breaker events.
+- Add an opt-in OCSF 1.4.0 JSON Lines security-event stream for stdout, append-only files, and signed HTTPS webhooks, with bounded asynchronous delivery and Prometheus queue/failure counters. Caller quota exhaustion is emitted separately from provider spend-breaker events; asynchronous detector signals and failures are streamed as Detection Findings with bounded signal metadata.
 
 ### Fixed
 
@@ -12,6 +12,7 @@
 
 - `router-migrate --json` keeps stdout valid JSON by directing GORM diagnostics
   to stderr.
+- Drop target-declared unsupported `temperature` and `top_p` fields before dispatch; classify structured 400/422 sampling-parameter refusals for pre-commit fallback; and forward `top_p` when translating to OpenAI Chat Completions.
 
 All notable changes to Metrum AI Router are documented in this file.
 
@@ -24,7 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add caller key containment through `/admin/v1/containment`, `routerctl contain` and `routerctl release`, plus an optional HMAC-SHA256 SOAR/EDR webhook. Webhook writes use signed nonce replay protection without ETag headers; containment can resume only containment-originated suspensions.
 
+### Security
+
+- Add the versioned external detector contract and bounded asynchronous detector queue. Operator detector code runs in separate services; see the detector security guide.
+- Reject userinfo in external-policy and detector URLs, including redirect targets.
+
 ### Fixed
+
+- Remove the in-process TypeScript routing strategy and its goja/esbuild dependencies. Configurations using `strategy: script`, `script`, `script_max_concurrent`, or `script_http` now fail at load with migration guidance to `strategy: external`. Port request-shape and PII-aware policy examples to standalone services.
 
 - Raise the default upstream SSE line limit to a bounded 8 MiB and expose `server.streaming.max_sse_line_bytes` with validated 64 KiB–32 MiB bounds.
 - Allow oversized upstream lines to fall back before downstream commitment; retain reported usage from discarded attempts with explicit audit provenance.
@@ -38,6 +46,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   server crash caused by a `MaxBytesReader` header race in `net/http`. Release binaries,
   container images and the CI runner image are built with Go 1.27.4, and source builds
   require at least Go 1.27.4.
+- Resolve proxied client addresses from the right through trusted proxy hops, so client-supplied leftmost `X-Forwarded-For` values cannot control caller binding, admin OIDC rate limits, or security access records.
 
 ## [4.8.0] - 2026-11-08
 

@@ -44,6 +44,8 @@ func TestOCSFSecurityEventClassesAndRequiredFields(t *testing.T) {
 		{"caller_suspended", 3002, 3, "Authentication"},
 		{"caller_throttled", 3002, 3, "Authentication"},
 		{"detector_signal", 2004, 2, "Detection Finding"},
+		{"security_detector_signal", 2004, 2, "Detection Finding"},
+		{"security_detector_failure", 2004, 2, "Detection Finding"},
 		{"dlp_hit", 2004, 2, "Detection Finding"},
 		{"firewall_block", 2004, 2, "Detection Finding"},
 		{"firewall_hold", 2004, 2, "Detection Finding"},
