@@ -101,6 +101,54 @@ func TestSecretDLPRequestAndUnaryResponseE2E(t *testing.T) {
 	}
 }
 
+func TestSecretDLPResponsesClientRedactsPromptAndToolResult(t *testing.T) {
+	githubToken := fakeGitHubToken()
+	awsToken := fakeAWSAccessKey()
+	var calls atomic.Int64
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+			return
+		}
+		messages, _ := json.Marshal(body["messages"])
+		for _, secret := range []string{githubToken, awsToken} {
+			if strings.Contains(string(messages), secret) {
+				t.Errorf("Responses bridge forwarded a secret: %s", messages)
+			}
+		}
+		if !strings.Contains(string(messages), "[SECRET_GITHUB_1]") || !strings.Contains(string(messages), "[SECRET_AWS_1]") {
+			t.Errorf("Responses bridge did not redact prompt and tool result: %s", messages)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"id": "responses-secret-dlp", "choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": "returned " + githubToken}}}, "usage": map[string]any{"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5}})
+	}))
+	defer upstream.Close()
+	cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
+	group := cfg.Models["default"]
+	group.PIIFilter.Enabled = true
+	group.PIIFilter.SecretsEnabled = true
+	group.Targets[0].ToolSupport = ToolSupport{OpenAIChat: []string{"tools", "tool_choice"}}
+	group.Targets[0].ResponsesToChat = ResponsesToChatBridge{Enabled: true, Text: true, FunctionTools: true, ToolChoice: true}
+	cfg.Models["default"] = group
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	body := `{"model":"default","input":[{"role":"user","content":"credential ` + githubToken + `"},{"type":"function_call","call_id":"call_1","name":"read_secret","arguments":"{}"},{"type":"function_call_output","call_id":"call_1","output":"tool result ` + awsToken + `"}],"max_output_tokens":128,"store":false,"tools":[{"type":"function","name":"read_secret","parameters":{"type":"object"}}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	response := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(response, req)
+	if response.Code != http.StatusOK || calls.Load() != 1 {
+		t.Fatalf("status=%d calls=%d body=%s", response.Code, calls.Load(), response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), githubToken) || !strings.Contains(response.Body.String(), "[SECRET_GITHUB_1]") {
+		t.Fatalf("Responses client received an unredacted completion: %s", response.Body.String())
+	}
+}
+
 func FuzzSecretMatcher(f *testing.F) {
 	f.Add(fakeAWSAccessKey())
 	f.Add(fakeGitHubToken())

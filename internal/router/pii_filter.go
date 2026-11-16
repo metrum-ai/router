@@ -374,6 +374,13 @@ func redactRawValue(v any, ctx rawPIIContext, state *piiRedactionState, apply no
 			out[i] = redactRawValue(item, child, state, apply)
 		}
 		return out
+	case []map[string]any:
+		out := make([]map[string]any, len(x))
+		for i, item := range x {
+			redacted, _ := redactRawValue(item, ctx, state, apply).(map[string]any)
+			out[i] = redacted
+		}
+		return out
 	case map[string]any:
 		role := strings.ToLower(strings.TrimSpace(stringValue(x["role"])))
 		childToolResult := ctx.inToolResult || role == "tool"
@@ -405,7 +412,7 @@ func shouldRedactRawString(ctx rawPIIContext, apply normalizedPIIApplyTo) bool {
 		return apply.system
 	case "input":
 		return apply.responsesInput
-	case "text":
+	case "text", "output_text":
 		return apply.messages || apply.responsesInput || (apply.toolResults && ctx.inToolResult) ||
 			(apply.system && ctx.inInstruction) || (apply.responsesInput && ctx.inInput)
 	case "content":
@@ -445,6 +452,12 @@ func restorePIIRaw(v any, placeholders []piiPlaceholder) any {
 		out := make([]any, len(x))
 		for i, item := range x {
 			out[i] = restorePIIRaw(item, placeholders)
+		}
+		return out
+	case []map[string]any:
+		out := make([]map[string]any, len(x))
+		for i, item := range x {
+			out[i], _ = restorePIIRaw(item, placeholders).(map[string]any)
 		}
 		return out
 	case map[string]any:
