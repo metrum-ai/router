@@ -251,6 +251,9 @@ server:
       policy_file: ''
       policy:
       - p, basic:admin, example/prod, admin:reports, read|export|drilldown
+      # Grant containment separately from key issue, rotation, and revoke.
+      # - g, adminkey:secops, role:containment, *
+      # - p, role:containment, *, admin:containment, contain
       # Example Casbin policy for metrics, admin reports, and content maintenance after AuthN is enabled.
       # Use policy_file for deployment-owned CSV files, or inline policy for small installs.
       # For DB-backed policy lifecycle, create policy rows in the usage DB, validate
@@ -264,6 +267,11 @@ server:
       # - p, content_admin, example/prod, content:capture, delete|purge
       # - p, reports_admin, example/prod, admin:reports, read|export|drilldown
       # - p, reports_admin, example/prod, admin:security_reports, read|export
+  containment_webhook:
+    enabled: false
+    # Set a 32-byte-or-longer secret in the process environment.
+    # secret_env: ROUTER_CONTAINMENT_WEBHOOK_SECRET
+    # timestamp_window: 5m
   admin_reports:
     enabled: true
     path_prefix: /admin/reports
