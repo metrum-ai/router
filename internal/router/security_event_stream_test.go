@@ -6,6 +6,8 @@ package router
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -232,6 +234,70 @@ func TestServiceStreamsAuthenticationFailureWhenReportsAreOff(t *testing.T) {
 	}
 	if !strings.Contains(string(body), `"class_uid":3002`) || !strings.Contains(string(body), "api_auth_failed") || strings.Contains(string(body), "invalid-token") {
 		t.Fatalf("missing sanitized auth failure event: %s", body)
+	}
+}
+
+func TestServiceWebhookReceivesSignedAuthenticationEvent(t *testing.T) {
+	secret := []byte(strings.Repeat("s", 32))
+	received := make(chan bool, 1)
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			received <- false
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		mac := hmac.New(sha256.New, secret)
+		_, _ = mac.Write([]byte(r.Header.Get("X-Router-Timestamp") + "\n"))
+		_, _ = mac.Write(body)
+		provided, err := hex.DecodeString(strings.TrimPrefix(r.Header.Get("X-Router-Signature"), "sha256="))
+		var event map[string]any
+		valid := err == nil && hmac.Equal(provided, mac.Sum(nil)) && json.Unmarshal(body, &event) == nil && event["class_uid"] == float64(3002) && event["message"] == "api_auth_failed unauthorized"
+		received <- valid
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	certPool, err := x509.SystemCertPool()
+	if err != nil || certPool == nil {
+		certPool = x509.NewCertPool()
+	}
+	certPool.AddCert(server.Certificate())
+	oldTransport := http.DefaultTransport
+	transport := oldTransport.(*http.Transport).Clone()
+	transport.TLSClientConfig = &tls.Config{RootCAs: certPool, MinVersion: tls.VersionTLS12}
+	http.DefaultTransport = transport
+	t.Cleanup(func() {
+		http.DefaultTransport = oldTransport
+		transport.CloseIdleConnections()
+	})
+
+	t.Setenv("SECURITY_EVENTS_WEBHOOK_TEST_KEY", string(secret))
+	dir := t.TempDir()
+	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", dir)
+	cfg.Server.Security.Events = SecurityEventStreamConfig{
+		Enabled: true, Version: "1.4.0", Output: "file", Path: filepath.Join(dir, "events.jsonl"),
+		WebhookURL: server.URL, WebhookSecretEnv: "SECURITY_EVENTS_WEBHOOK_TEST_KEY",
+	}
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"default","messages":[]}`))
+	req.Header.Set("Authorization", "Bearer invalid-token")
+	response := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(response, req)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("auth status = %d, want 401", response.Code)
+	}
+	select {
+	case valid := <-received:
+		if !valid {
+			t.Fatal("configured webhook did not receive the signed OCSF auth event")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for configured webhook event")
 	}
 }
 
