@@ -104,6 +104,7 @@ type RouterSecurityConfig struct {
 
 type KeyHygieneConfig struct {
 	MinEntropyBits int  `yaml:"min_entropy_bits" json:"minEntropyBits,omitempty"`
+	MaxAgeDays     int  `yaml:"max_age_days" json:"maxAgeDays,omitempty"`
 	Enforce        bool `yaml:"enforce" json:"enforce,omitempty"`
 }
 
@@ -1965,6 +1966,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 	}
 	if c.Security.KeyHygiene.MinEntropyBits < 0 || c.Security.KeyHygiene.MinEntropyBits > 256 {
 		return fmt.Errorf("security.key_hygiene.min_entropy_bits must be 0 (default) or between 1 and 256")
+	}
+	if c.Security.KeyHygiene.MaxAgeDays < 0 || c.Security.KeyHygiene.MaxAgeDays > 3650 {
+		return fmt.Errorf("security.key_hygiene.max_age_days must be 0 (default) or between 1 and 3650")
 	}
 	entropyFloor := c.Security.KeyHygiene.MinEntropyBits
 	if entropyFloor == 0 {
