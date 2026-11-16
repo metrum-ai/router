@@ -6,6 +6,7 @@
 package router
 
 import (
+	"errors"
 	"net"
 	"net/http"
 	"os"
@@ -24,7 +25,7 @@ func TestAdminUnixSocketPermissionHelper(t *testing.T) {
 	if conn != nil {
 		_ = conn.Close()
 	}
-	if err == nil || !(os.IsPermission(err) || err == syscall.EACCES || err == syscall.EPERM) {
+	if err == nil || !(errors.Is(err, syscall.EACCES) || errors.Is(err, syscall.EPERM) || os.IsPermission(err)) {
 		t.Fatalf("unprivileged socket dial error=%v, want permission denied", err)
 	}
 }

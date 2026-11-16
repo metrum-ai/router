@@ -15,6 +15,7 @@ import (
 	"time"
 )
 
+// Umask is process-wide, so serialize its temporary change while binding sockets.
 var adminUnixUmaskMu sync.Mutex
 
 func listenAdminUnixSocket(path string) (*net.UnixListener, error) {

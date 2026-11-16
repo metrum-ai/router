@@ -269,7 +269,8 @@ keys removed before restart.
 
 The online `metrum-ai-routerctl` commands now use the versioned API on the dedicated admin
 listener. Set either `--router-url`/`ROUTER_URL` for TCP or `--socket` for a Unix socket; do not
-combine them. Unix sockets can run alone or alongside TCP, and their filesystem mode controls which
+combine them. When neither is set, routerctl uses the restored default
+`http://127.0.0.1:8081`. Unix sockets can run alone or alongside TCP, and their filesystem mode controls which
 local users can connect. Remote TCP endpoints require HTTPS. Credentials remain in `ROUTER_ADMIN_KEY`,
 `ROUTER_ADMIN_KEY_FILE`, or a mode-0600 `--admin-key-file`. Endpoint values must be origins with
 no path (a single trailing slash is tolerated), query, fragment, or embedded credentials; use only

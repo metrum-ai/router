@@ -210,7 +210,8 @@ configuration database first and follow the v5.0.0 section of the `docs-site/doc
 and rollback use the Admin API by default; add `--offline` only when the router is stopped and the
 operator intentionally accesses the control-plane database. Other online operations use the Admin
 API directly. Set either `--router-url`/`ROUTER_URL` for TCP or `--socket` for a Unix socket;
-the options cannot be combined. A socket can be the only listener or run alongside TCP. Plain HTTP
+the options cannot be combined. When neither is set, routerctl uses the restored default
+`http://127.0.0.1:8081`. A socket can be the only listener or run alongside TCP. Plain HTTP
 is accepted only on loopback; remote endpoints require HTTPS. Admin credentials come from
 `ROUTER_ADMIN_KEY`, `ROUTER_ADMIN_KEY_FILE`, or
 `--admin-key-file`.

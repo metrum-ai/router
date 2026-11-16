@@ -15,7 +15,6 @@ import (
 	"testing"
 
 	"github.com/metrum-ai/router/internal/router"
-	"github.com/metrum-ai/router/internal/smartrouterctl"
 )
 
 func TestCFOReportCommand(t *testing.T) {
@@ -59,12 +58,12 @@ func TestCFOReportCommand(t *testing.T) {
 	}
 }
 
-func TestCFOReportRequiresExplicitEndpoint(t *testing.T) {
+func TestCFOReportUsesDefaultAdminEndpointAndHints(t *testing.T) {
 	t.Setenv("ROUTER_URL", "")
 	t.Setenv("ROUTER_ADMIN_KEY", "rtr_admin_fake")
-	client, err := smartrouterctl.NewAdminAPIClient("", "")
-	if err != nil || client.BaseURL != "http://127.0.0.1:8081" {
-		t.Fatalf("default endpoint client=%+v err=%v", client, err)
+	err := runCFOReport(nil, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "127.0.0.1:8081") || !strings.Contains(err.Error(), "admin.listen") {
+		t.Fatalf("default endpoint failure lacks setup hints: %v", err)
 	}
 }
 
