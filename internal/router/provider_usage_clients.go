@@ -279,6 +279,9 @@ type anthropicCostResponse struct {
 func readProviderUsageBody(response *http.Response) ([]byte, error) {
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		if response.StatusCode == http.StatusUnauthorized || response.StatusCode == http.StatusForbidden {
+			return nil, newProviderUsageAuthError(response.StatusCode)
+		}
 		return nil, errors.New("provider usage API returned a non-success status")
 	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, providerUsageMaxResponseBytes+1))

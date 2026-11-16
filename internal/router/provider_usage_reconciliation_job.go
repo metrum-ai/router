@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"log"
+	"net/http"
 	"time"
 )
 
@@ -126,7 +127,7 @@ func (s *Service) runProviderUsageReconciliation(parent context.Context, source 
 				_, err = reconciler.reconcile(perProvider, entry.Provider, dayStart, dayTo)
 				timedOut = perProvider.Err() != nil
 				stop()
-				if err == nil || errors.Is(err, errProviderUsagePartialData) {
+				if err == nil || errors.Is(err, errProviderUsagePartialData) || errors.Is(err, errProviderUsageAuthFailed) {
 					break
 				}
 				if attempt < 2 {
@@ -144,6 +145,9 @@ func (s *Service) runProviderUsageReconciliation(parent context.Context, source 
 				status, reason := 502, "provider_usage_source_failed"
 				if timedOut {
 					status, reason = 504, "provider_usage_timeout"
+				}
+				if errors.Is(err, errProviderUsageAuthFailed) {
+					status, reason = providerUsageAuthStatus(err), "provider_usage_auth_error"
 				}
 				if errors.Is(err, errProviderUsagePartialData) {
 					status, reason = 0, "provider_usage_data_partial"
@@ -166,7 +170,7 @@ func (s *Service) recordProviderUsageFailure(provider string, from, to time.Time
 	if s == nil || s.usage == nil || s.usage.db == nil {
 		return errors.New("provider usage failure event store is unavailable")
 	}
-	valid := (statusCode == 502 && reasonCode == "provider_usage_source_failed") || (statusCode == 504 && reasonCode == "provider_usage_timeout") || (statusCode == 0 && reasonCode == "provider_usage_data_partial")
+	valid := (statusCode == 502 && reasonCode == "provider_usage_source_failed") || (statusCode == 504 && reasonCode == "provider_usage_timeout") || ((statusCode == http.StatusUnauthorized || statusCode == http.StatusForbidden) && reasonCode == "provider_usage_auth_error") || (statusCode == 0 && reasonCode == "provider_usage_data_partial")
 	if provider == "" || !to.After(from) || !valid {
 		return errors.New("provider usage failure event is invalid")
 	}

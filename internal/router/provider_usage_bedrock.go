@@ -7,6 +7,8 @@ import (
 	"context"
 	"errors"
 	"math"
+	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -18,6 +20,8 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/aws/smithy-go"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 )
 
 const bedrockCloudWatchMaxQueries = 100
@@ -31,7 +35,8 @@ type bedrockMetricPrice struct {
 }
 
 func newBedrockCloudWatchClient(ctx context.Context, entry ProviderUsageReconciliationEntry) (cloudWatchGetMetricDataAPI, error) {
-	cfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(strings.TrimSpace(entry.AWSRegion)))
+	region := strings.TrimSpace(entry.AWSRegion)
+	cfg, err := loadProviderUsageAWSConfig(ctx, region)
 	if err != nil {
 		return nil, errors.New("Bedrock CloudWatch credentials are unavailable")
 	}
@@ -39,6 +44,55 @@ func newBedrockCloudWatchClient(ctx context.Context, entry ProviderUsageReconcil
 		cfg.Credentials = aws.NewCredentialsCache(stscreds.NewAssumeRoleProvider(sts.NewFromConfig(cfg), role))
 	}
 	return cloudwatch.NewFromConfig(cfg), nil
+}
+
+func providerUsageAWSHosts(region string) ([]string, error) {
+	region = strings.TrimSpace(region)
+	if !validAWSRegion(region) {
+		return nil, errors.New("provider usage AWS region is invalid")
+	}
+	suffix := "amazonaws.com"
+	if strings.HasPrefix(region, "cn-") {
+		suffix = "amazonaws.com.cn"
+	}
+	return []string{"monitoring." + region + "." + suffix, "sts." + region + "." + suffix}, nil
+}
+
+func newProviderUsageAWSHTTPClient(region string) (*http.Client, error) {
+	hosts, err := providerUsageAWSHosts(region)
+	if err != nil {
+		return nil, err
+	}
+	return newEgressHTTPClientWithOptions(egressHTTPClientOptions{
+		Timeout: 10 * time.Second, AllowHosts: hosts, Label: "provider usage AWS",
+		Proxy: func(*http.Request) (*url.URL, error) { return nil, nil },
+	}), nil
+}
+
+func loadProviderUsageAWSConfig(ctx context.Context, region string) (aws.Config, error) {
+	client, err := newProviderUsageAWSHTTPClient(region)
+	if err != nil {
+		return aws.Config{}, err
+	}
+	return awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(strings.TrimSpace(region)), awsconfig.WithHTTPClient(client))
+}
+
+func providerUsageIsAuthError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var responseErr *smithyhttp.ResponseError
+	if errors.As(err, &responseErr) && (responseErr.HTTPStatusCode() == http.StatusUnauthorized || responseErr.HTTPStatusCode() == http.StatusForbidden) {
+		return true
+	}
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		switch strings.ToLower(apiErr.ErrorCode()) {
+		case "accessdenied", "accessdeniedexception", "unauthorized", "unauthorizedexception", "unrecognizedclientexception", "invalidclienttokenid", "expiredtokenexception":
+			return true
+		}
+	}
+	return false
 }
 
 func (c *providerUsageClient) bedrockCost(ctx context.Context, entry ProviderUsageReconciliationEntry, from, to time.Time) (float64, error) {
@@ -109,6 +163,9 @@ func (c *providerUsageClient) bedrockCost(ctx context.Context, entry ProviderUsa
 			MaxDatapoints: aws.Int32(int32(len(queries))), ScanBy: types.ScanByTimestampAscending,
 		})
 		if err != nil || output == nil {
+			if providerUsageIsAuthError(err) {
+				return 0, newProviderUsageAuthError(403)
+			}
 			return 0, errors.New("Bedrock CloudWatch query failed")
 		}
 		for _, result := range output.MetricDataResults {

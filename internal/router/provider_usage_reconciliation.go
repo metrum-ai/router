@@ -30,6 +30,27 @@ type providerUsageWatermarkSource interface {
 var errProviderUsagePartialData = errors.New("provider usage data is not refreshed through the requested window")
 
 var errProviderUsageSourceFailed = errors.New("provider usage source request failed")
+var errProviderUsageAuthFailed = errors.New("provider usage authentication failed")
+
+type providerUsageAuthError struct{ statusCode int }
+
+func (e providerUsageAuthError) Error() string { return errProviderUsageAuthFailed.Error() }
+func (e providerUsageAuthError) Unwrap() error { return errProviderUsageAuthFailed }
+
+func newProviderUsageAuthError(statusCode int) error {
+	if statusCode != 401 && statusCode != 403 {
+		statusCode = 403
+	}
+	return providerUsageAuthError{statusCode: statusCode}
+}
+
+func providerUsageAuthStatus(err error) int {
+	var authErr providerUsageAuthError
+	if errors.As(err, &authErr) {
+		return authErr.statusCode
+	}
+	return 403
+}
 
 type providerUsageGap struct {
 	Provider    string
@@ -67,6 +88,9 @@ func (r *providerUsageReconciler) reconcile(ctx context.Context, provider string
 	if source, ok := r.source.(providerUsageWatermarkSource); ok {
 		result, sourceErr := source.ProviderCostWithWatermark(ctx, provider, from, to)
 		if sourceErr != nil {
+			if errors.Is(sourceErr, errProviderUsageAuthFailed) {
+				return false, newProviderUsageAuthError(providerUsageAuthStatus(sourceErr))
+			}
 			return false, errProviderUsageSourceFailed
 		}
 		if !result.DataRefreshedAt.IsZero() && result.DataRefreshedAt.Before(to) {
@@ -77,6 +101,9 @@ func (r *providerUsageReconciler) reconcile(ctx context.Context, provider string
 		var sourceErr error
 		providerUSD, sourceErr = r.source.ProviderCost(ctx, provider, from, to)
 		if sourceErr != nil {
+			if errors.Is(sourceErr, errProviderUsageAuthFailed) {
+				return false, newProviderUsageAuthError(providerUsageAuthStatus(sourceErr))
+			}
 			return false, errProviderUsageSourceFailed
 		}
 	}

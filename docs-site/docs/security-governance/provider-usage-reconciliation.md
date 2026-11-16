@@ -73,10 +73,14 @@ event store and catches up missed days after restart, bounded by
 up to two times with bounded backoff. When an API returns `data_refreshed_at`,
 the runner skips a window whose watermark does not reach its end and emits a
 partial-data event; the next scheduled run retries that day. Provider failures
-and partial windows emit safe events. Logs/events exclude credentials,
-response bodies and spend amounts; gap/failure events carry provider and window
-in dedicated event fields. Provider API egress permits only HTTPS to
-`api.openai.com` and `api.anthropic.com`, without environment proxies.
+and partial windows emit safe events. HTTP 401/403 and AWS access-denied errors
+fail without retry and use the `provider_usage_auth_error` class. Logs/events
+exclude credentials, response bodies and spend amounts; gap/failure events
+carry provider and window in dedicated event fields. Provider API egress
+permits only HTTPS to `api.openai.com` and `api.anthropic.com`; Bedrock's
+CloudWatch and STS clients share a direct egress client restricted to the
+region-specific `monitoring` and `sts` AWS hosts. Environment proxies are not
+used.
 
 When started with reconciliation enabled, config reloads apply on the next
 daily run; disabling pauses it and later re-enabling resumes it without a

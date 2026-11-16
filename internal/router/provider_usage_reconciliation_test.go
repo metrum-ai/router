@@ -22,6 +22,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/cloudwatch"
 	cwtypes "github.com/aws/aws-sdk-go-v2/service/cloudwatch/types"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
 type fixedProviderUsageSource struct {
@@ -98,6 +99,84 @@ func TestProviderUsageDailyJobRecordsSafeTimeoutStatus(t *testing.T) {
 	}
 }
 
+type authFailureProviderUsageSource struct{ calls int }
+
+func (s *authFailureProviderUsageSource) ProviderCost(context.Context, string, time.Time, time.Time) (float64, error) {
+	s.calls++
+	return 0, errProviderUsageAuthFailed
+}
+
+func TestProviderUsageAuthFailureDoesNotRetryAndIsClassified(t *testing.T) {
+	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	service := &Service{usage: store, cfg: &Config{Server: ServerConfig{AdminReports: AdminReportsConfig{Security: AdminSecurityReportsConfig{Enabled: true}}, ProviderUsageReconciliation: ProviderUsageReconciliationConfig{Enabled: true, Providers: []ProviderUsageReconciliationEntry{{Provider: "primary"}}}}}}
+	source := &authFailureProviderUsageSource{}
+	if err := service.runProviderUsageReconciliation(context.Background(), source, time.Date(2026, 11, 16, 6, 0, 0, 0, time.UTC)); !errors.Is(err, errProviderUsageAuthFailed) {
+		t.Fatalf("run error = %v, want auth failure", err)
+	}
+	if source.calls != 1 {
+		t.Fatalf("authentication failure attempts = %d, want 1", source.calls)
+	}
+	var event securityAccessEventRecord
+	if err := store.db.Where("event_type = ? AND reason_code = ?", "provider_usage_failure", "provider_usage_auth_error").First(&event).Error; err != nil {
+		t.Fatalf("auth failure event missing: %v", err)
+	}
+	if event.StatusCode != http.StatusForbidden || event.Outcome != "failed" {
+		t.Fatalf("auth failure event = %+v", event)
+	}
+}
+
+func TestBedrockUsageAndSTSClientsUseDirectAllowListedEgress(t *testing.T) {
+	t.Setenv("AWS_ACCESS_KEY_ID", "test-access-key")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "test-secret-key")
+	t.Setenv("AWS_EC2_METADATA_DISABLED", "true")
+	t.Setenv("HTTPS_PROXY", "http://proxy.invalid:8080")
+	cfg, err := loadProviderUsageAWSConfig(context.Background(), "us-east-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cloudWatchClient := cloudwatch.NewFromConfig(cfg)
+	stsClient := sts.NewFromConfig(cfg)
+	if cloudWatchClient.Options().HTTPClient != cfg.HTTPClient || stsClient.Options().HTTPClient != cfg.HTTPClient {
+		t.Fatal("CloudWatch and STS clients did not receive the configured router egress client")
+	}
+	httpClient, ok := cfg.HTTPClient.(*http.Client)
+	if !ok {
+		t.Fatalf("AWS HTTP client = %T, want *http.Client", cfg.HTTPClient)
+	}
+	transport, ok := httpClient.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("AWS transport = %T, want egress transport", httpClient.Transport)
+	}
+	proxy, err := transport.Proxy(httptest.NewRequest(http.MethodGet, "https://monitoring.us-east-1.amazonaws.com", nil))
+	if err != nil || proxy != nil {
+		t.Fatalf("AWS egress proxy = %v, err=%v; want direct connection", proxy, err)
+	}
+	hosts, err := providerUsageAWSHosts("us-east-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, host := range []string{"monitoring.us-east-1.amazonaws.com", "sts.us-east-1.amazonaws.com"} {
+		if err := validateEgressURL(mustParseURL("https://"+host), hosts, false, "provider usage AWS"); err != nil {
+			t.Fatalf("AWS endpoint %s rejected: %v", host, err)
+		}
+	}
+	if err := validateEgressURL(mustParseURL("https://169.254.169.254/latest/meta-data"), hosts, false, "provider usage AWS"); err == nil {
+		t.Fatal("metadata endpoint passed Bedrock egress policy")
+	}
+}
+
+func mustParseURL(value string) *url.URL {
+	parsed, err := url.Parse(value)
+	if err != nil {
+		panic(err)
+	}
+	return parsed
+}
+
 func TestProviderUsageDailyJobLogDoesNotExposeCredential(t *testing.T) {
 	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
 	if err != nil {
@@ -169,17 +248,21 @@ func TestProviderUsageClientsFilterKeyAndBoundPagination(t *testing.T) {
 
 func TestProviderUsageClientDoesNotExposeHTTPErrorBody(t *testing.T) {
 	t.Setenv("ROUTER_PROVIDER_USAGE_TEST_TOKEN", "admin-secret-token")
+	status := http.StatusForbidden
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusForbidden)
+		w.WriteHeader(status)
 		_, _ = w.Write([]byte("admin-secret-token internal response details"))
 	}))
 	defer server.Close()
-	client := newProviderUsageClient(ProviderUsageReconciliationConfig{Providers: []ProviderUsageReconciliationEntry{{Provider: "openai", Kind: "openai", CredentialEnv: "ROUTER_PROVIDER_USAGE_TEST_TOKEN", ProviderKeyID: "key-123"}}}, nil, server.Client())
-	client.openAIEndpoint = server.URL
 	from := time.Date(2026, 11, 15, 0, 0, 0, 0, time.UTC)
-	_, err := client.ProviderCost(context.Background(), "openai", from, from.Add(24*time.Hour))
-	if err == nil || strings.Contains(err.Error(), "admin-secret-token") || strings.Contains(err.Error(), "internal response details") {
-		t.Fatalf("provider API error leaked: %v", err)
+	for _, code := range []int{http.StatusUnauthorized, http.StatusForbidden} {
+		status = code
+		client := newProviderUsageClient(ProviderUsageReconciliationConfig{Providers: []ProviderUsageReconciliationEntry{{Provider: "openai", Kind: "openai", CredentialEnv: "ROUTER_PROVIDER_USAGE_TEST_TOKEN", ProviderKeyID: "key-123"}}}, nil, server.Client())
+		client.openAIEndpoint = server.URL
+		_, err := client.ProviderCost(context.Background(), "openai", from, from.Add(24*time.Hour))
+		if !errors.Is(err, errProviderUsageAuthFailed) || providerUsageAuthStatus(err) != code || strings.Contains(err.Error(), "admin-secret-token") || strings.Contains(err.Error(), "internal response details") {
+			t.Fatalf("provider API status %d error = %v, want safe auth failure", code, err)
+		}
 	}
 }
 
