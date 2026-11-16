@@ -247,7 +247,7 @@ the deployment's data-handling policy.
 
 For v5.0.0, run Harbor task images as UID/GID 10001. Kubernetes manifest image references now include both a release tag placeholder and a digest placeholder; replace them with the exact tag and digest published for your chosen architecture. Third-party serving image references use immutable digests. Do not deploy mutable tags alone.
 
-The optional `deploy/kubernetes/trusted-registry-policy.example.yaml` shows a Kyverno policy that requires approved router or vLLM registries and digests for Pod containers. It is an example only; the router does not install or require an admission controller. Adapt the allowed images and registry hosts to your cluster before applying it.
+The optional `deploy/kubernetes/trusted-registry-policy.example.yaml` shows a Kyverno policy that requires approved router or vLLM registries and digests for regular, init, and ephemeral containers. It is an example only; the router does not install or require an admission controller. Adapt the allowed images and registry hosts to your cluster before applying it. Trivy's KSV-0125 suppression is limited to exact rendered examples because its static registry list cannot establish deployment-specific trust.
 
 ## 10. Kubernetes network verification
 

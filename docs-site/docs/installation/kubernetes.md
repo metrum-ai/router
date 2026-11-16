@@ -48,7 +48,7 @@ docker tag metrum-ai-router:<version>-linux-amd64 registry.example.com/metrum-ai
 docker push registry.example.com/metrum-ai-router:<version>-linux-amd64
 ```
 
-Use the registry-reported digest in every workload image reference; do not deploy a mutable tag alone. The generic manifests use placeholder tag and digest values. Replace them with the exact published image reference before applying. Third-party serving images are pinned by digest in their manifests. For an optional cluster-wide guard, adapt the [trusted-registry policy example](../../../deploy/kubernetes/trusted-registry-policy.example.yaml) to your approved registry hosts and images, then install it through your cluster's policy process. The example is not installed by this project.
+Use the registry-reported digest in every workload image reference; do not deploy a mutable tag alone. The generic manifests use placeholder tag and digest values. Replace them with the exact published image reference before applying. Third-party serving images are pinned by digest in their manifests. For an optional cluster-wide guard, adapt the [trusted-registry policy example](../../../deploy/kubernetes/trusted-registry-policy.example.yaml) to your approved registry hosts and images, then install it through your cluster's policy process. The example is not installed by this project. Trivy cannot infer whether deployment-specific registries are trusted; the repository therefore suppresses KSV-0125 only for exact rendered examples, with an explanation for each output.
 
 Mixed-architecture clusters need separate per-architecture tags or a registry-managed multi-architecture manifest. Do not use a per-architecture tarball as if it were a multi-architecture image.
 

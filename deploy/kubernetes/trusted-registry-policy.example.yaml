@@ -5,7 +5,6 @@ kind: ClusterPolicy
 metadata:
   name: require-trusted-image-registries
 spec:
-  validationFailureAction: Enforce
   background: true
   rules:
     - name: require-trusted-registries-and-digests
@@ -15,19 +14,27 @@ spec:
               kinds:
                 - Pod
       validate:
+        failureAction: Enforce
         message: Images must come from an approved registry and use an immutable digest.
         foreach:
           - list: request.object.spec.containers
             deny:
               conditions:
                 any:
-                  - key: "{{ element.image }}"
-                    operator: NotMatches
-                    value: "^(registry\\.example\\.com/metrum-ai-router|docker\\.io/vllm/vllm-openai(-rocm)?):[^@]+@sha256:[a-f0-9]{64}$"
+                  - key: "{{ regex_match('^((docker\\.io/)?vllm/vllm-openai(-rocm)?|registry\\.example\\.com/metrum-ai-router):[^@]+@sha256:[a-f0-9]{64}$', element.image) }}"
+                    operator: Equals
+                    value: false
           - list: request.object.spec.initContainers || `[]`
             deny:
               conditions:
                 any:
-                  - key: "{{ element.image }}"
-                    operator: NotMatches
-                    value: "^(registry\\.example\\.com/metrum-ai-router|docker\\.io/vllm/vllm-openai(-rocm)?):[^@]+@sha256:[a-f0-9]{64}$"
+                  - key: "{{ regex_match('^((docker\\.io/)?vllm/vllm-openai(-rocm)?|registry\\.example\\.com/metrum-ai-router):[^@]+@sha256:[a-f0-9]{64}$', element.image) }}"
+                    operator: Equals
+                    value: false
+          - list: request.object.spec.ephemeralContainers || `[]`
+            deny:
+              conditions:
+                any:
+                  - key: "{{ regex_match('^((docker\\.io/)?vllm/vllm-openai(-rocm)?|registry\\.example\\.com/metrum-ai-router):[^@]+@sha256:[a-f0-9]{64}$', element.image) }}"
+                    operator: Equals
+                    value: false

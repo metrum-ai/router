@@ -347,6 +347,16 @@ jobs:
           path: ${{ env.COMPAT_CACHE }}
           key: ci-testers-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.mod') }}-${{ steps.pins.outputs.openai }}-${{ steps.pins.outputs.anthropic }}
 
+  harbor-task-images:
+    name: Harbor non-root task images
+    if: github.event_name != 'push' && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build and smoke-test non-root Harbor images
+        run: bash scripts/harbor_e2e/test_nonroot_images.sh
+
   k8s-security:
     name: Rendered Kubernetes security
     if: github.event_name != 'push' && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
@@ -374,7 +384,7 @@ jobs:
           scan-type: config
           scan-ref: ${{ runner.temp }}/security-rendered
           trivyignores: .github/trivy-k8s-ignore.yaml
-          severity: HIGH,CRITICAL
+          severity: MEDIUM,HIGH,CRITICAL
           exit-code: '1'
           version: v0.76.1
           cache: 'false'

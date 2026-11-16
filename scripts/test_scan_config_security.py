@@ -12,12 +12,24 @@ def test_harbor_task_images_run_as_fixed_non_root_user():
     assert len(dockerfiles) == 6
     for dockerfile in dockerfiles:
         content = dockerfile.read_text(encoding="utf-8")
+        assert "useradd --uid 10001" in content, dockerfile
+        assert "ENV HOME=/home/harbor" in content, dockerfile
+        assert "install -d -o 10001 -g 10001 /app /logs/verifier" in content, dockerfile
         assert "COPY --chown=10001:10001 workspace/ /app/" in content, dockerfile
         assert "USER 10001:10001" in content, dockerfile
 
     staging = (ROOT / "scripts/harbor_e2e/prepare_catalog_tasks.py").read_text(encoding="utf-8")
+    assert "useradd --uid 10001" in staging
+    assert "ENV HOME=/home/harbor" in staging
+    assert "install -d -o 10001 -g 10001 /app /logs/verifier" in staging
     assert "COPY --chown=10001:10001 workspace/ /app/" in staging
     assert "USER 10001:10001" in staging
+
+    synthetic = (ROOT / "scripts/harbor_e2e/generate_tasks.py").read_text(encoding="utf-8")
+    assert "useradd --uid 10001" in synthetic
+    assert "ENV HOME=/home/harbor" in synthetic
+    assert "COPY --chown=10001:10001 workspace/ /app/" in synthetic
+    assert "USER 10001:10001" in synthetic
 
 
 def test_kubernetes_images_are_digest_pinned_and_policy_is_opt_in():
@@ -34,10 +46,30 @@ def test_kubernetes_images_are_digest_pinned_and_policy_is_opt_in():
             assert "@sha256:" in image, (path, image)
 
     policy = (ROOT / "deploy/kubernetes/trusted-registry-policy.example.yaml").read_text(encoding="utf-8")
-    assert "validationFailureAction: Enforce" in policy
+    assert "failureAction: Enforce" in policy
+    assert "validationFailureAction" not in policy
     assert "sha256" in policy
-    assert "metrum-ai-router|docker" in policy
-    assert "vllm-openai" in policy
+    assert "regex_match(" in policy
+    assert policy.count("regex_match(") == 3
+    assert "operator: Equals" in policy
+    assert "value: false" in policy
+    assert "(docker\\\\.io/)?vllm/vllm-openai" in policy
+    assert "request.object.spec.containers" in policy
+    assert "request.object.spec.initContainers" in policy
+    assert "request.object.spec.ephemeralContainers" in policy
+    pattern = re.search(r"regex_match\('([^']+)'", policy).group(1).replace("\\\\", "\\")
+    allowed = [
+        "vllm/vllm-openai:v0.33.0@sha256:" + "a" * 64,
+        "docker.io/vllm/vllm-openai-rocm:v0.33.0@sha256:" + "a" * 64,
+        "registry.example.com/metrum-ai-router:v5-linux-amd64@sha256:" + "a" * 64,
+    ]
+    blocked = [
+        "docker.io/library/nginx:latest",
+        "vllm/vllm-openai:v0.33.0",
+        "registry.example.com/metrum-ai-router:v5",
+    ]
+    assert all(re.fullmatch(pattern, image) for image in allowed)
+    assert not any(re.fullmatch(pattern, image) for image in blocked)
     assert "trusted-registry-policy.example.yaml" in (
         ROOT / "docs-site/docs/installation/kubernetes.md"
     ).read_text(encoding="utf-8")

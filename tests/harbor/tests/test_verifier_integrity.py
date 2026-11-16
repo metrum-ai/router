@@ -118,5 +118,8 @@ def test_harbor_runnable_task_builds_workspace_into_container(task_id: str):
     config = tomllib.loads((task_dir / "task.toml").read_text())
     assert "docker_image" not in config.get("environment", {})
     dockerfile = (task_dir / "environment" / "Dockerfile").read_text()
+    assert "useradd --uid 10001" in dockerfile
+    assert "ENV HOME=/home/harbor" in dockerfile
+    assert "install -d -o 10001 -g 10001 /app /logs/verifier" in dockerfile
     assert "COPY --chown=10001:10001 workspace/ /app/" in dockerfile
     assert "USER 10001:10001" in dockerfile
