@@ -5,7 +5,7 @@ profile: nvidia-local-serving
 # when B200/H200 capacity exists.
 hardware_profile: l40s
 namespace: metrum-ai-router
-router_image: registry.example.com/metrum-ai-router:<version>-linux-amd64
+router_image: registry.example.com/metrum-ai-router:<version>-linux-amd64@sha256:<digest>
 edge: ingress
 usage_driver: sqlite
 default_model_group: local-small-chat

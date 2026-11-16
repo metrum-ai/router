@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Security
+
+- Run Harbor task containers as UID/GID 10001 and require digest-pinned image references in Kubernetes examples. Add an opt-in Kyverno trusted-registry policy example; it is not deployed by default.
+
 ### Added
 
 - Add release-only OpenAI Chat, OpenAI Responses, and Anthropic Messages SDK client cells to the bounded tool-call workflow. A manual `cell_set=release` dispatch on `main` attaches the sanitized report to release checks.

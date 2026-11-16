@@ -20,7 +20,8 @@ ROOT = Path(__file__).resolve().parents[2]
 DOCKERFILE = """FROM node:22.16.0-bookworm-slim
 RUN apt-get update -qq && apt-get install -y -qq python3 && npm install -g --ignore-scripts @earendil-works/pi-coding-agent@1.4.0 && pi --version
 WORKDIR /app
-COPY workspace/ /app/
+COPY --chown=10001:10001 workspace/ /app/
+USER 10001:10001
 CMD [\"sleep\", \"infinity\"]
 """
 TEST_SH = """#!/bin/sh
