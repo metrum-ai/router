@@ -7,6 +7,15 @@ doc_type: reference
 
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
 
+## v5.0.0 provider spend breaker
+
+Provider `spend_breaker` is optional. Existing configurations keep their prior
+routing behavior. Set `hourly_usd` and/or `daily_usd` under a provider to cap
+estimated spend; each window resets at the next UTC boundary. The counters are
+in memory and reset on router restart, so configure ceilings with that limit
+in mind. The router records only safe scalar trip/reset events and does not
+write provider keys to logs, events or usage rows.
+
 ## Pre-Upgrade Checklist
 
 1. Read the release notes for operator impact, database changes, license changes, and caller-visible behavior.

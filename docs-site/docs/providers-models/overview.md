@@ -91,6 +91,10 @@ providers:
     api_key: ${PROVIDER_API_KEY}
     api_key_env: PROVIDER_API_KEY
     key_id: provider-primary
+    spend_breaker:
+      hourly_usd: 200
+      daily_usd: 1500
+      on_trip: failover
     models:
       balanced-text:
         model: provider/model-id
@@ -108,6 +112,15 @@ providers:
           max_tool_schema_bytes: 100000
           supports_large_coding_agent_payloads: true
 ```
+
+`spend_breaker` is optional and tracks estimated request cost per provider in
+UTC hour and day windows. A ceiling of zero disables that window. When a
+ceiling is reached, the router removes that provider from eligible targets
+until the window resets. `on_trip` accepts `failover` or `stop`; static routing
+with no remaining target stops, while a strategy with another eligible target
+can fail over. Counters are in memory and reset on process restart. Trip and
+reset log events contain only the provider identifier, window and configured
+ceiling; provider keys are never included.
 
 Keep routing weights out of provider catalogs. Weights belong only under model groups:
 

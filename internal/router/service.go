@@ -111,6 +111,7 @@ type Service struct {
 	affinity           *dynamicAffinityStore
 	responsesAffinity  *responsesAffinities
 	shaping            *upstreamShapeManager
+	providerSpend      *providerSpendBreaker
 	contentCaptureKeys contentCaptureKeyResolver
 	reportCursor       [32]byte
 	tlsManager         *tlsacme.Manager
@@ -375,6 +376,7 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		toolReliability:    newToolReliabilityStore(),
 		affinity:           newDynamicAffinityStore(),
 		shaping:            newUpstreamShapeManager(),
+		providerSpend:      newProviderSpendBreaker(),
 		contentCaptureKeys: contentCaptureKeys,
 		configSnapshot:     NewConfigSnapshot(),
 		configInstanceID:   newConfigAdminInstanceID(),
@@ -2466,6 +2468,7 @@ func (s *Service) finish(rc *requestContext, status int, code *string) {
 	s.recordCacheStats(rc)
 	populateThroughput(&rc.rec)
 	populateCosts(&rc.rec)
+	s.providerSpend.add(rc.rec.TargetProvider, s.cfg.Provider[rc.rec.TargetProvider].SpendBreaker, rc.rec.TotalCostUSD)
 	if rc.rec.Status == 0 {
 		rc.rec.Status = status
 	}
@@ -4218,14 +4221,26 @@ func (s *Service) filterTargetsForRequest(rc *requestContext, targets []Target, 
 	estimate := s.requestTokenEstimateForSelection(rc, req, callerDialect)
 	out := make([]Target, 0, len(targets))
 	var rejected [][]string
+	stopRouting := false
 	for _, target := range targets {
 		outDialect := targetDialect(s.cfg.Provider[target.Provider], target)
 		reasons := s.targetEligibilityReasons(target, req, callerDialect, outDialect, estimate)
-		if len(reasons) == 0 {
-			out = append(out, target)
-		} else {
+		if len(reasons) != 0 {
 			rejected = append(rejected, reasons)
+			continue
 		}
+		breaker := s.cfg.Provider[target.Provider].SpendBreaker
+		if !s.providerSpend.allow(target.Provider, breaker) {
+			rejected = append(rejected, []string{"provider-spend-breaker"})
+			if breaker.OnTrip == "stop" {
+				stopRouting = true
+			}
+			continue
+		}
+		out = append(out, target)
+	}
+	if stopRouting {
+		return nil, rejected
 	}
 	return out, rejected
 }
