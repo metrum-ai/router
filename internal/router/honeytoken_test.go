@@ -649,3 +649,49 @@ callers:
 		t.Fatalf("database honeytoken event leaked secret material: %s", encoded)
 	}
 }
+
+func TestChildCanarySinksBeforeInheritedGroupPolicy(t *testing.T) {
+	t.Setenv("HIERARCHY_CANARY_CREDENTIAL", "canary-child-test-credential")
+	var parentCalls atomic.Int32
+	parent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		parentCalls.Add(1)
+		http.Error(w, "unavailable", http.StatusServiceUnavailable)
+	}))
+	defer parent.Close()
+	cfg := testConfig(t, "http://127.0.0.1:1", "provider-key", t.TempDir())
+	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(t.TempDir(), "usage.sqlite"))
+	cfg.Models["canary"] = ModelGroup{Strategy: "static", Canary: &CanaryGroupConfig{Callers: []string{"alice"}}}
+	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "canary")
+	cfg.Server.Hierarchy.Child = HierarchyChildConfig{ID: "child", ParentURL: parent.URL, CredentialEnv: "HIERARCHY_CANARY_CREDENTIAL", CacheTTL: "30s", TimeoutMS: 100}
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatalf("create child router: %v", err)
+	}
+	defer svc.Close()
+	call := func(path, body string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+testToken)
+		resp := httptest.NewRecorder()
+		svc.Handler().ServeHTTP(resp, req)
+		return resp
+	}
+	chat := call("/v1/chat/completions", `{"model":"canary","messages":[{"role":"user","content":"probe"}]}`)
+	if chat.Code != http.StatusOK || !strings.Contains(chat.Body.String(), honeytokenCompletionText) {
+		t.Fatalf("child canary completion status=%d body=%s", chat.Code, chat.Body.String())
+	}
+	count := call("/v1/messages/count_tokens", `{"model":"canary","messages":[{"role":"user","content":"probe"}]}`)
+	if count.Code != http.StatusOK || !strings.Contains(count.Body.String(), `"input_tokens"`) {
+		t.Fatalf("child canary count_tokens status=%d body=%s", count.Code, count.Body.String())
+	}
+	embeddings := call("/v1/embeddings", `{"model":"canary","input":"probe"}`)
+	if embeddings.Code != http.StatusBadRequest || !strings.Contains(embeddings.Body.String(), "unsupported_capability") {
+		t.Fatalf("child canary embeddings status=%d body=%s", embeddings.Code, embeddings.Body.String())
+	}
+	if calls := parentCalls.Load(); calls != 0 {
+		t.Fatalf("canary requests fetched parent policy %d times", calls)
+	}
+	if count := waitForHoneytokenEvents(t, svc, "security_canary_group_used", "canary", 1); count == 0 {
+		t.Fatal("child canary requests did not record a canary-use event")
+	}
+}

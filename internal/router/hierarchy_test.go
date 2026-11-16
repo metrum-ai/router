@@ -176,24 +176,49 @@ func TestHierarchyPolicyNarrowsResponsesAndCountTokenGroups(t *testing.T) {
 	cfg := testConfig(t, provider.URL, "provider-key", t.TempDir())
 	cfg.Callers[0].Allow = append(cfg.Callers[0].Allow, "restricted")
 	cfg.Models["restricted"] = cfg.Models["default"]
+	responsesProvider := cfg.Provider["mock"]
+	responsesProvider.Dialect = "openai-responses"
+	cfg.Provider["responses"] = responsesProvider
+	defaultGroup := cfg.Models["default"]
+	defaultGroup.Targets = append(defaultGroup.Targets, Target{Provider: "responses", Model: "mock-model", Weight: 1})
+	cfg.Models["default"] = defaultGroup
+	cfg.Models["restricted"] = defaultGroup
 	cfg.Server.Hierarchy.Child = HierarchyChildConfig{ID: "app", ParentURL: parent.URL, CredentialEnv: "HIERARCHY_COUNT_CREDENTIAL", CacheTTL: "30s"}
 	svc, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer svc.Close()
-	for _, tc := range []struct{ path, body string }{
-		{"/v1/responses/input_tokens", `{"model":"restricted","input":"hello"}`},
-		{"/v1/messages/count_tokens", `{"model":"restricted","messages":[{"role":"user","content":"hello"}]}`},
-		{"/v1/responses/input_tokens", `{"model":"default","input":"alice@example.test"}`},
-		{"/v1/messages/count_tokens", `{"model":"default","messages":[{"role":"user","content":"alice@example.test"}]}`},
+	modelList := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	modelList.Header.Set("Authorization", "Bearer "+testToken)
+	modelListResponse := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(modelListResponse, modelList)
+	if modelListResponse.Code != http.StatusOK || !strings.Contains(modelListResponse.Body.String(), `"id":"default"`) || strings.Contains(modelListResponse.Body.String(), `"id":"restricted"`) {
+		t.Fatalf("inherited model catalog status=%d body=%s", modelListResponse.Code, modelListResponse.Body.String())
+	}
+	restrictedModel := httptest.NewRequest(http.MethodGet, "/v1/models/restricted", nil)
+	restrictedModel.Header.Set("Authorization", "Bearer "+testToken)
+	restrictedModelResponse := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(restrictedModelResponse, restrictedModel)
+	if restrictedModelResponse.Code != http.StatusNotFound || !strings.Contains(restrictedModelResponse.Body.String(), "model_not_found") {
+		t.Fatalf("inherited model detail status=%d body=%s", restrictedModelResponse.Code, restrictedModelResponse.Body.String())
+	}
+	for _, tc := range []struct {
+		path, body string
+		status     int
+		detail     string
+	}{
+		{"/v1/responses/input_tokens", `{"model":"restricted","input":"hello"}`, http.StatusNotFound, "model_not_found"},
+		{"/v1/messages/count_tokens", `{"model":"restricted","messages":[{"role":"user","content":"hello"}]}`, http.StatusNotFound, "Model not found."},
+		{"/v1/responses/input_tokens", `{"model":"default","input":"alice@example.test"}`, http.StatusBadRequest, "pii-filter-blocked"},
+		{"/v1/messages/count_tokens", `{"model":"default","messages":[{"role":"user","content":"alice@example.test"}]}`, http.StatusBadRequest, "pii-filter-blocked"},
 	} {
 		request := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(tc.body))
 		request.Header.Set("Authorization", "Bearer "+testToken)
 		response := httptest.NewRecorder()
 		svc.Handler().ServeHTTP(response, request)
-		if response.Code == http.StatusOK {
-			t.Errorf("%s escaped inherited group/PII policy: status=%d body=%s", tc.path, response.Code, response.Body.String())
+		if response.Code != tc.status || !strings.Contains(response.Body.String(), tc.detail) {
+			t.Errorf("%s inherited-policy response status=%d body=%s, want status=%d detail=%q", tc.path, response.Code, response.Body.String(), tc.status, tc.detail)
 		}
 	}
 	if providerCalls.Load() != 0 {
@@ -694,34 +719,123 @@ func TestHierarchyPolicyNarrowingAndPIIUnion(t *testing.T) {
 }
 
 func TestHierarchySuspendedCallerMappingSurvivesReloadAndRejectsRequests(t *testing.T) {
-	cfg := testConfig(t, "http://localhost", "provider-key", t.TempDir())
-	cfg.Server.Hierarchy.Parent.Children = []HierarchyChildPolicyConfig{{
-		ID: "team-a", CallerID: "alice", OrganizationID: "org-a", TeamID: "team-a", AllowedGroups: []string{"default"},
-	}}
-	svc, err := New(cfg)
+	t.Setenv("MOCK_API_KEY", "hierarchy-reload-test-key")
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{"id": "response", "choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": "ok"}, "finish_reason": "stop"}}, "usage": map[string]int{"prompt_tokens": 1, "completion_tokens": 1}})
+	}))
+	defer upstream.Close()
+	dbPath := serveAuthE2EDB(t)
+	runner, closeDB, err := ConfigControlPlaneMigrationRunner(UsageDBConfig{Driver: "sqlite", Path: dbPath})
 	if err != nil {
-		t.Fatalf("initial active config rejected: %v", err)
+		t.Fatal(err)
 	}
-	defer svc.Close()
-	cfg.Callers[0].Status = "suspended"
-	if err := cfg.Validate(); err != nil {
-		t.Fatalf("reload rejected suspended mapped caller: %v", err)
-	}
-	callers, err := prepareQuotaCallers(cfg)
+	t.Cleanup(func() { _ = closeDB() })
+	applyConfigControlPlaneMigrationsForTest(t, runner)
+	canonical := strings.Replace(serveAuthCanonicalYAML(), "https://mock.example/v1", upstream.URL, 1)
+	canonical = strings.Replace(canonical, "server:\n  identifiers:", `server:
+  hierarchy:
+    parent:
+      children:
+        - id: team-a
+          caller_id: alice
+          organization_id: org-a
+          team_id: team-a
+          allowed_model_groups: [default]
+  identifiers:`, 1)
+	bobHash, err := HashCallerToken(tokenHashTestToken, strings.NewReader(strings.Repeat("b", callerTokenHashSaltBytes)), callerTokenHashMinIterations)
 	if err != nil {
-		t.Fatalf("prepare reload callers: %v", err)
+		t.Fatal(err)
 	}
-	if err := svc.publishMachinePlane(func(machinePlaneSnapshot) (*machinePlanePublication, error) {
-		return &machinePlanePublication{Config: cfg, Callers: callers}, nil
-	}); err != nil {
-		t.Fatalf("publish suspended caller reload: %v", err)
+	canonical = strings.Replace(canonical, "callers:\n", `callers:
+  - id: bob
+    owner_user: bob
+    project: search
+    environment: dev
+    status: active
+    token_hash: "`+bobHash+`"
+    token_id: `+tokenHashTestTokenID+`
+    allow: [default]
+`, 1)
+	setID, err := ImportCanonicalYAML(runner.db, "staging", "hierarchy-active", []byte(canonical), "test-actor")
+	if err != nil {
+		t.Fatalf("import active hierarchy config: %v", err)
 	}
-	request := httptest.NewRequest(http.MethodGet, hierarchyPolicyPath, nil)
-	request.Header.Set("Authorization", "Bearer "+testToken)
-	response := httptest.NewRecorder()
-	svc.Handler().ServeHTTP(response, request)
-	if response.Code != http.StatusForbidden {
-		t.Fatalf("suspended mapped caller was not refused after reload: status=%d body=%s", response.Code, response.Body.String())
+	if err := ActivateConfigSet(runner.db, "staging", setID, "test-actor"); err != nil {
+		t.Fatal(err)
+	}
+	bootstrapPath := filepath.Join(t.TempDir(), "bootstrap.yaml")
+	if err := os.WriteFile(bootstrapPath, []byte(serveAuthBootstrapYAML(t, dbPath, "staging")), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfigForServe(bootstrapPath)
+	if err != nil {
+		t.Fatalf("load active config: %v", err)
+	}
+	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(t.TempDir(), "usage.sqlite"))
+	cfg.StatePath = filepath.Join(t.TempDir(), "router-state.json")
+	svc, err := newServiceWithVerifiedFixture(cfg)
+	if err != nil {
+		t.Fatalf("start service: %v", err)
+	}
+	t.Cleanup(func() { svc.Close() })
+	serve := func(path, token, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		svc.Handler().ServeHTTP(rec, req)
+		return rec
+	}
+	policyRequest := httptest.NewRequest(http.MethodGet, hierarchyPolicyPath, nil)
+	policyRequest.Header.Set("Authorization", "Bearer "+serveAuthToken)
+	policyResponse := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(policyResponse, policyRequest)
+	if policyResponse.Code != http.StatusOK {
+		t.Fatalf("active mapped policy status=%d body=%s", policyResponse.Code, policyResponse.Body.String())
+	}
+	if response := serve("/v1/chat/completions", serveAuthToken, `{"model":"default","messages":[{"role":"user","content":"hello"}]}`); response.Code != http.StatusOK {
+		t.Fatalf("active inference status=%d body=%s", response.Code, response.Body.String())
+	}
+	unmapped := httptest.NewRequest(http.MethodGet, hierarchyPolicyPath, nil)
+	unmapped.Header.Set("Authorization", "Bearer "+tokenHashTestToken)
+	unmappedResponse := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(unmappedResponse, unmapped)
+	if unmappedResponse.Code != http.StatusForbidden || !strings.Contains(unmappedResponse.Body.String(), "hierarchy_child_not_configured") {
+		t.Fatalf("unmapped caller status=%d body=%s, want unmapped 403", unmappedResponse.Code, unmappedResponse.Body.String())
+	}
+
+	suspendedCanonical := strings.Replace(canonical, "id: alice\n    owner_user: alice\n    project: search\n    environment: dev\n    status: active", "id: alice\n    owner_user: alice\n    project: search\n    environment: dev\n    status: suspended", 1)
+	suspendedSet, err := ImportCanonicalYAML(runner.db, "staging", "hierarchy-suspended", []byte(suspendedCanonical), "test-actor")
+	if err != nil {
+		t.Fatalf("import suspended config: %v", err)
+	}
+	if err := ActivateConfigSet(runner.db, "staging", suspendedSet, "test-actor"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.reloadActiveConfigFromDB(); err != nil {
+		t.Fatalf("reload suspended config: %v", err)
+	}
+	policyRequest = httptest.NewRequest(http.MethodGet, hierarchyPolicyPath, nil)
+	policyRequest.Header.Set("Authorization", "Bearer "+serveAuthToken)
+	policyResponse = httptest.NewRecorder()
+	svc.Handler().ServeHTTP(policyResponse, policyRequest)
+	if policyResponse.Code != http.StatusForbidden || !strings.Contains(policyResponse.Body.String(), "key-suspended") {
+		t.Fatalf("suspended mapped policy status=%d body=%s, want suspended-key refusal distinct from unmapped 403", policyResponse.Code, policyResponse.Body.String())
+	}
+	if response := serve("/v1/chat/completions", serveAuthToken, `{"model":"default","messages":[{"role":"user","content":"hello"}]}`); response.Code != http.StatusForbidden || !strings.Contains(response.Body.String(), "key-suspended") {
+		t.Fatalf("suspended inference status=%d body=%s, want suspended-key refusal", response.Code, response.Body.String())
+	}
+}
+
+func TestHierarchyQuotaScopeUsesReservedNamespace(t *testing.T) {
+	callerID := "hierarchy-org:org-a"
+	scopes := hierarchyQuotaScopes(HierarchyConfig{Parent: HierarchyParentConfig{Children: []HierarchyChildPolicyConfig{{
+		CallerID: "alice", OrganizationID: "org-a",
+	}}}})
+	if scopes["alice"] != hierarchyQuotaScopePrefix+"org-a" || safeDetectorID(hierarchyQuotaScopePrefix+"org-a") {
+		t.Fatalf("organization quota scope is not collision-proof: %q", scopes["alice"])
+	}
+	if scopes["alice"] == callerID {
+		t.Fatal("organization quota scope collided with a valid caller ID")
 	}
 }
 

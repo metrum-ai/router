@@ -177,10 +177,12 @@ func validateHierarchyCallers(hierarchy HierarchyConfig, callers []CallerConfig)
 	return nil
 }
 
+const hierarchyQuotaScopePrefix = "\x00hierarchy-org:"
+
 func hierarchyQuotaScopes(hierarchy HierarchyConfig) map[string]string {
 	scopes := make(map[string]string, len(hierarchy.Parent.Children))
 	for _, child := range hierarchy.Parent.Children {
-		scopes[child.CallerID] = "hierarchy-org:" + child.OrganizationID
+		scopes[child.CallerID] = hierarchyQuotaScopePrefix + child.OrganizationID
 	}
 	return scopes
 }

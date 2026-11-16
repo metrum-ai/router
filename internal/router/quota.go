@@ -326,9 +326,9 @@ func (q *quotaStore) admit(c *callerRuntime, estTokens, rpmOverride int) admissi
 		reservedEstimate = q.scopedReserved[c.quotaScope]
 	}
 	quotaState, warning := q.quotaState(c.cfg, st, reservedEstimate)
-	keyState = q.keyState(c.cfg, st, 0)
+	keyState = q.keyState(c.cfg, keySt, 0)
 	if estTokens > 0 {
-		keyState = q.keyState(c.cfg, st, c.inFlightReservedTokens)
+		keyState = q.keyState(c.cfg, keySt, c.inFlightReservedTokens)
 	}
 	return admission{OK: true, Status: http.StatusOK, QuotaState: quotaState, KeyState: keyState, WarningText: warning, Reservation: res}
 }

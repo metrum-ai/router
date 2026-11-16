@@ -1158,7 +1158,11 @@ func (s *Service) handleModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer s.finish(rc, http.StatusOK, nil)
-	data := rc.filterMissionModelMetadata(s.callerModelMetadata(rc.caller))
+	data, err := s.filterHierarchyModelMetadata(r.Context(), rc.caller, rc.filterMissionModelMetadata(s.callerModelMetadata(rc.caller)))
+	if err != nil {
+		s.writeError(w, rc, http.StatusServiceUnavailable, hierarchyPolicyErrorCode(err))
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"object": "list", "mode": "default", "data": data, "models": data})
 }
 
@@ -1168,7 +1172,12 @@ func (s *Service) handleModelGet(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	for _, model := range rc.filterMissionModelMetadata(s.callerModelMetadata(rc.caller)) {
+	models, err := s.filterHierarchyModelMetadata(r.Context(), rc.caller, rc.filterMissionModelMetadata(s.callerModelMetadata(rc.caller)))
+	if err != nil {
+		s.writeError(w, rc, http.StatusServiceUnavailable, hierarchyPolicyErrorCode(err))
+		return
+	}
+	for _, model := range models {
 		if model["id"] == r.PathValue("model") {
 			defer s.finish(rc, http.StatusOK, nil)
 			if isAnthropicModelRequest(r) {
@@ -1203,8 +1212,32 @@ func (s *Service) handleCodexModels(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	models, err := s.filterHierarchyModelMetadata(r.Context(), rc.caller, rc.filterMissionModelMetadata(s.codexModelMetadata(rc.caller)))
+	if err != nil {
+		s.writeError(w, rc, http.StatusServiceUnavailable, hierarchyPolicyErrorCode(err))
+		return
+	}
 	defer s.finish(rc, http.StatusOK, nil)
-	writeJSON(w, http.StatusOK, map[string]any{"models": rc.filterMissionModelMetadata(s.codexModelMetadata(rc.caller))})
+	writeJSON(w, http.StatusOK, map[string]any{"models": models})
+}
+
+func (s *Service) filterHierarchyModelMetadata(ctx context.Context, caller *callerRuntime, models []map[string]any) ([]map[string]any, error) {
+	policy, err := s.effectiveHierarchyPolicy(ctx, caller)
+	if err != nil || policy == nil {
+		return models, err
+	}
+	filtered := make([]map[string]any, 0, len(models))
+	for _, model := range models {
+		name, _ := model["id"].(string)
+		if group, ok := s.cfg.Models[name]; ok && group.Canary != nil {
+			filtered = append(filtered, model)
+			continue
+		}
+		if hierarchyPolicyAllowsGroup(policy, name) {
+			filtered = append(filtered, model)
+		}
+	}
+	return filtered, nil
 }
 
 func (s *Service) callerModelMetadata(caller *callerRuntime) []map[string]any {
@@ -1791,6 +1824,20 @@ func (s *Service) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		s.writeAnthropicModelNotFound(w, rc, "model-not-allowed")
 		return
 	}
+	if rc.caller.cfg.Honeytoken != nil || group.Canary != nil {
+		if group.Canary != nil {
+			s.recordCanaryUse(rc, req.Model)
+		}
+		s.quota.Release(rc.caller)
+		bodyConcurrencyHeld = false
+		if !s.admitSinkhole(w, rc) {
+			return
+		}
+		defer s.quota.Release(rc.caller)
+		rc.rec.UsageSource = "estimated"
+		s.writeEstimatedCountTokens(w, rc, req)
+		return
+	}
 	policy, policyErr := s.effectiveHierarchyPolicy(r.Context(), rc.caller)
 	if policyErr != nil {
 		s.writeError(w, rc, http.StatusServiceUnavailable, hierarchyPolicyErrorCode(policyErr))
@@ -1825,20 +1872,6 @@ func (s *Service) handleCountTokens(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	rc.rec.RequestedModel = req.Model
-	if rc.caller.cfg.Honeytoken != nil || group.Canary != nil {
-		if group.Canary != nil {
-			s.recordCanaryUse(rc, req.Model)
-		}
-		s.quota.Release(rc.caller)
-		bodyConcurrencyHeld = false
-		if !s.admitSinkhole(w, rc) {
-			return
-		}
-		defer s.quota.Release(rc.caller)
-		rc.rec.UsageSource = "estimated"
-		s.writeEstimatedCountTokens(w, rc, req)
-		return
-	}
 	rc.rec.QuotaState = conc.QuotaState
 	rc.rec.KeyState = conc.KeyState
 	rc.rec.UsageSource = "none"
@@ -2022,28 +2055,6 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		s.writeError(w, rc, http.StatusForbidden, "mission-scope-exceeded")
 		return
 	}
-	inheritedPolicy, policyErr := s.effectiveHierarchyPolicy(r.Context(), rc.caller)
-	if policyErr != nil {
-		s.writeError(w, rc, http.StatusServiceUnavailable, hierarchyPolicyErrorCode(policyErr))
-		return
-	}
-	if inheritedPolicy != nil {
-		rc.rec.OrganizationID = inheritedPolicy.OrganizationID
-		rc.rec.TeamID = inheritedPolicy.TeamID
-		if !hierarchyPolicyAllowsGroup(inheritedPolicy, req.Model) {
-			s.writeModelNotFound(w, rc, req.Model, "model-not-allowed")
-			return
-		}
-		if !hierarchyPolicyAllowsTools(inheritedPolicy, req.Tools) {
-			s.writeError(w, rc, http.StatusForbidden, "hierarchy-tool-not-allowed")
-			return
-		}
-		group.PIIFilter, err = mergeHierarchyPIIFilters(group.PIIFilter, inheritedPolicy.PIIFilter)
-		if err != nil {
-			s.writeError(w, rc, http.StatusServiceUnavailable, "hierarchy-policy-invalid")
-			return
-		}
-	}
 	if invalidReasoningEffort(dialect, req.Raw) {
 		code := "invalid_reasoning_effort"
 		s.finish(rc, http.StatusBadRequest, &code)
@@ -2121,6 +2132,28 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		s.writeIR(w, dialect, response, req.Stream, rc)
 		s.finish(rc, http.StatusOK, nil)
 		return
+	}
+	inheritedPolicy, policyErr := s.effectiveHierarchyPolicy(r.Context(), rc.caller)
+	if policyErr != nil {
+		s.writeError(w, rc, http.StatusServiceUnavailable, hierarchyPolicyErrorCode(policyErr))
+		return
+	}
+	if inheritedPolicy != nil {
+		rc.rec.OrganizationID = inheritedPolicy.OrganizationID
+		rc.rec.TeamID = inheritedPolicy.TeamID
+		if !hierarchyPolicyAllowsGroup(inheritedPolicy, req.Model) {
+			s.writeModelNotFound(w, rc, req.Model, "model-not-allowed")
+			return
+		}
+		if !hierarchyPolicyAllowsTools(inheritedPolicy, req.Tools) {
+			s.writeError(w, rc, http.StatusForbidden, "hierarchy-tool-not-allowed")
+			return
+		}
+		group.PIIFilter, err = mergeHierarchyPIIFilters(group.PIIFilter, inheritedPolicy.PIIFilter)
+		if err != nil {
+			s.writeError(w, rc, http.StatusServiceUnavailable, "hierarchy-policy-invalid")
+			return
+		}
 	}
 	if responsesBodyOnChatEndpoint && rawValuePresent(req.Raw, "previous_response_id") && !modelGroupHasNativeResponsesTarget(s.cfg, group) {
 		rc.trace("openai_compatibility_shape", "endpoint=/v1/chat/completions detected_shape=openai-responses bridge_direction=responses_to_chat mode=enabled rejection_reason="+openAIChatEndpointPreviousResponseUnsupportedError, Target{}, 0, http.StatusBadRequest, openAIChatEndpointPreviousResponseUnsupportedError, false, 0)

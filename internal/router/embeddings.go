@@ -396,6 +396,23 @@ func (s *Service) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, rc, http.StatusNotFound, "model_not_found")
 		return
 	}
+	rc.rec.RequestedModel = req.Model
+	if group.Canary != nil && !canaryAllowsCaller(group.Canary, rc.caller.cfg.ID) {
+		s.recordCanaryUse(rc, req.Model)
+		s.writeError(w, rc, http.StatusNotFound, "model_not_found")
+		return
+	}
+	if group.Canary != nil {
+		s.recordCanaryUse(rc, req.Model)
+		s.quota.Release(rc.caller)
+		bodyHeld = false
+		if !s.admitSinkhole(w, rc) {
+			return
+		}
+		defer s.quota.Release(rc.caller)
+		s.writeError(w, rc, http.StatusBadRequest, "unsupported_capability")
+		return
+	}
 	inheritedPolicy, policyErr := s.effectiveHierarchyPolicy(r.Context(), rc.caller)
 	if policyErr != nil {
 		s.writeError(w, rc, http.StatusServiceUnavailable, "hierarchy-policy-unavailable")
@@ -411,26 +428,6 @@ func (s *Service) handleEmbeddings(w http.ResponseWriter, r *http.Request) {
 			s.writeError(w, rc, http.StatusServiceUnavailable, "hierarchy-policy-invalid")
 			return
 		}
-	}
-	rc.rec.RequestedModel = req.Model
-	if group.Canary != nil && !canaryAllowsCaller(group.Canary, rc.caller.cfg.ID) {
-		s.recordCanaryUse(rc, req.Model)
-		s.writeError(w, rc, http.StatusNotFound, "model_not_found")
-		return
-	}
-	sinkhole := rc.caller.cfg.Honeytoken != nil || group.Canary != nil
-	if group.Canary != nil {
-		s.recordCanaryUse(rc, req.Model)
-	}
-	if sinkhole {
-		s.quota.Release(rc.caller)
-		bodyHeld = false
-		if !s.admitSinkhole(w, rc) {
-			return
-		}
-		defer s.quota.Release(rc.caller)
-		s.writeError(w, rc, http.StatusBadRequest, "unsupported_capability")
-		return
 	}
 	targets, dimensions, err := embeddingGroupTargets(group, req.Dimensions)
 	if err != nil {

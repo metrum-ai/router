@@ -102,7 +102,9 @@ normal bearer authentication, returns `Cache-Control: no-store`, and has no brow
 authentication path. Policy fetch requests include a bounded hop-depth header to prevent recursive
 parent lookups.
 
-Usage schema version 21 stores `organization_id` and `team_id` beside the W3C trace and span IDs.
+The `caller_id` value must match a configured caller ID and use the safe identifier charset: 1–64 ASCII letters, digits, underscore, period, colon, or hyphen. Parent and child must use identical model-group names.
+
+Usage schema version 22 stores `organization_id` and `team_id` beside the W3C trace and span IDs.
 Each router records the organization and team scope it enforces. The admin request report returns
 these fields as `organizationId` and `teamId`, along with `traceId`, `hopId` (the router's span ID)
 and `parentHopId`. Filter `/admin/reports/api/requests` with `organization_id`, `team_id` and

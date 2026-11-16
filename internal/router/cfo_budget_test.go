@@ -46,14 +46,14 @@ func TestCFOBudgetUsesSharedOrganizationCounters(t *testing.T) {
 	now := time.Now().UTC()
 	quota := QuotaConfig{Day: BudgetConfig{Tokens: 100}, Month: BudgetConfig{Tokens: 200}}
 	makeCaller := func(id string) *callerRuntime {
-		return &callerRuntime{cfg: CallerConfig{ID: id, Project: "finance", Environment: "test", Quota: quota}, quotaScope: "hierarchy-org:org-a"}
+		return &callerRuntime{cfg: CallerConfig{ID: id, Project: "finance", Environment: "test", Quota: quota}, quotaScope: hierarchyQuotaScopePrefix + "org-a"}
 	}
 	store := &quotaStore{
 		callers: map[string]*callerRuntime{"a": makeCaller("a"), "b": makeCaller("b")},
 		state: persistentState{Callers: map[string]*callerState{
-			"a":                   {DayStart: dayStart(now), MonthStart: monthStart(now), DayTokens: 1, MonthTokens: 2},
-			"b":                   {DayStart: dayStart(now), MonthStart: monthStart(now), DayTokens: 3, MonthTokens: 4},
-			"hierarchy-org:org-a": {DayStart: dayStart(now), MonthStart: monthStart(now), DayTokens: 40, MonthTokens: 60},
+			"a":                                 {DayStart: dayStart(now), MonthStart: monthStart(now), DayTokens: 1, MonthTokens: 2},
+			"b":                                 {DayStart: dayStart(now), MonthStart: monthStart(now), DayTokens: 3, MonthTokens: 4},
+			hierarchyQuotaScopePrefix + "org-a": {DayStart: dayStart(now), MonthStart: monthStart(now), DayTokens: 40, MonthTokens: 60},
 		}},
 	}
 	result := (&Service{quota: store}).cfoBudgets(adminAuthSubject{domain: "finance/test"}, false, UsageReportOptions{})
