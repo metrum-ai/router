@@ -5,6 +5,17 @@ doc_type: reference
 
 # Upgrade Guide
 
+## Honeytokens and canary groups (v5.0.0)
+
+Honeytoken caller metadata and canary group allowlists are optional. Existing
+configurations need no changes. New configurations must use a targetless
+`static` strategy for canary groups and explicitly list selected callers. The
+router returns a canned completion and records a critical security event for
+use of either a honeytoken caller or a canary group; neither path contacts an
+upstream provider. See [Honeytokens and canary groups](/docs/security-governance/honeytokens)
+for setup, reporting, and key handling.
+
+
 ## Detector service boundary (v5.0.0)
 
 Custom detector strategies run as separate services behind the versioned

@@ -1069,10 +1069,13 @@ func (s *Service) modelMetadata(caller *callerRuntime, codexResponsesOnly bool) 
 		return data
 	}
 	for name := range caller.allow {
+		group := s.cfg.Models[name]
+		if group.Canary != nil && !canaryAllowsCaller(group.Canary, caller.cfg.ID) {
+			continue
+		}
 		if codexResponsesOnly && len(s.codexTargetsForGroup(name, &IRRequest{Input: "catalog"})) == 0 {
 			continue
 		}
-		group := s.cfg.Models[name]
 		internalModalities := s.supportedInputModalitiesForGroup(name)
 		if codexResponsesOnly {
 			internalModalities = s.codexInputModalitiesForGroup(name)
@@ -1691,6 +1694,18 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		s.writeError(w, rc, http.StatusBadRequest, "missing-model")
 		return
 	}
+	if rc.caller != nil && rc.caller.cfg.Honeytoken != nil {
+		rc.rec.Stream = req.Stream
+		rc.rec.RequestedModel = req.Model
+		rc.rec.ResolvedGroup = "honeytoken"
+		rc.rec.Usage = Usage{InputTokens: 1, OutputTokens: 1, TotalTokens: 2}
+		rc.rec.UsageSource = "estimated"
+		s.recordHoneytokenUse(rc)
+		response := &IRResponse{ID: rc.id, Model: req.Model, Text: honeytokenCompletionText, StopReason: "end_turn", Usage: rc.rec.Usage}
+		s.writeIR(w, dialect, response, req.Stream, rc)
+		s.finish(rc, http.StatusOK, nil)
+		return
+	}
 	if (dialect == "openai-responses" || dialect == "anthropic") && requestHasForbiddenProviderHostedTools(req) {
 		s.writeError(w, rc, http.StatusBadRequest, "provider-hosted-tools-forbidden")
 		return
@@ -1727,6 +1742,27 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		} else {
 			s.writeError(w, rc, http.StatusForbidden, reason)
 		}
+		return
+	}
+	if group.Canary != nil && !canaryAllowsCaller(group.Canary, rc.caller.cfg.ID) {
+		if dialect == "openai-chat" || dialect == "openai-responses" {
+			s.writeModelNotFound(w, rc, req.Model, "model-not-allowed")
+		} else if dialect == "anthropic" {
+			s.writeAnthropicModelNotFound(w, rc, "model-not-allowed")
+		} else {
+			s.writeError(w, rc, http.StatusForbidden, "model-not-allowed")
+		}
+		return
+	}
+	if group.Canary != nil {
+		s.recordCanaryUse(rc, req.Model)
+		rc.rec.RequestedModel = req.Model
+		rc.rec.ResolvedGroup = req.Model
+		rc.rec.Usage = Usage{InputTokens: 1, OutputTokens: 1, TotalTokens: 2}
+		rc.rec.UsageSource = "estimated"
+		response := &IRResponse{ID: rc.id, Model: req.Model, Text: honeytokenCompletionText, StopReason: "end_turn", Usage: rc.rec.Usage}
+		s.writeIR(w, dialect, response, req.Stream, rc)
+		s.finish(rc, http.StatusOK, nil)
 		return
 	}
 	if invalidReasoningEffort(dialect, req.Raw) {
@@ -2284,6 +2320,13 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	}
 }
 
+func canaryAllowsCaller(canary *CanaryGroupConfig, callerID string) bool {
+	if canary == nil || callerID == "" {
+		return false
+	}
+	return stringSliceContains(canary.Callers, callerID)
+}
+
 func estimatedUsageForReservation(req *IRRequest, dialect string, reservationTokens int) Usage {
 	input := estimateTokens(req)
 	if input <= 0 {
@@ -2488,6 +2531,55 @@ func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) 
 	}
 	rc.trace("request_accepted", "", Target{}, 0, 0, "", false, 0)
 	return rc, true
+}
+
+const honeytokenCompletionText = "I can help with that."
+
+func (s *Service) recordHoneytokenUse(rc *requestContext) {
+	if rc == nil || rc.caller == nil || s.usage == nil {
+		return
+	}
+	s.dispatchBuiltinDetectorEvent(detect.EventHoneytokenUsed, rc.caller.cfg.ID, rc.id, rc.rec.TokenID)
+	s.usage.EmitSecurityAccessEvent(securityAccessEvent{
+		TS:           time.Now().UTC(),
+		RequestID:    rc.id,
+		EventType:    "security_honeytoken_used",
+		Surface:      securitySurfaceForDialect(rc.dialect),
+		HTTPMethod:   rc.method,
+		PathTemplate: rc.pathTemplate,
+		StatusCode:   http.StatusOK,
+		Outcome:      "critical",
+		ReasonCode:   "honeytoken_used",
+		AuthSource:   "caller_token",
+		CallerID:     rc.caller.cfg.ID,
+		TokenID:      rc.rec.TokenID,
+		IPAddress:    rc.clientIP.Address,
+		IPVersion:    rc.clientIP.Version,
+	})
+}
+
+func (s *Service) recordCanaryUse(rc *requestContext, group string) {
+	if rc == nil || rc.caller == nil || s.usage == nil {
+		return
+	}
+	s.dispatchBuiltinDetectorEvent(detect.EventHoneytokenUsed, rc.caller.cfg.ID, rc.id, rc.rec.TokenID)
+	s.usage.EmitSecurityAccessEvent(securityAccessEvent{
+		TS:           time.Now().UTC(),
+		RequestID:    rc.id,
+		EventType:    "security_canary_group_used",
+		Surface:      securitySurfaceForDialect(rc.dialect),
+		HTTPMethod:   rc.method,
+		PathTemplate: rc.pathTemplate,
+		StatusCode:   http.StatusOK,
+		Outcome:      "critical",
+		ReasonCode:   "canary_group_used",
+		AuthSource:   "caller_token",
+		CallerID:     rc.caller.cfg.ID,
+		TokenID:      rc.rec.TokenID,
+		IPAddress:    rc.clientIP.Address,
+		IPVersion:    rc.clientIP.Version,
+		ModelGroup:   group,
+	})
 }
 
 func cacheCallerScope(rc *requestContext) (callerID, project string) {

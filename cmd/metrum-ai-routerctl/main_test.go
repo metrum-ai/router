@@ -450,3 +450,25 @@ func TestRedactURLCredentialsAndEnvReference(t *testing.T) {
 		}
 	}
 }
+
+func TestHoneytokenIssueWritesPrivateTokenWithoutPrintingIt(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds and runs the CLI")
+	}
+	tokenPath := filepath.Join(t.TempDir(), "honeytoken")
+	output, err := exec.Command("go", "run", ".", "honeytoken", "issue", "--label", "old config example", "--owner-user", "security", "--project", "decoys", "--token-out", tokenPath).CombinedOutput()
+	if err != nil {
+		t.Fatalf("issue: %v: %s", err, output)
+	}
+	raw, err := os.ReadFile(tokenPath)
+	if err != nil || !strings.HasPrefix(string(raw), "rtr_metrum_security_decoys_dev_honeytoken_") {
+		t.Fatalf("token file: %v", err)
+	}
+	info, err := os.Stat(tokenPath)
+	if err != nil || info.Mode().Perm() != 0o600 {
+		t.Fatalf("token mode=%v err=%v, want 0600", info, err)
+	}
+	if strings.Contains(string(output), strings.TrimSpace(string(raw))) || !strings.Contains(string(output), "old config example") {
+		t.Fatalf("unsafe or incomplete output: %s", output)
+	}
+}

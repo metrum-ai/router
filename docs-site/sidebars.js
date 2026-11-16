@@ -115,6 +115,7 @@ const sidebars = {
         "usage-cost-reports/overview",
         "security-governance/overview",
         "security-governance/detectors",
+        "security-governance/honeytokens",
         "evaluation/overview",
         "evaluation/performance-overhead",
         "evaluation/tool-call-proof",
