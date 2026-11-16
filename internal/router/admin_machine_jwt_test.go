@@ -33,8 +33,16 @@ func machineSignedJWT(t *testing.T, key *ecdsa.PrivateKey, kid string, claims ma
 }
 
 func machineSignedJWTAlgorithm(t *testing.T, key any, kid string, alg jose.SignatureAlgorithm, claims map[string]any) string {
+	return machineSignedJWTType(t, key, kid, alg, "at+jwt", claims)
+}
+
+func machineSignedJWTType(t *testing.T, key any, kid string, alg jose.SignatureAlgorithm, typ string, claims map[string]any) string {
 	t.Helper()
-	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: alg, Key: key}, (&jose.SignerOptions{}).WithHeader("kid", kid).WithType("at+jwt"))
+	opts := (&jose.SignerOptions{}).WithHeader("kid", kid)
+	if typ != "" {
+		opts = opts.WithType(jose.ContentType(typ))
+	}
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: alg, Key: key}, opts)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,6 +124,14 @@ func TestAdminMachineJWTNegativeValidation(t *testing.T) {
 				t.Fatalf("invalid token accepted: %+v %v", p, err)
 			}
 		})
+	}
+	for _, typ := range []string{"", "JWT"} {
+		token := machineSignedJWTType(t, key, "known", jose.ES256, typ, map[string]any{"iss": issuer, "aud": "router-admin", "sub": "automation", "iat": now - 1, "exp": now + 300})
+		r := httptest.NewRequest("GET", "https://admin.example/admin/v1/config", nil)
+		r.Header.Set("Authorization", "Bearer "+token)
+		if principal, err := auth.Authenticate(r.Context(), r); !errors.Is(err, ErrInvalidCredential) || principal != (Principal{}) {
+			t.Fatalf("admin plane accepted legacy JWT typ %q: %+v %v", typ, principal, err)
+		}
 	}
 	if fetches.Load() < 1 {
 		t.Fatal("JWKS never fetched")

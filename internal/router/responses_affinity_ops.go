@@ -179,7 +179,7 @@ func (s *Service) resolveStoredResponse(r *http.Request, rc *requestContext) (*r
 	// Authorization still applies: a token that lost access to the group that
 	// holds the response cannot reach it, and gets the same 404 as an unknown
 	// id rather than a distinct forbidden response.
-	if rc == nil || rc.caller == nil || !rc.caller.allow[row.ModelGroup] {
+	if rc == nil || !rc.callerCanUseGroup(row.ModelGroup) {
 		return nil, nil, "", affinityClientError{status: http.StatusNotFound, code: "response_not_found", message: "The response was not found."}
 	}
 	group, ok := s.cfg.Models[row.ModelGroup]

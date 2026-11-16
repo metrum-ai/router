@@ -328,6 +328,12 @@ func marshalOCSFSecurityEvent(event securityAccessEvent) ([]byte, error) {
 		obj["user"] = user
 		obj["src_endpoint"] = ocsfEndpoint(event.IPAddress)
 		obj["service"] = map[string]any{"name": "Metrum AI Router"}
+		// Successful token exchanges use a fixed event reason and a generated
+		// grant hash as operation ID. Never serialize generic authentication
+		// reason codes: some callers may supply credential-shaped input there.
+		if event.EventType == "authentication" && event.Surface == "token_exchange" && event.ReasonCode == "mission_token_issued" && event.OperationID != "" {
+			obj["unmapped"] = map[string]any{"operation": safeOCSFValue(event.OperationID), "reason": "mission_token_issued"}
+		}
 	} else {
 		obj["actor"] = map[string]any{"user": map[string]any{"name": "Metrum AI Router"}}
 		operation := safeOCSFValue(event.PathTemplate)
@@ -369,7 +375,7 @@ func isSecurityStreamEvent(eventType string) bool {
 	switch strings.ToLower(strings.TrimSpace(eventType)) {
 	case "api_auth_failed", "api_authz_failed", "admin_auth_failed", "admin_authz_failed", "admin_auth_throttled",
 		"caller_suspended", "caller_released", "caller_throttled", "caller_quota_exhausted",
-		"dlp_hit", "firewall_block", "firewall_hold", "security_detector_signal", "security_detector_failure",
+		"dlp_hit", "firewall_block", "firewall_hold", "security_detector_signal", "security_detector_failure", "authentication",
 		"provider_spend_breaker_trip", "provider_spend_breaker_reset", "provider_usage_gap", "provider_usage_failure", "provider_usage_partial", "provider_usage_reconciled", "honeytoken_use", "incident":
 		return true
 	default:

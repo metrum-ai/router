@@ -29,6 +29,15 @@ type quotaStore struct {
 	saveFault error
 }
 
+func (q *quotaStore) lookupCaller(id string) *callerRuntime {
+	if q == nil || id == "" {
+		return nil
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.callers[id]
+}
+
 // rebuildCallers replaces the in-memory caller runtime map with runtimes built
 // from cfg.Callers. Existing caller state (day/month/lifetime counters) is
 // preserved for caller IDs that still exist in the new configuration. New
