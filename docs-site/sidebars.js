@@ -61,6 +61,7 @@ const sidebars = {
         "operations/reasoning-provenance",
         "operations/stored-responses",
         "operations/usage-reporting",
+        "operations/domain-fine-tuning",
         "operations/cfo-reporting",
         "operations/admin-browser-reports",
         "operations/switch-models-price-change",

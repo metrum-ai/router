@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Governed per-domain fine-tuning operator workflow: opt-in encrypted capture,
+  audited export, external training and preregistered gates, bounded shadow,
+  audited promotion, one-call rollback, and independent retention for copied
+  datasets. Content capture must be scrubbed before storage.
+
 ### Fixed
 
 - Migrate the API compatibility suite to Anthropic Python SDK 2.3.0 and test API-key and bearer authentication with separate clients.

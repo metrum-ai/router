@@ -9,6 +9,15 @@ For v5.0.0, `metrum-ai-router-migrate --json` writes one JSON document to stdout
 
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
 
+## Governed fine-tuning workflow
+
+Training capture remains disabled unless an operator explicitly enables it for
+an approved caller, group, or server scope. Review the new
+[domain fine-tuning operator guide](../operations/domain-fine-tuning) before
+enabling capture or training export. Exported datasets and trained artifacts
+have retention independent from router capture deletion. Use bounded shadow
+and audited promotion; retain the previous group set for one-call rollback.
+
 ## Security dependency update
 
 The v5.0.0 build pins `golang.org/x/crypto` to the upstream fix for GO-2026-5932. The fix removes the unused OpenPGP packages from the module; router configuration and runtime behavior do not change. When the next tagged `x/crypto` release includes this fix, routine dependency maintenance should replace the temporary pseudo-version.
