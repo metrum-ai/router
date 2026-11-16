@@ -96,7 +96,7 @@ func TestToolRoutingUsageSchema21UpgradeDownAndRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	when := time.Now().UTC()
-	if err := store.db.Create(recordFromRow(usageRow{RequestID: "legacy-tool-row", TS: when})).Error; err != nil {
+	if err := store.db.Omit("OrganizationID", "TeamID").Create(recordFromRow(usageRow{RequestID: "legacy-tool-row", TS: when})).Error; err != nil {
 		t.Fatal(err)
 	}
 	clearOfflineOperationMarkerUsageMigration(t, store.db)
