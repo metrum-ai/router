@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"gopkg.in/yaml.v3"
+	"gorm.io/gorm"
 )
 
 func TestCallerContainmentExpiry(t *testing.T) {
@@ -128,8 +130,14 @@ func TestContainmentWebhookAuthentication(t *testing.T) {
 		return httptest.NewRecorder()
 	}
 	now := time.Now().UTC()
+	store, err := NewSQLAdminIdempotencyStore(db, AdminIdempotencyConfig{TTL: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc.adminIdempotency.Store(store)
 	makeRequest("nonce-positive-0001", now, true)
-	// Replays are rejected by the persistent SQL idempotency claim.
+	// Authentication validates the signature without claiming the nonce; the
+	// handler claims it only after contract authorization and preconditions.
 	req := httptest.NewRequest("POST", containmentWebhookPath, strings.NewReader(body))
 	timestamp := strconv.FormatInt(now.Unix(), 10)
 	mac := hmac.New(sha256.New, []byte(secret))
@@ -137,11 +145,106 @@ func TestContainmentWebhookAuthentication(t *testing.T) {
 	req.Header.Set("X-Containment-Timestamp", timestamp)
 	req.Header.Set("X-Containment-Nonce", "nonce-positive-0001")
 	req.Header.Set("X-Containment-Signature", "sha256="+hex.EncodeToString(mac.Sum(nil)))
-	if _, err := auth.Authenticate(context.Background(), req); err == nil {
-		t.Fatal("Authenticate() accepted replayed nonce")
+	p, err := auth.Authenticate(context.Background(), req)
+	if err != nil || p.containmentNonce == "" {
+		t.Fatalf("Authenticate() did not retain verified nonce metadata: %+v %v", p, err)
+	}
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return svc.claimContainmentNonce(tx, p.containmentNonce, p.containmentBodyHash, p.containmentRetention, now)
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return svc.claimContainmentNonce(tx, p.containmentNonce, p.containmentBodyHash, p.containmentRetention, now.Add(2*time.Minute))
+	}); err == nil {
+		t.Fatal("nonce replay was accepted after the general one-minute idempotency TTL")
 	}
 	makeRequest("nonce-invalid-0002", now, false)
 	makeRequest("nonce-stale-0003", now.Add(-6*time.Minute), true)
+}
+
+func TestContainmentWebhookRejectsNonSuspendActions(t *testing.T) {
+	db := callerAdminTestDB(t)
+	called := false
+	h := newCallerAdminHandler(CallerAdminDeps{DB: db, Authorize: func(*http.Request, string, string) bool { return true }, ClaimWebhookNonce: func(*gorm.DB, Principal) error { called = true; return nil }})
+	for _, action := range []string{"resume", "revoke", "issue"} {
+		body := `{"caller_id":"caller-a","action":"` + action + `","reason":"edr-alert"}`
+		req := httptest.NewRequest(http.MethodPost, containmentWebhookPath, strings.NewReader(body)).WithContext(WithPrincipal(context.Background(), Principal{Subject: authzRoleContainment, Kind: "webhook", containmentNonce: "nonce-0123456789", containmentBodyHash: "hash", containmentRetention: 20 * time.Minute}))
+		rec := httptest.NewRecorder()
+		h.handleWebhookContainment(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("action %q status = %d", action, rec.Code)
+		}
+	}
+	if called {
+		t.Fatal("invalid webhook action claimed its nonce")
+	}
+}
+
+func TestContainmentWebhookNonceStoreErrorsFailClosed(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		ctx   context.Context
+		claim func(*gorm.DB, Principal) error
+	}{
+		{name: "store error", ctx: context.Background(), claim: func(*gorm.DB, Principal) error { return errors.New("store unavailable") }},
+		{name: "timeout", ctx: context.Background(), claim: func(*gorm.DB, Principal) error { return context.DeadlineExceeded }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := callerAdminTestDB(t)
+			h := newCallerAdminHandler(CallerAdminDeps{DB: db, RuntimeScope: "staging", Authorize: func(*http.Request, string, string) bool { return true }, ClaimWebhookNonce: tc.claim})
+			issue := httptest.NewRecorder()
+			h.handleIssue(issue, httptest.NewRequest(http.MethodPost, "/callers/issue", strings.NewReader(`{"owner_user":"alice","project":"search","allow":["default"]}`)))
+			if issue.Code != http.StatusCreated {
+				t.Fatalf("issue fixture status = %d: %s", issue.Code, issue.Body.String())
+			}
+			var issued callerAdminIssueResponse
+			if err := json.Unmarshal(issue.Body.Bytes(), &issued); err != nil {
+				t.Fatal(err)
+			}
+			body := `{"caller_id":"` + issued.Caller.ID + `","action":"suspend","reason":"edr-alert"}`
+			p := Principal{Subject: authzRoleContainment, Kind: "webhook", containmentNonce: "nonce-0123456789", containmentBodyHash: "hash", containmentRetention: 20 * time.Minute}
+			req := httptest.NewRequest(http.MethodPost, containmentWebhookPath, strings.NewReader(body)).WithContext(WithPrincipal(tc.ctx, p))
+			rec := httptest.NewRecorder()
+			h.handleWebhookContainment(rec, req)
+			if rec.Code != http.StatusServiceUnavailable {
+				t.Fatalf("nonce-store status = %d", rec.Code)
+			}
+		})
+	}
+}
+
+func TestAdminIdempotencyJanitorPrunesOnTicker(t *testing.T) {
+	db := callerAdminTestDB(t)
+	store, err := NewSQLAdminIdempotencyStore(db, AdminIdempotencyConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	scope := adminIdempotencyScope{PrincipalKind: "test", PrincipalSubject: "janitor", Domain: AdminGlobalDomain, Operation: "test.prune", Key: "expired", RequestHash: "hash"}
+	if _, _, err := store.Begin(scope, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`UPDATE router_admin_idempotency SET expires_at = ? WHERE idempotency_key = ?`, adminIdempotencyTime(time.Now().Add(-time.Second)), scope.Key).Error; err != nil {
+		t.Fatal(err)
+	}
+	stop := make(chan struct{})
+	done := StartAdminIdempotencyJanitor(store, 10*time.Millisecond, stop)
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		var count int64
+		if err := db.Table(adminIdempotencyTable).Where("idempotency_key = ?", scope.Key).Count(&count).Error; err != nil {
+			t.Fatal(err)
+		}
+		if count == 0 {
+			close(stop)
+			<-done
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	close(stop)
+	<-done
+	t.Fatal("expired idempotency row was not pruned by the janitor")
 }
 
 type testAuthenticator struct{}
@@ -224,15 +327,25 @@ func TestCallerContainmentHTTPFlow(t *testing.T) {
 	if caller.Status != accountStatusSuspended || caller.ContainmentExpiresAt == "" {
 		t.Fatalf("canonical caller containment = status %q expiry %q", caller.Status, caller.ContainmentExpiresAt)
 	}
+	containmentCtx := WithPrincipal(context.Background(), Principal{Subject: authzRoleContainment, Kind: "adminkey"})
+	if got := contain("resume", "", containmentCtx).Code; got != http.StatusConflict {
+		t.Fatalf("containment role resumed an administrator suspension: %d", got)
+	}
+	if got := contain("resume", "", context.Background()).Code; got != http.StatusOK {
+		t.Fatalf("administrator resume status = %d", got)
+	}
+	if got := contain("suspend", "5m", containmentCtx).Code; got != http.StatusOK {
+		t.Fatalf("containment suspend status = %d", got)
+	}
+	if got := contain("resume", "", containmentCtx).Code; got != http.StatusOK {
+		t.Fatalf("containment resume status = %d", got)
+	}
 	auth := newCallerAuthState()
 	runtimeCaller := &callerRuntime{cfg: caller, keyStatus: normalizeStatusDefault(caller.Status)}
 	auth.rebuild([]*callerRuntime{runtimeCaller})
 	svc := &Service{callerAuth: auth}
 	if _, _, err := svc.authenticate("Bearer "+issued.Token, ""); err == nil {
 		t.Fatal("suspended caller authenticated")
-	}
-	if got := contain("resume", "", context.Background()).Code; got != http.StatusOK {
-		t.Fatalf("resume status = %d", got)
 	}
 	caller.Status = accountStatusActive
 	caller.ContainmentExpiresAt = ""
@@ -269,10 +382,17 @@ func TestCallerContainmentAdminV1EndToEnd(t *testing.T) {
 		t.Fatalf("stored caller status = %q", status)
 	}
 	events := harness.changeEvents(t)
+	foundContainmentAudit := false
 	for _, event := range events {
-		if event.Action == "caller_containment_suspend" && strings.Contains(event.Ticket, body.Reason) {
-			t.Fatal("secret-like reason code persisted in the audit event")
+		if event.Action == "caller_containment_suspend" {
+			foundContainmentAudit = true
+			if strings.Contains(event.Ticket, body.Reason) {
+				t.Fatal("secret-like reason code persisted in the audit event")
+			}
 		}
+	}
+	if !foundContainmentAudit {
+		t.Fatal("containment mutation did not emit an audit event")
 	}
 	replayed := harness.do(t, http.MethodPost, "/admin/v1/containment", body, map[string]string{
 		"Idempotency-Key": "contain-suspend", "If-Match": `"stale"`,

@@ -50,9 +50,10 @@ type CallerAdminDeps struct {
 	Authorize    func(r *http.Request, object, action string) bool
 	// AuthorizeDomain takes a decision in an explicit domain, used to filter a
 	// caller-directory row by the domain stored on that row.
-	AuthorizeDomain func(r *http.Request, domain, object, action string) bool
-	AfterMutate     func(r *http.Request, callerID string) error
-	Now             func() time.Time
+	AuthorizeDomain   func(r *http.Request, domain, object, action string) bool
+	AfterMutate       func(r *http.Request, callerID string) error
+	Now               func() time.Time
+	ClaimWebhookNonce func(*gorm.DB, Principal) error
 }
 
 // RegisterCallerDirectoryAdmin registers the admin caller directory endpoints on the
@@ -145,6 +146,15 @@ func (h *callerAdminHandler) handleContainment(w http.ResponseWriter, r *http.Re
 		writeCallerAdminError(w, http.StatusServiceUnavailable, "containment-config-set-unavailable")
 		return
 	}
+	principal, _ := PrincipalFrom(r.Context())
+	if principal.Kind == "webhook" && (principal.containmentNonce == "" || h.deps.ClaimWebhookNonce == nil) {
+		writeCallerAdminError(w, http.StatusServiceUnavailable, "containment-nonce-store-unavailable")
+		return
+	}
+	source := "admin"
+	if principal.Subject == authzRoleContainment || principal.Kind == "webhook" {
+		source = "containment"
+	}
 	err = h.deps.DB.WithContext(r.Context()).Transaction(func(tx *gorm.DB) error {
 		var rows []callerRow
 		if err := tx.Where("config_set_id = ? AND caller_id = ?", set.ID, req.CallerID).Limit(1).Find(&rows).Error; err != nil {
@@ -178,6 +188,34 @@ func (h *callerAdminHandler) handleContainment(w http.ResponseWriter, r *http.Re
 		if req.Action == "resume" && currentStatus != accountStatusSuspended {
 			return errCallerAdminConflict
 		}
+		if req.Action == "resume" && source == "containment" {
+			var doc configControlPlaneDocumentRow
+			if err := tx.Where("config_set_id = ?", set.ID).First(&doc).Error; err != nil {
+				return err
+			}
+			var config Config
+			if err := yaml.Unmarshal([]byte(doc.CanonicalYAML), &config); err != nil {
+				return err
+			}
+			canResume := false
+			for _, caller := range config.Callers {
+				if caller.ID == req.CallerID {
+					canResume = caller.ContainmentSource == "containment"
+					break
+				}
+			}
+			if !canResume {
+				return errCallerAdminConflict
+			}
+		}
+		if principal.Kind == "webhook" {
+			if err := h.deps.ClaimWebhookNonce(tx, principal); err != nil {
+				if strings.Contains(err.Error(), "already claimed") {
+					return errContainmentNonceReplay
+				}
+				return fmt.Errorf("%w: %v", errContainmentNonceStore, err)
+			}
+		}
 		if err := tx.Exec(`UPDATE router_config_callers SET status = ? WHERE config_set_id = ? AND caller_id = ?`, status, set.ID, req.CallerID).Error; err != nil {
 			return err
 		}
@@ -186,6 +224,11 @@ func (h *callerAdminHandler) handleContainment(w http.ResponseWriter, r *http.Re
 				if callers[i].ID == req.CallerID {
 					callers[i].Status = status
 					callers[i].ContainmentExpiresAt = expiry
+					if req.Action == "suspend" {
+						callers[i].ContainmentSource = source
+					} else {
+						callers[i].ContainmentSource = ""
+					}
 					return callers, nil
 				}
 			}
@@ -208,6 +251,14 @@ func (h *callerAdminHandler) handleContainment(w http.ResponseWriter, r *http.Re
 		}
 		if errors.Is(err, errCallerAdminConflict) {
 			writeCallerAdminError(w, http.StatusConflict, "containment-state-conflict")
+			return
+		}
+		if errors.Is(err, errContainmentNonceReplay) {
+			writeCallerAdminError(w, http.StatusConflict, "containment-replay")
+			return
+		}
+		if errors.Is(err, errContainmentNonceStore) {
+			writeCallerAdminError(w, http.StatusServiceUnavailable, "containment-nonce-store-unavailable")
 			return
 		}
 		writeCallerAdminError(w, http.StatusInternalServerError, "containment-mutation-failed")
@@ -260,6 +311,8 @@ type callerAdminHandler struct {
 
 var errCallerAdminConflict = errors.New("caller already exists")
 var errCallerAdminNotFound = errors.New("caller not found")
+var errContainmentNonceReplay = errors.New("containment nonce replay")
+var errContainmentNonceStore = errors.New("containment nonce store unavailable")
 
 type callerAdminError struct {
 	Type    string `json:"type"`

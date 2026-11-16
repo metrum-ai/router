@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 const containmentWebhookPath = "/admin/v1/containment/webhook"
@@ -80,10 +82,9 @@ func (a containmentWebhookAuthenticator) Authenticate(ctx context.Context, r *ht
 	if err != nil || !hmac.Equal(got, want) {
 		return Principal{}, ErrInvalidCredential
 	}
-	if !a.owner.claimContainmentNonce(nonce, body, now) {
-		return Principal{}, ErrInvalidCredential
-	}
-	return Principal{Subject: authzRoleContainment, Kind: "webhook", CredentialID: "containment-webhook"}, nil
+	digest := sha256.Sum256(body)
+	return Principal{Subject: authzRoleContainment, Kind: "webhook", CredentialID: "containment-webhook",
+		containmentNonce: nonce, containmentBodyHash: hex.EncodeToString(digest[:]), containmentRetention: 2 * window}, nil
 }
 
 func validContainmentNonce(nonce string) bool {
@@ -98,23 +99,24 @@ func validContainmentNonce(nonce string) bool {
 	return true
 }
 
-func (s *Service) claimContainmentNonce(nonce string, body []byte, now time.Time) bool {
+func (s *Service) claimContainmentNonce(tx *gorm.DB, nonce, requestHash string, retention time.Duration, now time.Time) error {
 	if s == nil {
-		return false
+		return ErrAuthorizationUnavailable
 	}
 	store, ok := s.adminIdempotencyStore()
 	if !ok {
-		return false
+		return ErrAuthorizationUnavailable
 	}
 	sqlStore, ok := store.(*sqlAdminIdempotencyStore)
 	if !ok {
-		return false
+		return ErrAuthorizationUnavailable
 	}
-	digest := sha256.Sum256(body)
 	scope := adminIdempotencyScope{
 		PrincipalKind: "webhook", PrincipalSubject: authzRoleContainment, Domain: AdminGlobalDomain,
-		Operation: "containment.webhook", Key: nonce, RequestHash: hex.EncodeToString(digest[:]),
+		Operation: "containment.webhook", Key: nonce, RequestHash: requestHash,
 	}
-	_, outcome, err := sqlStore.Begin(scope, now)
-	return err == nil && outcome == adminIdempotencyProceed
+	if tx == nil {
+		return ErrAuthorizationUnavailable
+	}
+	return sqlStore.beginWithTTLDB(tx, scope, now, retention)
 }

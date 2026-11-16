@@ -2825,26 +2825,6 @@
     "/admin/v1/containment/webhook": {
       "post": {
         "operationId": "containCallerWebhook",
-        "parameters": [
-          {
-            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
-            "in": "header",
-            "name": "Idempotency-Key",
-            "schema": {
-              "maxLength": 128,
-              "type": "string"
-            }
-          }
-        ],
         "requestBody": {
           "content": {
             "application/json": {
@@ -2883,13 +2863,7 @@
           "409": {
             "$ref": "#/components/responses/Problem"
           },
-          "412": {
-            "$ref": "#/components/responses/Problem"
-          },
           "422": {
-            "$ref": "#/components/responses/Problem"
-          },
-          "428": {
             "$ref": "#/components/responses/Problem"
           },
           "429": {
@@ -2907,9 +2881,9 @@
           "admin"
         ],
         "x-admin-action": "contain",
-        "x-admin-concurrency": "revision",
+        "x-admin-concurrency": "none",
         "x-admin-domain": "global",
-        "x-admin-idempotency": "store",
+        "x-admin-idempotency": "none",
         "x-admin-object": "admin:containment"
       }
     },

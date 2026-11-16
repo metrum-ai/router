@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 )
 
 // Principal is an authenticated machine identity, not an authorization grant.
@@ -16,10 +17,13 @@ import (
 // Kind is mtls, oauth, federated, adminkey, or emergency. Every kind, including
 // emergency, must pass through the admin Authorizer before an operation runs.
 type Principal struct {
-	Subject      string
-	Kind         string
-	CredentialID string
-	Issuer       string
+	Subject              string
+	Kind                 string
+	CredentialID         string
+	Issuer               string
+	containmentNonce     string
+	containmentBodyHash  string
+	containmentRetention time.Duration
 }
 
 type principalContextKey struct{}

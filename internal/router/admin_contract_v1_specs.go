@@ -303,8 +303,8 @@ var adminV1OperationSpecs = []Operation{
 		Summary: "Suspend a caller key from a signed SOAR or EDR webhook",
 		Object:  authzObjectAdminContainment, Action: authzActionContain, Domain: AdminDomainGlobal,
 		Request: callerContainmentRequest{}, Response: adminOpenObject{Members: []string{"caller_id", "status", "expires_at"}},
-		Errors:      []int{400, 404, 409, 412, 422, 428},
-		Concurrency: AdminConcurrencyRevision, Idempotency: AdminIdempotencyStore,
+		Errors:      []int{400, 403, 404, 409, 422, 503},
+		Concurrency: AdminConcurrencyNone, Idempotency: AdminIdempotencyNone,
 		RateClass: AdminRateClassWrite, HandlerKey: "containment.webhook",
 	},
 

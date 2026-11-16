@@ -210,6 +210,42 @@ func (s *sqlAdminIdempotencyStore) Begin(scope adminIdempotencyScope, now time.T
 	return adminIdempotencyRecord{State: "in_progress", CreatedAt: now}, adminIdempotencyProceed, nil
 }
 
+func (s *sqlAdminIdempotencyStore) beginWithTTLDB(db *gorm.DB, scope adminIdempotencyScope, now time.Time, ttl time.Duration) error {
+	if err := scope.validate(s.cfg.MaxKeyBytes); err != nil {
+		return err
+	}
+	rows, err := s.loadWithDB(db, scope)
+	if err != nil {
+		return err
+	}
+	if len(rows) > 0 {
+		record := rows[0]
+		if !record.ExpiresAt.IsZero() && !now.Before(record.ExpiresAt) {
+			if err := db.Exec(`DELETE FROM router_admin_idempotency WHERE principal_kind = ? AND principal_subject = ? AND domain = ? AND operation = ? AND idempotency_key = ?`, scope.PrincipalKind, scope.PrincipalSubject, scope.Domain, scope.Operation, scope.Key).Error; err != nil {
+				return fmt.Errorf("delete expired nonce: %w", err)
+			}
+		} else {
+			return errors.New("nonce already claimed")
+		}
+	}
+	if ttl < 20*time.Minute {
+		ttl = 20 * time.Minute
+	}
+	expires := now.Add(ttl)
+	result := db.Exec(
+		`INSERT INTO router_admin_idempotency (principal_kind, principal_subject, domain, operation, idempotency_key, request_hash, state, response_status, response_content_type, response_etag, response_body, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, 0, '', '', '', ?, ?) ON CONFLICT DO NOTHING`,
+		scope.PrincipalKind, scope.PrincipalSubject, scope.Domain, scope.Operation, scope.Key, scope.RequestHash,
+		"in_progress", adminIdempotencyTime(now), adminIdempotencyTime(expires),
+	)
+	if result.Error != nil {
+		return fmt.Errorf("claim containment nonce: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return errors.New("nonce already claimed")
+	}
+	return nil
+}
+
 func (s *sqlAdminIdempotencyStore) classify(record adminIdempotencyRecord, scope adminIdempotencyScope, now time.Time) (adminIdempotencyRecord, adminIdempotencyOutcome, error) {
 	if record.RequestHash != scope.RequestHash {
 		return adminIdempotencyRecord{}, adminIdempotencyConflict, nil
@@ -246,8 +282,12 @@ type adminIdempotencyRow struct {
 func (adminIdempotencyRow) TableName() string { return adminIdempotencyTable }
 
 func (s *sqlAdminIdempotencyStore) load(scope adminIdempotencyScope) ([]adminIdempotencyRecord, error) {
+	return s.loadWithDB(s.db, scope)
+}
+
+func (s *sqlAdminIdempotencyStore) loadWithDB(db *gorm.DB, scope adminIdempotencyScope) ([]adminIdempotencyRecord, error) {
 	var rows []adminIdempotencyRow
-	if err := s.db.Where(
+	if err := db.Where(
 		"principal_kind = ? AND principal_subject = ? AND domain = ? AND operation = ? AND idempotency_key = ?",
 		scope.PrincipalKind, scope.PrincipalSubject, scope.Domain, scope.Operation, scope.Key,
 	).Limit(1).Find(&rows).Error; err != nil {

@@ -1110,6 +1110,7 @@ type CallerConfig struct {
 	Environment          string `yaml:"environment" json:"environment"`
 	Status               string `yaml:"status" json:"status"`
 	ContainmentExpiresAt string `yaml:"containment_expires_at,omitempty" json:"containment_expires_at,omitempty"`
+	ContainmentSource    string `yaml:"containment_source,omitempty" json:"containment_source,omitempty"`
 	// TokenHash is the caller token verifier,
 	// "pbkdf2-sha3-512:i=<iterations>:<salt>:<key>". It requires TokenID.
 	TokenHash string `yaml:"token_hash,omitempty" json:"token_hash,omitempty"`
