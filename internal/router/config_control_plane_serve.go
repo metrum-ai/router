@@ -55,6 +55,7 @@ func loadActiveCanonicalConfig(db *gorm.DB, runtimeScope string, redactor *secre
 		cfg.Server.Identifiers = identifiers[0]
 	}
 	cfg.setDefaults()
+	warnDetectorSegmentOptIn(cfg.Server.Detectors)
 	cfg.secretEnvRefs = envRefs
 	if err := cfg.Validate(); err != nil {
 		return &cfg, fmt.Errorf("validate active canonical config: %w", err)

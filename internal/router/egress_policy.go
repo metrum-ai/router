@@ -41,6 +41,9 @@ func validateEgressURL(u *url.URL, allowHosts []string, allowHTTP bool, label st
 	if u == nil || u.Hostname() == "" {
 		return &egressPolicyError{label: label, msg: "URL is invalid"}
 	}
+	if u.User != nil {
+		return &egressPolicyError{label: label, msg: "URL userinfo is not allowed"}
+	}
 	switch strings.ToLower(u.Scheme) {
 	case "https":
 		if err := validateEgressHost(u.Hostname(), allowHosts, label); err != nil {

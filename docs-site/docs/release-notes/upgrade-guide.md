@@ -5,6 +5,16 @@ doc_type: reference
 
 # Upgrade Guide
 
+## Detector service boundary (v5.0.0)
+
+Custom detector strategies run as separate services behind the versioned
+`metrum.detector.v1` HTTPS contract. Detector transports require an exact
+allowlisted hostname and a bounded timeout. The router rejects unlisted
+redirects, URL userinfo, and malformed or oversized responses. Detector events
+carry metadata by default. Text segments are sent only when an operator opts in
+per detector with `include_segments`; prompts and user messages are never sent.
+See [External detectors](/docs/security-governance/detectors).
+
 For v5.0.0, `metrum-ai-router-migrate --json` writes one JSON document to stdout. Database diagnostics are sent to stderr.
 
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
