@@ -22,32 +22,83 @@ MODEL = "claude-fable-5-2"
 API_URL = "https://api.anthropic.com/v1/messages"
 API_VERSION = "2023-06-01"
 MAX_DIFF_BYTES = 1_000_000
+MAX_REVIEW_BATCHES = 8
 SENSITIVE = re.compile(r"(?i)(?:sk-[a-z0-9_-]{12,}|bearer\s+\S+|api[_ -]?key\s*[:=]|token\s*[:=]|password\s*[:=])")
-REVIEW_SYSTEM = """You are the independent release reviewer for Metrum AI Router. Review the supplied source diff since the previous production release, CHANGELOG.md changes, and v5.0.0 upgrade-guide changes. Return only JSON with keys summary and findings. Each finding has severity (blocking or informational), category (exactly one of security, correctness, compatibility, release-integrity), title, rationale, and locations (a non-empty list of objects containing repository-relative file and positive integer line). Block only a concrete security, correctness, compatibility, or release-integrity issue that must be fixed before publish. Do not quote source, prompt text, credentials, tokens, or secret values. Mention only file paths and concise reasoning. A clean review has an empty findings array."""
+REVIEW_SYSTEM = """You are the independent release reviewer for Metrum AI Router. Review the supplied source diff since the previous production release, CHANGELOG.md changes, and v5.0.0 upgrade-guide changes. The input may be one of several bounded batches from the same range; review only findings supported by the supplied batch and do not assume that omitted hunks are unchanged. Return only JSON with keys summary and findings. Each finding has severity (blocking or informational), category (exactly one of security, correctness, compatibility, release-integrity), title, rationale, and locations (a non-empty list of objects containing repository-relative file and positive integer line). Block only a concrete security, correctness, compatibility, or release-integrity issue that must be fixed before publish. Do not quote source, prompt text, credentials, tokens, or secret values. Mention only file paths and concise reasoning. A clean review has an empty findings array."""
 
 
-def git_diff(base: str, head: str) -> str:
-    result = subprocess.run(
-        ["git", "diff", "--no-ext-diff", "--unified=2", f"{base}..{head}"],
+def pack_diff_files(
+    file_diffs: list[tuple[str, str]],
+    *,
+    max_bytes: int = MAX_DIFF_BYTES,
+    max_batches: int = MAX_REVIEW_BATCHES,
+) -> list[tuple[str, tuple[str, ...]]]:
+    batches: list[tuple[str, tuple[str, ...]]] = []
+    current_diffs: list[str] = []
+    current_paths: list[str] = []
+    current_bytes = 0
+    for path, diff in file_diffs:
+        diff_bytes = len(diff.encode("utf-8"))
+        if diff_bytes > max_bytes:
+            raise ValueError(f"release diff for {path} exceeds the per-request review input limit")
+        if current_diffs and current_bytes + diff_bytes > max_bytes:
+            batches.append(("".join(current_diffs), tuple(current_paths)))
+            current_diffs = []
+            current_paths = []
+            current_bytes = 0
+            if len(batches) >= max_batches:
+                raise ValueError("release diff exceeds the maximum number of review batches")
+        current_diffs.append(diff)
+        current_paths.append(path)
+        current_bytes += diff_bytes
+    if current_diffs:
+        batches.append(("".join(current_diffs), tuple(current_paths)))
+    if not batches:
+        raise ValueError("release diff is empty")
+    if len(batches) > max_batches:
+        raise ValueError("release diff exceeds the maximum number of review batches")
+    return batches
+
+
+def git_diff_batches(base: str, head: str) -> list[tuple[str, tuple[str, ...]]]:
+    names = subprocess.run(
+        ["git", "diff", "--name-only", "-z", f"{base}..{head}"],
         check=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
-        text=True,
-    )
-    if not result.stdout.strip():
-        raise ValueError("release diff is empty")
-    if len(result.stdout.encode("utf-8")) > MAX_DIFF_BYTES:
-        raise ValueError("release diff exceeds the review input size limit")
-    return result.stdout
+    ).stdout.split(b"\0")
+    paths = [os.fsdecode(path) for path in names if path]
+    file_diffs: list[tuple[str, str]] = []
+    for path in paths:
+        result = subprocess.run(
+            ["git", "diff", "--no-ext-diff", "--unified=2", f"{base}..{head}", "--", path],
+            check=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        if result.stdout:
+            file_diffs.append((path, result.stdout))
+    return pack_diff_files(file_diffs)
 
 
-def call_model(api_key: str, diff: str, timeout: float = 120.0) -> dict[str, Any]:
+def call_model(
+    api_key: str,
+    diff: str,
+    *,
+    batch_number: int = 1,
+    batch_count: int = 1,
+    timeout: float = 120.0,
+) -> dict[str, Any]:
     body = json.dumps({
         "model": MODEL,
         "max_tokens": 4096,
         "temperature": 0,
         "system": REVIEW_SYSTEM,
-        "messages": [{"role": "user", "content": "Review this release diff:\n\n" + diff}],
+        "messages": [{
+            "role": "user",
+            "content": f"Review release diff batch {batch_number} of {batch_count}. Findings must be grounded in this batch.\n\n{diff}",
+        }],
     }).encode("utf-8")
     request = urllib.request.Request(
         API_URL,
@@ -243,12 +294,27 @@ def main() -> int:
             artifact = validate_artifact(artifact, args.base, args.head)
             cache_hit = True
         else:
-            diff = git_diff(args.base, args.head)
+            batches = git_diff_batches(args.base, args.head)
             api_key = os.environ.get("ANTHROPIC_API_KEY", "")
             if not api_key:
                 print("AI release review failed: required API credential is unavailable", file=sys.stderr)
                 return 2
-            artifact = build_artifact(call_model(api_key, diff), args.base, args.head)
+            batch_reviews = [
+                call_model(api_key, diff, batch_number=index, batch_count=len(batches))
+                for index, (diff, _paths) in enumerate(batches, start=1)
+            ]
+            findings_by_id: dict[str, dict[str, Any]] = {}
+            for batch_review in batch_reviews:
+                artifact_batch = build_artifact(batch_review, args.base, args.head)
+                for finding in artifact_batch["findings"]:
+                    existing = findings_by_id.get(finding["id"])
+                    if existing is None or finding["severity"] == "blocking":
+                        findings_by_id[finding["id"]] = finding
+            changed_files = sum(len(paths) for _diff, paths in batches)
+            artifact = build_artifact({
+                "summary": f"Reviewed {changed_files} changed files across {len(batches)} bounded batches.",
+                "findings": list(findings_by_id.values()),
+            }, args.base, args.head)
         report, unanswered = evaluate(artifact, acceptances, args.base, args.head)
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(render(report, args.base, args.head, args.tag), encoding="utf-8")

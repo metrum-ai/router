@@ -32,6 +32,7 @@ def validate(workflow):
     assert set(triggers) == {"push"}
     assert triggers["push"]["tags"] == ["v*"]
     ai_review = jobs["ai-release-review"]
+    assert ai_review["timeout-minutes"] >= 20
     assert ai_review["permissions"] == {"contents": "read"}
     assert ai_review.get("environment") == "release-review"
     ai_step = next(step for step in ai_review["steps"] if step.get("name") == "Review release diff and documentation")

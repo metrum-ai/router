@@ -5,15 +5,65 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 import release_ai_review as review
 
 
 class ReleaseAIReviewTest(unittest.TestCase):
+    def test_diff_files_are_packed_under_one_megabyte_and_preserved(self) -> None:
+        file_diffs = [
+            ("a.go", "diff --git a/a.go b/a.go\n" + "a" * 600_000),
+            ("b.go", "diff --git a/b.go b/b.go\n" + "b" * 500_000),
+            ("c.go", "diff --git a/c.go b/c.go\n" + "c" * 100_000),
+        ]
+        batches = review.pack_diff_files(file_diffs)
+        self.assertEqual(len(batches), 2)
+        self.assertEqual([path for _diff, paths in batches for path in paths], ["a.go", "b.go", "c.go"])
+        self.assertTrue(all(len(diff.encode("utf-8")) <= review.MAX_DIFF_BYTES for diff, _paths in batches))
+        self.assertIn("diff --git a/a.go b/a.go", batches[0][0])
+        self.assertIn("diff --git a/b.go b/b.go", batches[1][0])
+        self.assertIn("diff --git a/c.go b/c.go", batches[1][0])
+
+    def test_diff_batcher_fails_closed_for_one_oversized_file_or_too_many_batches(self) -> None:
+        with self.assertRaisesRegex(ValueError, "per-request"):
+            review.pack_diff_files([("large.go", "x" * 11)], max_bytes=10)
+        with self.assertRaisesRegex(ValueError, "maximum number"):
+            review.pack_diff_files(
+                [(f"{index}.go", "x" * 60) for index in range(3)],
+                max_bytes=100,
+                max_batches=2,
+            )
+
+    def test_git_diff_batches_reads_and_separates_real_file_diffs(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            subprocess.run(["git", "-C", str(root), "config", "user.name", "Release Review Test"], check=True)
+            subprocess.run(["git", "-C", str(root), "config", "user.email", "release-review-test@example.invalid"], check=True)
+            for name in ("first.go", "second.go"):
+                (root / name).write_text("initial\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(root), "add", "first.go", "second.go"], check=True)
+            subprocess.run(["git", "-C", str(root), "commit", "-qm", "baseline"], check=True)
+            base = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+            (root / "first.go").write_text("a" * 600_000 + "\n", encoding="utf-8")
+            (root / "second.go").write_text("b" * 600_000 + "\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(root), "add", "first.go", "second.go"], check=True)
+            subprocess.run(["git", "-C", str(root), "commit", "-qm", "large release diff"], check=True)
+            head = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+            original_cwd = Path.cwd()
+            try:
+                os.chdir(root)
+                batches = review.git_diff_batches(base, head)
+            finally:
+                os.chdir(original_cwd)
+        self.assertEqual([paths for _diff, paths in batches], [("first.go",), ("second.go",)])
+        self.assertTrue(all(len(diff.encode("utf-8")) <= review.MAX_DIFF_BYTES for diff, _paths in batches))
+
     def test_unanswered_blocker_blocks_and_answered_blocker_is_recorded(self) -> None:
         candidate = {
             "summary": "Release has one issue to resolve.",
@@ -150,11 +200,48 @@ class ReleaseAIReviewTest(unittest.TestCase):
                 "schema": "metrum-ai-router-release-review-responses/v1", "acceptances": {},
             }), encoding="utf-8")
             with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
-                 patch.object(review, "git_diff", return_value="changed range diff"), \
+                 patch.object(review, "git_diff_batches", return_value=[("changed range diff", ("router.go",))]), \
                  patch.object(review, "call_model", return_value=candidate) as call_model, \
                  patch("sys.argv", args):
                 self.assertEqual(review.main(), 0)
-            call_model.assert_called_once_with("test-key", "changed range diff")
+            call_model.assert_called_once_with("test-key", "changed range diff", batch_number=1, batch_count=1)
+
+    def test_uncached_range_reviews_every_bounded_batch(self) -> None:
+        clean_batch = {"summary": "No blocking findings in this batch.", "findings": []}
+        blocking_batch = {
+            "summary": "One release blocker was found in this batch.",
+            "findings": [{
+                "severity": "blocking", "category": "release-integrity", "title": "Missing provenance check",
+                "rationale": "The release workflow does not verify the expected source ref.",
+                "locations": [{"file": "docs/release.md", "line": 7}],
+            }],
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            args = [
+                "release_ai_review.py", "--base", "v4.8.0", "--head", "def5678", "--tag", "v5.0.0",
+                "--responses", str(root / "responses.json"), "--artifact-cache", str(root / "cache" / "review.json"),
+                "--artifact-output", str(root / "review-output" / "review.json"),
+                "--output", str(root / "review-output" / "AI-release-review.md"),
+            ]
+            (root / "responses.json").write_text(json.dumps({
+                "schema": "metrum-ai-router-release-review-responses/v1", "acceptances": {},
+            }), encoding="utf-8")
+            batches = [("diff batch one", ("router.go",)), ("diff batch two", ("docs/release.md",))]
+            with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
+                 patch.object(review, "git_diff_batches", return_value=batches), \
+                 patch.object(review, "call_model", side_effect=[clean_batch, blocking_batch]) as call_model, \
+                 patch("sys.argv", args):
+                self.assertEqual(review.main(), 1)
+            self.assertEqual(call_model.call_args_list, [
+                call("test-key", "diff batch one", batch_number=1, batch_count=2),
+                call("test-key", "diff batch two", batch_number=2, batch_count=2),
+            ])
+            artifact = json.loads((root / "review-output" / "review.json").read_text(encoding="utf-8"))
+            self.assertEqual(artifact["summary"], "Reviewed 2 changed files across 2 bounded batches.")
+            self.assertEqual(len(artifact["findings"]), 1)
+            self.assertEqual(artifact["findings"][0]["severity"], "blocking")
+            self.assertIn("Decision: **BLOCK**", (root / "review-output" / "AI-release-review.md").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
