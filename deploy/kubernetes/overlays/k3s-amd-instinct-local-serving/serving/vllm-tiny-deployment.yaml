@@ -30,7 +30,7 @@ spec:
         vendor: amd
       containers:
         - name: vllm
-          image: vllm/vllm-openai-rocm:v0.25.0
+          image: vllm/vllm-openai-rocm:v0.33.0@sha256:4fcd39b758b660c4e9c345c021e2ea8f0ccdb31e3c32507d676cc3005ae83fba
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false

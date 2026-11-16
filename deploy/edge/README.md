@@ -179,7 +179,7 @@ its token counts and costs are mock arithmetic rather than inference or billing.
 | System | 1× AMD Ryzen AI MAX+ 395 (Strix Halo, gfx1151) **128 GB** unified memory. The 64 GB variant cannot hold the 30B-class slot. |
 | GPU memory window | `amdgpu` GTT window large enough for ~110 GB (BIOS/`amdgpu.gttsize`); see Sizing |
 | Disk | ≥ 200 GB free for weights (`hf-cache` volume) and state |
-| Driver | `amdgpu` with ROCm 7.x userspace for gfx1151; `/dev/kfd` and `/dev/dri` present |
+| Driver | `amdgpu` kernel driver compatible with the container's ROCm 10.0 runtime for gfx1151; `/dev/kfd` and `/dev/dri` present |
 | Runtime | Docker Engine 27+ with the Compose v2 plugin; the installer adds `/dev/kfd`, `/dev/dri`, `video` and `render` groups |
 | CPU keyboard/monitor | none after install; the admin UI is reachable at the router address |
 | Network | outbound HTTPS to `huggingface.co` and the escalation endpoint (not needed in air-gapped mode) |
@@ -189,9 +189,8 @@ multi-arch `vllm/vllm-openai` pin and the NVIDIA device reservation. The pins in
 `compose.amd.yaml` and `compose.nvidia.yaml` are the same ones the reference
 configurations pin, and the install test fails if they drift.
 
-The AMD overlay sets `entrypoint: ["vllm", "serve"]` explicitly: the ROCm image
-ships vLLM, but its default command is a wheel-pin helper rather than the server,
-and AMD's published run form is `vllm serve ...`.
+The AMD overlay sets `entrypoint: ["vllm", "serve"]` explicitly so its serving
+command does not depend on image defaults.
 
 ## Sizing
 
@@ -244,10 +243,8 @@ for each; a skip is not a pass, and the script exits non-zero if anything failed
 
 ## AMD hosts: GPU group ids
 
-The pinned ROCm image has no `render` entry in its `/etc/group`, so a compose
-`group_add: [video, render]` fails with "Unable to find group render: no matching
-entries in group file" — on Docker as well as Podman. The AMD overlay therefore takes
-numeric host GIDs, and `install.sh` reads them from the device nodes:
+The AMD overlay passes numeric host GIDs so device access matches the host device
+nodes on both Docker and Podman. `install.sh` reads the values from the nodes:
 
 ```sh
 stat -c %g /dev/dri/renderD128     # render

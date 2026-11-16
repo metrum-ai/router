@@ -114,6 +114,7 @@ const sidebars = {
         "providers-models/overview",
         "usage-cost-reports/overview",
         "security-governance/overview",
+        "security-governance/detectors",
         "evaluation/overview",
         "evaluation/performance-overhead",
         "evaluation/tool-call-proof",
