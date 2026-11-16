@@ -41,7 +41,7 @@ Set `server.logging.path` to protected storage. The Router does not rotate reque
 
 ## Verification
 
-Run `metrum-ai-routerctl doctor --security` against each deployment config and use `--target` from a separate host to check public metrics exposure. It checks listener TLS posture, configured provider key sources and spend ceilings, admin listener settings, security-report enablement, caller limits and verifier format, caller key-age visibility, and sensitive-group DLP. A missing provider spend ceiling is advisory because ceilings are optional. Review each warning and remediation.
+Run `metrum-ai-routerctl doctor --security` against each deployment config and use `--target` from a separate host to check public metrics exposure. It checks listener TLS posture, configured provider key sources and spend ceilings, admin listener settings, security-report enablement, caller limits and verifier format, development/test caller key environments, caller key-age visibility, and sensitive-group DLP. A missing provider spend ceiling is advisory because ceilings are optional. Raw key entropy is not inspected because config stores verifiers only. Review each warning and remediation.
 
 The self-test cannot inspect certificate validity, provider-side permissions, file and database ACLs, client tool-host authorization, event-sink access, or actual log contents. Verify those controls in the deployment and test TLS, authorization, key rotation, DLP blocking, tool restrictions, event delivery, log redaction, and replica behavior in staging.
 
