@@ -5,6 +5,17 @@ doc_type: reference
 
 # Upgrade Guide
 
+## Detector service boundary (v5.0.0)
+
+Custom detector strategies run as separate services behind the versioned
+`metrum.detector.v1` HTTPS contract. Detector transports require an exact
+allowlisted hostname and a bounded timeout. The router rejects unlisted
+redirects, URL userinfo, and malformed or oversized responses. Remove embedded
+URL usernames and passwords from external-policy URLs; use supported secret
+configuration for service authentication. Do not configure custom code
+inside the router process; Go plugins, shared libraries, WASM, and scripts are
+not supported. See [External detectors](/docs/security-governance/detectors).
+
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
 
 ## Pre-Upgrade Checklist
