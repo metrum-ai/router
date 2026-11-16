@@ -93,7 +93,8 @@ def main():
                                 "url": f"http://127.0.0.1:{adapter_port}/route", "allow_hosts": ["127.0.0.1"],
                                 "timeout_ms": 5000, "max_response_bytes": 65536,
                                 "include_request": True, "mode": mode, "on_error": "fail_closed"}}
-                        config = {"server": {"listen": f"127.0.0.1:{port}", "default_model_group": "chat",
+                        config = {"admin": {"enabled": False},
+                                  "server": {"listen": f"127.0.0.1:{port}", "default_model_group": "chat",
                                              "cache": {"enabled": False}, "logging": {"path": str(work / "requests.jsonl")},
                                              "identifiers": {"mode": "passthrough"}, "decision_telemetry": {"enabled": True},
                                              "usage_db": {"enabled": True, "driver": "sqlite", "path": str(work / "usage.sqlite"), "migration_policy": "auto-safe"}},

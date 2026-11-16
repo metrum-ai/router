@@ -10,14 +10,13 @@ import os
 import signal
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
 from urllib.request import urlopen
 
 from run_chat_smoke import DIGEST, ROOT, TOKEN, free_port
+from run_codex_chain import retrying_temporary_directory
 
 CODEX = ROOT / "tests/agent_compat/node_modules/.bin/codex"
 
@@ -106,8 +105,7 @@ def main():
     thread = threading.Thread(target=upstream.serve_forever, daemon=True)
     thread.start()
     try:
-        with tempfile.TemporaryDirectory(prefix="router-codex-compat-") as tmp:
-            work = Path(tmp)
+        with retrying_temporary_directory(prefix="router-codex-compat-") as work:
             env = {"PATH": os.environ["PATH"], "HOME": os.environ["HOME"], "GOPROXY": "off", "GOSUMDB": "off", "GOTOOLCHAIN": "local"}
             binary = work / "router"
             subprocess.run(["go", "build", "-tags", "dev_no_license", "-o", str(binary), "./cmd/metrum-ai-router"], cwd=ROOT, env=env, check=True)

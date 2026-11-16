@@ -2,6 +2,7 @@
 # Copyright 2026 Metrum AI
 # SPDX-License-Identifier: Apache-2.0
 
+import errno
 import json
 import signal
 import subprocess
@@ -14,6 +15,26 @@ import run_codex_chain as runner
 
 
 class CodexChainTest(unittest.TestCase):
+    def test_remove_temp_tree_retries_transient_nonempty_error(self):
+        with tempfile.TemporaryDirectory() as temp:
+            target = Path(temp) / "codex-home"
+            target.mkdir()
+            (target / "ready.txt").write_text("ready")
+            real_rmtree = runner.shutil.rmtree
+            calls = 0
+
+            def transient_error(path):
+                nonlocal calls
+                calls += 1
+                if calls == 1:
+                    raise OSError(errno.ENOTEMPTY, "directory received a late child", str(path))
+                return real_rmtree(path)
+
+            with patch.object(runner.shutil, "rmtree", side_effect=transient_error), patch.object(runner.time, "sleep"):
+                runner.remove_temp_tree(target)
+            self.assertFalse(target.exists())
+            self.assertEqual(calls, 2)
+
     def test_cell_requires_exit_and_exact_marker(self):
         process = MagicMock(returncode=0)
         process.poll.return_value = 0
