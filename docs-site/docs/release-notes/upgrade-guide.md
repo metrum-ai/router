@@ -72,6 +72,19 @@ Response-cache entries and vLLM prefix-cache salts remain isolated by caller and
 
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
 
+## v5.0.0 bounded tool-call streaming hold
+
+Tool-aware model groups can opt in to `tool_routing.streaming.hold_until_validated` with
+`hold_timeout_ms` (1–60000) and `hold_max_bytes` (1–33554432). Tool-call frames are withheld until
+the complete call has passed inspection; ordinary text frames still stream immediately. For
+OpenAI Chat Completions, OpenAI Responses, and Anthropic Messages, the first tool-call frame incurs
+the remaining upstream tool-call generation time plus router inspection time. The hold limit applies per stream, and held bytes also count against the process-wide
+`server.streaming.max_inflight_line_bytes` budget shared with native and Responses SSE parsing. This
+budget is per router process, so configure each replica to cover its expected concurrent streams.
+The timeout is an absolute deadline from the first held tool event; upstream byte activity does not
+extend it. Responses argument delta/done events remain private through inspection, and Anthropic
+tool-use frames are released before the terminal `message_delta`.
+
 ## v5.0.0 caller-token hygiene
 
 Newly generated caller tokens append a `v2` marker and checksum to the existing
@@ -186,9 +199,10 @@ configuration](../configuration/tool-firewall) before enabling `shadow` or
 `enforce`. Sequence counters and pending approvals are process-local; with
 multiple replicas, route each conversation and its approval request to the same
 router process. Configure `admin:tool_approvals:resolve` only for principals
-that may release held tool calls. Enforced streamed requests that offer tools
-return HTTP 400 `tool_firewall_stream_inspection_required` until bounded stream
-inspection is available.
+that may release held tool calls. Hold rules return an immediate pending
+result; after an administrator releases the hold, the agent retries the same
+request. Enforced streamed tool calls require bounded stream inspection to be
+enabled for the model group and are withheld until inspection completes.
 
 ## Pre-Upgrade Checklist
 

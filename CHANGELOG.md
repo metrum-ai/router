@@ -135,6 +135,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Raise the default upstream SSE line limit to a bounded 8 MiB and expose `server.streaming.max_sse_line_bytes` with validated 64 KiB–32 MiB bounds.
 - Allow oversized upstream lines to fall back before downstream commitment; retain reported usage from discarded attempts with explicit audit provenance.
 - Cover large streaming tool calls, repeated Responses completion payloads, limit errors, fallback boundaries, and tool-result continuation.
+- Add an opt-in bounded stream hold for tool-call frames, with an absolute deadline, an ordered allow/block/redact inspector hook, and per-stream byte limits charged to the process-wide SSE buffer budget. Hold OpenAI Responses argument delta/done events through inspection and release Anthropic tool-use frames before terminal `message_delta`; ordinary text frames continue immediately.
 
 ### Changed
 

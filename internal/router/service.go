@@ -234,6 +234,7 @@ type requestContext struct {
 	maxSSELineBytes        int
 	lineBufferBudget       *lineBufferBudget
 	chatStreamIncludeUsage bool
+	streamToolCallHold     *streamToolCallHold
 	detectorTinyRequest    bool
 	traceSeq               int
 	// wrapStreamFrame binds opaque reasoning values in streamed frames (#622).
@@ -402,7 +403,7 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		bridgeSessions:     bridgeSessions,
 		observations:       newDynamicObservationStore(),
 		toolReliability:    newToolReliabilityStore(),
-		toolFirewall:       newToolFirewallRuntime(),
+		toolFirewall:       newToolFirewallRuntime(cfg.Server.ToolFirewall),
 		toolApprovals:      newToolApprovalRuntime(cfg.Server.ToolFirewall.MaxPendingApprovals),
 		affinity:           newDynamicAffinityStore(),
 		shaping:            newUpstreamShapeManager(),
@@ -1701,10 +1702,12 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	if !s.prepareRouterVia(w, r, rc) {
 		return
 	}
-	if s.toolFirewall.syncPolicy(s.cfg.Server.ToolFirewall) && s.toolApprovals != nil {
-		// A held call was approved under the previous policy. On any firewall
-		// config change, wake it as denied so an approver cannot release stale work.
-		s.toolApprovals.denyAll()
+	// Invalidate old holds while the firewall policy lock is still held. This
+	// prevents a concurrent request from seeing a new policy with a releasable
+	// approval created under the prior one.
+	s.toolFirewall.syncPolicyWithApprovals(s.cfg.Server.ToolFirewall, s.toolApprovals)
+	if s.toolApprovals != nil {
+		s.toolApprovals.setMax(s.cfg.Server.ToolFirewall.MaxPendingApprovals)
 	}
 	// Bound concurrent body buffering before ReadAll. Full request-count Admit
 	// and request admission stay after validation / traffic-shape queue
@@ -2019,12 +2022,6 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	if s.detectorSegmentsEnabled() {
 		rc.detectorSegments = extractDetectorSegments(req)
 	}
-	if strings.EqualFold(s.cfg.Server.ToolFirewall.Mode, toolFirewallEnforce) && req.Stream && len(req.Tools) > 0 {
-		code := "tool_firewall_stream_inspection_required"
-		rc.trace("tool_firewall_blocked", "", Target{}, 0, http.StatusBadRequest, code, false, 0)
-		s.writeError(w, rc, http.StatusBadRequest, code)
-		return
-	}
 	captureDecision := s.contentCaptureFor(rc.caller, req.Model, group)
 	s.captureRequestContent(rc, req, r.Header, captureDecision)
 	s.recordRequestShapeTelemetry(rc, req, dialect, len(body))
@@ -2292,44 +2289,26 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 			if servedTarget, ok := selectedServingTarget(rc, dec); ok {
 				uploadDialect = targetDialect(s.cfg.Provider[servedTarget.Provider], servedTarget)
 			}
-			calls := firewallToolCalls(resp, dialect, uploadDialect, "openai-chat", "openai-responses", "anthropic")
-			outcome := s.toolFirewall.check(s.cfg.Server.ToolFirewall, callerID, req.Model, req, calls)
-			if outcome.Action != "" {
-				rc.trace("tool_firewall_decision", "", Target{}, 0, http.StatusOK, outcome.RuleCode, false, 0)
-				if outcome.Mode != toolFirewallEnforce || outcome.Action == "deny" {
-					action := "denied"
-					if outcome.Mode == toolFirewallShadow {
-						action = "shadow"
-					}
-					s.recordToolFirewallDecisionEvent(rc, "", action, outcome.RuleCode)
-				}
-				blocked := outcome.Mode == toolFirewallEnforce && outcome.Action == "deny"
-				if outcome.Mode == toolFirewallEnforce && outcome.Action == "hold" {
-					approvalID := "approval_" + strings.TrimPrefix(requestID(), "req_")
-					timeout := 60 * time.Second
-					if s.cfg.Server.ToolFirewall.ApprovalTimeoutMS > 0 {
-						timeout = time.Duration(s.cfg.Server.ToolFirewall.ApprovalTimeoutMS) * time.Millisecond
-					}
-					approval, released := s.toolApprovals.wait(r.Context(), approvalID, timeout, func() {
-						rc.trace("tool_firewall_approval_pending", "approval_id="+approvalID, Target{}, 0, 0, "approval_pending", false, 0)
-						s.recordToolFirewallDecisionEvent(rc, approvalID, "pending", outcome.RuleCode)
-					})
-					blocked = !released || approval != "release"
-					reason := "denied"
-					if !released {
-						reason = "timeout"
-					} else if approval == "release" {
-						reason = "released"
-					}
-					rc.trace("tool_firewall_approval_resolved", "", Target{}, 0, 0, "approval_"+reason, false, 0)
-					s.recordToolFirewallDecisionEvent(rc, approvalID, reason, outcome.RuleCode)
-				}
-				if blocked {
-					resp.RawResponse = false
-					resp.ToolCalls = nil
-					resp.Text = "Tool call blocked by router policy."
-					resp.StopReason = "end_turn"
-				}
+			calls, truncated := firewallToolCalls(resp, dialect, uploadDialect, "openai-chat", "openai-responses", "anthropic")
+			fingerprint, fingerprintOK := toolCallApprovalFingerprint(callerID, calls)
+			approvalID, approvalState := "", ""
+			if fingerprintOK && s.toolApprovals != nil {
+				approvalID, approvalState = s.toolApprovals.lookup(fingerprint)
+			}
+			outcome := s.inspectToolCallsForFirewall(callerID, req, calls, truncated, approvalState == "release")
+			disposition := s.resolveToolFirewallDecision(rc, callerID, fingerprint, approvalID, approvalState, outcome)
+			if disposition.pending {
+				resp.RawResponse = false
+				resp.ToolCalls = nil
+				resp.ToolCallsTruncated = false
+				resp.Text = fmt.Sprintf(`{"status":"approval_pending","approval_id":%q,"message":"Retry this request after approval."}`, disposition.approvalID)
+				resp.StopReason = "end_turn"
+			} else if disposition.blocked {
+				resp.RawResponse = false
+				resp.ToolCalls = nil
+				resp.ToolCallsTruncated = false
+				resp.Text = "Tool call blocked by router policy."
+				resp.StopReason = "end_turn"
 			}
 		}
 		ensureResponseID(resp)
@@ -3892,11 +3871,34 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		// body after stream_idle_timeout_ms without a read, which ends the
 		// response with a clear attempt error instead of a silent stall.
 		streamBody := httpResp.Body
+		if group, ok := s.cfg.Models[groupName]; ok {
+			holdConfig := group.ToolRouting.Streaming
+			firewallEnforced := strings.EqualFold(strings.TrimSpace(s.cfg.Server.ToolFirewall.Mode), toolFirewallEnforce)
+			if firewallEnforced && !holdConfig.HoldUntilValidated {
+				// Enforce mode must never proxy executable stream frames before
+				// inspection. Use conservative defaults when the group did not
+				// explicitly opt into a separately tuned schema hold.
+				holdConfig = ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 30000, HoldMaxBytes: 1 << 20}
+			}
+			if holdConfig.HoldUntilValidated {
+				rc.streamToolCallHold = newStreamToolCallHold(holdConfig, req.Tools, group.ToolRouting.validationOptions(), s.lineBufferBudget)
+				if firewallEnforced {
+					callerID := ""
+					if rc.caller != nil {
+						callerID = rc.caller.cfg.ID
+					}
+					rc.streamToolCallHold.inspectors = append(rc.streamToolCallHold.inspectors, firewallToolCallInspector{service: s, rc: rc, callerID: callerID, request: req})
+				}
+			}
+		}
 		streamIdle := s.streamIdleTimeout()
 		var idleBody *streamIdleReader
-		if streamIdle > 0 {
+		if streamIdle > 0 || rc.streamToolCallHold != nil {
 			idleBody = newStreamIdleReader(httpResp.Body, streamIdle)
 			streamBody = idleBody
+		}
+		if idleBody != nil && rc.streamToolCallHold != nil {
+			rc.streamToolCallHold.bindIdleReader(idleBody, streamIdle)
 		}
 		rc.maxSSELineBytes = s.cfg.Server.Streaming.MaxSSELineBytes
 		rc.lineBufferBudget = s.lineBufferBudget
@@ -3919,7 +3921,12 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		attempt.ReasoningTokens = streamResult.Response.Usage.ReasoningTokens
 		if streamErr != nil {
 			upErr := classifyError(streamErr)
-			if errors.Is(streamErr, errStreamIdleTimeout) {
+			if errors.Is(streamErr, errStreamToolCallHoldTimeout) {
+				upErr = upstreamError{
+					Class: "tool_call_hold_timeout", Message: "tool-call inspection hold timed out",
+					TimedOut: true, Fallbackable: false, Err: streamErr,
+				}
+			} else if errors.Is(streamErr, errStreamIdleTimeout) {
 				// A clear, classifiable timeout with its own message; the
 				// attempt and usage rows record it.
 				upErr = upstreamError{
@@ -5763,6 +5770,12 @@ func upstreamFailureResponse(err upstreamError, rc *requestContext) (string, int
 	switch {
 	case err.Class == "upstream_loop_detected":
 		return "upstream-loop-detected", http.StatusLoopDetected
+	case err.Class == "tool_call_hold_timeout":
+		return "tool-call-hold-timeout", http.StatusGatewayTimeout
+	case err.Class == "tool_call_hold_too_large":
+		return "tool-call-hold-too-large", http.StatusBadGateway
+	case err.Class == "tool_call_hold_validation_failed":
+		return "tool-call-validation-failed", http.StatusBadGateway
 	case err.Class == "upstream_protocol_error" || err.Class == "upstream_frame_too_large" || err.Class == "upstream_stream_buffer_limit":
 		return err.Class, http.StatusBadGateway
 	case err.Class == "response_affinity_store_failed":
@@ -5852,6 +5865,12 @@ func callerUpstreamFailureReason(class string) (string, string) {
 		return class, "upstream provider quota, credits, or billing were exhausted"
 	case "upstream_timeout":
 		return class, "upstream timed out"
+	case "tool_call_hold_timeout":
+		return class, "tool-call inspection exceeded its configured timeout"
+	case "tool_call_hold_too_large":
+		return class, "tool-call inspection exceeded its configured size limit"
+	case "tool_call_hold_validation_failed":
+		return class, "streamed tool-call validation failed"
 	case "upstream_loop_detected":
 		return class, "an upstream loop was detected"
 	case "image_url_dns_timeout":

@@ -135,6 +135,7 @@ type ResponsesConfig struct {
 type ToolFirewallConfig struct {
 	Mode                   string                     `yaml:"mode" json:"mode,omitempty"`
 	URLAllowHosts          []string                   `yaml:"url_allow_hosts" json:"urlAllowHosts,omitempty"`
+	BuiltInRules           map[string]bool            `yaml:"built_in_rules" json:"builtInRules,omitempty"`
 	Deny                   []ToolFirewallDenyRule     `yaml:"deny" json:"deny,omitempty"`
 	Sequences              []ToolFirewallSequenceRule `yaml:"sequences" json:"sequences,omitempty"`
 	ApprovalTimeoutMS      int                        `yaml:"approval_timeout_ms" json:"approvalTimeoutMs,omitempty"`
@@ -948,11 +949,10 @@ type ToolRoutingRecoveryConfig struct {
 	OnExhausted          string `yaml:"on_exhausted" json:"onExhausted,omitempty"`
 }
 
-// ToolRoutingStreamingConfig is not implemented yet: hold_until_validated must
-// stay false so a streamed response is delivered exactly as the upstream sent
-// it and recovery cannot claim something it does not do.
 type ToolRoutingStreamingConfig struct {
 	HoldUntilValidated bool `yaml:"hold_until_validated" json:"holdUntilValidated,omitempty"`
+	HoldTimeoutMS      int  `yaml:"hold_timeout_ms" json:"holdTimeoutMs,omitempty"`
+	HoldMaxBytes       int  `yaml:"hold_max_bytes" json:"holdMaxBytes,omitempty"`
 }
 
 // ToolRoutingValidateConfig selects which checks run on a decoded response.
@@ -977,7 +977,7 @@ func toolRoutingEmpty(c ToolRoutingConfig) bool {
 	return c.Mode == "" && c.ColdStart == "" && c.MinSamples == 0 && c.WindowSeconds == 0 &&
 		c.Validate.ArgumentsJSON == nil && c.Validate.Schema == "" && c.Validate.NameMustBeOffered == nil &&
 		c.Recovery.MaxRetriesSameTarget == 0 && c.Recovery.MaxEscalations == 0 &&
-		c.Recovery.OnExhausted == "" && !c.Streaming.HoldUntilValidated
+		c.Recovery.OnExhausted == "" && !c.Streaming.HoldUntilValidated && c.Streaming.HoldTimeoutMS == 0 && c.Streaming.HoldMaxBytes == 0
 }
 
 const (
@@ -1069,7 +1069,14 @@ func validateToolRouting(name, strategy string, c ToolRoutingConfig, targetCount
 		return fmt.Errorf("model group %s tool_routing recovery.on_exhausted must be %s", name, toolRoutingOnExhaustedDeliverLast)
 	}
 	if c.Streaming.HoldUntilValidated {
-		return fmt.Errorf("model group %s tool_routing streaming.hold_until_validated is not available yet", name)
+		if c.Streaming.HoldTimeoutMS <= 0 || c.Streaming.HoldTimeoutMS > 60000 {
+			return fmt.Errorf("model group %s tool_routing streaming.hold_timeout_ms must be between 1 and 60000 when hold_until_validated is enabled", name)
+		}
+		if c.Streaming.HoldMaxBytes <= 0 || c.Streaming.HoldMaxBytes > 32<<20 {
+			return fmt.Errorf("model group %s tool_routing streaming.hold_max_bytes must be between 1 and 33554432 when hold_until_validated is enabled", name)
+		}
+	} else if c.Streaming.HoldTimeoutMS != 0 || c.Streaming.HoldMaxBytes != 0 {
+		return fmt.Errorf("model group %s tool_routing streaming hold limits require hold_until_validated", name)
 	}
 	switch strings.ToLower(strings.TrimSpace(c.ColdStart)) {
 	case "", toolRoutingColdStart:

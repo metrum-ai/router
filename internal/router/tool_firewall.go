@@ -4,12 +4,16 @@
 package router
 
 import (
-	"context"
+	"bytes"
 	"crypto/sha256"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net"
+	"net/http"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -20,8 +24,10 @@ const (
 	toolFirewallShadow              = "shadow"
 	toolFirewallEnforce             = "enforce"
 	defaultFirewallMaxConversations = 10000
+	defaultFirewallMaxPerCaller     = 100
 	defaultFirewallConversationTTL  = 30 * time.Minute
-	toolFirewallCacheSweepPerCall   = 32
+	maxFirewallArgumentDepth        = 32
+	maxFirewallArgumentNodes        = 8192
 )
 
 type compiledToolFirewallRule struct {
@@ -40,19 +46,34 @@ type toolFirewallRuntime struct {
 	conversations          map[string]*toolFirewallConversation
 	sequenceFingerprint    [32]byte
 	hasSequenceFingerprint bool
+	compiledRules          []compiledToolFirewallRule
+	compiledSequences      []compiledToolFirewallSequence
+	compileErr             error
+	sequenceClock          uint64
 	now                    func() time.Time
 }
 
 type toolApprovalRuntime struct {
-	mu      sync.Mutex
-	pending map[string]chan string
-	max     int
+	mu            sync.Mutex
+	records       map[string]*toolApprovalRecord
+	byFingerprint map[string]string
+	max           int
+	now           func() time.Time
 }
 
 type toolFirewallConversation struct {
 	turn       uint64
 	firstTurns map[int]uint64
 	expires    time.Time
+	callerID   string
+	lastUsed   uint64
+}
+
+type toolApprovalRecord struct {
+	fingerprint string
+	decision    string
+	expires     time.Time
+	created     time.Time
 }
 
 type toolFirewallOutcome struct {
@@ -63,9 +84,9 @@ type toolFirewallOutcome struct {
 
 var (
 	firewallDangerousShell = regexp.MustCompile(`(?i)\b(?:curl|wget)\b[^|\n]{0,1000}\|\s*(?:ba)?sh\b`)
-	firewallRemoveRoot     = regexp.MustCompile(`(?i)\brm\s+-[a-z]*r[a-z]*\b[^\n]{0,128}\s/`)
+	firewallRemoveRoot     = regexp.MustCompile(`(?i)\brm\s+-[a-z]*r[a-z]*\b[^\n]{0,128}\s/(?:\s|$|["';&|])`)
 	firewallURL            = regexp.MustCompile(`(?i)\b[a-z][a-z0-9+.-]{0,31}://[^\s"'<>]{1,1000}`)
-	firewallSensitivePath  = regexp.MustCompile(`(?i)(?:~/|/home/[^/]+/|/root/)(?:\.aws|\.ssh|\.env)(?:/|\b)`)
+	firewallSensitivePath  = regexp.MustCompile(`(?i)(?:~/|\$HOME/|/home/[^/]+/|/Users/[^/]+/|/root/)(?:\.aws|\.ssh|\.env)(?:/|\b)`)
 )
 
 func validateToolFirewallConfig(cfg ToolFirewallConfig, adminEnabled bool) error {
@@ -83,6 +104,13 @@ func validateToolFirewallConfig(cfg ToolFirewallConfig, adminEnabled bool) error
 	}
 	if len(cfg.Deny) > 128 || len(cfg.Sequences) > 64 || len(cfg.URLAllowHosts) > 128 {
 		return fmt.Errorf("server.tool_firewall rule and host counts exceed supported bounds")
+	}
+	for name := range cfg.BuiltInRules {
+		switch name {
+		case "dangerous_shell", "remove_root", "sensitive_path", "cloud_metadata_ip", "url_egress":
+		default:
+			return fmt.Errorf("server.tool_firewall.built_in_rules contains unknown rule %q", name)
+		}
 	}
 	for i, rule := range cfg.Deny {
 		if len(rule.Tool) > 128 || len(rule.ToolRegex) > 512 || len(rule.ArgsRegex) > 512 || len(rule.AnyArgContains) > 256 {
@@ -138,7 +166,7 @@ func compileToolFirewall(cfg ToolFirewallConfig) ([]compiledToolFirewallRule, []
 		rule := compiledToolFirewallRule{raw: raw}
 		var err error
 		if raw.ToolRegex != "" {
-			rule.toolRE, err = regexp.Compile(raw.ToolRegex)
+			rule.toolRE, err = regexp.Compile("(?i)(?:" + raw.ToolRegex + ")")
 			if err != nil {
 				return nil, nil, err
 			}
@@ -166,19 +194,23 @@ func compileToolFirewall(cfg ToolFirewallConfig) ([]compiledToolFirewallRule, []
 	return rules, sequences, nil
 }
 
-func newToolFirewallRuntime() *toolFirewallRuntime {
-	return &toolFirewallRuntime{conversations: map[string]*toolFirewallConversation{}, now: time.Now}
+func newToolFirewallRuntime(config ...ToolFirewallConfig) *toolFirewallRuntime {
+	runtime := &toolFirewallRuntime{conversations: map[string]*toolFirewallConversation{}, now: time.Now}
+	if len(config) > 0 {
+		runtime.syncPolicy(config[0])
+	}
+	return runtime
 }
 
-func firewallToolCalls(resp *IRResponse, dialects ...string) []IRToolCall {
+func firewallToolCalls(resp *IRResponse, dialects ...string) ([]IRToolCall, bool) {
 	if resp == nil {
-		return nil
+		return nil, false
 	}
 	if len(resp.ToolCalls) > 0 {
-		return resp.ToolCalls
+		return resp.ToolCalls, resp.ToolCallsTruncated
 	}
 	if resp.Raw == nil {
-		return nil
+		return nil, resp.ToolCallsTruncated
 	}
 	seen := map[string]bool{}
 	for _, dialect := range dialects {
@@ -187,50 +219,88 @@ func firewallToolCalls(resp *IRResponse, dialects ...string) []IRToolCall {
 			continue
 		}
 		seen[dialect] = true
-		calls, _ := toolCallsFromResponse(dialect, resp.Raw)
+		calls, truncated := toolCallsFromResponse(dialect, resp.Raw)
 		if len(calls) > 0 {
-			return calls
+			return calls, bool(truncated) || resp.ToolCallsTruncated
+		}
+		if truncated {
+			return calls, true
 		}
 	}
-	return nil
+	return nil, resp.ToolCallsTruncated
 }
 
 func newToolApprovalRuntime(max int) *toolApprovalRuntime {
 	if max <= 0 {
 		max = 1000
 	}
-	return &toolApprovalRuntime{pending: map[string]chan string{}, max: max}
+	return &toolApprovalRuntime{records: map[string]*toolApprovalRecord{}, byFingerprint: map[string]string{}, max: max, now: time.Now}
 }
 
-func (s *toolApprovalRuntime) wait(ctx context.Context, id string, timeout time.Duration, onPending ...func()) (string, bool) {
-	if s == nil || id == "" {
-		return "", false
+// request records a hold without keeping the inference request open. An
+// approved fingerprint is consumed once when the agent retries the same call.
+func (s *toolApprovalRuntime) request(id, fingerprint string, ttl time.Duration) (string, string, bool) {
+	if s == nil || id == "" || fingerprint == "" {
+		return "", "capacity", false
 	}
-	result := make(chan string, 1)
 	s.mu.Lock()
-	if len(s.pending) >= s.max {
-		s.mu.Unlock()
-		return "", false
-	}
-	s.pending[id] = result
-	s.mu.Unlock()
-	for _, notify := range onPending {
-		if notify != nil {
-			notify()
+	defer s.mu.Unlock()
+	s.pruneLocked()
+	if existingID := s.byFingerprint[fingerprint]; existingID != "" {
+		record := s.records[existingID]
+		if record != nil {
+			switch record.decision {
+			case "":
+				return existingID, "pending", false
+			default:
+				return existingID, record.decision, false
+			}
 		}
 	}
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-	select {
-	case decision := <-result:
-		return decision, true
-	case <-ctx.Done():
-	case <-timer.C:
+	if len(s.records) >= s.max {
+		return "", "capacity", false
+	}
+	if ttl <= 0 {
+		ttl = time.Minute
+	}
+	now := s.now()
+	s.records[id] = &toolApprovalRecord{fingerprint: fingerprint, expires: now.Add(ttl), created: now}
+	s.byFingerprint[fingerprint] = id
+	return id, "pending", true
+}
+
+func (s *toolApprovalRuntime) lookup(fingerprint string) (string, string) {
+	if s == nil || fingerprint == "" {
+		return "", ""
 	}
 	s.mu.Lock()
-	delete(s.pending, id)
-	s.mu.Unlock()
-	return "deny", false
+	defer s.mu.Unlock()
+	s.pruneLocked()
+	id := s.byFingerprint[fingerprint]
+	if id == "" || s.records[id] == nil {
+		return "", ""
+	}
+	return id, s.records[id].decision
+}
+
+func (s *toolApprovalRuntime) consume(fingerprint string) (string, string) {
+	if s == nil || fingerprint == "" {
+		return "", ""
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pruneLocked()
+	id := s.byFingerprint[fingerprint]
+	if id == "" || s.records[id] == nil {
+		return "", ""
+	}
+	record := s.records[id]
+	if record.decision == "" {
+		return id, "pending"
+	}
+	decision := record.decision
+	s.deleteLocked(id)
+	return id, decision
 }
 
 func (s *toolApprovalRuntime) resolve(id, decision string) bool {
@@ -239,12 +309,13 @@ func (s *toolApprovalRuntime) resolve(id, decision string) bool {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	ch := s.pending[id]
-	if ch == nil {
+	s.pruneLocked()
+	record := s.records[id]
+	if record == nil || record.decision != "" {
 		return false
 	}
-	delete(s.pending, id)
-	ch <- decision
+	record.decision = decision
+	record.expires = s.now().Add(time.Minute)
 	return true
 }
 
@@ -254,28 +325,107 @@ func (s *toolApprovalRuntime) denyAll() {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for id, result := range s.pending {
-		delete(s.pending, id)
-		result <- "deny"
+	for _, record := range s.records {
+		if record.decision == "" {
+			record.decision = "deny"
+			record.expires = s.now().Add(time.Minute)
+		}
+	}
+}
+
+func (s *toolApprovalRuntime) setMax(max int) {
+	if s == nil {
+		return
+	}
+	if max <= 0 {
+		max = 1000
+	}
+	s.mu.Lock()
+	s.max = max
+	s.pruneLocked()
+	for len(s.records) > s.max {
+		oldestID := ""
+		var oldest time.Time
+		for id, record := range s.records {
+			if oldestID == "" || record.created.Before(oldest) {
+				oldestID, oldest = id, record.created
+			}
+		}
+		if oldestID == "" {
+			break
+		}
+		s.deleteLocked(oldestID)
+	}
+	s.mu.Unlock()
+}
+
+func (s *toolApprovalRuntime) pruneLocked() {
+	now := s.now()
+	for id, record := range s.records {
+		if !record.expires.After(now) {
+			if record.decision == "" {
+				record.decision = "timeout"
+				record.expires = now.Add(time.Minute)
+			} else {
+				s.deleteLocked(id)
+			}
+		}
+	}
+}
+
+func (s *toolApprovalRuntime) deleteLocked(id string) {
+	record := s.records[id]
+	if record == nil {
+		return
+	}
+	delete(s.records, id)
+	if s.byFingerprint[record.fingerprint] == id {
+		delete(s.byFingerprint, record.fingerprint)
 	}
 }
 
 func (s *toolFirewallRuntime) check(cfg ToolFirewallConfig, callerID, group string, req *IRRequest, calls []IRToolCall) toolFirewallOutcome {
+	return s.checkWithTruncation(cfg, callerID, group, req, calls, false, false)
+}
+
+func (s *toolFirewallRuntime) checkWithTruncation(cfg ToolFirewallConfig, callerID, group string, req *IRRequest, calls []IRToolCall, truncated, approved bool) toolFirewallOutcome {
 	mode := strings.ToLower(strings.TrimSpace(cfg.Mode))
 	if mode == "" {
 		mode = toolFirewallOff
 	}
-	s.syncPolicy(cfg)
 	out := toolFirewallOutcome{Mode: mode}
 	if mode == toolFirewallOff {
 		return out
 	}
-	rules, sequences, err := compileToolFirewall(cfg)
-	if err != nil {
+	s.syncPolicy(cfg)
+	if truncated {
+		return toolFirewallOutcome{Mode: mode, Action: "deny", RuleCode: "tool_calls_truncated"}
+	}
+	if len(calls) == 0 {
+		return out
+	}
+	s.mu.Lock()
+	rules := append([]compiledToolFirewallRule(nil), s.compiledRules...)
+	sequences := append([]compiledToolFirewallSequence(nil), s.compiledSequences...)
+	compileErr := s.compileErr
+	s.mu.Unlock()
+	if compileErr != nil {
 		return toolFirewallOutcome{Mode: mode, Action: "deny", RuleCode: "invalid_config"}
 	}
-	for _, call := range calls {
-		if code := builtInToolFirewallMatch(call, cfg.URLAllowHosts); code != "" {
+	validatedCalls := make([]IRToolCall, len(calls))
+	copy(validatedCalls, calls)
+	for i := range validatedCalls {
+		if validatedCalls[i].Name == "" {
+			return toolFirewallOutcome{Mode: mode, Action: "deny", RuleCode: "invalid_tool_call"}
+		}
+		decoded, err := decodeToolFirewallArguments(validatedCalls[i].Arguments)
+		if err != nil {
+			return toolFirewallOutcome{Mode: mode, Action: "deny", RuleCode: "invalid_arguments"}
+		}
+		validatedCalls[i].Arguments = decoded
+	}
+	for _, call := range validatedCalls {
+		if code := builtInToolFirewallMatch(call, cfg); code != "" {
 			out = toolFirewallOutcome{Mode: mode, Action: "deny", RuleCode: code}
 			break
 		}
@@ -290,13 +440,10 @@ func (s *toolFirewallRuntime) check(cfg ToolFirewallConfig, callerID, group stri
 		}
 	}
 	if out.Action == "" && len(sequences) > 0 {
-		key := ""
-		if callerConversationIdentity(req) != "" {
-			key = buildExternalPolicyConversationKey(ExternalPolicyConversationKeyConfig{}, callerID, group, req)
-		}
+		key := firewallSequenceKey(callerID, req)
 		if key != "" {
-			out = s.checkSequence(cfg, key, calls, sequences, mode)
-		} else if len(calls) > 0 {
+			out = s.checkSequence(cfg, key, callerID, validatedCalls, sequences, mode, approved)
+		} else if sequenceRelevant(validatedCalls, sequences) {
 			out = toolFirewallOutcome{Mode: mode, Action: "deny", RuleCode: "sequence_identity_missing"}
 		}
 	}
@@ -307,6 +454,13 @@ func (s *toolFirewallRuntime) check(cfg ToolFirewallConfig, callerID, group stri
 }
 
 func (s *toolFirewallRuntime) syncPolicy(cfg ToolFirewallConfig) bool {
+	return s.syncPolicyWithApprovals(cfg, nil)
+}
+
+// syncPolicyWithApprovals invalidates old sequence and approval state under
+// the same policy lock so concurrent requests cannot observe the new policy
+// while an approval from the old policy remains releasable.
+func (s *toolFirewallRuntime) syncPolicyWithApprovals(cfg ToolFirewallConfig, approvals *toolApprovalRuntime) bool {
 	if s == nil {
 		return false
 	}
@@ -321,21 +475,41 @@ func (s *toolFirewallRuntime) syncPolicy(cfg ToolFirewallConfig) bool {
 	for _, rule := range cfg.Sequences {
 		fmt.Fprintf(&fingerprintInput, "%q/%q/%q/%d/%q\n", rule.FirstTool, rule.FirstArgsRegex, rule.ThenTool, rule.WithinTurns, rule.Action)
 	}
+	builtinNames := make([]string, 0, len(cfg.BuiltInRules))
+	for name := range cfg.BuiltInRules {
+		builtinNames = append(builtinNames, name)
+	}
+	sort.Strings(builtinNames)
+	for _, name := range builtinNames {
+		fmt.Fprintf(&fingerprintInput, "builtin=%q/%t\n", name, cfg.BuiltInRules[name])
+	}
 	fmt.Fprintf(&fingerprintInput, "approval=%d/%d/conversation=%d/%d\n", cfg.ApprovalTimeoutMS, cfg.MaxPendingApprovals, cfg.ConversationTTLSeconds, cfg.MaxConversations)
 	fingerprint := sha256.Sum256([]byte(fingerprintInput.String()))
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !s.hasSequenceFingerprint || s.sequenceFingerprint != fingerprint {
+		var rules []compiledToolFirewallRule
+		var sequences []compiledToolFirewallSequence
+		var err error
+		if !strings.EqualFold(strings.TrimSpace(cfg.Mode), toolFirewallOff) {
+			rules, sequences, err = compileToolFirewall(cfg)
+		}
 		s.conversations = map[string]*toolFirewallConversation{}
+		s.compiledRules = rules
+		s.compiledSequences = sequences
+		s.compileErr = err
 		s.sequenceFingerprint = fingerprint
 		s.hasSequenceFingerprint = true
+		if approvals != nil {
+			approvals.denyAll()
+		}
 		return true
 	}
 	return false
 }
 
 func ruleMatchesToolCall(rule compiledToolFirewallRule, call IRToolCall) bool {
-	if rule.raw.Tool != "" && rule.raw.Tool != call.Name {
+	if rule.raw.Tool != "" && !strings.EqualFold(rule.raw.Tool, call.Name) {
 		return false
 	}
 	if rule.toolRE != nil && !rule.toolRE.MatchString(call.Name) {
@@ -350,19 +524,23 @@ func ruleMatchesToolCall(rule compiledToolFirewallRule, call IRToolCall) bool {
 	return true
 }
 
-func builtInToolFirewallMatch(call IRToolCall, allowHosts []string) string {
+func builtInToolFirewallMatch(call IRToolCall, cfg ToolFirewallConfig) string {
 	args := call.Arguments
-	if firewallDangerousShell.MatchString(args) {
+	enabled := func(name string) bool { value, configured := cfg.BuiltInRules[name]; return !configured || value }
+	if enabled("dangerous_shell") && firewallDangerousShell.MatchString(args) {
 		return "dangerous_shell"
 	}
-	if firewallRemoveRoot.MatchString(args) {
+	if enabled("remove_root") && firewallRemoveRoot.MatchString(args) {
 		return "remove_root"
 	}
-	if firewallSensitivePath.MatchString(args) {
+	if enabled("sensitive_path") && firewallSensitivePath.MatchString(args) {
 		return "sensitive_path"
 	}
-	if strings.Contains(args, "169.254.169.254") {
+	if enabled("cloud_metadata_ip") && strings.Contains(args, "169.254.169.254") {
 		return "cloud_metadata_ip"
+	}
+	if !enabled("url_egress") {
+		return ""
 	}
 	urls := firewallURL.FindAllString(args, 17)
 	if len(urls) > 16 {
@@ -370,7 +548,7 @@ func builtInToolFirewallMatch(call IRToolCall, allowHosts []string) string {
 	}
 	for _, raw := range urls {
 		u, err := url.Parse(raw)
-		if err != nil || validateEgressURL(u, allowHosts, false, "tool_firewall") != nil {
+		if err != nil || validateEgressURL(u, cfg.URLAllowHosts, false, "tool_firewall") != nil {
 			return "url_not_allowed"
 		}
 		if ip := net.ParseIP(u.Hostname()); ip != nil && ip.IsLinkLocalUnicast() {
@@ -380,8 +558,234 @@ func builtInToolFirewallMatch(call IRToolCall, allowHosts []string) string {
 	return ""
 }
 
-func (s *toolFirewallRuntime) checkSequence(cfg ToolFirewallConfig, key string, calls []IRToolCall, rules []compiledToolFirewallSequence, mode string) toolFirewallOutcome {
+func firewallSequenceKey(callerID string, req *IRRequest) string {
+	if strings.TrimSpace(callerID) == "" {
+		return ""
+	}
+	first := firstUserTurnText(req)
+	if first == "" {
+		return ""
+	}
+	material := strings.TrimSpace(callerID) + "\x00" + first
+	sum := sha256.Sum256([]byte(material))
+	return fmt.Sprintf("%x", sum[:16])
+}
+
+func decodeToolFirewallArguments(raw string) (string, error) {
+	value, err := parseToolFirewallArguments(raw)
+	if err != nil {
+		return "", err
+	}
+	var decoded strings.Builder
+	budget := maxFirewallArgumentNodes
+	if err := appendFirewallArgumentStrings(&decoded, value, 0, &budget); err != nil {
+		return "", err
+	}
+	return decoded.String(), nil
+}
+
+func parseToolFirewallArguments(raw string) (any, error) {
+	if len(raw) == 0 || len(raw) > maxToolCallArgumentBytes {
+		return nil, fmt.Errorf("tool arguments are empty or exceed the size limit")
+	}
+	decoder := json.NewDecoder(bytes.NewReader([]byte(raw)))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return nil, err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return nil, fmt.Errorf("tool arguments contain trailing JSON")
+		}
+		return nil, err
+	}
+	budget := maxFirewallArgumentNodes
+	if err := appendFirewallArgumentStrings(&strings.Builder{}, value, 0, &budget); err != nil {
+		return nil, err
+	}
+	return value, nil
+}
+
+func toolCallApprovalFingerprint(callerID string, calls []IRToolCall) (string, bool) {
+	if strings.TrimSpace(callerID) == "" || len(calls) == 0 || len(calls) > maxToolCallsPerResponse {
+		return "", false
+	}
+	type fingerprintCall struct {
+		Name      string `json:"name"`
+		Arguments any    `json:"arguments"`
+	}
+	canonical := make([]fingerprintCall, 0, len(calls))
+	for _, call := range calls {
+		value, err := parseToolFirewallArguments(call.Arguments)
+		if err != nil {
+			return "", false
+		}
+		canonical = append(canonical, fingerprintCall{Name: strings.ToLower(call.Name), Arguments: value})
+	}
+	encoded, err := json.Marshal(struct {
+		Caller string            `json:"caller"`
+		Calls  []fingerprintCall `json:"calls"`
+	}{Caller: strings.TrimSpace(callerID), Calls: canonical})
+	if err != nil {
+		return "", false
+	}
+	sum := sha256.Sum256(encoded)
+	return fmt.Sprintf("%x", sum[:]), true
+}
+
+func approvalTTL(cfg ToolFirewallConfig) time.Duration {
+	if cfg.ApprovalTimeoutMS > 0 {
+		return time.Duration(cfg.ApprovalTimeoutMS) * time.Millisecond
+	}
+	return time.Minute
+}
+
+func (s *Service) inspectToolCallsForFirewall(callerID string, req *IRRequest, calls []IRToolCall, truncated, approved bool) toolFirewallOutcome {
+	if s == nil || s.toolFirewall == nil || s.cfg == nil {
+		return toolFirewallOutcome{Mode: toolFirewallOff}
+	}
+	return s.toolFirewall.checkWithTruncation(s.cfg.Server.ToolFirewall, callerID, "", req, calls, truncated, approved)
+}
+
+type toolFirewallDisposition struct {
+	pending    bool
+	blocked    bool
+	approvalID string
+	ruleCode   string
+}
+
+func (s *Service) resolveToolFirewallDecision(rc *requestContext, callerID, fingerprint, approvalID, approvalState string, outcome toolFirewallOutcome) toolFirewallDisposition {
+	disposition := toolFirewallDisposition{approvalID: approvalID, ruleCode: outcome.RuleCode}
+	if outcome.Mode == toolFirewallShadow && outcome.Action != "" {
+		rc.trace("tool_firewall_decision", "", Target{}, 0, http.StatusOK, outcome.RuleCode, false, 0)
+		s.recordToolFirewallDecisionEvent(rc, "", "shadow", outcome.RuleCode)
+		return disposition
+	}
+	if outcome.Mode != toolFirewallEnforce {
+		return disposition
+	}
+	if outcome.Action == "deny" {
+		disposition.blocked = true
+		disposition.ruleCode = outcome.RuleCode
+	} else {
+		switch approvalState {
+		case "pending":
+			disposition.pending = true
+			if disposition.ruleCode == "" {
+				disposition.ruleCode = "sequence_rule"
+			}
+		case "release":
+			_, decision := s.toolApprovals.consume(fingerprint)
+			if decision != "release" || outcome.Action == "hold" {
+				disposition.blocked = true
+				disposition.ruleCode = "approval_retry_invalid"
+				break
+			}
+			rc.trace("tool_firewall_approval_resolved", "", Target{}, 0, http.StatusOK, "approval_released", false, 0)
+			s.recordToolFirewallDecisionEvent(rc, approvalID, "released", "sequence_rule")
+		case "deny", "timeout":
+			disposition.blocked = true
+			disposition.ruleCode = "sequence_rule"
+			rc.trace("tool_firewall_approval_resolved", "", Target{}, 0, http.StatusOK, "approval_"+approvalState, false, 0)
+			s.recordToolFirewallDecisionEvent(rc, approvalID, approvalState, disposition.ruleCode)
+		default:
+			if outcome.Action != "hold" {
+				return disposition
+			}
+			newID := "approval_" + strings.TrimPrefix(requestID(), "req_")
+			var created bool
+			disposition.approvalID, approvalState, created = s.toolApprovals.request(newID, fingerprint, approvalTTL(s.cfg.Server.ToolFirewall))
+			if disposition.approvalID == "" {
+				disposition.approvalID = newID
+			}
+			switch approvalState {
+			case "pending":
+				disposition.pending = true
+				if created {
+					rc.trace("tool_firewall_approval_pending", "approval_id="+disposition.approvalID, Target{}, 0, http.StatusOK, "approval_pending", false, 0)
+					s.recordToolFirewallDecisionEvent(rc, disposition.approvalID, "pending", outcome.RuleCode)
+				}
+			case "release":
+				_, _ = s.toolApprovals.consume(fingerprint)
+				rc.trace("tool_firewall_approval_resolved", "", Target{}, 0, http.StatusOK, "approval_released", false, 0)
+				s.recordToolFirewallDecisionEvent(rc, disposition.approvalID, "released", outcome.RuleCode)
+			case "deny", "timeout":
+				disposition.blocked = true
+				disposition.ruleCode = "sequence_rule"
+				s.recordToolFirewallDecisionEvent(rc, disposition.approvalID, approvalState, disposition.ruleCode)
+			default:
+				disposition.blocked = true
+				disposition.ruleCode = "approval_capacity"
+			}
+		}
+	}
+	if disposition.blocked {
+		rc.trace("tool_firewall_decision", "", Target{}, 0, http.StatusOK, disposition.ruleCode, false, 0)
+		s.recordToolFirewallDecisionEvent(rc, disposition.approvalID, "denied", disposition.ruleCode)
+	}
+	return disposition
+}
+
+func appendFirewallArgumentStrings(out *strings.Builder, value any, depth int, budget *int) error {
+	if depth > maxFirewallArgumentDepth {
+		return fmt.Errorf("tool arguments exceed maximum nesting depth")
+	}
+	*budget--
+	if *budget < 0 {
+		return fmt.Errorf("tool arguments exceed maximum node count")
+	}
+	appendString := func(value string) {
+		if out.Len() > 0 {
+			out.WriteByte('\n')
+		}
+		out.WriteString(value)
+	}
+	switch typed := value.(type) {
+	case string:
+		appendString(typed)
+	case json.Number:
+		appendString(string(typed))
+	case []any:
+		for _, child := range typed {
+			if err := appendFirewallArgumentStrings(out, child, depth+1, budget); err != nil {
+				return err
+			}
+		}
+	case map[string]any:
+		keys := make([]string, 0, len(typed))
+		for key := range typed {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			child := typed[key]
+			appendString(key)
+			if err := appendFirewallArgumentStrings(out, child, depth+1, budget); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func sequenceRelevant(calls []IRToolCall, rules []compiledToolFirewallSequence) bool {
+	for _, call := range calls {
+		for _, rule := range rules {
+			if strings.EqualFold(call.Name, rule.raw.FirstTool) || strings.EqualFold(call.Name, rule.raw.ThenTool) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (s *toolFirewallRuntime) checkSequence(cfg ToolFirewallConfig, key, callerID string, calls []IRToolCall, rules []compiledToolFirewallSequence, mode string, approved bool) toolFirewallOutcome {
 	if s == nil || key == "" {
+		return toolFirewallOutcome{Mode: mode}
+	}
+	if len(calls) == 0 {
 		return toolFirewallOutcome{Mode: mode}
 	}
 	s.mu.Lock()
@@ -395,15 +799,7 @@ func (s *toolFirewallRuntime) checkSequence(cfg ToolFirewallConfig, key string, 
 	if max <= 0 {
 		max = defaultFirewallMaxConversations
 	}
-	// Keep request work independent of the configured cache maximum. A bounded
-	// map sample reclaims expired entries over time; if capacity is still full,
-	// the caller fails closed instead of evicting live sequence history.
-	scanned := 0
 	for existing, entry := range s.conversations {
-		if scanned >= toolFirewallCacheSweepPerCall {
-			break
-		}
-		scanned++
 		if !entry.expires.After(now) {
 			delete(s.conversations, existing)
 		}
@@ -413,15 +809,55 @@ func (s *toolFirewallRuntime) checkSequence(cfg ToolFirewallConfig, key string, 
 		delete(s.conversations, key)
 		entry = nil
 	}
-	if entry == nil {
-		if len(s.conversations) >= max {
-			// Evicting another conversation would silently forget the first half
-			// of a security sequence. Fail closed while state capacity is full.
-			return toolFirewallOutcome{Mode: mode, Action: "deny", RuleCode: "sequence_state_capacity"}
+	firstMatched := false
+	for _, call := range calls {
+		for _, rule := range rules {
+			if strings.EqualFold(call.Name, rule.raw.FirstTool) && (rule.firstRE == nil || rule.firstRE.MatchString(call.Arguments)) {
+				firstMatched = true
+				break
+			}
 		}
-		entry = &toolFirewallConversation{firstTurns: map[int]uint64{}}
+		if firstMatched {
+			break
+		}
+	}
+	if entry == nil && !firstMatched {
+		return toolFirewallOutcome{Mode: mode}
+	}
+	if entry == nil {
+		perCallerMax := defaultFirewallMaxPerCaller
+		if perCallerMax > max {
+			perCallerMax = max
+		}
+		callerEntries := 0
+		var oldestKey string
+		var oldestUse uint64
+		for existingKey, existing := range s.conversations {
+			if existing.callerID == callerID {
+				callerEntries++
+				if oldestKey == "" || existing.lastUsed < oldestUse {
+					oldestKey, oldestUse = existingKey, existing.lastUsed
+				}
+			}
+		}
+		if callerEntries >= perCallerMax && oldestKey != "" {
+			delete(s.conversations, oldestKey)
+		} else if len(s.conversations) >= max {
+			oldestKey, oldestUse = "", 0
+			for existingKey, existing := range s.conversations {
+				if oldestKey == "" || existing.lastUsed < oldestUse {
+					oldestKey, oldestUse = existingKey, existing.lastUsed
+				}
+			}
+			if oldestKey != "" {
+				delete(s.conversations, oldestKey)
+			}
+		}
+		entry = &toolFirewallConversation{firstTurns: map[int]uint64{}, callerID: callerID}
 		s.conversations[key] = entry
 	}
+	s.sequenceClock++
+	entry.lastUsed = s.sequenceClock
 	entry.turn++
 	entry.expires = now.Add(ttl)
 	for _, call := range calls {
@@ -431,7 +867,10 @@ func (s *toolFirewallRuntime) checkSequence(cfg ToolFirewallConfig, key string, 
 			}
 			if strings.EqualFold(call.Name, rule.raw.ThenTool) {
 				if first, ok := entry.firstTurns[i]; ok && entry.turn-first <= uint64(rule.raw.WithinTurns) {
-					delete(entry.firstTurns, i)
+					if rule.raw.Action == "hold" && approved {
+						delete(entry.firstTurns, i)
+						continue
+					}
 					return toolFirewallOutcome{Mode: mode, Action: rule.raw.Action, RuleCode: "sequence_rule"}
 				}
 			}

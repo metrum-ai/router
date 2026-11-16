@@ -5,14 +5,15 @@ package router
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -20,7 +21,7 @@ import (
 
 func TestToolFirewallBuiltInDenyAndAllowedURL(t *testing.T) {
 	runtime := newToolFirewallRuntime()
-	manyURLs := strings.Repeat(`{"url":"https://api.example/send"} `, 17)
+	manyURLs := `{"urls":[` + strings.TrimSuffix(strings.Repeat(`"https://api.example/send",`, 17), `,`) + `]}`
 	for _, tc := range []struct {
 		name  string
 		args  string
@@ -48,6 +49,75 @@ func TestToolFirewallBuiltInDenyAndAllowedURL(t *testing.T) {
 	}
 }
 
+func TestToolFirewallDecodesEscapedArgumentStrings(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		args   string
+		config ToolFirewallConfig
+		want   string
+	}{
+		{"escaped slash path", `{"path":"~\/.ssh\/id_rsa"}`, ToolFirewallConfig{Mode: toolFirewallEnforce}, "sensitive_path"},
+		{"escaped slash URL", `{"url":"http:\/\/evil.example/send"}`, ToolFirewallConfig{Mode: toolFirewallEnforce}, "url_not_allowed"},
+		{"unicode escaped metadata IP", `{"host":"\u0031\u0036\u0039.\u0032\u0035\u0034.\u0031\u0036\u0039.\u0032\u0035\u0034"}`, ToolFirewallConfig{Mode: toolFirewallEnforce}, "cloud_metadata_ip"},
+		{"decoded args regex", `{"token":"s\u0065cret"}`, ToolFirewallConfig{Mode: toolFirewallEnforce, Deny: []ToolFirewallDenyRule{{Tool: "RUN", ArgsRegex: "secret"}}}, "configured_deny"},
+		{"decoded substring", `{"token":"s\u0065cret"}`, ToolFirewallConfig{Mode: toolFirewallEnforce, Deny: []ToolFirewallDenyRule{{Tool: "run", AnyArgContains: "secret"}}}, "configured_deny"},
+		{"mac home ssh path", `{"path":"/Users/alice/.ssh/id_rsa"}`, ToolFirewallConfig{Mode: toolFirewallEnforce}, "sensitive_path"},
+		{"home path ssh", `{"path":"/home/octopai/.ssh/id_rsa"}`, ToolFirewallConfig{Mode: toolFirewallEnforce}, "sensitive_path"},
+		{"shell home ssh path", `{"path":"$HOME/.ssh/id_rsa"}`, ToolFirewallConfig{Mode: toolFirewallEnforce}, "sensitive_path"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := newToolFirewallRuntime(tc.config).check(tc.config, "caller", "group", &IRRequest{}, []IRToolCall{{Name: "run", Arguments: tc.args}})
+			if got.RuleCode != tc.want {
+				t.Fatalf("outcome=%+v, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestToolFirewallRemoveRootDoesNotMatchNestedDirectory(t *testing.T) {
+	for _, tc := range []struct {
+		args string
+		want string
+	}{
+		{`{"command":"rm -rf /tmp/x"}`, ""},
+		{`{"command":"rm -rf /"}`, "remove_root"},
+	} {
+		got := newToolFirewallRuntime().check(ToolFirewallConfig{Mode: toolFirewallEnforce}, "caller", "group", &IRRequest{}, []IRToolCall{{Name: "local_shell", Arguments: tc.args}})
+		if got.RuleCode != tc.want {
+			t.Fatalf("args=%s outcome=%+v, want rule %q", tc.args, got, tc.want)
+		}
+	}
+}
+
+func TestToolFirewallBuiltInRuleCanBeDisabledIndividually(t *testing.T) {
+	cfg := ToolFirewallConfig{Mode: toolFirewallEnforce, BuiltInRules: map[string]bool{"sensitive_path": false}}
+	got := newToolFirewallRuntime().check(cfg, "caller", "group", &IRRequest{}, []IRToolCall{{Name: "read", Arguments: `{"path":"~/.ssh/id_rsa"}`}})
+	if got.Action != "" {
+		t.Fatalf("disabled built-in still matched: %+v", got)
+	}
+}
+
+func TestToolFirewallMalformedAndOverComplexArgumentsFailClosed(t *testing.T) {
+	deep := strings.Repeat("[", maxFirewallArgumentDepth+1) + "0" + strings.Repeat("]", maxFirewallArgumentDepth+1)
+	for _, args := range []string{"{", "", `{} {}`, deep, strings.Repeat("x", maxToolCallArgumentBytes+1)} {
+		got := newToolFirewallRuntime().check(ToolFirewallConfig{Mode: toolFirewallEnforce}, "caller", "group", &IRRequest{}, []IRToolCall{{Name: "safe", Arguments: args}})
+		if got.Action != "deny" || got.RuleCode != "invalid_arguments" {
+			t.Fatalf("arguments size=%d outcome=%+v, want fail-closed invalid_arguments", len(args), got)
+		}
+	}
+}
+
+func TestToolFirewallTruncatedCallSetFailsClosed(t *testing.T) {
+	calls := make([]IRToolCall, maxToolCallsPerResponse)
+	for i := range calls {
+		calls[i] = IRToolCall{Name: "read", Arguments: `{}`}
+	}
+	got := newToolFirewallRuntime().checkWithTruncation(ToolFirewallConfig{Mode: toolFirewallEnforce}, "caller", "group", &IRRequest{}, calls, true, false)
+	if got.Action != "deny" || got.RuleCode != "tool_calls_truncated" {
+		t.Fatalf("truncated set was not denied: %+v", got)
+	}
+}
+
 func TestToolFirewallConfiguredDenyAndShadow(t *testing.T) {
 	for _, mode := range []string{toolFirewallEnforce, toolFirewallShadow} {
 		got := newToolFirewallRuntime().check(ToolFirewallConfig{Mode: mode, Deny: []ToolFirewallDenyRule{{Tool: "run", ArgsRegex: `(?i)secret`}}}, "c", "g", &IRRequest{}, []IRToolCall{{Name: "run", Arguments: `{"query":"secret"}`}})
@@ -72,9 +142,77 @@ func TestToolFirewallSequenceWindow(t *testing.T) {
 	if got := runtime.check(cfg, "caller", "group", second, []IRToolCall{{Name: "http_request", Arguments: `{"body":"send now"}`}}); got.Action != "deny" || got.RuleCode != "sequence_rule" {
 		t.Fatalf("sequence outcome=%+v", got)
 	}
+	if got := runtime.check(cfg, "caller", "group", second, []IRToolCall{{Name: "http_request", Arguments: `{"body":"retry"}`}}); got.Action != "deny" || got.RuleCode != "sequence_rule" {
+		t.Fatalf("retry escaped after sequence denial: %+v", got)
+	}
 }
 
-func TestToolFirewallSequenceCapacityFailsClosed(t *testing.T) {
+func TestToolFirewallSequenceKeyIgnoresClientIDsAndModelAlias(t *testing.T) {
+	first := &IRRequest{Model: "alias-a", Messages: []IRMessage{{Role: "user", Content: "stable first turn"}}, Metadata: map[string]string{"conversation_id": "client-a"}}
+	second := &IRRequest{Model: "alias-b", Messages: []IRMessage{{Role: "user", Content: "stable first turn"}}, Metadata: map[string]string{"session_id": "client-b"}}
+	keyA := firewallSequenceKey("caller", first)
+	keyB := firewallSequenceKey("caller", second)
+	if keyA == "" || keyA != keyB {
+		t.Fatalf("security sequence key changed with client ID/model alias: %q != %q", keyA, keyB)
+	}
+	if firewallSequenceKey("other-caller", second) == keyA {
+		t.Fatal("sequence key did not include caller identity")
+	}
+}
+
+func TestToolFirewallStoresSequenceStateOnlyForFirstTool(t *testing.T) {
+	runtime := newToolFirewallRuntime()
+	cfg := ToolFirewallConfig{Mode: toolFirewallEnforce, Sequences: []ToolFirewallSequenceRule{{FirstTool: "read", ThenTool: "send", WithinTurns: 2, Action: "deny"}}}
+	req := &IRRequest{Messages: []IRMessage{{Role: "user", Content: "plain conversation"}}}
+	for _, calls := range [][]IRToolCall{nil, {{Name: "unrelated", Arguments: `{}`}}} {
+		if got := runtime.check(cfg, "caller", "group", req, calls); got.Action != "" {
+			t.Fatalf("non-sequence call blocked: %+v", got)
+		}
+		if len(runtime.conversations) != 0 {
+			t.Fatalf("non-first tool created sequence state: %+v", runtime.conversations)
+		}
+	}
+	if got := runtime.check(cfg, "caller", "group", req, []IRToolCall{{Name: "READ", Arguments: `{}`}}); got.Action != "" {
+		t.Fatalf("case-insensitive first tool was blocked: %+v", got)
+	}
+	if len(runtime.conversations) != 1 {
+		t.Fatalf("first tool did not create state: %d entries", len(runtime.conversations))
+	}
+}
+
+func TestToolFirewallPerCallerSequenceLRUEviction(t *testing.T) {
+	runtime := newToolFirewallRuntime()
+	cfg := ToolFirewallConfig{Mode: toolFirewallEnforce, Sequences: []ToolFirewallSequenceRule{{FirstTool: "read", ThenTool: "send", WithinTurns: 5, Action: "deny"}}}
+	request := func(text, caller string) *IRRequest {
+		return &IRRequest{Messages: []IRMessage{{Role: "user", Content: text}}, Metadata: map[string]string{"conversation_id": "untrusted-client-id"}, Model: "untrusted-model-alias"}
+	}
+	for i := 0; i < defaultFirewallMaxPerCaller; i++ {
+		req := request(fmt.Sprintf("first turn %d", i), "caller-a")
+		if got := runtime.check(cfg, "caller-a", "model-a", req, []IRToolCall{{Name: "read", Arguments: `{}`}}); got.Action != "" {
+			t.Fatalf("first step %d blocked: %+v", i, got)
+		}
+	}
+	oldestKey := firewallSequenceKey("caller-a", request("first turn 0", "caller-a"))
+	secondKey := firewallSequenceKey("caller-a", request("first turn 1", "caller-a"))
+	if got := runtime.check(cfg, "caller-a", "different-model", request("first turn 0", "caller-a"), []IRToolCall{{Name: "unrelated", Arguments: `{}`}}); got.Action != "" {
+		t.Fatalf("touching the oldest entry blocked: %+v", got)
+	}
+	if got := runtime.check(cfg, "caller-a", "model-a", request("first turn 100", "caller-a"), []IRToolCall{{Name: "read", Arguments: `{}`}}); got.Action != "" {
+		t.Fatalf("LRU insertion blocked: %+v", got)
+	}
+	if runtime.conversations[oldestKey] == nil || runtime.conversations[secondKey] != nil {
+		t.Fatalf("LRU did not preserve the touched entry and evict the least-recent entry")
+	}
+	otherReq := request("other caller first turn", "caller-b")
+	if got := runtime.check(cfg, "caller-b", "model-a", otherReq, []IRToolCall{{Name: "read", Arguments: `{}`}}); got.Action != "" {
+		t.Fatalf("second caller first step blocked: %+v", got)
+	}
+	if len(runtime.conversations) != defaultFirewallMaxPerCaller+1 {
+		t.Fatalf("caller A eviction removed or retained wrong state count: %d", len(runtime.conversations))
+	}
+}
+
+func TestToolFirewallSequenceCacheEvictsLRUAndNeverBlocksPlainReplies(t *testing.T) {
 	runtime := newToolFirewallRuntime()
 	cfg := ToolFirewallConfig{
 		Mode: toolFirewallEnforce, MaxConversations: 1,
@@ -84,9 +222,15 @@ func TestToolFirewallSequenceCapacityFailsClosed(t *testing.T) {
 	if got := runtime.check(cfg, "caller", "group", first, []IRToolCall{{Name: "read_customer", Arguments: `{}`}}); got.Action != "" {
 		t.Fatalf("first sequence turn unexpectedly blocked: %+v", got)
 	}
+	if got := runtime.check(cfg, "caller", "group", first, nil); got.Action != "" {
+		t.Fatalf("plain response was blocked by sequence state: %+v", got)
+	}
 	second := &IRRequest{Messages: []IRMessage{{Role: "user", Content: "conversation two"}}}
-	if got := runtime.check(cfg, "caller", "group", second, []IRToolCall{{Name: "safe_tool", Arguments: `{}`}}); got.Action != "deny" || got.RuleCode != "sequence_state_capacity" {
-		t.Fatalf("full sequence cache did not fail closed: %+v", got)
+	if got := runtime.check(cfg, "caller", "group", second, []IRToolCall{{Name: "read_customer", Arguments: `{}`}}); got.Action != "" {
+		t.Fatalf("LRU cache insertion blocked a first step: %+v", got)
+	}
+	if len(runtime.conversations) != 1 {
+		t.Fatalf("cache entries=%d, want bounded LRU size 1", len(runtime.conversations))
 	}
 }
 
@@ -99,19 +243,19 @@ func TestToolFirewallSequenceCacheReclaimsExpiredEntry(t *testing.T) {
 		Sequences: []ToolFirewallSequenceRule{{FirstTool: "read_customer", ThenTool: "http_request", WithinTurns: 2, Action: "deny"}},
 	}
 	first := &IRRequest{Messages: []IRMessage{{Role: "user", Content: "conversation one"}}}
-	if got := runtime.check(cfg, "caller", "group", first, []IRToolCall{{Name: "safe_tool", Arguments: `{}`}}); got.Action != "" {
+	if got := runtime.check(cfg, "caller", "group", first, []IRToolCall{{Name: "read_customer", Arguments: `{}`}}); got.Action != "" {
 		t.Fatalf("first conversation unexpectedly blocked: %+v", got)
 	}
 	now = now.Add(2 * time.Second)
 	second := &IRRequest{Messages: []IRMessage{{Role: "user", Content: "conversation two"}}}
-	if got := runtime.check(cfg, "caller", "group", second, []IRToolCall{{Name: "safe_tool", Arguments: `{}`}}); got.Action != "" {
+	if got := runtime.check(cfg, "caller", "group", second, []IRToolCall{{Name: "read_customer", Arguments: `{}`}}); got.Action != "" {
 		t.Fatalf("expired cache entry was not reclaimed: %+v", got)
 	}
 }
 
 func TestToolFirewallSequenceRequiresConversationIdentity(t *testing.T) {
 	cfg := ToolFirewallConfig{Mode: toolFirewallEnforce, Sequences: []ToolFirewallSequenceRule{{FirstTool: "read_customer", ThenTool: "http_request", WithinTurns: 2, Action: "deny"}}}
-	got := newToolFirewallRuntime().check(cfg, "caller", "group", &IRRequest{}, []IRToolCall{{Name: "safe_tool", Arguments: `{}`}})
+	got := newToolFirewallRuntime().check(cfg, "caller", "group", &IRRequest{}, []IRToolCall{{Name: "http_request", Arguments: `{}`}})
 	if got.Action != "deny" || got.RuleCode != "sequence_identity_missing" {
 		t.Fatalf("sequence without conversation identity did not fail closed: %+v", got)
 	}
@@ -157,40 +301,35 @@ func TestToolApprovalReleaseDenyAndTimeout(t *testing.T) {
 	for _, decision := range []string{"release", "deny"} {
 		t.Run(decision, func(t *testing.T) {
 			store := newToolApprovalRuntime(2)
-			result := make(chan string, 1)
-			go func() {
-				value, ok := store.wait(context.Background(), "approval_0123456789abcdef0123456789abcdef", time.Second)
-				if !ok {
-					result <- "timeout"
-					return
-				}
-				result <- value
-			}()
-			deadline := time.Now().Add(time.Second)
-			for {
-				store.mu.Lock()
-				_, pending := store.pending["approval_0123456789abcdef0123456789abcdef"]
-				store.mu.Unlock()
-				if pending {
-					break
-				}
-				if time.Now().After(deadline) {
-					t.Fatal("approval was not registered")
-				}
-				time.Sleep(time.Millisecond)
+			store.now = func() time.Time { return time.Unix(100, 0) }
+			id, state, created := store.request("approval_0123456789abcdef0123456789abcdef", "fingerprint", time.Minute)
+			if id == "" || state != "pending" || !created {
+				t.Fatalf("request=(%q,%q,%v), want a newly pending approval", id, state, created)
 			}
-			if !store.resolve("approval_0123456789abcdef0123456789abcdef", decision) {
+			if !store.resolve(id, decision) {
 				t.Fatal("resolution rejected")
 			}
-			if got := <-result; got != decision {
-				t.Fatalf("got %q want %q", got, decision)
+			if gotID, got := store.lookup("fingerprint"); gotID != id || got != decision {
+				t.Fatalf("lookup=(%q,%q), want (%q,%q)", gotID, got, id, decision)
+			}
+			if gotID, got := store.consume("fingerprint"); gotID != id || got != decision {
+				t.Fatalf("consume=(%q,%q), want (%q,%q)", gotID, got, id, decision)
+			}
+			if _, got := store.lookup("fingerprint"); got != "" {
+				t.Fatalf("decision was not one-shot: %q", got)
 			}
 		})
 	}
 	store := newToolApprovalRuntime(1)
-	_, ok := store.wait(context.Background(), "approval_ffffffffffffffffffffffffffffffff", time.Millisecond)
-	if ok {
-		t.Fatal("timed out approval unexpectedly resolved")
+	now := time.Unix(200, 0)
+	store.now = func() time.Time { return now }
+	_, state, _ := store.request("approval_ffffffffffffffffffffffffffffffff", "timeout-fingerprint", time.Millisecond)
+	if state != "pending" {
+		t.Fatalf("initial state=%q", state)
+	}
+	now = now.Add(time.Second)
+	if _, state := store.lookup("timeout-fingerprint"); state != "timeout" {
+		t.Fatalf("expired approval state=%q, want timeout", state)
 	}
 	if store.resolve("approval_ffffffffffffffffffffffffffffffff", "release") {
 		t.Fatal("expired approval remained pending")
@@ -199,38 +338,17 @@ func TestToolApprovalReleaseDenyAndTimeout(t *testing.T) {
 
 func TestToolApprovalPendingCapacityFailsClosed(t *testing.T) {
 	store := newToolApprovalRuntime(1)
-	result := make(chan string, 1)
-	go func() {
-		decision, ok := store.wait(context.Background(), "approval_0123456789abcdef0123456789abcdef", time.Second)
-		if !ok {
-			result <- "timeout"
-			return
-		}
-		result <- decision
-	}()
-	deadline := time.Now().Add(time.Second)
-	registered := false
-	for time.Now().Before(deadline) {
-		store.mu.Lock()
-		pending := len(store.pending)
-		store.mu.Unlock()
-		if pending == 1 {
-			registered = true
-			break
-		}
-		time.Sleep(time.Millisecond)
+	if _, state, created := store.request("approval_0123456789abcdef0123456789abcdef", "one", time.Minute); state != "pending" || !created {
+		t.Fatalf("first request state=%q created=%v", state, created)
 	}
-	if !registered {
-		t.Fatal("approval was not registered")
-	}
-	if _, ok := store.wait(context.Background(), "approval_abcdefabcdefabcdefabcdefabcdefab", time.Second); ok {
-		t.Fatal("approval exceeded the configured pending capacity")
+	if _, state, _ := store.request("approval_abcdefabcdefabcdefabcdefabcdefab", "two", time.Minute); state != "capacity" {
+		t.Fatalf("second request state=%q, want capacity", state)
 	}
 	if !store.resolve("approval_0123456789abcdef0123456789abcdef", "release") {
 		t.Fatal("registered approval could not be resolved")
 	}
-	if decision := <-result; decision != "release" {
-		t.Fatalf("decision=%q, want release", decision)
+	if gotID, decision := store.consume("one"); gotID != "approval_0123456789abcdef0123456789abcdef" || decision != "release" {
+		t.Fatalf("consumed=(%q,%q)", gotID, decision)
 	}
 }
 
@@ -241,36 +359,15 @@ func TestToolFirewallPolicyChangeDeniesPendingApprovals(t *testing.T) {
 	runtime.syncPolicy(oldPolicy)
 	approvals := newToolApprovalRuntime(1)
 	const id = "approval_0123456789abcdef0123456789abcdef"
-	result := make(chan string, 1)
-	go func() {
-		decision, ok := approvals.wait(context.Background(), id, time.Second)
-		if !ok {
-			result <- "timeout"
-			return
-		}
-		result <- decision
-	}()
-	deadline := time.Now().Add(time.Second)
-	registered := false
-	for time.Now().Before(deadline) {
-		approvals.mu.Lock()
-		pending := len(approvals.pending)
-		approvals.mu.Unlock()
-		if pending == 1 {
-			registered = true
-			break
-		}
-		time.Sleep(time.Millisecond)
-	}
-	if !registered {
-		t.Fatal("pending approval was not registered")
+	if _, state, _ := approvals.request(id, "fingerprint", time.Minute); state != "pending" {
+		t.Fatalf("initial approval state=%q", state)
 	}
 	if !runtime.syncPolicy(newPolicy) {
 		t.Fatal("changed policy fingerprint was not detected")
 	}
 	approvals.denyAll()
-	if decision := <-result; decision != "deny" {
-		t.Fatalf("stale approval resolved as %q, want deny", decision)
+	if _, decision := approvals.lookup("fingerprint"); decision != "deny" {
+		t.Fatalf("stale approval state=%q, want deny", decision)
 	}
 	if approvals.resolve(id, "release") {
 		t.Fatal("approval remained resolvable after policy change")
@@ -281,27 +378,8 @@ func TestToolApprovalAdminEndpointResolvesPendingHold(t *testing.T) {
 	store := newToolApprovalRuntime(1)
 	svc := &Service{toolApprovals: store}
 	const id = "approval_0123456789abcdef0123456789abcdef"
-	result := make(chan string, 1)
-	go func() {
-		decision, ok := store.wait(context.Background(), id, time.Second)
-		if !ok {
-			result <- "timeout"
-			return
-		}
-		result <- decision
-	}()
-	deadline := time.Now().Add(time.Second)
-	for {
-		store.mu.Lock()
-		_, pending := store.pending[id]
-		store.mu.Unlock()
-		if pending {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("approval was not registered")
-		}
-		time.Sleep(time.Millisecond)
+	if _, state, _ := store.request(id, "fingerprint", time.Minute); state != "pending" {
+		t.Fatalf("approval state=%q", state)
 	}
 	req := httptest.NewRequest(http.MethodPost, "/admin/v1/tool-approvals/"+id, strings.NewReader(`{"decision":"release"}`))
 	req.SetPathValue("approval_id", id)
@@ -310,7 +388,7 @@ func TestToolApprovalAdminEndpointResolvesPendingHold(t *testing.T) {
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"decision":"release"`) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
-	if got := <-result; got != "release" {
+	if _, got := store.lookup("fingerprint"); got != "release" {
 		t.Fatalf("decision=%q", got)
 	}
 }
@@ -374,6 +452,60 @@ func TestToolFirewallEnforceE2EBlocksReturnedToolCall(t *testing.T) {
 	}
 }
 
+func TestToolFirewallEnforcedStreamInspectsBeforeReleasingCalls(t *testing.T) {
+	for _, tc := range []struct {
+		name, arguments string
+		wantBlocked     bool
+	}{
+		{name: "allowed", arguments: `{"path":"notes.txt"}`},
+		{name: "blocked", arguments: `{"path":"/Users/alice/.ssh/id_rsa"}`, wantBlocked: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				w.WriteHeader(http.StatusOK)
+				writeEvent := func(value any) {
+					encoded, _ := json.Marshal(value)
+					_, _ = fmt.Fprintf(w, "data: %s\n\n", encoded)
+					if flusher, ok := w.(http.Flusher); ok {
+						flusher.Flush()
+					}
+				}
+				writeEvent(map[string]any{"choices": []any{map[string]any{"index": 0, "delta": map[string]any{"tool_calls": []any{map[string]any{"index": 0, "id": "call_stream", "type": "function", "function": map[string]any{"name": "read_file", "arguments": tc.arguments}}}}, "finish_reason": nil}}})
+				writeEvent(map[string]any{"choices": []any{map[string]any{"index": 0, "delta": map[string]any{}, "finish_reason": "tool_calls"}}})
+				_, _ = io.WriteString(w, "data: [DONE]\n\n")
+			}))
+			defer upstream.Close()
+			dir := t.TempDir()
+			cfg := testConfig(t, upstream.URL, "provider-key", dir)
+			group := cfg.Models["default"]
+			group.Targets[0].ToolSupport = ToolSupport{OpenAIChat: []string{"tools", "tool_choice"}}
+			cfg.Models["default"] = group
+			cfg.Server.ToolFirewall.Mode = " enforce "
+			svc, err := New(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer svc.Close()
+			body := `{"model":"default","stream":true,"messages":[{"role":"user","content":"read a file"}],"tools":[{"type":"function","function":{"name":"read_file","parameters":{"type":"object","properties":{"path":{"type":"string"}}}}}]}`
+			req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+			req.Header.Set("Authorization", "Bearer "+testToken)
+			recorder := httptest.NewRecorder()
+			svc.Handler().ServeHTTP(recorder, req)
+			if recorder.Code != http.StatusOK || !strings.Contains(recorder.Header().Get("Content-Type"), "text/event-stream") {
+				t.Fatalf("stream status=%d headers=%v body=%s", recorder.Code, recorder.Header(), recorder.Body.String())
+			}
+			if tc.wantBlocked {
+				if strings.Contains(recorder.Body.String(), "call_stream") || strings.Contains(recorder.Body.String(), "id_rsa") || !strings.Contains(recorder.Body.String(), "Tool call blocked") {
+					t.Fatalf("blocked stream leaked tool call: %s", recorder.Body.String())
+				}
+			} else if !strings.Contains(recorder.Body.String(), "call_stream") || !strings.Contains(recorder.Body.String(), "read_file") {
+				t.Fatalf("allowed stream call was not released: %s", recorder.Body.String())
+			}
+		})
+	}
+}
+
 func TestToolFirewallSequenceE2E(t *testing.T) {
 	upstream := sequenceUpstream(t,
 		chatToolCallBodyNamed(t, "read_customer", `{"record":"account-7"}`),
@@ -419,6 +551,7 @@ func TestToolFirewallApprovalHoldE2E(t *testing.T) {
 				upstream := sequenceUpstream(t,
 					chatToolCallBodyNamed(t, "read_customer", `{"record":"account-7"}`),
 					chatToolCallBodyNamed(t, "http_request", `{"body":"send"}`),
+					chatToolCallBodyNamed(t, "http_request", `{"body":"send"}`),
 					`{"id":"chatcmpl-final","choices":[{"message":{"role":"assistant","content":"continued safely"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12}}`,
 				)
 				defer upstream.Close()
@@ -440,7 +573,7 @@ func TestToolFirewallApprovalHoldE2E(t *testing.T) {
 				group.Targets[0].ResponsesToChat = ResponsesToChatBridge{Enabled: true, Text: true, FunctionTools: true, ToolChoice: true}
 				cfg.Models["default"] = group
 				cfg.Server.ToolFirewall = ToolFirewallConfig{
-					Mode: toolFirewallEnforce, ApprovalTimeoutMS: 100,
+					Mode: toolFirewallEnforce, ApprovalTimeoutMS: 20,
 					Sequences: []ToolFirewallSequenceRule{{FirstTool: "read_customer", FirstArgsRegex: "account", ThenTool: "http_request", WithinTurns: 3, Action: "hold"}},
 				}
 				cfg.Admin.Enabled = true
@@ -498,29 +631,13 @@ func TestToolFirewallApprovalHoldE2E(t *testing.T) {
 				if first.Code != http.StatusOK || !firstHasCall {
 					t.Fatalf("first status=%d body=%s", first.Code, first.Body.String())
 				}
-				result := make(chan *httptest.ResponseRecorder, 1)
-				go func() { result <- makeRequest() }()
-				var approvalID string
-				deadline := time.Now().Add(time.Second)
-				for time.Now().Before(deadline) {
-					svc.toolApprovals.mu.Lock()
-					for id := range svc.toolApprovals.pending {
-						approvalID = id
-						break
-					}
-					svc.toolApprovals.mu.Unlock()
-					if approvalID != "" {
-						break
-					}
-					time.Sleep(time.Millisecond)
+				second := makeRequest()
+				if second.Code != http.StatusOK || !strings.Contains(second.Body.String(), "approval_pending") || strings.Contains(second.Body.String(), "tool_calls") || strings.Contains(second.Body.String(), "function_call") || strings.Contains(second.Body.String(), `"type":"tool_use"`) {
+					t.Fatalf("hold did not return an immediate pending result: status=%d body=%s", second.Code, second.Body.String())
 				}
+				approvalID := regexp.MustCompile(`approval_[a-f0-9]{32}`).FindString(second.Body.String())
 				if approvalID == "" {
-					select {
-					case finished := <-result:
-						t.Fatalf("approval hold was not registered; inference completed with status=%d body=%s", finished.Code, finished.Body.String())
-					default:
-					}
-					t.Fatal("approval hold was not registered")
+					t.Fatalf("pending result omitted approval ID: %s", second.Body.String())
 				}
 				if decision != "timeout" {
 					request, err := http.NewRequest(http.MethodPost, localAdmin.URL+"/admin/v1/tool-approvals/"+approvalID, strings.NewReader(`{"decision":"`+decision+`"}`))
@@ -540,20 +657,22 @@ func TestToolFirewallApprovalHoldE2E(t *testing.T) {
 					if response.StatusCode != http.StatusOK {
 						t.Fatalf("resolution status=%d body=%s", response.StatusCode, resolution)
 					}
+				} else {
+					time.Sleep(30 * time.Millisecond)
 				}
-				second := <-result
-				if second.Code != http.StatusOK {
-					t.Fatalf("second status=%d body=%s", second.Code, second.Body.String())
+				third := makeRequest()
+				if third.Code != http.StatusOK {
+					t.Fatalf("retry status=%d body=%s", third.Code, third.Body.String())
 				}
-				secondHasCall := strings.Contains(second.Body.String(), "tool_calls")
+				thirdHasCall := strings.Contains(third.Body.String(), "tool_calls")
 				if client == "responses" {
-					secondHasCall = strings.Contains(second.Body.String(), "function_call")
+					thirdHasCall = strings.Contains(third.Body.String(), "function_call")
 				} else if client == "claude_code_messages" {
-					secondHasCall = strings.Contains(second.Body.String(), `"type":"tool_use"`)
+					thirdHasCall = strings.Contains(third.Body.String(), `"type":"tool_use"`)
 				}
 				if decision == "release" {
-					if !secondHasCall || strings.Contains(second.Body.String(), "Tool call blocked") {
-						t.Fatalf("released tool call was not returned: %s", second.Body.String())
+					if !thirdHasCall || strings.Contains(third.Body.String(), "Tool call blocked") {
+						t.Fatalf("approved retry did not return the tool call: %s", third.Body.String())
 					}
 					continuation := `{"model":"default","messages":[{"role":"user","content":"conversation seed"},{"role":"assistant","tool_calls":[{"id":"call-http","type":"function","function":{"name":"http_request","arguments":"{\"body\":\"send\"}"}}]},{"role":"tool","tool_call_id":"call-http","content":"200 OK"}]}`
 					if client == "responses" {
@@ -565,8 +684,8 @@ func TestToolFirewallApprovalHoldE2E(t *testing.T) {
 					if continued.Code != http.StatusOK || !strings.Contains(continued.Body.String(), "continued safely") {
 						t.Fatalf("client continuation status=%d body=%s", continued.Code, continued.Body.String())
 					}
-				} else if secondHasCall || !strings.Contains(second.Body.String(), "Tool call blocked") {
-					t.Fatalf("%s hold did not block call: %s", decision, second.Body.String())
+				} else if thirdHasCall || !strings.Contains(third.Body.String(), "Tool call blocked") {
+					t.Fatalf("%s approval did not block retry: %s", decision, third.Body.String())
 				}
 				var events []securityAccessEventRecord
 				eventDeadline := time.Now().Add(time.Second)

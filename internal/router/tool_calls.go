@@ -53,26 +53,36 @@ func toolCallsFromOpenAIChat(m map[string]any) ([]IRToolCall, IRToolCallTruncate
 	if len(choices) == 0 {
 		return nil, false
 	}
-	choice, _ := choices[0].(map[string]any)
-	message, _ := choice["message"].(map[string]any)
-	rawCalls, _ := message["tool_calls"].([]any)
-	calls := make([]IRToolCall, 0, len(rawCalls))
-	for i, item := range rawCalls {
-		if len(calls) >= maxToolCallsPerResponse {
-			return calls, true
+	calls := make([]IRToolCall, 0)
+	for _, choiceValue := range choices {
+		choice, _ := choiceValue.(map[string]any)
+		message, _ := choice["message"].(map[string]any)
+		rawCalls, _ := message["tool_calls"].([]any)
+		for _, item := range rawCalls {
+			if len(calls) >= maxToolCallsPerResponse {
+				return calls, true
+			}
+			call, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			function, _ := call["function"].(map[string]any)
+			calls = append(calls, IRToolCall{
+				ID:        stringValue(call["id"]),
+				Name:      stringValue(function["name"]),
+				Arguments: toolCallArgumentsText(function["arguments"]),
+				Index:     len(calls),
+				Dialect:   "openai-chat",
+			})
 		}
-		call, ok := item.(map[string]any)
-		if !ok {
-			continue
+		// Older Chat completions used message.function_call instead of the
+		// tool_calls array. It is still executable by compatible clients.
+		if legacy, ok := message["function_call"].(map[string]any); ok {
+			if len(calls) >= maxToolCallsPerResponse {
+				return calls, true
+			}
+			calls = append(calls, IRToolCall{Name: stringValue(legacy["name"]), Arguments: toolCallArgumentsText(legacy["arguments"]), Index: len(calls), Dialect: "openai-chat"})
 		}
-		function, _ := call["function"].(map[string]any)
-		calls = append(calls, IRToolCall{
-			ID:        stringValue(call["id"]),
-			Name:      stringValue(function["name"]),
-			Arguments: toolCallArgumentsText(function["arguments"]),
-			Index:     i,
-			Dialect:   "openai-chat",
-		})
 	}
 	return calls, false
 }
@@ -86,7 +96,8 @@ func toolCallsFromResponses(m map[string]any) ([]IRToolCall, IRToolCallTruncated
 		if !ok {
 			continue
 		}
-		if stringValue(entry["type"]) != "function_call" {
+		typ := stringValue(entry["type"])
+		if !strings.HasSuffix(typ, "_call") {
 			continue
 		}
 		if len(calls) >= maxToolCallsPerResponse {
@@ -96,10 +107,24 @@ func toolCallsFromResponses(m map[string]any) ([]IRToolCall, IRToolCallTruncated
 		if id == "" {
 			id = stringValue(entry["id"])
 		}
+		name := stringValue(entry["name"])
+		arguments := toolCallArgumentsText(entry["arguments"])
+		if typ == "local_shell_call" {
+			name = "local_shell"
+			arguments = canonicalToolCallArguments(entry)
+		} else if typ == "custom_tool_call" {
+			if name == "" {
+				name = "custom_tool"
+			}
+			arguments = canonicalToolCallArguments(entry)
+		} else if typ != "function_call" {
+			name = ""
+			arguments = canonicalToolCallArguments(entry)
+		}
 		calls = append(calls, IRToolCall{
 			ID:        id,
-			Name:      stringValue(entry["name"]),
-			Arguments: toolCallArgumentsText(entry["arguments"]),
+			Name:      name,
+			Arguments: arguments,
 			Index:     index,
 			Dialect:   "openai-responses",
 		})
@@ -215,13 +240,33 @@ func (a *toolCallAccumulator) addDelta(dialect string, index int, id, name, argu
 	}
 }
 
+// setArguments replaces accumulated argument fragments with a provider's
+// authoritative complete-arguments event, as in OpenAI Responses `.done`.
+func (a *toolCallAccumulator) setArguments(index int, arguments string) {
+	if a == nil {
+		return
+	}
+	if _, ok := a.calls[index]; !ok {
+		return
+	}
+	if a.args[index] == nil {
+		a.args[index] = &strings.Builder{}
+	}
+	a.args[index].Reset()
+	if len(arguments) > maxToolCallArgumentBytes {
+		arguments = arguments[:maxToolCallArgumentBytes]
+		a.truncatedC = true
+	}
+	_, _ = a.args[index].WriteString(arguments)
+}
+
 // snapshot returns the calls assembled so far, in first-seen order.
 func (a *toolCallAccumulator) snapshot() []IRToolCall {
 	if a == nil {
 		return nil
 	}
 	out := make([]IRToolCall, 0, len(a.order))
-	for position, index := range a.order {
+	for _, index := range a.order {
 		arguments := ""
 		if a.args[index] != nil {
 			arguments = a.args[index].String()
@@ -230,7 +275,7 @@ func (a *toolCallAccumulator) snapshot() []IRToolCall {
 			ID:        a.ids[index],
 			Name:      a.names[index],
 			Arguments: arguments,
-			Index:     position,
+			Index:     index,
 			Dialect:   a.dialects[index],
 		})
 	}
