@@ -90,28 +90,6 @@ The denylist write, revision notification, and audit records commit together.
 Rotate the caller token to issue a new verifier and restore access; then update
 clients with the new bearer token. Only rotation restores access; the old
 verifier remains refused.
-
-## v5.0.0 secret DLP
-
-Model groups can set `pii_filter.secrets_enabled: true` to apply the built-in
-credential detector pack to inbound text, buffered responses, and streamed
-text. `mode: redact_only` replaces matches with placeholders; `mode:
-fail_on_match` blocks matching requests. Existing custom rules and replacement
-limits continue to apply. Configure `apply_to.tool_results` for tool-result
-coverage. Streamed text keeps a 512-byte ordinary rolling tail, holds plausible
-JWTs from their start (up to 4,096 bytes per segment), and tracks every PEM
-BEGIN marker through its end marker, up to 64 KiB. The PEM cap and overlong
-provider-token or credential-assignment candidates fail closed. Unary response
-replacement-limit exhaustion also fails closed. Response redaction requires
-`secrets_enabled` and `apply_to.messages`; custom-only PII configurations keep
-their prior response behavior.
-
-As an interim limit until the #929 bounded tool-call inspection integration
-lands, streams with advertised tools on a group with `secrets_enabled: true`
-fail with HTTP 400 `secret-dlp-stream-inspection-required`. Use non-streaming
-requests or omit tools until that integration is available. This gate does not
-apply to groups without secret DLP enabled.
-
 ## v5.0.0 streaming line-buffer budget
 
 Streaming now caps total in-flight SSE line-buffer capacity per router process with `server.streaming.max_inflight_line_bytes` (default 64 MiB). Set an explicit value from 64 KiB to 1 GiB if needed. Exhaustion fails a stream with `upstream_stream_buffer_limit`; pre-commit requests can use existing fallback. Monitor `metrum_ai_router_sse_line_buffer_bytes`, `metrum_ai_router_sse_line_buffer_limit_bytes` and `metrum_ai_router_sse_line_buffer_rejections_total`.
@@ -138,6 +116,27 @@ does not fail over to another provider until the window resets. Use
 also enter security access events when
 `server.admin_reports.security.enabled` is true; structured log events remain
 available otherwise.
+
+## v5.0.0 secret DLP
+
+Model groups can set `pii_filter.secrets_enabled: true` to apply the built-in
+credential detector pack to inbound text, buffered responses, and streamed
+text. `mode: redact_only` replaces matches with placeholders; `mode:
+fail_on_match` blocks matching requests. Existing custom rules and replacement
+limits continue to apply. Configure `apply_to.tool_results` for tool-result
+coverage. Streamed text keeps a 512-byte ordinary rolling tail, holds plausible
+JWTs from their start (up to 4,096 bytes per segment), and tracks every PEM
+BEGIN marker through its end marker, up to 64 KiB. The PEM cap and overlong
+provider-token or credential-assignment candidates fail closed. Unary response
+replacement-limit exhaustion also fails closed. Response redaction requires
+`secrets_enabled` and `apply_to.messages`; custom-only PII configurations keep
+their prior response behavior.
+
+As an interim limit until the #929 bounded tool-call inspection integration
+lands, streams with advertised tools on a group with `secrets_enabled: true`
+fail with HTTP 400 `secret-dlp-stream-inspection-required`. Use non-streaming
+requests or omit tools until that integration is available. This gate does not
+apply to groups without secret DLP enabled.
 
 ## v5.0.0 trusted proxy client IP resolution
 
