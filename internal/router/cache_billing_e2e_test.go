@@ -24,7 +24,7 @@ func TestCacheBillingLocalhostE2E(t *testing.T) {
 			writeJSON(w, 200, map[string]any{"id": "tool", "choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": nil, "tool_calls": []any{map[string]any{"id": "call_w5", "type": "function", "function": map[string]any{"name": "write_file", "arguments": "{}"}}}}, "finish_reason": "tool_calls"}}})
 			return
 		}
-		writeJSON(w, 200, map[string]any{"id": "mock", "choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": "answer"}, "finish_reason": "stop"}}, "usage": map[string]any{"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150}})
+		writeJSON(w, 200, map[string]any{"id": "mock", "choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": "answer"}, "finish_reason": "stop"}}, "usage": map[string]any{"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150, "prompt_tokens_details": map[string]any{"cached_tokens": 40}}})
 	}))
 	defer upstream.Close()
 	dir := t.TempDir()
@@ -88,6 +88,24 @@ func TestCacheBillingLocalhostE2E(t *testing.T) {
 	if row.CostBilledUSD != 0 || row.CostListUSD <= 0 {
 		t.Fatalf("cache row list=%g billed=%g", row.CostListUSD, row.CostBilledUSD)
 	}
+	var metered usageRecord
+	deadline = time.Now().Add(5 * time.Second)
+	for {
+		result := svc.usage.db.Where("cached_input_tokens = ?", 40).Limit(1).Find(&metered)
+		if result.Error != nil {
+			t.Fatal(result.Error)
+		}
+		if result.RowsAffected > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("timed out waiting for recomputed-token usage row")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if metered.RecomputedInputTokens == nil || *metered.RecomputedInputTokens != 60 {
+		t.Fatalf("cache metering row cached=%v recomputed=%v", metered.CachedInputTokens, metered.RecomputedInputTokens)
+	}
 	req, _ := http.NewRequest("GET", "http://127.0.0.1:18155/admin/reports/api/overview?since=24h", nil)
 	req.SetBasicAuth("admin", "w5-password")
 	resp, err := client.Do(req)
@@ -103,6 +121,9 @@ func TestCacheBillingLocalhostE2E(t *testing.T) {
 	}
 	if resp.StatusCode != 200 || report.Summary.CostBilledUSD != row.CostListUSD || report.Summary.CacheSavingsUSD != row.CostListUSD {
 		t.Fatalf("report status=%d summary=%+v", resp.StatusCode, report.Summary)
+	}
+	if report.Summary.RecomputedInputTokens != 60 || report.Summary.RecomputedInputReportedRequests != 1 {
+		t.Fatalf("report recomputed input=%d reported=%d", report.Summary.RecomputedInputTokens, report.Summary.RecomputedInputReportedRequests)
 	}
 	// Exercise a client tool-result continuation over the same localhost router.
 	post := func(body string) map[string]any {

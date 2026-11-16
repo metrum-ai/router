@@ -5,13 +5,14 @@
 
 ## What it shows
 
-This example sends the same long synthetic prefix repeatedly, first to one
-model and then alternating between two models. Each arm has a distinct,
+This example sends the same long synthetic agent-context prefix repeatedly,
+first through dynamic-score prefix affinity to one model, then deliberately
+spreads requests across two models. Each arm has a distinct,
 equal-length marker at the beginning to avoid deliberately sharing its cache
-with the other arm. It reads cached-input token counts and request-time cost
-from router usage rows; it does **not** control provider cache allocation or
-prove a causal model-quality or latency difference. The two model identities
-are not interchangeable-quality claims.
+with the other arm. It reads cached and recomputed input tokens, cache-hit
+rate, streaming TTFB, and request-time cost from router usage rows. It does
+**not** control provider cache allocation or prove a causal production latency
+difference. The two model identities are not interchangeable-quality claims.
 
 The default mock simulates per-model prefix caching with fictional token
 counts. The [mock result](evidence/mock-output.json) is a wiring check, not a
@@ -59,6 +60,20 @@ and exclude infrastructure; they are not total inference cost. Backend usage
 must be reported, and cached-input support varies by implementation.
 
 ## What you should see
+
+The 2026-11-16 mock run measured 4 requests per arm. Dynamic-score prefix
+affinity reported a 75% cache-hit rate, 16,000 recomputed tokens, and
+$0.00504 configured-price cost. Deliberate spreading reported 50%, 24,000
+recomputed tokens, and $0.007392. Mean TTFB was 6.75 ms vs 2.25 ms; these
+mock timings are scheduler noise and do not show a latency improvement. The
+cache and cost differences are simulated, not backend measurements.
+
+The 2026-11-16 Fireworks streamed run measured 4 requests per arm. Dynamic-score
+prefix affinity reported a 75% hit rate and 16,032 recomputed tokens; deliberate
+spreading reported 50% and 31,548. Configured-rate usage cost was 46.9% lower
+with affinity. Mean TTFB was 1,762 ms vs 741 ms, so this run showed no latency
+improvement. One synthetic run with different model identities cannot establish
+production performance or model-quality equivalence.
 
 In the [2026-10-28 hosted result](evidence/hosted-output.json), each arm had
 four requests and two reported cache hits. Both had the same usage-derived

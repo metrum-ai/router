@@ -36,6 +36,7 @@ export function TokenUsageBreakdown({ summary }: { summary?: ReportSummary }) {
   const tiles = [
     { label: "Reasoning share", tokens: summary.reasoningTokens, denominator: summary.outputTokens ?? summary.output_tokens, reported: summary.reasoningReportedRequests },
     { label: "Cached input share", tokens: summary.cachedInputTokens, denominator: summary.inputTokens ?? summary.input_tokens, reported: summary.cachedInputReportedRequests },
+    { label: "Recomputed input share", tokens: summary.recomputedInputTokens, denominator: summary.inputTokens ?? summary.input_tokens, reported: summary.recomputedInputReportedRequests },
   ];
   return <>
     {tiles.map(tile => <Card key={tile.label} className="panel-gradient"><CardContent className="p-4">
@@ -49,6 +50,6 @@ export function TokenUsageBreakdown({ summary }: { summary?: ReportSummary }) {
     <div className="col-span-full text-xs text-white/58">{summary.costComponentReportedRequests ?? 0} / {summary.requests ?? 0} requests have a complete billed-cost allocation</div>
     {[["routingSavingsUsd", "Routing savings"], ["promptCacheSavingsUsd", "Provider prompt-cache savings"], ["responseCacheSavingsUsd", "Router response-cache savings"]].map(([key, label]) => typeof summary[key] === "number" && typeof summary.costComponentReportedRequests === "number" && summary.costComponentReportedRequests > 0 && summary.savingsAttributionComplete !== false && (key !== "routingSavingsUsd" || typeof summary.baselineCostUsd === "number" || typeof summary.baseline_cost_usd === "number") ? <Card key={key}><CardContent className="p-4"><div>${(summary[key] as number).toFixed(6)}</div><div>{label}</div></CardContent></Card> : null)}
     {summary.savingsAttributionComplete === false && <div className="col-span-full text-xs text-white/58">Savings attribution is incomplete; total spend remains available, but historical or partial component evidence cannot establish a complete savings split.</div>}
-    <div className="col-span-full text-xs text-white/58">Reasoning is a subset of output, and cache reads/writes are subsets of input. Shares show known tokens across all requests; partial coverage is not a complete tokenizer breakdown. Uncached input includes input not attributed to reported caching; output not attributed to reasoning may include undisclosed reasoning.</div>
+    <div className="col-span-full text-xs text-white/58">Reasoning is a subset of output, and cache reads/writes are subsets of input. Recomputed input means input not reported as cached. Shares show known tokens across all requests; partial coverage is not a complete tokenizer breakdown. Output not attributed to reasoning may include undisclosed reasoning.</div>
   </>;
 }

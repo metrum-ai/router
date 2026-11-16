@@ -95,7 +95,7 @@ func TestResponseAffinitySchema12SQLiteUpgradeAndDown(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	runner, closeDB, err := usageMigrationRunnerWithoutPostureReport(cfg)
+	runner, closeDB, err := usageMigrationRunnerWithLatestSchema(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,8 +111,8 @@ func TestResponseAffinitySchema12SQLiteUpgradeAndDown(t *testing.T) {
 		t.Fatalf("second apply: %v", err)
 	}
 	status, err := runner.Status()
-	// 16 is the usage schema head for the migration set under test.
-	if err != nil || status.SchemaVersion != 16 {
+	// The current usage head includes MCP audit, automatic containment, security posture reporting, and recomputed-input metering.
+	if err != nil || status.SchemaVersion != 18 {
 		t.Fatalf("after: %+v err=%v", status, err)
 	}
 	if err := verifyResponseAffinityMigration(runner.db); err != nil {
@@ -129,7 +129,7 @@ func TestResponseAffinitySchema12SQLiteUpgradeAndDown(t *testing.T) {
 
 	// Earlier binaries must fail closed on the future schema instead of
 	// ignoring the table.
-	old, err := NewMigrationRunnerWithDataJobs(runner.db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 11, MinData: 0, MaxData: 1}, usageMigrationDefinitions[:len(usageMigrationDefinitions)-1], usageDataJobDefinitions)
+	old, err := NewMigrationRunnerWithDataJobs(runner.db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 11, MinData: 0, MaxData: 1}, usageMigrationDefinitionsBeforeResponseAffinity(), usageDataJobDefinitions)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -175,7 +175,7 @@ func TestResponseAffinitySchema12SQLiteUpgradeAndDown(t *testing.T) {
 
 func TestResponseAffinitySchema12FreshInstall(t *testing.T) {
 	cfg := uncachedSQLiteUsageDBConfigForTest(filepath.Join(t.TempDir(), "usage.sqlite"))
-	runner, closeDB, err := usageMigrationRunnerWithoutPostureReport(cfg)
+	runner, closeDB, err := usageMigrationRunnerWithLatestSchema(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,9 +184,8 @@ func TestResponseAffinitySchema12FreshInstall(t *testing.T) {
 		t.Fatal(err)
 	}
 	status, err := runner.Status()
-	// Fresh installs reach the current usage head (16), including MCP audit,
-	// automatic containment, admin audit and policy-runtime migrations.
-	if err != nil || status.SchemaVersion != 16 || !status.Compatible {
+	// Fresh installs reach the current usage head, including MCP audit, automatic containment, security posture reporting, and recomputed-input metering.
+	if err != nil || status.SchemaVersion != 18 || !status.Compatible {
 		t.Fatalf("fresh install: %+v err=%v", status, err)
 	}
 	if err := verifyResponseAffinityMigration(runner.db); err != nil {
@@ -243,7 +242,7 @@ func TestResponseAffinitySchema12PostgresUpgradeAndDown(t *testing.T) {
 		t.Fatalf("refusing to run against a non-disposable database; set SMART_ROUTER_POSTGRES_TEST_ALLOW=issue-665-affinity and use smart_router_issue_665")
 	}
 	cfg := UsageDBConfig{Driver: "postgres", DSN: dsn, MigrationPolicy: usageDBMigrationPolicyAutoSafe}
-	runner, closeDB, err := usageMigrationRunnerWithoutPostureReport(cfg)
+	runner, closeDB, err := usageMigrationRunnerWithLatestSchema(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,8 +273,8 @@ func TestResponseAffinitySchema12PostgresUpgradeAndDown(t *testing.T) {
 		t.Fatalf("second apply: %v", err)
 	}
 	after, err := runner.Status()
-	// 16 is the usage schema head for the migration set under test.
-	if err != nil || after.SchemaVersion != 16 {
+	// The current usage head includes MCP audit, automatic containment, security posture reporting, and recomputed-input metering.
+	if err != nil || after.SchemaVersion != 18 {
 		t.Fatalf("after: %+v err=%v", after, err)
 	}
 	if err := verifyResponseAffinityMigration(runner.db); err != nil {
@@ -316,7 +315,7 @@ func TestResponseAffinitySchema12PostgresUpgradeAndDown(t *testing.T) {
 	if err != nil || afterDown.SchemaVersion != 11 {
 		t.Fatalf("after down: %+v err=%v", afterDown, err)
 	}
-	old, err := NewMigrationRunnerWithDataJobs(runner.db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 11, MinData: 0, MaxData: 1}, usageMigrationDefinitions[:len(usageMigrationDefinitions)-1], usageDataJobDefinitions)
+	old, err := NewMigrationRunnerWithDataJobs(runner.db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 11, MinData: 0, MaxData: 1}, usageMigrationDefinitionsBeforeResponseAffinity(), usageDataJobDefinitions)
 	if err != nil {
 		t.Fatal(err)
 	}

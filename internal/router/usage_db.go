@@ -307,6 +307,7 @@ type usageRow struct {
 	CacheWriteInputTokens              *int
 	CacheWritePricePerMillionUSD       *float64
 	CachedInputTokens                  *int
+	RecomputedInputTokens              *int
 	ReasoningAttemptCount              int
 	ReasoningSuccessfulAttemptCount    int
 	ReasoningReportedAttemptCount      int
@@ -461,6 +462,7 @@ type usageRecord struct {
 	CacheWriteInputTokens              *int                               `gorm:"column:cache_write_input_tokens"`
 	CacheWritePricePerMillionUSD       *float64                           `gorm:"column:cache_write_price_per_million_usd"`
 	CachedInputTokens                  *int                               `gorm:"column:cached_input_tokens"`
+	RecomputedInputTokens              *int                               `gorm:"column:recomputed_input_tokens"`
 	ReasoningAttemptCount              int                                `gorm:"column:reasoning_attempt_count;not null;default:0"`
 	ReasoningSuccessfulAttemptCount    int                                `gorm:"column:reasoning_successful_attempt_count;not null;default:0"`
 	ReasoningReportedAttemptCount      int                                `gorm:"column:reasoning_reported_attempt_count;not null;default:0"`
@@ -1661,6 +1663,10 @@ func OpenUsageStorePath(path string) (*usageStore, error) {
 		_ = store.Close()
 		return nil, err
 	}
+	if err := applyUsageRecomputedInputMigration(db); err != nil {
+		_ = store.Close()
+		return nil, err
+	}
 	return store, nil
 }
 
@@ -1854,12 +1860,16 @@ func applyUsageExplicitBaseline(db *gorm.DB) error {
 		usageRequestKindColumns,
 		usageTokenBreakdownColumns,
 		usageEndpointColumns,
+		usageRecomputedInputColumns,
 	} {
 		for table, columns := range laterColumns {
 			if !created[table] {
 				continue
 			}
 			for column := range columns {
+				if !db.Migrator().HasColumn(table, column) {
+					continue
+				}
 				if err := db.Exec("ALTER TABLE " + table + " DROP COLUMN " + column).Error; err != nil {
 					return fmt.Errorf("freeze usage baseline column %s.%s: %w", table, column, err)
 				}
@@ -2637,8 +2647,15 @@ var usageCachedInputPricingColumns = map[string]map[string]struct{}{
 	},
 }
 
+var usageRecomputedInputColumns = map[string]map[string]struct{}{
+	"request_usage":                {"recomputed_input_tokens": {}},
+	"usage_rollup_daily":           {"recomputed_input_tokens": {}, "recomputed_input_reported_request_count": {}},
+	"usage_rollup_hourly":          {"recomputed_input_tokens": {}, "recomputed_input_reported_request_count": {}},
+	"usage_rollup_monthly_billing": {"recomputed_input_tokens": {}, "recomputed_input_reported_request_count": {}},
+}
+
 func mergeUsageExcludedColumns(groups ...map[string]map[string]struct{}) map[string]map[string]struct{} {
-	return mergeUsageColumnSets(append(groups, usageCacheBillingColumns, usageProvenanceColumns, usageCacheWriteColumns, usageRequestKindColumns, usageTokenBreakdownColumns, usageEndpointColumns)...)
+	return mergeUsageColumnSets(append(groups, usageCacheBillingColumns, usageProvenanceColumns, usageCacheWriteColumns, usageRequestKindColumns, usageTokenBreakdownColumns, usageEndpointColumns, usageRecomputedInputColumns)...)
 }
 
 func mergeUsageColumnSets(groups ...map[string]map[string]struct{}) map[string]map[string]struct{} {
@@ -3309,6 +3326,7 @@ func rowFromRecord(rec logRecord) usageRow {
 		CacheWriteInputTokens:              rec.Usage.CacheWriteInputTokens,
 		CacheWritePricePerMillionUSD:       rec.CacheWritePricePerMillionUSD,
 		CachedInputTokens:                  rec.Usage.CachedInputTokens,
+		RecomputedInputTokens:              recomputedInputTokens(rec.Usage.InputTokens, rec.Usage.CachedInputTokens),
 		ReasoningAttemptCount:              reasoningAttempts,
 		ReasoningSuccessfulAttemptCount:    reasoningSuccesses,
 		ReasoningReportedAttemptCount:      reasoningReported,
@@ -3388,11 +3406,27 @@ func reasoningUsageCoverage(attempts []attemptLogRecord) (total *int, attempted,
 	return total, attempted, successful, reported
 }
 
+func recomputedInputTokens(input int, cached *int) *int {
+	if cached == nil || input < 0 {
+		return nil
+	}
+	cacheTokens := *cached
+	if cacheTokens < 0 {
+		cacheTokens = 0
+	}
+	if cacheTokens > input {
+		cacheTokens = input
+	}
+	value := input - cacheTokens
+	return &value
+}
+
 func recordFromRow(row usageRow) *usageRecord {
+	row.RecomputedInputTokens = recomputedInputTokens(row.InputTokens, row.CachedInputTokens)
 	if row.RequestKind == "count_tokens" {
 		row.InputTokens, row.OutputTokens, row.TotalTokens = 0, 0, 0
 		row.InputImageCount, row.InputImageTokens = 0, 0
-		row.ReasoningTokens, row.CachedInputTokens, row.CacheWriteInputTokens = nil, nil, nil
+		row.ReasoningTokens, row.CachedInputTokens, row.RecomputedInputTokens, row.CacheWriteInputTokens = nil, nil, nil, nil
 		row.TotalCostUSD, row.CostListUSD, row.InputCostUSD, row.OutputCostUSD, row.ImageCostUSD = 0, 0, 0, 0, 0
 		row.UsageSource = "none"
 	}
@@ -3445,6 +3479,7 @@ func recordFromRow(row usageRow) *usageRecord {
 		CacheWriteInputTokens:              row.CacheWriteInputTokens,
 		CacheWritePricePerMillionUSD:       row.CacheWritePricePerMillionUSD,
 		CachedInputTokens:                  row.CachedInputTokens,
+		RecomputedInputTokens:              row.RecomputedInputTokens,
 		ReasoningAttemptCount:              row.ReasoningAttemptCount,
 		ReasoningSuccessfulAttemptCount:    row.ReasoningSuccessfulAttemptCount,
 		ReasoningReportedAttemptCount:      row.ReasoningReportedAttemptCount,
@@ -3550,6 +3585,7 @@ func rowFromUsageRecord(record usageRecord) (usageRow, error) {
 		CacheWriteInputTokens:              record.CacheWriteInputTokens,
 		CacheWritePricePerMillionUSD:       record.CacheWritePricePerMillionUSD,
 		CachedInputTokens:                  record.CachedInputTokens,
+		RecomputedInputTokens:              record.RecomputedInputTokens,
 		ReasoningAttemptCount:              record.ReasoningAttemptCount,
 		ReasoningSuccessfulAttemptCount:    record.ReasoningSuccessfulAttemptCount,
 		ReasoningReportedAttemptCount:      record.ReasoningReportedAttemptCount,

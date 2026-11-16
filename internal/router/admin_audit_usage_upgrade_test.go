@@ -101,7 +101,7 @@ func loadV471UsageDatabase(t *testing.T, db *gorm.DB) {
 	}
 }
 
-// upgradeToV480 runs the documented v4.8.0 deployment job against an existing
+// upgradeToV480 runs the documented migration path against an existing
 // database: apply every pending migration, then verify-serving.
 func upgradeToV480(t *testing.T, db *gorm.DB) MigrationStatus {
 	t.Helper()
@@ -116,7 +116,7 @@ func upgradeToV480(t *testing.T, db *gorm.DB) MigrationStatus {
 	if err != nil {
 		t.Fatalf("verify-serving after the v4.8.0 deployment job: %v", err)
 	}
-	if status.SchemaVersion != 17 || status.DataVersion != 1 || !UsageMigrationServingCompatible(status) {
+	if status.SchemaVersion != 18 || status.DataVersion != 1 || !UsageMigrationServingCompatible(status) {
 		t.Fatalf("upgraded database is not serving compatible: %+v", status)
 	}
 	return status
