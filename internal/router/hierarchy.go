@@ -455,7 +455,8 @@ func mergeHierarchyPIIFilters(local, inherited PIIFilterConfig) (PIIFilterConfig
 	if inherited.MaxReplacementsPerRequest > 0 && (out.MaxReplacementsPerRequest == 0 || inherited.MaxReplacementsPerRequest < out.MaxReplacementsPerRequest) {
 		out.MaxReplacementsPerRequest = inherited.MaxReplacementsPerRequest
 	}
-	names := make(map[string]bool, len(local.Rules)+len(inherited.Rules))
+	// Capacity from one input avoids overflowing on the sum of two lengths.
+	names := make(map[string]bool, len(local.Rules))
 	out.Rules = append([]PIIFilterRule(nil), local.Rules...)
 	for _, rule := range local.Rules {
 		names[rule.Name] = true

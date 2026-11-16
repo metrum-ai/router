@@ -48,6 +48,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add parent/child hierarchy governance with authenticated bounded policy snapshots, shared organization quotas, inherited model-group/tool/PII restrictions and fail-closed cache expiry.
 - Add caller key containment through `/admin/v1/containment`, `routerctl contain` and `routerctl release`, plus an optional HMAC-SHA256 SOAR/EDR webhook. Webhook writes use signed nonce replay protection without ETag headers; containment can resume only containment-originated suspensions.
+- Add opt-in shadow/enforce mapping from detector signals to temporary key throttles or suspensions, with a per-minute action cap, emergency caller exemptions, and persistent TTL state.
+- Route detector suspensions through the canonical containment API so containment and admin roles can resume them; require a finite default throttle limit for unlimited keys.
 
 - Add versioned provider and model-catalog reads, provider validation and create/update/disable, project and environment lifecycle, project-environment membership CRUD, project USD budgets with alert thresholds, caller quota reads and updates, and retention policy writes. Writes use configuration revisions; retention changes that can delete more data require `admin:retention:force`, and provider credential references and headers never appear in responses.
 
@@ -65,6 +67,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deployment. Browser reports and `/admin/auth/*` routes remain on the serving port. Database-mode
   operators must run the router-config maintenance migration before startup; it removes the v4-only
   keys from stored canonical configurations and refreshes their content hashes.
+- `metrum-ai-routerctl config import|export|activate|rollback` now use the Admin API by default;
+  use `--offline` for deliberate direct database access while the router is stopped. The default
+  Admin API endpoint is `http://127.0.0.1:8081`; non-loopback endpoints require HTTPS. Reports use
+  `/admin/v1/reports`, and the former `/admin/reports` `--reports-prefix` value is rejected.
 
 ### Migrations
 
@@ -81,6 +87,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Raise the default upstream SSE line limit to a bounded 8 MiB and expose `server.streaming.max_sse_line_bytes` with validated 64 KiB–32 MiB bounds.
 - Allow oversized upstream lines to fall back before downstream commitment; retain reported usage from discarded attempts with explicit audit provenance.
 - Cover large streaming tool calls, repeated Responses completion payloads, limit errors, fallback boundaries, and tool-result continuation.
+
+### Changed
+
+- Online `metrum-ai-routerctl` operations now use `/admin/v1`; offline bootstrap commands remain
+  local.
 
 ### Security
 

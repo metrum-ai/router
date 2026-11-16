@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -87,8 +88,9 @@ type ResponsesConfig struct {
 }
 
 type ServerConfig struct {
-	Detectors []DetectorConfig `yaml:"detectors,omitempty" json:"detectors,omitempty"`
-	Streaming StreamingConfig  `yaml:"streaming" json:"streaming"`
+	Detectors       []DetectorConfig      `yaml:"detectors,omitempty" json:"detectors,omitempty"`
+	AutoContainment AutoContainmentConfig `yaml:"auto_containment,omitempty" json:"auto_containment,omitempty"`
+	Streaming       StreamingConfig       `yaml:"streaming" json:"streaming"`
 	// HTTP server deadlines (#759). Zero selects the default. The write
 	// deadline is absolute, so it defaults above the upstream budget; event
 	// streams additionally get a progress deadline (StreamIdleTimeoutMS).
@@ -140,6 +142,24 @@ type ServerConfig struct {
 // distributed trace for a serving request.
 type TraceConfig struct {
 	TrustedParentCIDRs []string `yaml:"trusted_parent_cidrs" json:"trustedParentCidrs,omitempty"`
+}
+
+// AutoContainmentConfig maps enforce-mode detector signals to bounded key actions.
+// It is off by default; shadow mode records proposed actions without changing admission.
+type AutoContainmentConfig struct {
+	Mode                   string                      `yaml:"mode" json:"mode,omitempty"`
+	MaxActionsPerMinute    int                         `yaml:"max_actions_per_minute" json:"maxActionsPerMinute,omitempty"`
+	UnlimitedThrottleLimit int                         `yaml:"unlimited_throttle_limit,omitempty" json:"unlimitedThrottleLimit,omitempty"`
+	ExemptCallers          []string                    `yaml:"exempt_callers,omitempty" json:"exemptCallers,omitempty"`
+	Rules                  []AutoContainmentRuleConfig `yaml:"rules,omitempty" json:"rules,omitempty"`
+}
+
+type AutoContainmentRuleConfig struct {
+	DetectorID      string `yaml:"detector_id" json:"detectorId"`
+	Severity        string `yaml:"severity" json:"severity"`
+	Action          string `yaml:"action" json:"action"`
+	TTLMS           int    `yaml:"ttl_ms" json:"ttlMs"`
+	ThrottlePercent int    `yaml:"throttle_percent,omitempty" json:"throttlePercent,omitempty"`
 }
 
 // ContainmentWebhookConfig enables signed SOAR/EDR containment requests.
@@ -1851,6 +1871,16 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 	if err := validateDetectorConfigs(c.Server.Detectors); err != nil {
 		return err
 	}
+	if err := validateAutoContainment(c.Server.AutoContainment); err != nil {
+		return err
+	}
+	if c.Server.AutoContainment.Mode == "enforce" && c.Server.ConfigSource.Mode != "database" {
+		for _, rule := range c.Server.AutoContainment.Rules {
+			if rule.Action == "suspend" {
+				return errors.New("server.auto_containment suspend rules require server.config_source.mode database so containment can be resumed")
+			}
+		}
+	}
 	if c.Security.KeyHygiene.MinEntropyBits < 0 || c.Security.KeyHygiene.MinEntropyBits > 256 {
 		return fmt.Errorf("security.key_hygiene.min_entropy_bits must be 0 (default) or between 1 and 256")
 	}
@@ -1858,6 +1888,7 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 	if entropyFloor == 0 {
 		entropyFloor = 128
 	}
+
 	if n := c.Server.Streaming.MaxSSELineBytes; n != 0 && (n < minMaxSSELineBytes || n > maxMaxSSELineBytes) {
 		return fmt.Errorf("server.streaming.max_sse_line_bytes must be between %d and %d (zero selects %d)", minMaxSSELineBytes, maxMaxSSELineBytes, defaultMaxSSELineBytes)
 	}
@@ -2408,6 +2439,56 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 	}
 	if err := validateHierarchyCallers(c.Server.Hierarchy, c.Callers); err != nil {
 		return err
+	}
+	return nil
+}
+
+func validateAutoContainment(cfg AutoContainmentConfig) error {
+	if cfg.Mode != "" && cfg.Mode != "off" && cfg.Mode != "shadow" && cfg.Mode != "enforce" {
+		return errors.New("server.auto_containment.mode must be off, shadow, or enforce")
+	}
+	if cfg.MaxActionsPerMinute < 0 || cfg.MaxActionsPerMinute > 60 {
+		return errors.New("server.auto_containment.max_actions_per_minute must be between 1 and 60 when set")
+	}
+	if cfg.Mode != "" && cfg.Mode != "off" && (cfg.MaxActionsPerMinute == 0 || len(cfg.Rules) == 0) {
+		return errors.New("server.auto_containment requires max_actions_per_minute and rules when enabled")
+	}
+	if cfg.UnlimitedThrottleLimit < 0 || cfg.UnlimitedThrottleLimit > 1000000 {
+		return errors.New("server.auto_containment.unlimited_throttle_limit must be between 0 and 1000000")
+	}
+	if len(cfg.Rules) > 64 || len(cfg.ExemptCallers) > 256 {
+		return errors.New("server.auto_containment exceeds bounded rule or exemption limits")
+	}
+	seen := map[string]bool{}
+	for i, rule := range cfg.Rules {
+		if !safeDetectorID(rule.DetectorID) || (rule.Severity != "low" && rule.Severity != "medium" && rule.Severity != "high" && rule.Severity != "critical") {
+			return fmt.Errorf("server.auto_containment.rules[%d] has invalid detector_id or severity", i)
+		}
+		if rule.Action != "throttle" && rule.Action != "suspend" {
+			return fmt.Errorf("server.auto_containment.rules[%d].action must be throttle or suspend", i)
+		}
+		if rule.TTLMS < 1000 || rule.TTLMS > 24*60*60*1000 {
+			return fmt.Errorf("server.auto_containment.rules[%d].ttl_ms must be between 1000 and 86400000", i)
+		}
+		if rule.Action == "throttle" && (rule.ThrottlePercent < 1 || rule.ThrottlePercent > 100) {
+			return fmt.Errorf("server.auto_containment.rules[%d].throttle_percent must be between 1 and 100", i)
+		}
+		if rule.Action == "throttle" && cfg.UnlimitedThrottleLimit < 1 {
+			return errors.New("server.auto_containment.unlimited_throttle_limit is required for throttle rules")
+		}
+		if rule.Action == "suspend" && rule.ThrottlePercent != 0 {
+			return fmt.Errorf("server.auto_containment.rules[%d] suspend cannot set throttle_percent", i)
+		}
+		key := rule.DetectorID + ":" + rule.Severity
+		if seen[key] {
+			return fmt.Errorf("server.auto_containment has duplicate rule %s", key)
+		}
+		seen[key] = true
+	}
+	for _, caller := range cfg.ExemptCallers {
+		if !safeDetectorID(caller) {
+			return errors.New("server.auto_containment.exempt_callers contains invalid caller id")
+		}
 	}
 	return nil
 }

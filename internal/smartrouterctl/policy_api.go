@@ -18,6 +18,9 @@ import (
 // PolicyAPIClient reuses the shared admin transport without legacy endpoint or
 // redirect fallback. Other machine transports belong to the shared client.
 type PolicyAPIClient struct{ admin *AdminAPIClient }
+
+const PolicySetCollectionPath = "/admin/v1/policy-sets"
+
 type PolicyCallOptions struct {
 	IfMatch        string
 	IdempotencyKey string
@@ -30,6 +33,9 @@ func NewPolicyAPIClient(endpoint, keyFile string) (*PolicyAPIClient, error) {
 	endpoint = strings.TrimSpace(endpoint)
 	if endpoint == "" {
 		endpoint = strings.TrimSpace(os.Getenv("ROUTER_URL"))
+	}
+	if endpoint == "" {
+		endpoint = "http://127.0.0.1:8081"
 	}
 	parsed, err := url.Parse(endpoint)
 	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") {
@@ -136,7 +142,7 @@ func (c *PolicyAPIClient) CallWithMetadata(operation, id string, body json.RawMe
 	if c == nil || c.admin == nil {
 		return nil, fmt.Errorf("policy API client unavailable")
 	}
-	method, path := "GET", "/admin/v1/policy-sets"
+	method, path := "GET", PolicySetCollectionPath
 	if operation != "list" && operation != "draft" {
 		if strings.TrimSpace(id) == "" || id == "." || id == ".." {
 			return nil, fmt.Errorf("policy set ID required")

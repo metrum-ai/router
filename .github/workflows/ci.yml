@@ -72,6 +72,9 @@ jobs:
       - name: Router shard
         if: env.CI_RUN_GO == '1'
         run: env -u AWS_BEARER_TOKEN_BEDROCK python3 scripts/ci_router_shards.py --shard-count 6 --shard-index ${{ matrix.shard }}
+      - name: Run automatic-containment PostgreSQL replica test
+        if: matrix.shard == 0 && env.CI_RUN_GO == '1'
+        run: go test ./internal/router -run '^TestAutomaticContainmentPostgresNotifiesBetweenServicesAndPersistsOnRestart$' -count=1 -v
 
   other-go:
     name: Other Go and Windows

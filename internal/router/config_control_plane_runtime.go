@@ -276,11 +276,15 @@ func finishRevisionNotificationConnectionWithin(conn revisionNotificationConnect
 // callback, and connection cleanup. Reload callbacks must terminate during
 // shutdown and must not call Stop themselves.
 func StartConfigRevisionNotifier(ctx context.Context, db *gorm.DB, runtimeScope string, reload func()) (func(), error) {
+	return startPostgresNotifier(ctx, db, configControlPlaneNotifyChannel, runtimeScope, reload, "config control-plane")
+}
+
+func startPostgresNotifier(ctx context.Context, db *gorm.DB, channel, runtimeScope string, reload func(), label string) (func(), error) {
 	if db == nil {
-		return nil, errors.New("config control-plane database is required")
+		return nil, errors.New(label + " database is required")
 	}
 	if reload == nil {
-		return nil, errors.New("config control-plane reload callback is required")
+		return nil, errors.New(label + " reload callback is required")
 	}
 
 	// SQLite has no LISTEN/NOTIFY support. The poller is the refresh path.
@@ -303,17 +307,17 @@ func StartConfigRevisionNotifier(ctx context.Context, db *gorm.DB, runtimeScope 
 		}
 	}
 	if strings.TrimSpace(dsn) == "" {
-		return nil, errors.New("postgres config notifier requires the DSN in the gorm dialector")
+		return nil, fmt.Errorf("postgres %s notifier requires the DSN in the gorm dialector", label)
 	}
 
 	listenCtx, cancel := context.WithCancel(ctx)
 	connCfg, err := pgconn.ParseConfig(dsn)
 	if err != nil {
 		cancel()
-		return nil, fmt.Errorf("postgres config notifier DSN parse: %w", err)
+		return nil, fmt.Errorf("postgres %s notifier DSN parse: %w", label, err)
 	}
 	connCfg.OnNotification = func(_ *pgconn.PgConn, notification *pgconn.Notification) {
-		if notification.Channel != configControlPlaneNotifyChannel {
+		if notification.Channel != channel {
 			return
 		}
 		if notification.Payload != "" && notification.Payload != runtimeScope {
@@ -326,7 +330,7 @@ func StartConfigRevisionNotifier(ctx context.Context, db *gorm.DB, runtimeScope 
 		cancel()
 		// The pgconn error may name the server endpoint; it never carries
 		// the DSN or password, and callers redact nothing further here.
-		return nil, fmt.Errorf("postgres config notifier connect: %w", err)
+		return nil, fmt.Errorf("postgres %s notifier connect: %w", label, err)
 	}
 
 	done := make(chan struct{})
@@ -335,9 +339,9 @@ func StartConfigRevisionNotifier(ctx context.Context, db *gorm.DB, runtimeScope 
 		// PgConn is single-owner: cancellation wakes the blocking receive;
 		// only this goroutine closes it after all reads/callbacks return.
 		defer finishRevisionNotificationConnection(conn)
-		if _, err := conn.Exec(listenCtx, "LISTEN "+configControlPlaneNotifyChannel).ReadAll(); err != nil {
+		if _, err := conn.Exec(listenCtx, "LISTEN "+channel).ReadAll(); err != nil {
 			if listenCtx.Err() == nil {
-				log.Printf("config control-plane notifier LISTEN failed for scope %q; poller remains the fallback", runtimeScope)
+				log.Printf("%s notifier LISTEN failed for scope %q; poller remains the fallback", label, runtimeScope)
 			}
 			return
 		}
@@ -348,7 +352,7 @@ func StartConfigRevisionNotifier(ctx context.Context, db *gorm.DB, runtimeScope 
 		for {
 			if err := conn.WaitForNotification(listenCtx); err != nil {
 				if listenCtx.Err() == nil {
-					log.Printf("config control-plane notifier connection dropped for scope %q; poller remains the fallback", runtimeScope)
+					log.Printf("%s notifier connection dropped for scope %q; poller remains the fallback", label, runtimeScope)
 				}
 				return
 			}

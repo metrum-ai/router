@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const usageTraceCorrelationMigrationID = 2026111601
+const usageTraceCorrelationMigrationID = 2026111602
 const usageTraceCorrelationIndexName = "idx_request_usage_trace"
 
 var usageTraceCorrelationColumns = map[string]map[string]struct{}{
@@ -27,7 +27,7 @@ func TraceCorrelationMigrationDefinition() MigrationDefinition {
 		Name:             "add request trace correlation metadata",
 		Release:          "2026.11",
 		Checksum:         MigrationChecksum("usage.trace-correlation.v1"),
-		SchemaVersion:    16,
+		SchemaVersion:    17,
 		DataVersion:      0,
 		Transactional:    true,
 		MaintenanceMode:  "online",

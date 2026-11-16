@@ -51,7 +51,7 @@ func TestTraceCorrelationAndHierarchyAuditSchema18SQLiteUpgradeDownAndRowRoundTr
 	}
 	clearTraceCorrelationMigrationLedger(t, store.db)
 	if err := verifyPolicyRuntimeMigration(store.db); err != nil {
-		t.Fatalf("schema 15 postcondition: %v", err)
+		t.Fatalf("schema 16 postcondition: %v", err)
 	}
 	if err := store.Close(); err != nil {
 		t.Fatal(err)
@@ -63,7 +63,7 @@ func TestTraceCorrelationAndHierarchyAuditSchema18SQLiteUpgradeDownAndRowRoundTr
 	}
 	defer closeDB()
 	before, err := runner.Status()
-	if err != nil || before.SchemaVersion != 15 {
+	if err != nil || before.SchemaVersion != 16 {
 		t.Fatalf("before: %+v err=%v", before, err)
 	}
 	if err := runner.ApplyPending("trace-correlation-schema-test"); err != nil {
@@ -89,13 +89,13 @@ func TestTraceCorrelationAndHierarchyAuditSchema18SQLiteUpgradeDownAndRowRoundTr
 		t.Fatalf("trace row=%+v want=%+v err=%v", got, row, err)
 	}
 
-	old, err := NewMigrationRunnerWithDataJobs(runner.db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 15, MinData: 0, MaxData: 1}, usageMigrationDefinitions[:len(usageMigrationDefinitions)-1], usageDataJobDefinitions)
+	old, err := NewMigrationRunnerWithDataJobs(runner.db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 16, MinData: 0, MaxData: 1}, usageMigrationDefinitions[:len(usageMigrationDefinitions)-1], usageDataJobDefinitions)
 	if err != nil {
 		t.Fatal(err)
 	}
 	oldStatus, err := old.Status()
 	if err != nil || oldStatus.Compatible || oldStatus.State != "incompatible" {
-		t.Fatalf("schema 15 binary should reject schema 16: %+v err=%v", oldStatus, err)
+		t.Fatalf("schema 16 binary should reject schema 18: %+v err=%v", oldStatus, err)
 	}
 	if err := revertHierarchyAuditMigration(runner.db); err != nil {
 		t.Fatal(err)
@@ -106,12 +106,12 @@ func TestTraceCorrelationAndHierarchyAuditSchema18SQLiteUpgradeDownAndRowRoundTr
 	}
 	clearTraceCorrelationMigrationLedger(t, runner.db)
 	afterDown, err := runner.Status()
-	if err != nil || afterDown.SchemaVersion != 15 || !afterDown.Compatible {
+	if err != nil || afterDown.SchemaVersion != 16 || !afterDown.Compatible {
 		t.Fatalf("after down: %+v err=%v", afterDown, err)
 	}
 	oldStatus, err = old.Status()
-	if err != nil || !oldStatus.Compatible || oldStatus.SchemaVersion != 15 {
-		t.Fatalf("schema 15 binary should accept reversed database: %+v err=%v", oldStatus, err)
+	if err != nil || !oldStatus.Compatible || oldStatus.SchemaVersion != 16 {
+		t.Fatalf("schema 16 binary should accept reversed database: %+v err=%v", oldStatus, err)
 	}
 }
 
