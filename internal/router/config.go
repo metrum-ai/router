@@ -1285,6 +1285,40 @@ func yamlNodeHasNonZeroValue(node *yaml.Node) bool {
 	}
 }
 
+func stripEmptyRemovedScriptFields(raw []byte) ([]byte, error) {
+	var root yaml.Node
+	if err := yaml.Unmarshal(raw, &root); err != nil {
+		return nil, err
+	}
+	if root.Kind != yaml.DocumentNode || len(root.Content) == 0 || root.Content[0].Kind != yaml.MappingNode {
+		return raw, nil
+	}
+	for i := 0; i+1 < len(root.Content[0].Content); i += 2 {
+		if root.Content[0].Content[i].Value != "models" || root.Content[0].Content[i+1].Kind != yaml.MappingNode {
+			continue
+		}
+		for _, group := range root.Content[0].Content[i+1].Content {
+			if group.Kind != yaml.MappingNode {
+				continue
+			}
+			filtered := make([]*yaml.Node, 0, len(group.Content))
+			for j := 0; j+1 < len(group.Content); j += 2 {
+				key, value := group.Content[j], group.Content[j+1]
+				if (key.Value == "script" || key.Value == "script_max_concurrent" || key.Value == "script_http") && !yamlNodeHasNonZeroValue(value) {
+					continue
+				}
+				filtered = append(filtered, key, value)
+			}
+			group.Content = filtered
+		}
+	}
+	cleaned, err := yaml.Marshal(&root)
+	if err != nil {
+		return nil, err
+	}
+	return cleaned, nil
+}
+
 // discardDeprecatedServerLicenseYAML reports a legacy server.license mapping.
 // LoadConfig rejects that key in 4.0.0. Detection never opens paths named
 // inside the block.
