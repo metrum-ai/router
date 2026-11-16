@@ -19,7 +19,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 LOCK = threading.Lock()
-STATE = {"count": 0, "last_headers": {}, "last_body": "", "streams": 0, "unary": 0}
+STATE = {"count": 0, "last_headers": {}, "last_body": "", "last_model": "", "streams": 0, "unary": 0, "mode": "ok"}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -37,7 +37,8 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):  # noqa: N802 - BaseHTTPRequestHandler API
-        if self.path == "/__echo":
+        path = self.path.removeprefix("/v1")
+        if path == "/__echo":
             with LOCK:
                 self._write_json(200, dict(STATE))
             return
@@ -46,12 +47,22 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):  # noqa: N802 - BaseHTTPRequestHandler API
         length = int(self.headers.get("Content-Length") or 0)
         raw = self.rfile.read(length) if length else b""
-        if self.path == "/__reset":
+        path = self.path.removeprefix("/v1")
+        if path == "/__configure":
+            mode = json.loads(raw or b"{}").get("mode", "ok")
+            if mode not in ("ok", "down", "timeout"):
+                self._write_json(400, {"error": "invalid-mode"})
+                return
             with LOCK:
-                STATE.update(count=0, last_headers={}, last_body="", streams=0, unary=0)
+                STATE["mode"] = mode
             self._write_json(200, {"ok": True})
             return
-        if self.path.rstrip("/") not in ("/v1/chat/completions", "/chat/completions"):
+        if path == "/__reset":
+            with LOCK:
+                STATE.update(count=0, last_headers={}, last_body="", last_model="", streams=0, unary=0)
+            self._write_json(200, {"ok": True})
+            return
+        if self.path.removeprefix("/v1").rstrip("/") != "/chat/completions":
             self._write_json(404, {"error": "not-found"})
             return
         try:
@@ -64,10 +75,17 @@ class Handler(BaseHTTPRequestHandler):
             entries[key.lower()] = ", ".join(self.headers.get_all(key) or [])
         stream = bool(body.get("stream"))
         with LOCK:
+            mode = STATE["mode"]
+            STATE["last_model"] = body.get("model", "")
             STATE["count"] += 1
             STATE["last_headers"] = entries
             STATE["last_body"] = raw.decode("utf-8", "replace")[:2000]
             STATE["streams" if stream else "unary"] += 1
+        if mode == "down":
+            self._write_json(503, {"error": "synthetic CPU unavailable"})
+            return
+        if mode == "timeout":
+            time.sleep(1)
         if stream:
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")

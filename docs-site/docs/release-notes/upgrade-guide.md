@@ -152,6 +152,25 @@ group list/show API now reports each target's measured vector, membership and
 exclusion reason. Missing or ambiguous report data fails without changing the
 active config. Reported context tokens are the maximum observed in the eval
 workload, not a model's theoretical context limit.
+## CPU-first small-work reference group
+
+The hierarchy reference now includes an optional `agent-small` model group,
+backed by the official vLLM CPU image and `Qwen/Qwen2.5-0.5B-Instruct`. The
+reference caller can request this group explicitly. Its CPU candidate is
+eligible only when estimated input is at most 800 tokens and the requested
+output cap is at most 128 tokens; other requests use the configured frontier
+target. The full CPU attempt has a 15-second timeout sized for the 128-token
+output cap; `thresholds.max_ttfb_ms: 1000` supplies the dynamic latency budget,
+and CPU errors/timeouts retry the frontier before a response begins. Configure
+`CPU_BASE_URL`, `CPU_MODEL`, and the vLLM
+CPU resource settings in the hierarchy `.env` file. Existing groups and
+existing caller behavior are unchanged.
+
+This is reference configuration only. Operators should establish workload
+quality and saturation limits on their own CPU hardware before granting callers
+access to `agent-small`. The edge and datacenter hierarchy reference configs set
+`admin.enabled: false` because each router uses one listener; deployments that
+need the authenticated admin listener should enable and configure it explicitly.
 
 ## v5.0.0 caller-token hygiene
 

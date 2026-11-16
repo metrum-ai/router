@@ -84,6 +84,7 @@ The router first applies the same request eligibility rules used by other strate
 - Image-bearing requests require matching input modality metadata.
 - Reasoning or thinking requests require compatible `reasoning` target metadata.
 - Explicit positive caller token caps, including OpenAI Chat `max_completion_tokens: 1`, skip targets marked `honors_max_tokens: false`.
+- A target's `request_shape_support.max_estimated_input_tokens` and `max_requested_output_tokens` bounds are hard eligibility limits. Use them to keep a constrained target out of requests that exceed its measured context or output budget; an eligible fallback target can still serve those requests.
 
 `hard_filters.require_reasoning_support_when_requested` is an additional dynamic-score hard filter for deployments that want that rule declared in policy. It is not the only reasoning-routing mechanism: compatible target `reasoning` metadata is still the baseline eligibility source for ordinary weighted, failover, script, external, and dynamic-score groups. See [Reasoning Routing](./reasoning-routing) for the weighted-group pattern.
 

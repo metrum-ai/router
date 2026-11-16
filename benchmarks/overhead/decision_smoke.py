@@ -100,7 +100,8 @@ def main():
                         derived = hashlib.pbkdf2_hmac("sha3_512", TOKEN.encode(), salt, 20000, 64)
                         encode = lambda value: base64.urlsafe_b64encode(value).decode().rstrip("=")
                         token_hash = f"pbkdf2-sha3-512:i=20000:{encode(salt)}:{encode(derived)}"
-                        config = {"server": {"listen": f"127.0.0.1:{port}", "default_model_group": "chat",
+                        config = {"admin": {"enabled": False},
+                                  "server": {"listen": f"127.0.0.1:{port}", "default_model_group": "chat",
                                              "cache": {"enabled": False}, "logging": {"path": str(work / "requests.jsonl")},
                                              "identifiers": {"mode": "passthrough"}, "decision_telemetry": {"enabled": True},
                                              "usage_db": {"enabled": True, "driver": "sqlite", "path": str(work / "usage.sqlite"), "migration_policy": "auto-safe"}},
