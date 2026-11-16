@@ -16,6 +16,27 @@ from unittest.mock import call, patch
 import release_ai_review as review
 
 
+def sse_response(events: list[tuple[str, dict[str, object]]]):
+    class Response:
+        def __init__(self):
+            self.lines = [
+                line.encode("utf-8")
+                for name, payload in events
+                for line in f"event: {name}\ndata: {json.dumps(payload)}\n\n".splitlines(keepends=True)
+            ]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def __iter__(self):
+            return iter(self.lines)
+
+    return Response()
+
+
 class ReleaseAIReviewTest(unittest.TestCase):
     def test_diff_files_are_packed_under_one_megabyte_and_preserved(self) -> None:
         file_diffs = [
@@ -195,7 +216,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
 
     def test_model_timeout_fails_without_logging_request(self) -> None:
         with patch.object(review.urllib.request, "urlopen", side_effect=TimeoutError()):
-            with self.assertRaisesRegex(RuntimeError, "failed or timed out"):
+            with self.assertRaisesRegex(review.RequestTimeoutError, "timed out after"):
                 review.call_model("not-a-real-key", "diff contents", timeout=0.001)
 
     def test_model_http_error_reports_status_without_response_body(self) -> None:
@@ -251,24 +272,25 @@ class ReleaseAIReviewTest(unittest.TestCase):
             self.assertIn(artifact["artifact_digest"], output.read_text(encoding="utf-8"))
             self.assertEqual(json.loads(artifact_output.read_text(encoding="utf-8")), artifact)
 
-    def test_model_request_uses_supported_limits_and_final_text_block(self) -> None:
-        class Response:
-            def __enter__(self):
-                return self
-            def __exit__(self, *_args):
-                return False
-            def read(self):
-                return json.dumps({"stop_reason": "end_turn", "content": [
-                    {"type": "text", "text": "not the final answer"},
-                    {"type": "thinking", "thinking": "private reasoning"},
-                    {"type": "text", "text": '{"summary":"clean","findings":[]}'},
-                ]}).encode()
-
-        with patch.object(review.urllib.request, "urlopen", return_value=Response()) as urlopen:
+    def test_streaming_request_accumulates_final_text_block_and_message_delta_stop_reason(self) -> None:
+        response = sse_response([
+            ("content_block_start", {"index": 0, "content_block": {"type": "text", "text": ""}}),
+            ("content_block_delta", {"index": 0, "delta": {"type": "text_delta", "text": "obsolete answer"}}),
+            ("content_block_stop", {"index": 0}),
+            ("content_block_start", {"index": 1, "content_block": {"type": "text", "text": ""}}),
+            ("content_block_delta", {"index": 1, "delta": {"type": "text_delta", "text": '{"summary":"clean",' }}),
+            ("content_block_delta", {"index": 1, "delta": {"type": "text_delta", "text": '"findings":[]}' }}),
+            ("content_block_stop", {"index": 1}),
+            ("message_delta", {"delta": {"stop_reason": "end_turn"}}),
+            ("message_stop", {"type": "message_stop"}),
+        ])
+        with patch.object(review.urllib.request, "urlopen", return_value=response) as urlopen:
             parsed = review.call_model("test-key", "diff")
         request = urlopen.call_args.args[0]
         payload = json.loads(request.data)
         self.assertEqual(payload["max_tokens"], 32000)
+        self.assertTrue(payload["stream"])
+        self.assertEqual(urlopen.call_args.kwargs["timeout"], 900)
         self.assertNotIn("temperature", payload)
         self.assertEqual(payload["output_config"], {
             "format": {"type": "json_schema", "schema": review.REVIEW_OUTPUT_SCHEMA},
@@ -285,34 +307,25 @@ class ReleaseAIReviewTest(unittest.TestCase):
         self.assertNotIn("minimum", json.dumps(review.REVIEW_OUTPUT_SCHEMA))
         self.assertEqual(parsed, {"summary": "clean", "findings": []})
 
-    def test_model_rejects_truncated_response_by_stop_reason_without_logging_content(self) -> None:
-        class Response:
-            def __enter__(self):
-                return self
-            def __exit__(self, *_args):
-                return False
-            def read(self):
-                return json.dumps({
-                    "stop_reason": "max_tokens",
-                    "content": [{"type": "text", "text": "private partial report"}],
-                }).encode()
-
-        with patch.object(review.urllib.request, "urlopen", return_value=Response()):
+    def test_model_reads_max_tokens_stop_reason_from_message_delta(self) -> None:
+        response = sse_response([
+            ("content_block_start", {"index": 0, "content_block": {"type": "text", "text": ""}}),
+            ("content_block_delta", {"index": 0, "delta": {"type": "text_delta", "text": "private partial report"}}),
+            ("message_delta", {"delta": {"stop_reason": "max_tokens"}}),
+            ("message_stop", {"type": "message_stop"}),
+        ])
+        with patch.object(review.urllib.request, "urlopen", return_value=response):
             with self.assertRaisesRegex(RuntimeError, "stop_reason=max_tokens") as raised:
                 review.call_model("test-key", "diff")
         self.assertNotIn("private partial report", str(raised.exception))
 
     def test_refusal_fails_closed_without_splitting_or_retrying(self) -> None:
-        class Response:
-            def __enter__(self):
-                return self
-            def __exit__(self, *_args):
-                return False
-            def read(self):
-                return json.dumps({
-                    "stop_reason": "refusal",
-                    "content": [{"type": "text", "text": "private refusal text"}],
-                }).encode()
+        response = sse_response([
+            ("content_block_start", {"index": 0, "content_block": {"type": "text", "text": ""}}),
+            ("content_block_delta", {"index": 0, "delta": {"type": "text_delta", "text": "private refusal text"}}),
+            ("message_delta", {"delta": {"stop_reason": "refusal"}}),
+            ("message_stop", {"type": "message_stop"}),
+        ])
 
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -328,7 +341,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
             stderr = io.StringIO()
             with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
                  patch.object(review, "git_diff_batches", return_value=[("one diff", ("one.go",))]) as batches, \
-                 patch.object(review.urllib.request, "urlopen", return_value=Response()) as urlopen, \
+                 patch.object(review.urllib.request, "urlopen", return_value=response) as urlopen, \
                  patch("sys.argv", args), redirect_stderr(stderr):
                 self.assertEqual(review.main(), 2)
             batches.assert_called_once_with("v4.8.0", "abc1234", max_bytes=review.INITIAL_DIFF_BYTES)
@@ -463,6 +476,49 @@ class ReleaseAIReviewTest(unittest.TestCase):
             ])
             self.assertIn("Decision: **PASS**", (root / "review-output" / "AI-release-review.md").read_text(encoding="utf-8"))
 
+    def test_request_timeout_splits_only_the_failed_batch(self) -> None:
+        clean_batch = {"summary": "No blockers found.", "findings": []}
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            responses = root / "responses.json"
+            responses.write_text(json.dumps({
+                "schema": "metrum-ai-router-release-review-responses/v1", "acceptances": {},
+            }), encoding="utf-8")
+            args = [
+                "release_ai_review.py", "--base", "v4.8.0", "--head", "def5678", "--tag", "v5.0.0",
+                "--responses", str(responses), "--artifact-cache", str(root / "cache" / "review.json"),
+                "--artifact-output", str(root / "review-output" / "review.json"),
+                "--output", str(root / "review-output" / "AI-release-review.md"),
+            ]
+
+            def batches(_base, _head, *, max_bytes, only_paths=None, max_single_file_bytes=None):
+                if only_paths is None:
+                    self.assertEqual(max_bytes, review.INITIAL_DIFF_BYTES)
+                    return [("passed diff", ("passed.go",)), ("slow combined diff", ("two-a.go", "two-b.go"))]
+                self.assertEqual(only_paths, {"two-a.go", "two-b.go"})
+                self.assertEqual(max_bytes, review.INITIAL_DIFF_BYTES // 2)
+                self.assertEqual(max_single_file_bytes, review.MAX_DIFF_BYTES)
+                return [("smaller diff two-a", ("two-a.go",)), ("smaller diff two-b", ("two-b.go",))]
+
+            with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
+                 patch.object(review, "git_diff_batches", side_effect=batches) as build_batches, \
+                 patch.object(review, "call_model", side_effect=[
+                     clean_batch,
+                     review.RequestTimeoutError("AI release review request timed out"),
+                     clean_batch,
+                     clean_batch,
+                 ]) as call_model, \
+                 patch("sys.argv", args):
+                self.assertEqual(review.main(), 0)
+            self.assertEqual(build_batches.call_count, 2)
+            self.assertEqual(call_model.call_args_list, [
+                call("test-key", "passed diff", batch_number=1, batch_count=2),
+                call("test-key", "slow combined diff", batch_number=2, batch_count=2),
+                call("test-key", "smaller diff two-a", batch_number=2, batch_count=3),
+                call("test-key", "smaller diff two-b", batch_number=3, batch_count=3),
+            ])
+            self.assertIn("Decision: **PASS**", (root / "review-output" / "AI-release-review.md").read_text(encoding="utf-8"))
+
     def test_repeated_max_tokens_at_floor_fails_without_retry_loop(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -486,14 +542,14 @@ class ReleaseAIReviewTest(unittest.TestCase):
                  )) as call_model, \
                  patch("sys.argv", args), redirect_stderr(stderr):
                 self.assertEqual(review.main(), 2)
-            self.assertEqual(call_model.call_count, 6)
-            self.assertEqual(batch_builder.call_count, 6)
+            self.assertEqual(call_model.call_count, 5)
+            self.assertEqual(batch_builder.call_count, 5)
             self.assertEqual(
                 [entry.kwargs["max_bytes"] for entry in batch_builder.call_args_list],
-                [700_000, 350_000, 175_000, 87_500, 43_750, 32_768],
+                [300_000, 150_000, 75_000, 37_500, 32_768],
             )
             self.assertIn("32768-byte minimum", stderr.getvalue())
-            self.assertEqual(stderr.getvalue().count("split into"), 5)
+            self.assertEqual(stderr.getvalue().count("split into"), 4)
             self.assertFalse((root / "artifact.json").exists())
 
 
