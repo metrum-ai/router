@@ -912,6 +912,20 @@ func stripBedrockInternalChatFields(raw map[string]any) map[string]any {
 	if raw == nil {
 		return nil
 	}
+	if _, exists := raw["bedrock_reasoning"]; !exists {
+		containsInternalContent := false
+		for _, value := range valueAsSlice(raw["choices"]) {
+			choice, _ := value.(map[string]any)
+			message, _ := choice["message"].(map[string]any)
+			if _, exists := message["bedrock_content"]; exists {
+				containsInternalContent = true
+				break
+			}
+		}
+		if !containsInternalContent {
+			return raw
+		}
+	}
 	out := cloneMap(raw)
 	delete(out, "bedrock_reasoning")
 	choices := valueAsSlice(raw["choices"])
