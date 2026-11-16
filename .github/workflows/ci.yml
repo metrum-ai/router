@@ -433,6 +433,11 @@ jobs:
         with:
           go-version-file: go.mod
           cache: false
+      - name: OpenPGP dependency graph negative proof
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s scripts -p 'test_check_xcrypto_openpgp.py'
+          go list -deps -test -f '{{.ImportPath}}' ./... | python3 scripts/check_xcrypto_openpgp.py
       - name: Source vulnerability and published Casbin advisory gate
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

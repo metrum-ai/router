@@ -183,28 +183,47 @@ def test_http_06_anthropic_version_and_beta_header_policy(http_router, upstream)
 
 
 def test_http_06_provider_skin_bearer_vs_api_key(http_router, upstream):
-    """HTTP-06: a Bearer-skin Anthropic provider receives Authorization, not x-api-key."""
-    client = anthropic.Anthropic(
+    """HTTP-06: Anthropic API-key and bearer provider skins receive distinct auth headers."""
+    api_key_client = anthropic.Anthropic(
         base_url=http_router["base"] + "/anthropic",
         api_key=CALLER,
-        auth_token=CALLER,
         max_retries=0,
         default_headers={"anthropic-beta": "caller-beta-sdk-2026-01-01"},
     )
     upstream.scenario = ScriptedScenario().expect(path="/anthropic/v1/messages")
-    message = client.messages.create(
-        model="messages-bearer",
+    message = api_key_client.messages.create(
+        model="messages",
         max_tokens=16,
         messages=[{"role": "user", "content": PROMPT_CANARY}],
     )
     assert message.content[0].text == "synthetic messages"
     sent = {k.lower(): v for k, v in upstream.calls[0]["headers"].items()}
+    assert sent["x-api-key"] == UPSTREAM_KEY
+    assert "authorization" not in sent
+    assert sent["anthropic-version"] == "2023-06-01"
+    assert "anthropic-beta" not in sent
+    assert upstream.calls[0]["body"]["model"] == "synthetic-messages"
+
+    bearer_client = anthropic.Anthropic(
+        base_url=http_router["base"] + "/anthropic",
+        auth_token=CALLER,
+        max_retries=0,
+        default_headers={"anthropic-beta": "caller-beta-sdk-2026-01-01"},
+    )
+    upstream.scenario = ScriptedScenario().expect(path="/anthropic/v1/messages")
+    message = bearer_client.messages.create(
+        model="messages-bearer",
+        max_tokens=16,
+        messages=[{"role": "user", "content": PROMPT_CANARY}],
+    )
+    assert message.content[0].text == "synthetic messages"
+    sent = {k.lower(): v for k, v in upstream.calls[1]["headers"].items()}
     assert sent["authorization"] == f"Bearer {UPSTREAM_KEY}"
     assert "x-api-key" not in sent
     assert sent["anthropic-version"] == "2023-06-01"
     # No configured beta on this skin, and the SDK caller's beta is not forwarded.
     assert "anthropic-beta" not in sent
-    assert upstream.calls[0]["body"]["model"] == "synthetic-messages-bearer"
+    assert upstream.calls[1]["body"]["model"] == "synthetic-messages-bearer"
 
 
 # --- HTTP-07 -----------------------------------------------------------------
@@ -334,7 +353,7 @@ def test_http_07_anthropic_sdk_error_is_typed_and_sanitized(http_router, upstrea
         response=json.dumps({"type": "error", "error": {"type": "api_error", "message": LEAK_CANARY}}).encode(),
     )
     client = anthropic.Anthropic(
-        base_url=http_router["base"] + "/anthropic", api_key=CALLER, auth_token=CALLER, max_retries=0
+        base_url=http_router["base"] + "/anthropic", api_key=CALLER, max_retries=0
     )
     with pytest.raises(anthropic.APIStatusError) as exc_info:
         client.messages.create(
