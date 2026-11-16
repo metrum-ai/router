@@ -22,12 +22,12 @@ MODEL = "claude-fable-5-2"
 API_URL = "https://api.anthropic.com/v1/messages"
 API_VERSION = "2023-06-01"
 MAX_DIFF_BYTES = 1_000_000
-MAX_REVIEW_BATCHES = 8
+MAX_REVIEW_BATCHES = 32
 REVIEW_CONTEXT_PATHS = ("CHANGELOG.md", "docs-site/docs/release-notes/upgrade-guide.md")
 REVIEW_OUTPUT_SCHEMA = {
     "type": "object",
     "properties": {
-        "summary": {"type": "string"},
+        "summary": {"type": "string", "minLength": 1, "maxLength": 600},
         "findings": {
             "type": "array",
             "items": {
@@ -35,15 +35,15 @@ REVIEW_OUTPUT_SCHEMA = {
                 "properties": {
                     "severity": {"type": "string", "enum": ["blocking", "informational"]},
                     "category": {"type": "string", "enum": ["security", "correctness", "compatibility", "release-integrity"]},
-                    "title": {"type": "string"},
-                    "rationale": {"type": "string"},
+                    "title": {"type": "string", "minLength": 1, "maxLength": 600},
+                    "rationale": {"type": "string", "minLength": 1, "maxLength": 600},
                     "locations": {
                         "type": "array",
                         "items": {
                             "type": "object",
                             "properties": {
-                                "file": {"type": "string"},
-                                "line": {"type": "integer"},
+                                "file": {"type": "string", "minLength": 1},
+                                "line": {"type": "integer", "minimum": 1},
                             },
                             "required": ["file", "line"],
                             "additionalProperties": False,
@@ -108,7 +108,12 @@ def pack_diff_files(
     return batches
 
 
-def git_diff_batches(base: str, head: str) -> list[tuple[str, tuple[str, ...]]]:
+def git_diff_batches(
+    base: str,
+    head: str,
+    *,
+    max_bytes: int = MAX_DIFF_BYTES,
+) -> list[tuple[str, tuple[str, ...]]]:
     names = subprocess.run(
         ["git", "--literal-pathspecs", "diff", "--no-renames", "--name-only", "-z", f"{base}..{head}"],
         check=True,
@@ -128,7 +133,7 @@ def git_diff_batches(base: str, head: str) -> list[tuple[str, tuple[str, ...]]]:
         if not result.stdout:
             raise ValueError(f"listed release diff file {path} produced an empty diff")
         file_diffs.append((path, result.stdout))
-    return pack_diff_files(file_diffs)
+    return pack_diff_files(file_diffs, max_bytes=max_bytes)
 
 
 def call_model(
@@ -165,18 +170,27 @@ def call_model(
     except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
         # Do not include provider response text, request data, or credentials.
         raise RuntimeError("AI release review request failed or timed out") from exc
-    if not isinstance(data, dict) or not isinstance(data.get("content"), list):
+    if not isinstance(data, dict):
         raise RuntimeError("AI release review returned an invalid report")
+    stop_reason = data.get("stop_reason")
+    if stop_reason != "end_turn":
+        # Stop reasons are bounded provider metadata; never print response/request text.
+        safe_reason = stop_reason if isinstance(stop_reason, str) and re.fullmatch(r"[a-z_]{1,40}", stop_reason) else "unknown"
+        raise RuntimeError(f"AI release review response ended with stop_reason={safe_reason}")
+    if not isinstance(data.get("content"), list):
+        raise RuntimeError("AI release review response had no content blocks")
     text_blocks = [item.get("text", "") for item in data["content"] if isinstance(item, dict) and item.get("type") == "text"]
+    if not text_blocks:
+        raise RuntimeError("AI release review response had no text block")
     text = text_blocks[-1].strip() if text_blocks else ""
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.DOTALL)
     try:
         result = json.loads(text)
     except json.JSONDecodeError as exc:
-        raise RuntimeError("AI release review returned an invalid report") from exc
+        raise RuntimeError("AI release review final text block was not valid JSON") from exc
     if not isinstance(result, dict):
-        raise RuntimeError("AI release review returned an invalid report")
+        raise RuntimeError("AI release review final JSON value was not an object")
     return result
 
 
@@ -351,19 +365,37 @@ def main() -> int:
             artifact = validate_artifact(artifact, args.base, args.head)
             cache_hit = True
         else:
-            batches = git_diff_batches(args.base, args.head)
             api_key = os.environ.get("ANTHROPIC_API_KEY", "")
             if not api_key:
                 print("AI release review failed: required API credential is unavailable", file=sys.stderr)
                 return 2
-            findings_by_id: dict[str, dict[str, Any]] = {}
-            for index, (diff, paths) in enumerate(batches, start=1):
-                batch_review = call_model(api_key, diff, batch_number=index, batch_count=len(batches))
-                artifact_batch = build_artifact(batch_review, args.base, args.head, allowed_files=set(paths))
-                for finding in artifact_batch["findings"]:
-                    existing = findings_by_id.get(finding["id"])
-                    if existing is None or finding["severity"] == "blocking":
-                        findings_by_id[finding["id"]] = finding
+            diff_limit = MAX_DIFF_BYTES
+            while True:
+                batches = git_diff_batches(args.base, args.head, max_bytes=diff_limit)
+                findings_by_id: dict[str, dict[str, Any]] = {}
+                try:
+                    for index, (diff, paths) in enumerate(batches, start=1):
+                        print(f"AI release review batch {index}/{len(batches)} started", file=sys.stderr)
+                        try:
+                            batch_review = call_model(api_key, diff, batch_number=index, batch_count=len(batches))
+                            artifact_batch = build_artifact(batch_review, args.base, args.head, allowed_files=set(paths))
+                        except (RuntimeError, ValueError) as exc:
+                            raise RuntimeError(f"batch {index}/{len(batches)} failed: {exc}") from exc
+                        for finding in artifact_batch["findings"]:
+                            existing = findings_by_id.get(finding["id"])
+                            if existing is None or finding["severity"] == "blocking":
+                                findings_by_id[finding["id"]] = finding
+                        print(f"AI release review batch {index}/{len(batches)} completed", file=sys.stderr)
+                except RuntimeError as exc:
+                    if "stop_reason=max_tokens" not in str(exc) or diff_limit <= 32_000:
+                        raise
+                    diff_limit //= 2
+                    print(
+                        f"AI release review batch failed with max_tokens; splitting into smaller batches (limit={diff_limit} bytes)",
+                        file=sys.stderr,
+                    )
+                    continue
+                break
             changed_files = len({path for _diff, paths in batches for path in paths})
             artifact = build_artifact({
                 "summary": f"Reviewed {changed_files} changed files across {len(batches)} bounded batches.",

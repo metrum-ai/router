@@ -220,7 +220,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
             def __exit__(self, *_args):
                 return False
             def read(self):
-                return json.dumps({"content": [
+                return json.dumps({"stop_reason": "end_turn", "content": [
                     {"type": "text", "text": "not the final answer"},
                     {"type": "thinking", "thinking": "private reasoning"},
                     {"type": "text", "text": '{"summary":"clean","findings":[]}'},
@@ -237,7 +237,28 @@ class ReleaseAIReviewTest(unittest.TestCase):
         })
         self.assertEqual(review.REVIEW_OUTPUT_SCHEMA["required"], ["summary", "findings"])
         self.assertFalse(review.REVIEW_OUTPUT_SCHEMA["additionalProperties"])
+        self.assertEqual(review.REVIEW_OUTPUT_SCHEMA["properties"]["summary"]["maxLength"], 600)
+        finding_schema = review.REVIEW_OUTPUT_SCHEMA["properties"]["findings"]["items"]
+        self.assertEqual(finding_schema["properties"]["title"]["minLength"], 1)
+        self.assertEqual(finding_schema["properties"]["locations"]["items"]["properties"]["line"]["minimum"], 1)
         self.assertEqual(parsed, {"summary": "clean", "findings": []})
+
+    def test_model_rejects_truncated_response_by_stop_reason_without_logging_content(self) -> None:
+        class Response:
+            def __enter__(self):
+                return self
+            def __exit__(self, *_args):
+                return False
+            def read(self):
+                return json.dumps({
+                    "stop_reason": "max_tokens",
+                    "content": [{"type": "text", "text": "private partial report"}],
+                }).encode()
+
+        with patch.object(review.urllib.request, "urlopen", return_value=Response()):
+            with self.assertRaisesRegex(RuntimeError, "stop_reason=max_tokens") as raised:
+                review.call_model("test-key", "diff")
+        self.assertNotIn("private partial report", str(raised.exception))
 
     def test_uncached_changed_range_calls_model_once(self) -> None:
         candidate = {"summary": "No blocking findings.", "findings": []}
@@ -322,6 +343,41 @@ class ReleaseAIReviewTest(unittest.TestCase):
             self.assertEqual(call_model.call_count, 2)
             self.assertFalse((root / "review-output" / "review.json").exists())
             self.assertFalse((root / "review-output" / "AI-release-review.md").exists())
+
+    def test_max_tokens_splits_the_failed_review_into_smaller_batches(self) -> None:
+        clean_batch = {"summary": "No blockers found.", "findings": []}
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            args = [
+                "release_ai_review.py", "--base", "v4.8.0", "--head", "def5678", "--tag", "v5.0.0",
+                "--responses", str(root / "responses.json"), "--artifact-cache", str(root / "cache" / "review.json"),
+                "--artifact-output", str(root / "review-output" / "review.json"),
+                "--output", str(root / "review-output" / "AI-release-review.md"),
+            ]
+            (root / "responses.json").write_text(json.dumps({
+                "schema": "metrum-ai-router-release-review-responses/v1", "acceptances": {},
+            }), encoding="utf-8")
+            batch_sets = [
+                [("large combined diff", ("one.go", "two.go"))],
+                [("smaller diff one", ("one.go",)), ("smaller diff two", ("two.go",))],
+            ]
+            with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
+                 patch.object(review, "git_diff_batches", side_effect=batch_sets) as git_diff_batches, \
+                 patch.object(review, "call_model", side_effect=[
+                     RuntimeError("AI release review response ended with stop_reason=max_tokens"),
+                     clean_batch,
+                     clean_batch,
+                 ]) as call_model, \
+                 patch("sys.argv", args):
+                self.assertEqual(review.main(), 0)
+            self.assertEqual(git_diff_batches.call_count, 2)
+            self.assertEqual(git_diff_batches.call_args_list[1].kwargs["max_bytes"], review.MAX_DIFF_BYTES // 2)
+            self.assertEqual(call_model.call_args_list, [
+                call("test-key", "large combined diff", batch_number=1, batch_count=1),
+                call("test-key", "smaller diff one", batch_number=1, batch_count=2),
+                call("test-key", "smaller diff two", batch_number=2, batch_count=2),
+            ])
+            self.assertIn("Decision: **PASS**", (root / "review-output" / "AI-release-review.md").read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":
