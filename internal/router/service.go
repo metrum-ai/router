@@ -4039,7 +4039,7 @@ func statusErrorClass(status int, raw []byte) string {
 
 func upstreamBodyIndicatesUnsupportedField(raw []byte) bool {
 	text := strings.ToLower(strings.TrimSpace(string(raw)))
-	for _, marker := range []string{"unsupported_field", "unsupported field", "unknown field", "unrecognized field"} {
+	for _, marker := range []string{"unsupported_field", "unsupported field"} {
 		if strings.Contains(text, marker) {
 			return true
 		}
