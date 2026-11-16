@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	detect "github.com/metrum-ai/router/internal/security/detect"
 	"github.com/metrum-ai/router/pkg/detector"
 )
 
@@ -120,19 +121,25 @@ func TestRequestRoutesOptedInSegmentsOffPathAndKeepsPrivateTextOutOfLogs(t *test
 	}))
 	defer upstream.Close()
 	events := make(chan detector.Event, 4)
+	results := make(chan detect.Result, 4)
 	detectorService := httptest.NewServer(detector.Handler(detectorFunc(func(_ context.Context, event detector.Event) ([]detector.Signal, error) {
 		events <- event
-		return []detector.Signal{}, nil
+		index := 0
+		return []detector.Signal{{SchemaVersion: detector.SchemaVersion, DetectorID: "fixture", Severity: "high", Score: 0.75, Key: strings.Repeat("b", 32), EvidenceRequestIDs: []string{event.RequestID}, SegmentKind: "tool_result", SegmentIndex: &index}}, nil
 	})))
 	defer detectorService.Close()
 	dir := t.TempDir()
 	cfg := testConfig(t, upstream.URL, providerKey, dir)
+	enabled := true
+	cfg.Server.UsageDB = freshSQLiteUsageDBConfigForTest(filepath.Join(dir, "usage.sqlite"), &enabled)
+	cfg.Server.AdminReports.Security.Enabled = true
 	cfg.Server.Detectors = []DetectorConfig{{ID: "capture", URL: detectorService.URL + "/v1/detect", AllowHosts: []string{"127.0.0.1"}, AllowHTTP: true, Mode: "report", TimeoutMS: 500, OnError: "fallback", SampleRate: 1, IncludeSegments: []string{"tool_result"}}}
 	svc, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer svc.Close()
+	svc.SetDetectorResultConsumer(func(result detect.Result) { results <- result })
 	server := httptest.NewServer(svc.mux)
 	defer server.Close()
 	body := `{"model":"default","messages":[{"role":"user","content":"` + promptMarker + `"},{"role":"tool","tool_call_id":"call_1","content":"` + segmentMarker + `"}]}`
@@ -176,4 +183,30 @@ func TestRequestRoutesOptedInSegmentsOffPathAndKeepsPrivateTextOutOfLogs(t *test
 	if strings.Contains(string(logBytes), promptMarker) || strings.Contains(string(logBytes), segmentMarker) || strings.Contains(string(logBytes), testToken) || strings.Contains(string(logBytes), providerKey) {
 		t.Fatal("request log carried prompt, detector segment, or credential text")
 	}
+	var result detect.Result
+	select {
+	case result = <-results:
+	case <-time.After(2 * time.Second):
+		t.Fatal("detector result was not delivered")
+	}
+	resultBytes, _ := json.Marshal(result)
+	if strings.Contains(string(resultBytes), promptMarker) || strings.Contains(string(resultBytes), segmentMarker) || strings.Contains(string(resultBytes), testToken) || strings.Contains(string(resultBytes), providerKey) {
+		t.Fatal("detector result carried prompt, segment, or credential text")
+	}
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		var records []securityAccessEventRecord
+		if err := svc.usage.db.Where("event_type = ?", "security_detector_signal").Find(&records).Error; err != nil {
+			t.Fatal(err)
+		}
+		if len(records) > 0 {
+			recordBytes, _ := json.Marshal(records)
+			if strings.Contains(string(recordBytes), promptMarker) || strings.Contains(string(recordBytes), segmentMarker) || strings.Contains(string(recordBytes), testToken) || strings.Contains(string(recordBytes), providerKey) {
+				t.Fatal("security event carried prompt, segment, or credential text")
+			}
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("detector signal was not stored on security event path")
 }
