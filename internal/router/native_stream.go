@@ -101,17 +101,22 @@ func proxyNativeSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, 
 			upErr.Committed = result.Committed
 			return result, upErr
 		}
-		line, err := readNativeSSELine(reader, rc.sseLineLimit())
+		line, reserved, err := readNativeSSELine(reader, rc.sseLineLimit(), rc.sseLineBudget())
 		if errors.Is(err, errNativeSSELineTooLarge) {
 			return result, upstreamError{Class: "upstream_frame_too_large", Message: "upstream SSE line exceeds configured max_sse_line_bytes", Retryable: !result.Committed, Committed: result.Committed}
+		}
+		if errors.Is(err, errNativeSSELineBudget) {
+			return result, upstreamError{Class: "upstream_stream_buffer_limit", Message: "process-wide SSE line buffer budget exhausted", Retryable: !result.Committed, Committed: result.Committed}
 		}
 		if len(line) > 0 {
 			result.Bytes += int64(len(line))
 			if maxBytes > 0 && result.Bytes > maxBytes {
+				rc.releaseSSELineBuffer(reserved)
 				return result, upstreamError{Class: "upstream_response_too_large", Message: "upstream response exceeded configured size limit", Committed: result.Committed, ResponseLen: result.Bytes}
 			}
 			_, _ = frame.Write(line)
 		}
+		rc.releaseSSELineBuffer(reserved)
 		frameComplete := isSSEBlankLine(line)
 		if frameComplete || (err == io.EOF && frame.Len() > 0) {
 			rawFrame := append([]byte(nil), frame.Bytes()...)
@@ -360,19 +365,66 @@ func (rc *requestContext) sseLineLimit() int {
 	return defaultMaxSSELineBytes
 }
 
-func readNativeSSELine(reader *bufio.Reader, limit int) ([]byte, error) {
+func (rc *requestContext) sseLineBudget() *lineBufferBudget {
+	if rc == nil {
+		return nil
+	}
+	return rc.lineBufferBudget
+}
+
+func (rc *requestContext) releaseSSELineBuffer(reserved int64) {
+	if rc != nil && rc.lineBufferBudget != nil && reserved > 0 {
+		rc.lineBufferBudget.Release(reserved)
+	}
+}
+
+func readNativeSSELine(reader *bufio.Reader, limit int, budget ...*lineBufferBudget) ([]byte, int64, error) {
+	var lineBudget *lineBufferBudget
+	if len(budget) > 0 {
+		lineBudget = budget[0]
+	}
 	var line []byte
+	var reserved int64
 	for {
 		fragment, err := reader.ReadSlice('\n')
 		if len(fragment) > limit-len(line) {
-			return nil, errNativeSSELineTooLarge
+			if lineBudget != nil {
+				lineBudget.Release(reserved)
+			}
+			return nil, 0, errNativeSSELineTooLarge
 		}
 		if len(line) == 0 && !errors.Is(err, bufio.ErrBufferFull) {
-			return fragment, err
+			return fragment, 0, err
+		}
+		need := len(line) + len(fragment)
+		if need > cap(line) {
+			newCap := cap(line) * 2
+			if newCap < 256 {
+				newCap = 256
+			}
+			if newCap < need {
+				newCap = need
+			}
+			if newCap > limit {
+				newCap = limit
+			}
+			if lineBudget != nil && !lineBudget.TryAcquire(int64(newCap)) {
+				lineBudget.Release(reserved)
+				return nil, 0, errNativeSSELineBudget
+			}
+			grown := make([]byte, len(line), newCap)
+			copy(grown, line)
+			if lineBudget != nil {
+				lineBudget.Release(reserved)
+			}
+			reserved = int64(newCap)
+			line = grown
 		}
 		line = append(line, fragment...)
 		if !errors.Is(err, bufio.ErrBufferFull) {
-			return line, err
+			return line, reserved, err
 		}
 	}
 }
+
+var errNativeSSELineBudget = errors.New("process-wide SSE line buffer budget exhausted")

@@ -97,6 +97,8 @@ Enable it only after validating a client adapter that posts a Responses-shaped b
 
 `server.streaming.max_sse_line_bytes` bounds each upstream SSE line before copying it into the event buffer. It defaults to 8388608 (8 MiB); zero selects that default. Explicit values must be between 65536 (64 KiB) and 33554432 (32 MiB), inclusive. The total response ceiling in `server.upstream.max_response_bytes` still applies independently.
 
+`server.streaming.max_inflight_line_bytes` caps allocated SSE line-buffer capacity across concurrent streams in one router process. It defaults to 67108864 (64 MiB); zero selects that default. Explicit values must be between 65536 (64 KiB) and 1073741824 (1 GiB), inclusive. When a line cannot reserve more capacity, the stream fails with `upstream_stream_buffer_limit`; pre-commit failures can fall back. Prometheus exposes current reserved bytes, the configured limit and rejected reservations as `metrum_ai_router_sse_line_buffer_bytes`, `metrum_ai_router_sse_line_buffer_limit_bytes` and `metrum_ai_router_sse_line_buffer_rejections_total`.
+
 `server.streaming.translator` accepts `incremental` (default) or `synthesized`.
 Incremental mode uses native same-dialect Chat, Responses, and Anthropic streams.
 Responses emits each recognized event immediately and transforms protocol IDs

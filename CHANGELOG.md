@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Cap process-wide in-flight SSE line-buffer capacity and expose current usage and rejections in Prometheus metrics.
 - `router-migrate --json` keeps stdout valid JSON by directing GORM diagnostics
   to stderr.
 

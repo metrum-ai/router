@@ -4,7 +4,9 @@
 package router
 
 import (
+	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,9 +14,105 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 )
+
+func TestSSELineBufferBudgetBoundsConcurrentNativeLines(t *testing.T) {
+	const streams = 200
+	budget := newLineBufferBudget(16<<20, nil)
+	wire := "data: " + strings.Repeat("x", 4<<20) + "\n"
+	var successes, rejected atomic.Int64
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := 0; i < streams; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, reserved, err := readNativeSSELine(bufio.NewReaderSize(strings.NewReader(wire), 64<<10), 8<<20, budget)
+			if errors.Is(err, errNativeSSELineBudget) {
+				rejected.Add(1)
+			} else if err == nil {
+				successes.Add(1)
+				budget.Release(reserved)
+			} else {
+				t.Errorf("unexpected line read error: %v", err)
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	if successes.Load() == 0 || rejected.Load() == 0 {
+		t.Fatalf("successful=%d rejected=%d, want both", successes.Load(), rejected.Load())
+	}
+	if used := budget.Used(); used != 0 {
+		t.Fatalf("reserved bytes after all streams finished = %d", used)
+	}
+}
+
+func TestSSELineBufferBudgetFallbackExhaustionAndCommit(t *testing.T) {
+	for _, mode := range []string{"fallback", "exhausted", "committed"} {
+		t.Run(mode, func(t *testing.T) {
+			var backupCalls atomic.Int64
+			up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body map[string]any
+				_ = json.NewDecoder(r.Body).Decode(&body)
+				w.Header().Set("Content-Type", "text/event-stream")
+				if body["model"] == "backup" {
+					backupCalls.Add(1)
+					_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"backup\"}}]}\n\ndata: [DONE]\n\n")
+					return
+				}
+				if mode == "committed" {
+					_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"first\"}}]}\n\n")
+				}
+				_, _ = io.WriteString(w, "data: "+strings.Repeat("x", 128<<10)+"\n\n")
+			}))
+			defer up.Close()
+			cfg := testConfig(t, up.URL, "key", t.TempDir())
+			cfg.Server.Streaming.MaxSSELineBytes = 1 << 20
+			cfg.Server.Streaming.MaxInflightLineBytes = 64 << 10
+			cfg.Provider = map[string]ProviderConfig{"up": {BaseURL: up.URL, Dialect: "openai-chat"}}
+			targets := []Target{{Provider: "up", Model: "primary"}}
+			if mode != "exhausted" {
+				targets = append(targets, Target{Provider: "up", Model: "backup"})
+			}
+			cfg.Models = map[string]ModelGroup{"large": {Strategy: "static", Targets: targets}}
+			cfg.Callers[0].Allow = []string{"large"}
+			cfg.Server.DefaultModelGroup = "large"
+			svc, err := New(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"model":"large","stream":true,"messages":[{"role":"user","content":"hi"}]}`))
+			req.Header.Set("Authorization", "Bearer "+testToken)
+			rr := httptest.NewRecorder()
+			svc.Handler().ServeHTTP(rr, req)
+			svc.Close()
+			wantBackupCalls := int64(0)
+			if mode == "fallback" {
+				wantBackupCalls = 1
+			}
+			if backupCalls.Load() != wantBackupCalls {
+				t.Fatalf("backup calls=%d want=%d", backupCalls.Load(), wantBackupCalls)
+			}
+			if mode == "exhausted" && (rr.Code != http.StatusBadGateway || !strings.Contains(rr.Body.String(), "upstream_stream_buffer_limit")) {
+				t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+			}
+			if mode != "exhausted" && rr.Code != http.StatusOK {
+				t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
+			}
+			if mode == "committed" && (!strings.Contains(rr.Body.String(), "first") || strings.Contains(rr.Body.String(), "backup")) {
+				t.Fatalf("committed stream replayed after budget rejection: %s", rr.Body.String())
+			}
+			if !strings.Contains(svc.metrics.Prometheus(nil, MigrationStatus{}), "metrum_ai_router_sse_line_buffer_rejections_total{} 1") {
+				t.Fatal("budget rejection metric did not increment")
+			}
+		})
+	}
+}
 
 func TestSSELineLimitConfig(t *testing.T) {
 	for _, n := range []int{0, 64 << 10, 8 << 20, 32 << 20, -1, (64 << 10) - 1, (32 << 20) + 1} {
@@ -28,6 +126,22 @@ func TestSSELineLimitConfig(t *testing.T) {
 		}
 		if n == 0 && cfg.Server.Streaming.MaxSSELineBytes != 8<<20 {
 			t.Fatal("wrong default")
+		}
+	}
+}
+
+func TestInflightSSELineBufferBudgetConfig(t *testing.T) {
+	for _, n := range []int{0, 64 << 10, 64 << 20, 1 << 30, -1, (64 << 10) - 1, (1 << 30) + 1} {
+		cfg := testConfig(t, "http://localhost:9999", "key", t.TempDir())
+		cfg.Server.Streaming.MaxInflightLineBytes = n
+		cfg.setDefaults()
+		err := cfg.Validate()
+		valid := n == 0 || n >= 64<<10 && n <= 1<<30
+		if (err == nil) != valid {
+			t.Fatalf("limit %d: %v", n, err)
+		}
+		if n == 0 && cfg.Server.Streaming.MaxInflightLineBytes != 64<<20 {
+			t.Fatalf("default budget=%d", cfg.Server.Streaming.MaxInflightLineBytes)
 		}
 	}
 }
