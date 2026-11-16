@@ -162,12 +162,14 @@ Never supply recorded teacher assistant/tool answers
 to candidate/teacher/base as an oracle continuation. Do not execute code or URLs
 from exported data. Freeze scorer/fixture/gates before training or held-out calls.
 
-`canary.ts` binds both the support public key ID and project to `ft-canary`
-inside the same `support-agent` group; other callers keep `teacher`. The launcher
-proves this using a localhost synthetic candidate **stand-in**, not a trained
-model. `canary-evidence.json` joins actual request IDs to selected provider/model.
-Replace that target with the real FT endpoint only after FT training/serving;
-retain caller quotas, rollback and preregistered regression gates.
+The standalone `canary_policy.py` external policy binds both the support public
+key ID and project to `ft-canary` inside the same `support-agent` group; other
+callers keep `teacher`. `local.py` runs the policy as a separate loopback HTTP
+service and proves this using a synthetic candidate **stand-in**, not a trained
+model. `canary-evidence.json` joins actual request IDs to selected
+provider/model. Replace that target with the real FT endpoint only after FT
+training/serving; retain caller quotas, rollback and preregistered regression
+gates.
 
 ## Local test limit policy
 
@@ -177,8 +179,9 @@ month100000000requests/20000000000tokens. This is local capacity headroom, not
 production defaults or spend authorization; the independent teacher-dollar
 reservation and GPU lease guards remain unchanged. Every project-associated key
 uses these values. Projects/static groups have no separate rate/quota fields in
-the schema; script canary concurrency is explicitly256. Evaluation/load/replay
-keys generated elsewhere must receive equivalent headroom before use.
+the schema. The external canary policy has a 1-second timeout and a 4 KiB
+response limit. Evaluation/load/replay keys generated elsewhere must receive
+equivalent headroom before use.
 
 Normal canaries do not install tiny quotas. The **only** exception is explicit
 `local.py --test-rate-limiting`, which labels the canary evidence

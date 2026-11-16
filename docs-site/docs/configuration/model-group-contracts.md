@@ -109,7 +109,7 @@ Contracts are not a separate strategy. They filter the target list before the co
 
 `dynamic_score` can use target tags and target validation quality/pass-rate metadata as scoring hints after hard contract floors have passed.
 
-TypeScript and external policy strategies receive safe contract and validation metadata plus the contract-filtered eligible target list. Returned decisions are validated against that list and fail closed if they choose an ineligible target.
+External policy strategies receive safe contract and validation metadata plus the contract-filtered eligible target list. Returned decisions are validated against that list and fail closed if they choose an ineligible target.
 
 ## Errors And Reports
 
