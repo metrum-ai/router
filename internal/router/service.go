@@ -139,6 +139,7 @@ type Service struct {
 	autoContainmentMu     sync.Mutex
 	policySyncStop        func()
 	policyNotifyStop      func()
+	providerUsageStop     func()
 	configInstanceID      string
 	configLoaded          atomic.Value // configLoadedState
 	shadows               *shadowRuntime
@@ -554,6 +555,9 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 	// Admin audit retention runs once per database that holds admin audit tables, and stops
 	// with the service.
 	s.StartAdminAuditJanitors()
+	if cfg.Server.ProviderUsageReconciliation.Enabled {
+		s.startProviderUsageReconciliation()
+	}
 	return s, nil
 }
 
@@ -584,6 +588,10 @@ func (s *Service) TLSManager() *tlsacme.Manager {
 }
 
 func (s *Service) Close() {
+	if s.providerUsageStop != nil {
+		s.providerUsageStop()
+		s.providerUsageStop = nil
+	}
 	if s.securityEventStream != nil {
 		s.securityEventStream.close()
 	}
