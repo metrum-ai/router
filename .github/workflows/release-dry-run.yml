@@ -98,6 +98,7 @@ jobs:
     needs: [hierarchy-agent-chain, hierarchy-codex-chain]
     runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     timeout-minutes: 180
+    environment: release-review
     permissions:
       contents: read
     env:
@@ -203,6 +204,8 @@ jobs:
           path: ${{ runner.temp }}/review-cache/review.json
       - name: Review the previous production release through main
         id: review
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           set -euo pipefail
           mkdir -p dist
