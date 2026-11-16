@@ -34,6 +34,8 @@ func TestV47AuthorizationLoadedReferenceConfigs(t *testing.T) {
 			if name == "config.example.yaml" {
 				text = replaceExampleCallerTokenHashes(t, text)
 				text = strings.ReplaceAll(text, "script: scripts/router.ts", "script: ../../scripts/router.ts")
+			} else if strings.HasPrefix(name, "deploy/reference/") {
+				text = strings.ReplaceAll(text, "REPLACE_WITH_GENERATED_CALLER_TOKEN_HASH", configAdminTestTokenHash())
 			}
 			path := filepath.Join(t.TempDir(), "config.yaml")
 			if err := os.WriteFile(path, []byte(text), 0600); err != nil {
