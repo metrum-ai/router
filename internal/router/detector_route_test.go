@@ -130,6 +130,11 @@ func TestRequestCompletesWhenDetectorQueueIsFull(t *testing.T) {
 	if svc.detectorDropped.Load() < dropsBeforeReload+256 {
 		t.Fatal("detector drop counter reset across reload")
 	}
+	metricsResponse := httptest.NewRecorder()
+	svc.writeMetricsPayload(metricsResponse, httptest.NewRequest(http.MethodGet, "/metrics", nil), nil)
+	if !strings.Contains(metricsResponse.Body.String(), "metrum_ai_router_detector_dropped_total ") {
+		t.Fatal("detector drop metric disappeared after removing detector config")
+	}
 }
 
 func TestDetectorResultConsumerConcurrentWorkers(t *testing.T) {

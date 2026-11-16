@@ -91,6 +91,21 @@ func (s *Service) detectorSegmentsEnabled() bool {
 	return detectorSegmentsConfigured(s.detectors)
 }
 
+func (s *Service) detectorDropMetrics() (bool, uint64) {
+	s.detectorMu.RLock()
+	dispatcher := s.detectorDispatcher
+	enabled := s.detectorMetricsEnabled.Load()
+	drops := s.detectorDropped.Load()
+	if dispatcher != nil {
+		enabled = true
+		if active := dispatcher.Dropped(); active > drops {
+			drops = active
+		}
+	}
+	s.detectorMu.RUnlock()
+	return enabled, drops
+}
+
 func (s *Service) dispatchCompletedRequestDetectors(rc *requestContext) {
 	if rc == nil || rc.caller == nil {
 		return
