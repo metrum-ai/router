@@ -66,7 +66,7 @@ callers: []
 func callerAdminTestMux(t *testing.T, db *gorm.DB, mutated *[]string) *http.ServeMux {
 	t.Helper()
 	mux := http.NewServeMux()
-	RegisterCallerDirectoryAdmin(mux, CallerAdminDeps{
+	deps := CallerAdminDeps{
 		DB:           db,
 		RuntimeScope: "staging",
 		Authorize: func(r *http.Request, object, action string) bool {
@@ -79,8 +79,142 @@ func callerAdminTestMux(t *testing.T, db *gorm.DB, mutated *[]string) *http.Serv
 			return nil
 		},
 		Now: func() time.Time { return time.Date(2026, 7, 21, 12, 0, 0, 0, time.UTC) },
-	})
+	}
+	RegisterCallerDirectoryAdmin(mux, deps)
+	newCallerAdminHandler(deps).register(func(pattern string, handler http.HandlerFunc) { mux.HandleFunc(pattern, handler) }, "/admin/v1")
 	return mux
+}
+
+func TestCallerAdminV1IssueHoneytokenPersistsMetadata(t *testing.T) {
+	db := callerAdminTestDB(t)
+	mux := callerAdminTestMux(t, db, nil)
+	unsafe := callerAdminRequest(t, mux, http.MethodPost, "/admin/v1/callers/issue", map[string]any{
+		"owner_user": "security", "project": "decoys", "environment": "prod", "key_slug": "unsafe",
+		"allow": []string{"default"}, "honeytoken_label": "invalid real-group grant",
+	}, true)
+	if unsafe.Code != http.StatusBadRequest {
+		t.Fatalf("database honeytoken real-group allow status=%d body=%s", unsafe.Code, unsafe.Body.String())
+	}
+	issued := callerAdminRequest(t, mux, http.MethodPost, "/admin/v1/callers/issue", map[string]any{
+		"owner_user": "security", "project": "decoys", "environment": "prod", "key_slug": "honey",
+		"allow": []string{}, "honeytoken_label": "incident response kit",
+	}, true)
+	if issued.Code != http.StatusCreated {
+		t.Fatalf("honeytoken issue status=%d body=%s", issued.Code, issued.Body.String())
+	}
+	var response callerAdminIssueResponse
+	if err := json.Unmarshal(issued.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Token == "" || response.Caller.HoneytokenLabel != "incident response kit" || response.Caller.TokenHash == "" {
+		t.Fatalf("incomplete database-mode honeytoken response: %+v", response)
+	}
+	if strings.Contains(issued.Body.String(), response.Caller.TokenHash) == false {
+		t.Fatal("caller response should include the one-time verifier record")
+	}
+	var label, plantedAt string
+	if err := db.Raw(`SELECT honeytoken_label, honeytoken_planted_at FROM router_config_callers WHERE caller_id = ?`, response.Caller.ID).Row().Scan(&label, &plantedAt); err != nil {
+		t.Fatal(err)
+	}
+	if label != "incident response kit" || plantedAt == "" {
+		t.Fatalf("stored honeytoken metadata label=%q planted_at=%q", label, plantedAt)
+	}
+	var unsafeCount int64
+	if err := db.Table("router_config_callers").Where("token_sha256 = ? OR token_id = ?", response.Token, response.Token).Count(&unsafeCount).Error; err != nil || unsafeCount != 0 {
+		t.Fatalf("raw token persisted count=%d err=%v", unsafeCount, err)
+	}
+}
+
+func TestCallerAdminV1IssueHoneytokenRegistersDatabaseCanaryGroups(t *testing.T) {
+	db := callerAdminTestDB(t)
+	if err := db.Exec(`INSERT INTO router_config_model_groups (config_set_id, group_name, strategy) VALUES (?, ?, ?)`, "set-1", "canary", "static").Error; err != nil {
+		t.Fatal(err)
+	}
+	canonical := `server:
+  listen: ':8080'
+  default_model_group: default
+models:
+  default:
+    strategy: static
+  canary:
+    strategy: static
+    canary:
+      callers: []
+callers: []
+`
+	hash := sha256.Sum256([]byte(canonical))
+	if err := db.Exec(`UPDATE router_config_documents SET canonical_yaml = ?, content_sha256 = ? WHERE config_set_id = ?`, canonical, hex.EncodeToString(hash[:]), "set-1").Error; err != nil {
+		t.Fatal(err)
+	}
+	mux := callerAdminTestMux(t, db, nil)
+	issued := callerAdminRequest(t, mux, http.MethodPost, "/admin/v1/callers/issue", map[string]any{
+		"owner_user": "security", "project": "decoys", "environment": "prod", "key_slug": "canary",
+		"allow": []string{"canary"}, "honeytoken_label": "db canary decoy",
+	}, true)
+	if issued.Code != http.StatusCreated {
+		t.Fatalf("database honeytoken canary issue status=%d body=%s", issued.Code, issued.Body.String())
+	}
+	var response callerAdminIssueResponse
+	if err := json.Unmarshal(issued.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	var stored string
+	if err := db.Raw(`SELECT canonical_yaml FROM router_config_documents WHERE config_set_id = ?`, "set-1").Row().Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	var config Config
+	if err := yaml.Unmarshal([]byte(stored), &config); err != nil {
+		t.Fatal(err)
+	}
+	if len(config.Callers) != 1 || len(config.Callers[0].Allow) != 1 || config.Callers[0].Allow[0] != "canary" || !canaryAllowsCaller(config.Models["canary"].Canary, response.Caller.ID) {
+		t.Fatalf("DB-mode canary grant did not persist on caller and group: caller=%+v group=%+v", config.Callers, config.Models["canary"])
+	}
+}
+
+func TestCallerContainmentRefusesHoneytokenCaller(t *testing.T) {
+	db := callerAdminTestDB(t)
+	mux := callerAdminTestMux(t, db, nil)
+	issued := callerAdminRequest(t, mux, http.MethodPost, "/admin/v1/callers/issue", map[string]any{
+		"owner_user": "security", "project": "decoys", "environment": "prod", "key_slug": "containment",
+		"allow": []string{}, "honeytoken_label": "protected decoy",
+	}, true)
+	if issued.Code != http.StatusCreated {
+		t.Fatalf("honeytoken issue status=%d body=%s", issued.Code, issued.Body.String())
+	}
+	var response callerAdminIssueResponse
+	if err := json.Unmarshal(issued.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	h := newCallerAdminHandler(CallerAdminDeps{DB: db, RuntimeScope: "staging", Authorize: func(*http.Request, string, string) bool { return true }})
+	req := httptest.NewRequest(http.MethodPost, "/admin/callers/containment", strings.NewReader(`{"caller_id":"`+response.Caller.ID+`","action":"suspend","reason":"detector_test","ttl":"5m"}`))
+	rec := httptest.NewRecorder()
+	h.handleContainment(rec, req)
+	if rec.Code != http.StatusForbidden || !strings.Contains(rec.Body.String(), "containment-honeytoken-forbidden") {
+		t.Fatalf("honeytoken containment status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var status string
+	if err := db.Raw(`SELECT status FROM router_config_callers WHERE caller_id = ?`, response.Caller.ID).Row().Scan(&status); err != nil || status != accountStatusActive {
+		t.Fatalf("honeytoken status=%q err=%v; want active", status, err)
+	}
+}
+
+func TestPatchCanonicalCallersYAMLRejectsRealGroupGrantToHoneytoken(t *testing.T) {
+	raw := []byte(`models:
+  default:
+    strategy: static
+callers:
+  - id: decoy
+    honeytoken:
+      label: planted decoy
+    allow: []
+`)
+	_, err := PatchCanonicalCallersYAML(raw, func(callers []CallerConfig) ([]CallerConfig, error) {
+		callers[0].Allow = []string{"default"}
+		return callers, nil
+	})
+	if err == nil || !strings.Contains(err.Error(), "only allow canary model groups") {
+		t.Fatalf("canonical caller write accepted a real model grant to a honeytoken: %v", err)
+	}
 }
 
 func callerAdminRequest(t *testing.T, mux *http.ServeMux, method, path string, body any, admin bool) *httptest.ResponseRecorder {

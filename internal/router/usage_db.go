@@ -7888,6 +7888,28 @@ func (s *usageStore) securityAccessEvents(opts SecurityReportOptions) ([]securit
 	return securityAccessEventsFromRecords(records)
 }
 
+func (s *usageStore) honeytokenLastSeen() (map[string]string, error) {
+	if s == nil || s.db == nil {
+		return nil, errors.New("honeytoken report database is unavailable")
+	}
+	var rows []struct {
+		CallerID string
+		LastSeen string
+	}
+	err := s.db.Model(&securityAccessEventRecord{}).
+		Select("caller_id, MAX(ts) AS last_seen").
+		Where("event_type IN ?", []string{"security_honeytoken_used", "security_canary_group_used"}).
+		Group("caller_id").Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	lastSeen := make(map[string]string, len(rows))
+	for _, row := range rows {
+		lastSeen[row.CallerID] = row.LastSeen
+	}
+	return lastSeen, nil
+}
+
 func (s *usageStore) adminSecurityEventsPage(opts adminSecurityPageOptions) (adminSecurityPage, error) {
 	base := s.securityAccessEventsQuery(opts.SecurityReportOptions)
 	var total int64

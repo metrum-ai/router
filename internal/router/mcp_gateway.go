@@ -238,7 +238,16 @@ func (s *Service) handleMCP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	caller, _, err := s.authenticate(r.Header.Get("Authorization"), r.Header.Get("X-API-Key"))
+	caller, tokenID, err := s.authenticate(r.Header.Get("Authorization"), r.Header.Get("X-API-Key"))
+	if caller != nil && caller.cfg.Honeytoken != nil {
+		s.recordHoneytokenRequest(caller, tokenID, r, "mcp")
+		if err == nil {
+			// MCP does not go through begin(). Never dispatch a planted key to a
+			// configured MCP server, regardless of the MCP policy shape.
+			writeMCPError(w, nil, -32003, "tool denied by policy")
+			return
+		}
+	}
 	if err != nil || caller == nil {
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"error": map[string]string{"code": "unauthorized", "message": "authentication required"}})
 		return
