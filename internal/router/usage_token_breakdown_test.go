@@ -48,6 +48,25 @@ func TestTokenBreakdownMetricsComponents(t *testing.T) {
 	}
 }
 
+func TestBackendCacheHitRateUsesReportedRequests(t *testing.T) {
+	metrics := newMetricsStore()
+	hit, miss := 12, 0
+	metrics.Observe(logRecord{CallerID: "alice", Usage: Usage{InputTokens: 100, CachedInputTokens: &hit}})
+	metrics.Observe(logRecord{CallerID: "alice", Usage: Usage{InputTokens: 100, CachedInputTokens: &miss}})
+	metrics.Observe(logRecord{CallerID: "alice", Usage: Usage{InputTokens: 100}})
+	text := metrics.Prometheus(nil, MigrationStatus{})
+	for _, want := range []string{
+		`metrum_ai_router_backend_cache_hit_requests_total{`,
+		`metrum_ai_router_backend_cache_reported_requests_total{`,
+		`metrum_ai_router_backend_cache_hit_rate{`,
+		`} 1`, `} 2`, `} 0.5`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("missing %q in metrics:\n%s", want, text)
+		}
+	}
+}
+
 func TestTokenBreakdownCoverageAndRollups(t *testing.T) {
 	zero, reasoning, cached := 0, 20, 60
 	rows := []usageRow{

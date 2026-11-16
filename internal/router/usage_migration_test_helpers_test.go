@@ -4,7 +4,7 @@
 package router
 
 // usageMigrationRunnerWithLatestSchema applies the full usage manifest in
-// focused migration tests, including migrations added by other lanes.
+// focused migration tests, including later schema migrations.
 func usageMigrationRunnerWithLatestSchema(cfg UsageDBConfig) (*migrationRunner, func() error, error) {
 	db, err := openUsageDB(cfg)
 	if err != nil {

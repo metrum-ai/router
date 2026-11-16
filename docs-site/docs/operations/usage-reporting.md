@@ -67,6 +67,17 @@ coverage, while an omitted field does not. See
 [Usage, Cost, And Reports](../usage-cost-reports/overview) for field names and
 cost/savings attribution caveats.
 
+The Prometheus metric `metrum_ai_router_backend_cache_hit_rate` is the fraction
+of requests with provider-reported cached input tokens that reported a positive
+cached-token count. Its companion counters distinguish hit requests from all
+requests with reported cache usage; requests with omitted cache fields are
+excluded. OpenAI-compatible backends, including OpenAI and vLLM, report this
+when their response usage includes `prompt_tokens_details.cached_tokens` or
+`input_tokens_details.cached_tokens`. Anthropic reports it through
+`cache_read_input_tokens`. Other engines are covered only when their adapter
+provides one of those recognized fields; missing fields remain unknown and do
+not count as cache misses.
+
 The browser and compatible aggregate APIs can explicitly read finalized daily
 history using `history_source=rollup`. This is not a new CLI Markdown input
 flag: CLI/server Markdown exports still read retained raw requests. Daily

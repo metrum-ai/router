@@ -114,6 +114,7 @@ func dynamicAffinityKey(caller *callerRuntime, groupName, callerDialect string, 
 	}
 	type prefix struct {
 		CallerID string          `json:"caller_id"`
+		Project  string          `json:"project"`
 		Group    string          `json:"group"`
 		Dialect  string          `json:"dialect"`
 		Session  string          `json:"session,omitempty"`
@@ -124,6 +125,7 @@ func dynamicAffinityKey(caller *callerRuntime, groupName, callerDialect string, 
 	}
 	value := prefix{
 		CallerID: caller.cfg.ID,
+		Project:  callerProject(caller.cfg),
 		Group:    groupName,
 		Dialect:  normalizeDialect(callerDialect),
 		System:   req.System,

@@ -3084,7 +3084,7 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 		// decision-model contract without issuing a second upstream request until
 		// the bounded selector and overhead accounting are available.
 		label := "intelligent:baseline-only"
-		targets = preferTieredKVTargets(targets, req)
+		targets = s.preferTieredKVTargets(groupName, targets, req)
 		return decision{
 			Target:      targets[0],
 			Fallbacks:   targets[1:],
@@ -3111,13 +3111,13 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 	if label != nil {
 		label = safePolicyClassLabel(*label)
 	}
-	targets = preferTieredKVTargets(targets, req)
+	targets = s.preferTieredKVTargets(groupName, targets, req)
 	return decision{Target: targets[0], Fallbacks: targets[1:], ClassLabel: label, Strategy: strategy, GroupName: groupName, DynamicScoreTerms: simpleStrategyRankingTelemetry(strategy, targets, s.cfg.Provider)}, nil
 }
 
 const longContextKVCacheThresholdTokens = 32000
 
-func preferTieredKVTargets(targets []Target, req *IRRequest) []Target {
+func (s *Service) preferTieredKVTargets(groupName string, targets []Target, req *IRRequest) []Target {
 	if len(targets) < 2 || estimateTokens(req) < longContextKVCacheThresholdTokens {
 		return targets
 	}
@@ -3130,7 +3130,7 @@ func preferTieredKVTargets(targets []Target, req *IRRequest) []Target {
 	}
 	ordered := make([]Target, 0, len(targets))
 	for _, target := range targets {
-		if target.TieredKVCache {
+		if target.TieredKVCache && !s.tieredKVTargetUnhealthy(groupName, target) {
 			ordered = append(ordered, target)
 		}
 	}
@@ -3139,7 +3139,25 @@ func preferTieredKVTargets(targets []Target, req *IRRequest) []Target {
 			ordered = append(ordered, target)
 		}
 	}
+	for _, target := range targets {
+		if target.TieredKVCache && s.tieredKVTargetUnhealthy(groupName, target) {
+			ordered = append(ordered, target)
+		}
+	}
 	return ordered
+}
+
+const (
+	tieredKVUnhealthyMinObservations = 2
+	tieredKVUnhealthyErrorRate       = 0.5
+)
+
+func (s *Service) tieredKVTargetUnhealthy(groupName string, target Target) bool {
+	if s == nil || s.observations == nil {
+		return false
+	}
+	stats := s.observations.stats(dynamicObservationKey(groupName, target.Provider, target.Model), s.dynamicObservationRetention(groupName))
+	return stats.Count >= tieredKVUnhealthyMinObservations && stats.ErrorRate >= tieredKVUnhealthyErrorRate
 }
 
 func (s *Service) loadExternalPolicies() {

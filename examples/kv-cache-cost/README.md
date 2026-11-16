@@ -5,12 +5,12 @@
 
 ## What it shows
 
-This example sends the same long synthetic agent-context prefix repeatedly,
-first through dynamic-score prefix affinity to one model, then deliberately
-spreads requests across two models. Each arm has a distinct,
-equal-length marker at the beginning to avoid deliberately sharing its cache
-with the other arm. It reads cached and recomputed input tokens, cache-hit
-rate, streaming TTFB, and request-time cost from router usage rows. It does
+This example sends the same synthetic requests through one `dynamic_score`
+group and target set twice, with affinity disabled and enabled. Each run uses a
+different equal-length prefix to avoid sharing provider cache state across the
+arms. It reads cached and recomputed input tokens, cache-hit rate, streaming
+TTFB, and request-time cost from router usage rows. A separate 32,000-estimated-
+token request in each arm verifies the tiered-KV target path. The example does
 **not** control provider cache allocation or prove a causal production latency
 difference. The two model identities are not interchangeable-quality claims.
 
@@ -27,8 +27,14 @@ Requires Go, Python 3 and `uv`:
 
 ```sh
 go build -o /tmp/kv-router ./cmd/metrum-ai-router
-uv run --with pyyaml python examples/kv-cache-cost/run.py --router /tmp/kv-router
+uv run --with pyyaml python examples/kv-cache-cost/run.py --router /tmp/kv-router --backend mock
 ```
+
+The sanitized output for this exact mock command is committed at
+[`evidence/mock-output.json`](evidence/mock-output.json). It records usage-row
+configured-price usage costs of $0.0332757 in both arms, with a simulated 60% reported cache-hit rate
+in each. The fixture routed all requests to the same model in both arms, so it
+did not demonstrate a cost or cache-hit improvement from affinity.
 
 For a hosted Fireworks run, verify the dated rates in
 [`config.example.json`](config.example.json), set `FIREWORKS_API_KEY` in an
@@ -61,19 +67,10 @@ must be reported, and cached-input support varies by implementation.
 
 ## What you should see
 
-The 2026-11-16 mock run measured 4 requests per arm. Dynamic-score prefix
-affinity reported a 75% cache-hit rate, 16,000 recomputed tokens, and
-$0.00504 configured-price cost. Deliberate spreading reported 50%, 24,000
-recomputed tokens, and $0.007392. Mean TTFB was 6.75 ms vs 2.25 ms; these
-mock timings are scheduler noise and do not show a latency improvement. The
-cache and cost differences are simulated, not backend measurements.
-
-The 2026-11-16 Fireworks streamed run measured 4 requests per arm. Dynamic-score
-prefix affinity reported a 75% hit rate and 16,032 recomputed tokens; deliberate
-spreading reported 50% and 31,548. Configured-rate usage cost was 46.9% lower
-with affinity. Mean TTFB was 1,762 ms vs 741 ms, so this run showed no latency
-improvement. One synthetic run with different model identities cannot establish
-production performance or model-quality equivalence.
+The committed mock output is a harness check only. It uses synthetic provider
+usage and configured prices; it is not Fireworks or production evidence. Do not
+quote the former 2026-11-16 hosted comparison: its raw run output was not
+committed and its arms used different routing groups.
 
 In the [2026-10-28 hosted result](evidence/hosted-output.json), each arm had
 four requests and two reported cache hits. Both had the same usage-derived

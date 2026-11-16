@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --with pyyaml python
 # Copyright 2026 Metrum AI
 # SPDX-License-Identifier: Apache-2.0
-"""Compare repeated prefixes under pinned and deliberately spread routing."""
+"""Compare the same model group with prefix affinity off and on."""
 import argparse
 import sys
 from contextlib import ExitStack, nullcontext
@@ -37,9 +37,11 @@ class FakeUpstream(BaseHTTPRequestHandler):
     def log_message(self,*_): pass
     def do_POST(self):
         body=json.loads(self.rfile.read(int(self.headers['Content-Length'])))
-        key=(body['model'],body['messages'][0]['content'][:32])
-        cached=8000 if key in self.cache else 0; self.cache.add(key)
-        usage={'prompt_tokens':10000,'completion_tokens':20,'total_tokens':10020,'prompt_tokens_details':{'cached_tokens':cached}}
+        content=body['messages'][0]['content']
+        key=(body['model'],content[:32])
+        prompt_tokens=max(10000,len(content)//4)
+        cached=min(8000,prompt_tokens) if key in self.cache else 0; self.cache.add(key)
+        usage={'prompt_tokens':prompt_tokens,'completion_tokens':20,'total_tokens':prompt_tokens+20,'prompt_tokens_details':{'cached_tokens':cached}}
         if body.get('stream'):
             chunks=[{'id':'mock','object':'chat.completion.chunk','created':0,'model':body['model'],'choices':[{'index':0,'delta':{'role':'assistant'},'finish_reason':None}]},
                 {'id':'mock','object':'chat.completion.chunk','created':0,'model':body['model'],'choices':[{'index':0,'delta':{'content':'ok'},'finish_reason':None}]},
@@ -74,7 +76,7 @@ def main():
             token='rtr_metrum_eval_cache_dev_k424_'+secrets.token_urlsafe(24)
             cfg=m.build_config(out_dir=state,listen=f'127.0.0.1:{port}',id_key_hex=secrets.token_hex(64),token=token)
             secure.apply(cfg['callers'][0],secure.prepare(ROOT),token,state)
-            cfg['server']['identifiers']={'mode':'passthrough'};cfg['server']['admin_auth']={'basic':{'enabled':False,'users':[]}};cfg['server']['admin_reports']={'enabled':False};cfg['server']['default_model_group']='pinned'
+            cfg['server']['identifiers']={'mode':'passthrough'};cfg['server']['admin_auth']={'basic':{'enabled':False,'users':[]}};cfg['server']['admin_reports']={'enabled':False};cfg['server']['default_model_group']='comparison'
             metadata={}
             for key in ('a','b'):
                 metadata[key]={'model':models[key],'tier':'coding','input_modalities':['text'],'output_modalities':['text'],'input_price_per_million_usd':s['input_price_per_million_usd'],
@@ -86,42 +88,51 @@ def main():
                 for model in metadata.values():
                     model.update(input_price_per_million_usd=0,cached_input_price_per_million_usd=0,output_price_per_million_usd=0,pricing_source='https://example.invalid/local-excludes-compute')
             cfg['providers']={'backend':provider};cfg['models']={}
-            cfg['models']['pinned']={'strategy':'dynamic_score','targets':[{'provider':'backend','model_ref':'a','weight':2},{'provider':'backend','model_ref':'b','weight':1}],'routing_policy':{'dynamic_score':{'affinity':{'enabled':True,'ttl_seconds':600,'max_entries':10000}}}}
-            for group,key in [('spread-a','a'),('spread-b','b')]:
-                cfg['models'][group]={'strategy':'static','targets':[{'provider':'backend','model_ref':key}]}
-            cfg['callers'][0]['allow']=['pinned','spread-a','spread-b']
-            config=state/'config.yaml';config.write_text(yaml.safe_dump(cfg,sort_keys=False));config.chmod(0o600)
-            with (state/'router.log').open('wb') as log,ExitStack() as cleanup:
-                process=subprocess.Popen([str(a.router.resolve()),'--config',str(config)],stdout=log,stderr=subprocess.STDOUT);cleanup.callback(demo.stop,process)
-                wait_for_router_ready(process, base+'/readyz', log_path=state/'router.log')
-                run_id=secrets.token_hex(8); requests=[]
-                for arm,groups in [('pinned',['pinned']*4),('spread',['spread-a','spread-b','spread-a','spread-b'])]:
-                    prefix=f'case-{arm}-{run_id}: ' + ('This synthetic document describes an imaginary product and contains no private data. '*s['prompt_repetitions'])
-                    for group in groups:
-                        body=json.dumps({'model':group,'messages':[{'role':'user','content':prefix}],'max_tokens':16,'stream':True,'stream_options':{'include_usage':True}}).encode()
-                        if len(body)>120000:raise RuntimeError('prompt-size bound exceeded')
+            targets=[{'provider':'backend','model_ref':'a','weight':2,'tiered_kv_cache':True},{'provider':'backend','model_ref':'b','weight':1}]
+            cfg['models']['comparison']={'strategy':'dynamic_score','targets':targets,'routing_policy':{'dynamic_score':{'affinity':{'enabled':True,'ttl_seconds':600,'max_entries':10000}}}}
+            cfg['callers'][0]['allow']=['comparison']
+            config=state/'config.yaml';run_id=secrets.token_hex(8);requests=[];output=[]
+            with (state/'router.log').open('ab') as log:
+                for affinity in (False,True):
+                    cfg['models']['comparison']['routing_policy']['dynamic_score']['affinity']['enabled']=affinity
+                    config.write_text(yaml.safe_dump(cfg,sort_keys=False));config.chmod(0o600)
+                    with ExitStack() as cleanup:
+                        process=subprocess.Popen([str(a.router.resolve()),'--config',str(config)],stdout=log,stderr=subprocess.STDOUT);cleanup.callback(demo.stop,process)
+                        wait_for_router_ready(process, base+'/readyz', log_path=state/'router.log')
+                        arm='affinity_on' if affinity else 'affinity_off'
+                        prefix=f'case-{arm}-{run_id}: ' + ('This synthetic document describes an imaginary product and contains no private data. '*s['prompt_repetitions'])
+                        for turn in range(4):
+                            body=json.dumps({'model':'comparison','metadata':{'session_id':f'session-{arm}-{run_id}'},'messages':[{'role':'user','content':prefix+f' turn={turn}'}],'max_tokens':16,'stream':True,'stream_options':{'include_usage':True}}).encode()
+                            if len(body)>120000:raise RuntimeError('short-prefix request exceeded the 120 KB smoke bound')
+                            req=Request(base+'/v1/chat/completions',data=body,headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'})
+                            try:
+                                with urlopen(req,timeout=120) as r:r.read();requests.append((arm,'short',r.headers.get('X-Request-Id')))
+                            except HTTPError as e:raise RuntimeError(f'request failed ({e.code}); reconcile before retry') from None
+                        long_prefix=f'case-tiered-{arm}-{run_id}: '
+                        long_content=long_prefix + ('x' * max(0, 4*32000-len('user')-len(long_prefix)))
+                        body=json.dumps({'model':'comparison','metadata':{'session_id':f'tiered-{arm}-{run_id}'},'messages':[{'role':'user','content':long_content}],'max_tokens':16,'stream':True,'stream_options':{'include_usage':True}}).encode()
+                        if len(body)<=120000:raise RuntimeError('32,000-token tiered arm did not exceed the short-request bound')
                         req=Request(base+'/v1/chat/completions',data=body,headers={'Authorization':'Bearer '+token,'Content-Type':'application/json'})
                         try:
-                            with urlopen(req,timeout=120) as r:r.read();requests.append((arm,group,r.headers.get('X-Request-Id')))
-                        except HTTPError as e:raise RuntimeError(f'request failed ({e.code}); reconcile before retry') from None
-                rows=[]
-                for _ in range(100):
-                    with sqlite3.connect(state/'usage.sqlite') as db:
-                        rows=[db.execute('select requested_model,target_model,status,attempts,fallback_used,input_tokens,cached_input_tokens,recomputed_input_tokens,output_tokens,total_cost_usd,usage_source,ttfb_ms from request_usage where request_id=?',(rid,)).fetchone() for _,_,rid in requests]
-                    if all(r is not None for r in rows):break
-                    time.sleep(.1)
-                if any(r is None for r in rows):raise RuntimeError('missing usage; reconcile before retry')
-                output=[]
-                for (arm,group,_),r in zip(requests,rows):
-                    target=models['b'] if group=='spread-b' else models['a']
-                    if r[0]!=group or r[1]!=target or r[2:5]!=(200,1,0) or r[10]!='reported':raise RuntimeError('unexpected target, retry or unreported usage')
-                    output.append({'arm':arm,'group':group,'model':r[1],'input_tokens':r[5],'cached_input_tokens':r[6],'recomputed_input_tokens':r[7],'output_tokens':r[8],'usage_cost_usd':r[9],'ttfb_ms':r[11]})
-                if a.backend=='mock' and [r['cached_input_tokens'] for r in output]!=[0,8000,8000,8000,0,0,8000,8000]:raise RuntimeError('unexpected synthetic cache behavior')
-                summaries=[]
-                for arm in ('pinned','spread'):
-                    samples=[row for row in output if row['arm']==arm]
-                    summaries.append({'arm':arm,'requests':len(samples),'cache_hit_rate':sum((row['cached_input_tokens'] or 0) > 0 for row in samples)/len(samples),'ttfb_ms_mean':sum(row['ttfb_ms'] or 0 for row in samples)/len(samples),'recomputed_input_tokens':sum(row['recomputed_input_tokens'] or 0 for row in samples),'usage_cost_usd':sum(row['usage_cost_usd'] for row in samples)})
-                print(json.dumps({'mode':a.backend,'note':'Provider-reported cache usage and request TTFB; configured-price usage is not an invoice. Mock cache is simulated; local costs exclude compute.', 'summary':summaries,'requests':output},indent=2))
+                            with urlopen(req,timeout=180) as r:r.read();requests.append((arm,'tiered_32000',r.headers.get('X-Request-Id')))
+                        except HTTPError as e:raise RuntimeError(f'tiered request failed ({e.code}); reconcile before retry') from None
+                    rows=[]
+                    for _ in range(100):
+                        with sqlite3.connect(state/'usage.sqlite') as db:
+                            rows=[db.execute('select requested_model,target_model,status,attempts,fallback_used,input_tokens,cached_input_tokens,recomputed_input_tokens,output_tokens,total_cost_usd,usage_source,ttfb_ms from request_usage where request_id=?',(rid,)).fetchone() for _,_,rid in requests]
+                        if all(r is not None for r in rows):break
+                        time.sleep(.1)
+                    if any(r is None for r in rows):raise RuntimeError('missing usage; reconcile before retry')
+                    for (request_arm,kind,rid),r in zip(requests[len(output):],rows[len(output):]):
+                        if r[0]!='comparison' or r[2:5]!=(200,1,0) or r[10]!='reported':raise RuntimeError('unexpected group, retry or unreported usage')
+                        if kind=='tiered_32000' and r[1]!=models['a']:raise RuntimeError('32,000-token request did not select the tiered target')
+                        output.append({'arm':request_arm,'kind':kind,'request_id':rid,'model':r[1],'input_tokens':r[5],'cached_input_tokens':r[6],'recomputed_input_tokens':r[7],'output_tokens':r[8],'usage_cost_usd':r[9],'ttfb_ms':r[11]})
+            summaries=[]
+            for arm in ('affinity_off','affinity_on'):
+                samples=[row for row in output if row['arm']==arm]
+                reported=[row for row in samples if row['cached_input_tokens'] is not None]
+                summaries.append({'arm':arm,'group':'comparison','affinity_enabled':arm=='affinity_on','requests':len(samples),'cache_hit_rate':sum(row['cached_input_tokens']>0 for row in reported)/len(reported) if reported else None,'cache_reported_requests':len(reported),'ttfb_ms_mean':sum(row['ttfb_ms'] or 0 for row in samples)/len(samples),'recomputed_input_tokens':sum(row['recomputed_input_tokens'] or 0 for row in samples),'usage_cost_usd':sum(row['usage_cost_usd'] for row in samples)})
+            print(json.dumps({'mode':a.backend,'note':'Same dynamic_score group and target set, run with affinity disabled and enabled; request costs are read from usage rows. Fireworks costs use configured prices, mock usage and costs are simulated, and local costs exclude compute. The 32,000-token request bypasses the 120 KB guard only for the tiered arm.', 'summary':summaries,'requests':output},indent=2))
     finally:
         if process:demo.stop(process)
         upstream.shutdown();upstream.server_close();thread.join()

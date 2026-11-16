@@ -26,13 +26,19 @@ class Smoke(unittest.TestCase):
                 self.assertEqual(p.returncode,0,p.stderr)
                 result=json.loads(p.stdout)
                 rows=result['requests']
-                self.assertEqual([r['cached_input_tokens'] for r in rows],[0,8000,8000,8000,0,0,8000,8000])
-                self.assertEqual([r['recomputed_input_tokens'] for r in rows],[10000,2000,2000,2000,10000,10000,2000,2000])
+                self.assertEqual(len(rows),10)
+                self.assertEqual({r['arm'] for r in rows},{'affinity_off','affinity_on'})
+                self.assertEqual(sum(r['kind']=='tiered_32000' for r in rows),2)
+                self.assertTrue(all(r['kind']=='tiered_32000' and r['model']=='mock-a' or r['kind']!='tiered_32000' for r in rows))
+                off_short=[r['model'] for r in rows if r['arm']=='affinity_off' and r['kind']=='short']
+                on_short=[r['model'] for r in rows if r['arm']=='affinity_on' and r['kind']=='short']
+                self.assertEqual(len(off_short),4)
+                self.assertEqual(len(on_short),4)
                 self.assertTrue(all(r['usage_cost_usd']==0 for r in rows))
                 self.assertTrue(all(r['ttfb_ms'] is not None for r in rows))
-                pinned,spread=result['summary']
-                self.assertEqual((pinned['cache_hit_rate'],pinned['recomputed_input_tokens']),(0.75,16000))
-                self.assertEqual((spread['cache_hit_rate'],spread['recomputed_input_tokens']),(0.5,24000))
+                off,on=result['summary']
+                self.assertEqual((off['group'],off['affinity_enabled'],off['requests']),('comparison',False,5))
+                self.assertEqual((on['group'],on['affinity_enabled'],on['requests']),('comparison',True,5))
         finally:
             server.shutdown();server.server_close();thread.join()
 
