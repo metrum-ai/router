@@ -127,20 +127,6 @@ type ServerConfig struct {
 	ResponsesAffinity ResponsesAffinityConfig `yaml:"responses_affinity" json:"responsesAffinity,omitempty"`
 }
 
-// SecurityEventsConfig controls the opt-in OCSF JSON Lines event stream.
-type SecurityEventsConfig struct {
-	Events SecurityEventStreamConfig `yaml:"events" json:"events,omitempty"`
-}
-
-type SecurityEventStreamConfig struct {
-	Enabled          bool   `yaml:"enabled" json:"enabled,omitempty"`
-	Version          string `yaml:"version" json:"version,omitempty"`
-	Output           string `yaml:"output" json:"output,omitempty"`
-	Path             string `yaml:"path" json:"path,omitempty"`
-	WebhookURL       string `yaml:"webhook_url" json:"webhookUrl,omitempty"`
-	WebhookSecretEnv string `yaml:"webhook_secret_env" json:"webhookSecretEnv,omitempty"`
-}
-
 // ContainmentWebhookConfig enables signed SOAR/EDR containment requests.
 type ContainmentWebhookConfig struct {
 	Enabled         bool   `yaml:"enabled" json:"enabled,omitempty"`
@@ -214,6 +200,20 @@ type AdminReportsConfig struct {
 type AdminSecurityReportsConfig struct {
 	Enabled       bool `yaml:"enabled" json:"enabled"`
 	RetentionDays int  `yaml:"retention_days" json:"retention_days"`
+}
+
+// SecurityEventsConfig controls the opt-in OCSF JSON Lines event stream.
+type SecurityEventsConfig struct {
+	Events SecurityEventStreamConfig `yaml:"events" json:"events,omitempty"`
+}
+
+type SecurityEventStreamConfig struct {
+	Enabled          bool   `yaml:"enabled" json:"enabled,omitempty"`
+	Version          string `yaml:"version" json:"version,omitempty"`
+	Output           string `yaml:"output" json:"output,omitempty"`
+	Path             string `yaml:"path" json:"path,omitempty"`
+	WebhookURL       string `yaml:"webhook_url" json:"webhookUrl,omitempty"`
+	WebhookSecretEnv string `yaml:"webhook_secret_env" json:"webhookSecretEnv,omitempty"`
 }
 
 type ClientIPConfig struct {
