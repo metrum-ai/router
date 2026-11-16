@@ -231,6 +231,20 @@ func TestAdminPlaneConfigValidation(t *testing.T) {
 	}
 }
 
+func TestAdminListenerSettingsDifferIncludesUnixSocket(t *testing.T) {
+	owner := 42
+	current := AdminPlaneConfig{Enabled: true, UnixSocket: AdminUnixSocketConfig{Path: "/run/admin.sock", Mode: "0600", Owner: &owner}}
+	for name, next := range map[string]AdminPlaneConfig{
+		"path":  {Enabled: true, UnixSocket: AdminUnixSocketConfig{Path: "/run/other.sock", Mode: "0600", Owner: &owner}},
+		"mode":  {Enabled: true, UnixSocket: AdminUnixSocketConfig{Path: "/run/admin.sock", Mode: "0660", Owner: &owner}},
+		"owner": {Enabled: true, UnixSocket: AdminUnixSocketConfig{Path: "/run/admin.sock", Mode: "0600"}},
+	} {
+		if !adminListenerSettingsDiffer(current, next) {
+			t.Errorf("%s change did not require restart", name)
+		}
+	}
+}
+
 // ACP-005/ACP-007: a disabled plane never silently removes or moves admin
 // handlers, and cannot hide /metrics.
 func TestAdminDisabledPlaneRules(t *testing.T) {

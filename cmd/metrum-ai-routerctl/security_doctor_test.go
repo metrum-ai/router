@@ -499,7 +499,7 @@ func TestSecurityDoctorReportSubmissionSendsSafeSummary(t *testing.T) {
 		Schema: "metrum.ai/router-security-posture/v1", Generated: "2026-11-16T06:00:00Z", Target: "https://router.example",
 		Findings: []securityDoctorFinding{{Check: "admin-listener", Status: "warn", Severity: "medium", Detail: "private target 10.0.0.5", Fix: "rotate secret"}},
 	}
-	if err := submitSecurityDoctorReport(server.URL, "", report); err != nil {
+	if err := submitSecurityDoctorReport(server.URL, "", "", report); err != nil {
 		t.Fatal(err)
 	}
 	if gotPath != "/admin/v1/reports/security/posture/latest" || gotAuthorization != "Bearer admin-test-secret" {

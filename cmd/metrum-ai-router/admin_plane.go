@@ -39,7 +39,12 @@ func startAdminPlane(cfg *router.Config, svc *router.Service, listenOverride str
 	if err := plane.Start(); err != nil {
 		return nil, err
 	}
-	log.Printf("Metrum AI Router admin plane listening on %s", plane.Addr())
+	if addr := plane.Addr(); addr != "" {
+		log.Printf("Metrum AI Router admin plane listening on %s", addr)
+	}
+	if socket := strings.TrimSpace(cfg.Admin.UnixSocket.Path); socket != "" {
+		log.Printf("Metrum AI Router admin plane listening on Unix socket %s", socket)
+	}
 	go func() {
 		if serveErr, ok := <-plane.Err(); ok && serveErr != nil {
 			// An admin accept-loop failure must never stop inference (ACP-006).
