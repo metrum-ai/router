@@ -39,6 +39,8 @@ The strategy's recovery is defined on *detectable* failures: unparsable JSON, sc
 
 So the honest conclusion is: **no measured task-success or cost effect on this task set**, because the failure mode this feature targets did not occur. The mechanism itself is covered by deterministic tests (retry on the same target, escalation with the serving target identified, ceiling and deadline bounds, discarded-usage quota settlement), not by this run. A task set where models emit malformed JSON or omit required arguments would exercise it; that set is not BFCL v4 AST categories, and choosing a set because it makes the feature look good is exactly what the release rules forbid.
 
+No checked-in evaluation set currently has provider/model-attributed counts of these detectable tool-call failures, and the compatibility matrix records client, API-surface and path behavior rather than model outcomes. Do not seed target reliability from those matrix pass cells. The strategy remains unproven on measured tasks until a suitable task set and evidence source are available.
+
 ## Limits
 
 - Single-turn AST categories only. BFCL's multi-turn and live categories need tool execution and state, and were not run; no claim is made about them.

@@ -5,6 +5,15 @@ doc_type: reference
 
 # Upgrade Guide
 
+## v5.0.0 tool-routing usage fields
+
+Usage schema 17 adds six scalar fields to `request_usage` for tool calls, first
+failure class, retries, escalations, per-request reliability outcome, and its
+source. Existing rows keep empty/default values. The migration is additive,
+online, and applied by the deployment migration job. Raw tool arguments,
+schemas, and outputs are not stored. Live outcomes are labelled `live`; the
+compatibility matrix currently has no provider/model outcome mapping, so it is
+not used to seed target reliability.
 ## Security hardening
 
 Review the [Router Hardening Guide](../security-governance/hardening), [Threat Summary](../security-governance/threat-model-v5), and [Compromise Runbook](../security-governance/compromise-runbook) before production rollout. These docs use existing v5.0.0 settings; no config migration is required.
