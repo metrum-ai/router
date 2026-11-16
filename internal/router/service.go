@@ -2918,6 +2918,7 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 		// decision-model contract without issuing a second upstream request until
 		// the bounded selector and overhead accounting are available.
 		label := "intelligent:baseline-only"
+		targets = preferTieredKVTargets(targets, req)
 		return decision{
 			Target:      targets[0],
 			Fallbacks:   targets[1:],
@@ -2944,7 +2945,35 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 	if label != nil {
 		label = safePolicyClassLabel(*label)
 	}
+	targets = preferTieredKVTargets(targets, req)
 	return decision{Target: targets[0], Fallbacks: targets[1:], ClassLabel: label, Strategy: strategy, GroupName: groupName, DynamicScoreTerms: simpleStrategyRankingTelemetry(strategy, targets, s.cfg.Provider)}, nil
+}
+
+const longContextKVCacheThresholdTokens = 32000
+
+func preferTieredKVTargets(targets []Target, req *IRRequest) []Target {
+	if len(targets) < 2 || estimateTokens(req) < longContextKVCacheThresholdTokens {
+		return targets
+	}
+	hasTiered := false
+	for _, target := range targets {
+		hasTiered = hasTiered || target.TieredKVCache
+	}
+	if !hasTiered {
+		return targets
+	}
+	ordered := make([]Target, 0, len(targets))
+	for _, target := range targets {
+		if target.TieredKVCache {
+			ordered = append(ordered, target)
+		}
+	}
+	for _, target := range targets {
+		if !target.TieredKVCache {
+			ordered = append(ordered, target)
+		}
+	}
+	return ordered
 }
 
 func (s *Service) loadScripts() error {

@@ -928,6 +928,7 @@ func validateToolRouting(name, strategy string, c ToolRoutingConfig, targetCount
 }
 
 type Target struct {
+	TieredKVCache                bool           `yaml:"tiered_kv_cache" json:"tieredKvCache,omitempty"`
 	CacheWritePricePerMillionUSD *float64       `yaml:"cache_write_price_per_million_usd" json:"cacheWritePricePerMillionUsd,omitempty"`
 	AllowedBetas                 []string       `yaml:"allowed_betas" json:"allowedBetas,omitempty"`
 	Modalities                   []string       `yaml:"modalities,omitempty" json:"modalities,omitempty"`
