@@ -5,6 +5,7 @@ package router
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 )
 
@@ -49,45 +50,59 @@ func toolCallsFromResponse(dialect string, m map[string]any) ([]IRToolCall, IRTo
 	}
 }
 
-func toolCallsFromOpenAIChat(m map[string]any) ([]IRToolCall, IRToolCallTruncated) {
-	choices, _ := m["choices"].([]any)
-	if len(choices) == 0 {
-		return nil, false
+func toolCallAnySlice(value any) []any {
+	if values, ok := value.([]any); ok {
+		return values
 	}
-	choice, _ := choices[0].(map[string]any)
-	message, _ := choice["message"].(map[string]any)
-	rawCalls, _ := message["tool_calls"].([]any)
-	calls := make([]IRToolCall, 0, len(rawCalls))
-	for i, item := range rawCalls {
-		if len(calls) >= maxToolCallsPerResponse {
-			return calls, true
+	rv := reflect.ValueOf(value)
+	if !rv.IsValid() || rv.Kind() != reflect.Slice {
+		return nil
+	}
+	out := make([]any, rv.Len())
+	for i := range out {
+		out[i] = rv.Index(i).Interface()
+	}
+	return out
+}
+
+func toolCallsFromOpenAIChat(m map[string]any) ([]IRToolCall, IRToolCallTruncated) {
+	choices := toolCallAnySlice(m["choices"])
+	calls := make([]IRToolCall, 0)
+	for choiceIndex, rawChoice := range choices {
+		choice, _ := rawChoice.(map[string]any)
+		message, _ := choice["message"].(map[string]any)
+		rawCalls := toolCallAnySlice(message["tool_calls"])
+		for i, item := range rawCalls {
+			if len(calls) >= maxToolCallsPerResponse {
+				return calls, true
+			}
+			call, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			function, _ := call["function"].(map[string]any)
+			calls = append(calls, IRToolCall{ID: stringValue(call["id"]), Name: stringValue(function["name"]), Arguments: toolCallArgumentsText(function["arguments"]), Index: choiceIndex*maxToolCallsPerResponse + i, Dialect: "openai-chat", Kind: "function_call"})
 		}
-		call, ok := item.(map[string]any)
-		if !ok {
-			continue
+		if legacy, ok := message["function_call"].(map[string]any); ok {
+			if len(calls) >= maxToolCallsPerResponse {
+				return calls, true
+			}
+			calls = append(calls, IRToolCall{Name: stringValue(legacy["name"]), Arguments: toolCallArgumentsText(legacy["arguments"]), Index: choiceIndex*maxToolCallsPerResponse + maxToolCallsPerResponse - 1, Dialect: "openai-chat", Kind: "function_call"})
 		}
-		function, _ := call["function"].(map[string]any)
-		calls = append(calls, IRToolCall{
-			ID:        stringValue(call["id"]),
-			Name:      stringValue(function["name"]),
-			Arguments: toolCallArgumentsText(function["arguments"]),
-			Index:     i,
-			Dialect:   "openai-chat",
-		})
 	}
 	return calls, false
 }
 
 func toolCallsFromResponses(m map[string]any) ([]IRToolCall, IRToolCallTruncated) {
-	output, _ := m["output"].([]any)
+	output := toolCallAnySlice(m["output"])
 	calls := make([]IRToolCall, 0, len(output))
-	index := 0
 	for _, item := range output {
 		entry, ok := item.(map[string]any)
 		if !ok {
 			continue
 		}
-		if stringValue(entry["type"]) != "function_call" {
+		typ := strings.ToLower(stringValue(entry["type"]))
+		if !strings.HasSuffix(typ, "_call") {
 			continue
 		}
 		if len(calls) >= maxToolCallsPerResponse {
@@ -97,20 +112,35 @@ func toolCallsFromResponses(m map[string]any) ([]IRToolCall, IRToolCallTruncated
 		if id == "" {
 			id = stringValue(entry["id"])
 		}
-		calls = append(calls, IRToolCall{
-			ID:        id,
-			Name:      stringValue(entry["name"]),
-			Arguments: toolCallArgumentsText(entry["arguments"]),
-			Index:     index,
-			Dialect:   "openai-responses",
-		})
-		index++
+		name := stringValue(entry["name"])
+		switch typ {
+		case "local_shell_call":
+			name = "local_shell"
+		case "function_call", "custom_tool_call":
+		default:
+			if !isHostedResponsesTool(IRToolCall{Dialect: "openai-responses", Kind: typ}) {
+				name = ""
+			} else if name == "" {
+				name = typ
+			}
+		}
+		args := entry["arguments"]
+		if args == nil {
+			args = entry["input"]
+		}
+		if typ == "local_shell_call" {
+			args = entry["action"]
+			if args == nil && entry["command"] != nil {
+				args = map[string]any{"command": entry["command"]}
+			}
+		}
+		calls = append(calls, IRToolCall{ID: id, Name: name, Arguments: toolCallArgumentsText(args), Index: len(calls), Dialect: "openai-responses", Kind: typ})
 	}
 	return calls, false
 }
 
 func toolCallsFromAnthropic(m map[string]any) ([]IRToolCall, IRToolCallTruncated) {
-	content, _ := m["content"].([]any)
+	content := toolCallAnySlice(m["content"])
 	calls := make([]IRToolCall, 0, len(content))
 	index := 0
 	for _, item := range content {

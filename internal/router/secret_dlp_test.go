@@ -996,14 +996,28 @@ func TestSecretDLPUpstreamTimeoutAfterRedaction(t *testing.T) {
 	}
 }
 
-func TestSecretDLPStreamFailsClosedUntilInspectionGate(t *testing.T) {
+func TestSecretDLPStreamHoldsAndRedactsToolArguments(t *testing.T) {
 	var calls atomic.Int64
-	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls.Add(1) }))
+	secret := "sk_live_" + strings.Repeat("a", 20)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.Header().Set("Content-Type", "text/event-stream")
+		writeEvent := func(value any) {
+			encoded, _ := json.Marshal(value)
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", encoded)
+		}
+		writeEvent(map[string]any{"choices": []any{map[string]any{"index": 0, "delta": map[string]any{"tool_calls": []any{map[string]any{"index": 0, "id": "call_secret", "type": "function", "function": map[string]any{"name": "lookup", "arguments": `{"token":"` + secret + `"}`}}}}, "finish_reason": nil}}})
+		writeEvent(map[string]any{"choices": []any{map[string]any{"index": 0, "delta": map[string]any{}, "finish_reason": "tool_calls"}}})
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
 	defer upstream.Close()
 	cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
 	group := cfg.Models["default"]
 	group.PIIFilter.Enabled = true
 	group.PIIFilter.SecretsEnabled = true
+	group.Strategy = "tool_aware"
+	group.ToolRouting.Streaming = ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20}
+	group.Targets[0].ToolSupport = ToolSupport{OpenAIChat: []string{"tools", "tool_choice"}}
 	cfg.Models["default"] = group
 	svc, err := New(cfg)
 	if err != nil {
@@ -1014,7 +1028,7 @@ func TestSecretDLPStreamFailsClosedUntilInspectionGate(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+testToken)
 	response := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(response, req)
-	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "secret-dlp-stream-inspection-required") || calls.Load() != 0 {
+	if response.Code != http.StatusOK || calls.Load() != 1 || !strings.Contains(response.Body.String(), "[SECRET_STRIPE_1]") || strings.Contains(response.Body.String(), secret) || !strings.Contains(response.Body.String(), "call_secret") {
 		t.Fatalf("status=%d calls=%d body=%s", response.Code, calls.Load(), response.Body.String())
 	}
 }

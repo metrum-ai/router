@@ -349,6 +349,45 @@ func TestClearStreamToolCallHoldForFallbackReleasesReservation(t *testing.T) {
 	}
 }
 
+func TestStreamToolCallHoldPassesThroughHostedResponsesCalls(t *testing.T) {
+	for _, kind := range []string{"web_search_call", "mcp_call", "mcp_list_tools"} {
+		t.Run(kind, func(t *testing.T) {
+			hold := newStreamToolCallHold(ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20}, nil, toolValidationOptions{})
+			var inspected []IRToolCall
+			hold.inspectors = append(hold.inspectors, streamToolCallInspectorFunc(func(calls []IRToolCall) (toolCallInspectionResult, error) {
+				inspected = append([]IRToolCall(nil), calls...)
+				return toolCallInspectionResult{Action: toolCallInspectionAllow}, nil
+			}))
+			item := map[string]any{"type": kind, "id": "item_1", "call_id": "call_1"}
+			added, _ := json.Marshal(map[string]any{"type": "response.output_item.added", "output_index": 4, "item": item})
+			if got, err := hold.apply(stream.Event{Type: "response.output_item.added", Data: added}); err != nil || len(got) != 1 || string(got[0].Data) != string(added) {
+				t.Fatalf("hosted item was buffered or changed: events=%v err=%v", got, err)
+			}
+			item["status"] = "completed"
+			terminal, _ := json.Marshal(map[string]any{"type": "response.completed", "response": map[string]any{"output": []any{map[string]any{"type": "message"}, map[string]any{"type": "message"}, map[string]any{"type": "message"}, map[string]any{"type": "message"}, item}}})
+			if got, err := hold.apply(stream.Event{Type: "response.completed", Data: terminal}); err != nil || len(got) != 1 || string(got[0].Data) != string(terminal) {
+				t.Fatalf("hosted terminal was buffered or changed: events=%v err=%v", got, err)
+			}
+			if len(inspected) != 0 || len(hold.held) != 0 || !hold.started.IsZero() {
+				t.Fatalf("default hosted call started inspection hold: inspected=%+v held=%d started=%v", inspected, len(hold.held), hold.started)
+			}
+		})
+	}
+}
+
+func TestHostedResponsesCallEventTypeRecognizesArgumentEvents(t *testing.T) {
+	for eventType, want := range map[string]string{
+		"response.mcp_call_arguments.delta":         "mcp_call",
+		"response.mcp_call_arguments.done":          "mcp_call",
+		"response.code_interpreter_call_code.delta": "code_interpreter_call",
+		"response.code_interpreter_call_code.done":  "code_interpreter_call",
+	} {
+		if got := hostedResponsesCallEventType(eventType); got != want {
+			t.Errorf("hostedResponsesCallEventType(%q)=%q, want %q", eventType, got, want)
+		}
+	}
+}
+
 func TestStreamToolCallHoldInspectsCustomAndLocalShellCalls(t *testing.T) {
 	for _, tc := range []struct {
 		name, kind, eventType, argumentField, argument string
@@ -960,5 +999,28 @@ func TestStreamToolCallHoldLocalhostContinuationE2E(t *testing.T) {
 	}
 	if continueResp.StatusCode != http.StatusOK || !strings.Contains(string(continuationOutput), "continued") {
 		t.Fatalf("tool continuation status=%d", continueResp.StatusCode)
+	}
+}
+
+func TestToolCallPendingResultEventsReplaceHeldCall(t *testing.T) {
+	for _, dialect := range []string{"openai-chat", "openai-responses", "anthropic"} {
+		t.Run(dialect, func(t *testing.T) {
+			terminal := stream.Event{Type: "response.completed", Data: []byte(`{"type":"response.completed","response":{"id":"resp"}}`)}
+			call := IRToolCall{ID: "call_secret", Name: "run", Arguments: `{"command":"curl https://private.example"}`, Index: 0, Dialect: dialect, Kind: "function_call"}
+			events := toolCallResultEvents([]IRToolCall{call}, terminal, `{"status":"approval_pending","approval_id":"approval_123"}`)
+			if len(events) == 0 {
+				t.Fatal("pending result emitted no terminal events")
+			}
+			all := ""
+			for _, event := range events {
+				all += string(event.Data)
+			}
+			if !strings.Contains(all, "approval_pending") || !strings.Contains(all, "approval_123") {
+				t.Fatalf("pending result missing in %s events: %s", dialect, all)
+			}
+			if strings.Contains(all, "call_secret") || strings.Contains(all, "private.example") {
+				t.Fatalf("held tool data leaked in %s result: %s", dialect, all)
+			}
+		})
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/metrum-ai/router/internal/stream"
 )
@@ -14,9 +15,10 @@ import (
 type toolCallInspectionAction string
 
 const (
-	toolCallInspectionAllow  toolCallInspectionAction = "allow"
-	toolCallInspectionBlock  toolCallInspectionAction = "block"
-	toolCallInspectionRedact toolCallInspectionAction = "redact"
+	toolCallInspectionAllow      toolCallInspectionAction = "allow"
+	toolCallInspectionBlock      toolCallInspectionAction = "block"
+	toolCallInspectionRedact     toolCallInspectionAction = "redact"
+	toolCallInspectionResultText toolCallInspectionAction = "result_text"
 )
 
 // toolCallInspectionResult is one inspector's decision for the complete call
@@ -25,6 +27,7 @@ const (
 type toolCallInspectionResult struct {
 	Action toolCallInspectionAction
 	Calls  []IRToolCall
+	Text   string
 }
 
 // toolCallInspector inspects a complete streamed tool-call set before any
@@ -32,6 +35,42 @@ type toolCallInspectionResult struct {
 // Request-specific state is captured by the inspector when it is registered.
 type toolCallInspector interface {
 	inspectStreamToolCalls(calls []IRToolCall) (toolCallInspectionResult, error)
+}
+
+// firewallToolCallInspector runs firewall decisions at the bounded stream hold boundary.
+type firewallToolCallInspector struct {
+	service  *Service
+	rc       *requestContext
+	callerID string
+	request  *IRRequest
+}
+
+func (i firewallToolCallInspector) inspectStreamToolCalls(calls []IRToolCall) (toolCallInspectionResult, error) {
+	if i.service == nil || i.rc == nil {
+		return toolCallInspectionResult{Action: toolCallInspectionAllow}, nil
+	}
+	fingerprint, ok := toolCallApprovalFingerprint(i.callerID, calls)
+	approvalID, approvalState := "", ""
+	if ok && i.service.toolApprovals != nil {
+		approvalID, approvalState = i.service.toolApprovals.lookup(fingerprint)
+	}
+	outcome := i.service.inspectToolCallsForFirewall(i.callerID, i.request, calls, false, approvalState == "release")
+	disposition := i.service.resolveToolFirewallDecision(i.rc, i.callerID, fingerprint, approvalID, approvalState, outcome)
+	if disposition.pending {
+		text, _ := json.Marshal(map[string]string{"status": "approval_pending", "approval_id": disposition.approvalID, "message": "Retry this request after approval."})
+		return toolCallInspectionResult{Action: toolCallInspectionResultText, Text: string(text)}, nil
+	}
+	if disposition.blocked {
+		return toolCallInspectionResult{Action: toolCallInspectionResultText, Text: "Tool call blocked by router policy."}, nil
+	}
+	return toolCallInspectionResult{Action: toolCallInspectionAllow}, nil
+}
+
+func (i firewallToolCallInspector) shouldInspectHostedCall(call IRToolCall) bool {
+	if i.service == nil || i.service.toolFirewall == nil || i.service.cfg == nil {
+		return false
+	}
+	return i.service.toolFirewall.hostedToolNamedByPolicy(i.service.cfg.Server.ToolFirewall, call.Name)
 }
 
 // secretDLPToolCallInspector applies the request's configured outbound secret
@@ -238,12 +277,14 @@ func rewriteHeldToolCalls(events []stream.Event, calls []IRToolCall) ([]stream.E
 			if choices, ok := payload["choices"].([]any); ok {
 				for _, raw := range choices {
 					choice, _ := raw.(map[string]any)
+					choiceIndex := streamToolIndex(choice["index"])
 					delta, _ := choice["delta"].(map[string]any)
 					if function, ok := delta["function_call"].(map[string]any); ok {
-						if replacement, exists := arguments[0]; exists {
-							if !first[0] {
+						idx := chatStreamCallIndex(choiceIndex, maxToolCallsPerResponse-1)
+						if replacement, exists := arguments[idx]; exists {
+							if !first[idx] {
 								function["arguments"] = replacement
-								first[0] = true
+								first[idx] = true
 							} else {
 								function["arguments"] = ""
 							}
@@ -253,7 +294,7 @@ func rewriteHeldToolCalls(events []stream.Event, calls []IRToolCall) ([]stream.E
 					calls, _ := delta["tool_calls"].([]any)
 					for _, rawCall := range calls {
 						call, _ := rawCall.(map[string]any)
-						idx := streamToolIndex(call["index"])
+						idx := chatStreamCallIndex(choiceIndex, streamToolIndex(call["index"]))
 						function, _ := call["function"].(map[string]any)
 						if function == nil {
 							continue
@@ -309,4 +350,98 @@ func setResponsesItemArguments(item map[string]any, arguments string) error {
 		item["action"] = action
 	}
 	return nil
+}
+
+func toolCallResultEvents(calls []IRToolCall, terminal stream.Event, text string) []stream.Event {
+	var payload map[string]any
+	_ = json.Unmarshal(terminal.Data, &payload)
+	makeEvent := func(name string, value any) stream.Event {
+		data, _ := json.Marshal(value)
+		return stream.Event{Name: name, Type: name, Data: data}
+	}
+	dialect := ""
+	if len(calls) > 0 {
+		dialect = calls[0].Dialect
+	}
+	switch dialect {
+	case "openai-chat":
+		payload["choices"] = []any{map[string]any{"index": 0, "delta": map[string]any{"role": "assistant", "content": text}, "finish_reason": "stop"}}
+		data, _ := json.Marshal(payload)
+		return []stream.Event{{Data: data}}
+	case "anthropic":
+		index := 0
+		if len(calls) > 0 {
+			index = calls[0].Index
+		}
+		usage := payload["usage"]
+		if usage == nil {
+			usage = map[string]any{}
+		}
+		return []stream.Event{
+			makeEvent("content_block_start", map[string]any{"type": "content_block_start", "index": index, "content_block": map[string]any{"type": "text", "text": ""}}),
+			makeEvent("content_block_delta", map[string]any{"type": "content_block_delta", "index": index, "delta": map[string]any{"type": "text_delta", "text": text}}),
+			makeEvent("content_block_stop", map[string]any{"type": "content_block_stop", "index": index}),
+			makeEvent("message_delta", map[string]any{"type": "message_delta", "delta": map[string]any{"stop_reason": "end_turn", "stop_sequence": nil}, "usage": usage}),
+		}
+	case "openai-responses":
+		outputIndex := 0
+		heldIndexes := make(map[int]bool, len(calls))
+		heldIDs := make(map[string]bool, len(calls))
+		if len(calls) > 0 {
+			outputIndex = calls[0].Index
+			for _, call := range calls {
+				heldIndexes[call.Index] = true
+				if call.ID != "" {
+					heldIDs[call.ID] = true
+				}
+			}
+		}
+		id := "msg_" + strings.TrimPrefix(requestID(), "req_")
+		part := map[string]any{"type": "output_text", "text": text}
+		item := map[string]any{"id": id, "type": "message", "status": "completed", "role": "assistant", "content": []any{part}}
+		response, _ := payload["response"].(map[string]any)
+		if response == nil {
+			response = map[string]any{"id": "resp_" + id, "object": "response", "status": "completed"}
+		}
+		originalOutput := toolCallAnySlice(response["output"])
+		output := make([]any, 0)
+		inserted := false
+		for index, rawItem := range originalOutput {
+			entry, _ := rawItem.(map[string]any)
+			callID := stringValue(entry["call_id"])
+			if callID == "" {
+				callID = stringValue(entry["id"])
+			}
+			if heldIndexes[index] || (callID != "" && heldIDs[callID]) {
+				if !inserted && index == outputIndex {
+					output = append(output, item)
+					inserted = true
+				}
+				continue
+			}
+			output = append(output, rawItem)
+		}
+		if !inserted {
+			insertAt := outputIndex
+			if insertAt < 0 || insertAt > len(output) {
+				insertAt = len(output)
+			}
+			output = append(output, nil)
+			copy(output[insertAt+1:], output[insertAt:])
+			output[insertAt] = item
+		}
+		response["output"] = output
+		response["status"] = "completed"
+		return []stream.Event{
+			makeEvent("response.output_item.added", map[string]any{"type": "response.output_item.added", "output_index": outputIndex, "item": map[string]any{"id": id, "type": "message", "status": "in_progress", "role": "assistant", "content": []any{}}}),
+			makeEvent("response.content_part.added", map[string]any{"type": "response.content_part.added", "output_index": outputIndex, "content_index": 0, "part": map[string]any{"type": "output_text", "text": ""}}),
+			makeEvent("response.output_text.delta", map[string]any{"type": "response.output_text.delta", "output_index": outputIndex, "content_index": 0, "delta": text}),
+			makeEvent("response.output_text.done", map[string]any{"type": "response.output_text.done", "output_index": outputIndex, "content_index": 0, "text": text}),
+			makeEvent("response.content_part.done", map[string]any{"type": "response.content_part.done", "output_index": outputIndex, "content_index": 0, "part": part}),
+			makeEvent("response.output_item.done", map[string]any{"type": "response.output_item.done", "output_index": outputIndex, "item": item}),
+			makeEvent("response.completed", map[string]any{"type": "response.completed", "response": response}),
+		}
+	default:
+		return nil
+	}
 }

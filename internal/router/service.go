@@ -115,6 +115,8 @@ type Service struct {
 	bridgeSessions         *bridgeSessionBackends
 	observations           *dynamicObservationStore
 	toolReliability        *toolReliabilityStore
+	toolFirewall           *toolFirewallRuntime
+	toolApprovals          *toolApprovalRuntime
 	affinity               *dynamicAffinityStore
 	responsesAffinity      *responsesAffinities
 	detectorDispatcher     *detect.Dispatcher
@@ -439,6 +441,8 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		bridgeSessions:     bridgeSessions,
 		observations:       newDynamicObservationStore(),
 		toolReliability:    newToolReliabilityStore(reliabilitySeed.Targets...),
+		toolFirewall:       newToolFirewallRuntime(cfg.Server.ToolFirewall),
+		toolApprovals:      newToolApprovalRuntime(cfg.Server.ToolFirewall.MaxPendingApprovals),
 		affinity:           newDynamicAffinityStore(),
 		shaping:            newUpstreamShapeManager(),
 		providerSpend:      newProviderSpendBreaker(),
@@ -1799,6 +1803,13 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	if !s.prepareRouterVia(w, r, rc) {
 		return
 	}
+	// Invalidate old holds while the firewall policy lock is still held. This
+	// prevents a concurrent request from seeing a new policy with a releasable
+	// approval created under the prior one.
+	s.toolFirewall.syncPolicyWithApprovals(s.cfg.Server.ToolFirewall, s.toolApprovals)
+	if s.toolApprovals != nil {
+		s.toolApprovals.setMax(s.cfg.Server.ToolFirewall.MaxPendingApprovals)
+	}
 	// Bound concurrent body buffering before ReadAll. Full request-count Admit
 	// and request admission stay after validation / traffic-shape queue
 	// waits so invalid bodies and queued shaping do not burn quota volume or
@@ -2208,10 +2219,9 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	}
 	if group.PIIFilter.Enabled && group.PIIFilter.SecretsEnabled && req.Stream &&
 		((len(req.Tools) > 0 && !group.ToolRouting.Streaming.HoldUntilValidated) || len(group.PIIFilter.Rules) > 0) {
-		// Tool-bearing streams require the bounded #929 hold so complete
-		// arguments can be inspected before release. Custom expressions have no
-		// declared maximum match length, so custom-rule-enabled streams remain
-		// unsupported by the rolling text filter.
+		// Tool-bearing streams require the bounded hold so complete arguments
+		// can be inspected before release. Custom expressions have no declared
+		// maximum match length, so those streams remain unsupported.
 		code := "secret-dlp-stream-inspection-required"
 		rc.trace("secret_dlp_stream_blocked", "", Target{}, 0, http.StatusBadRequest, code, false, 0)
 		s.writeError(w, rc, http.StatusBadRequest, code)
@@ -2331,10 +2341,12 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	}
 	callerID, project := cacheCallerScope(rc, s.cfg)
 	key := targetCacheKey(req, s.cfg.Provider[dec.Target.Provider], dec.Target, callerID, project, dialect)
+	toolFirewallMode := strings.ToLower(strings.TrimSpace(s.cfg.Server.ToolFirewall.Mode))
+	toolFirewallEnabled := toolFirewallMode != "" && toolFirewallMode != toolFirewallOff
 	// PII normalization can collapse instruction boundaries that the selected
 	// provider receives distinctly. Until cache identity is target-bound,
 	// never read a response cached under a PII-enabled group.
-	if rc.caller != nil && cacheable(req) && !group.PIIFilter.Enabled {
+	if rc.caller != nil && cacheable(req) && !group.PIIFilter.Enabled && !toolFirewallEnabled {
 		if cached, ok := s.cache.Get(key); ok {
 			ensureResponseID(cached)
 			captureCached := *cached
@@ -2369,6 +2381,8 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		reason := cacheBypassReason(req)
 		if group.PIIFilter.Enabled && cacheable(req) {
 			reason = "cache-pii-filter"
+		} else if toolFirewallEnabled && cacheable(req) {
+			reason = "cache-tool-firewall"
 		}
 		s.recordCacheReasonTelemetry(rc, "bypass", reason, dec.Target)
 		rc.trace("cache_bypass", "", dec.Target, 0, 0, "", false, 0)
@@ -2472,6 +2486,37 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		return
 	}
 	if resp != nil {
+		if !resp.Streamed && toolFirewallEnabled {
+			callerID := ""
+			if rc.caller != nil {
+				callerID = rc.caller.cfg.ID
+			}
+			uploadDialect := dialect
+			if servedTarget, ok := selectedServingTarget(rc, dec); ok {
+				uploadDialect = targetDialect(s.cfg.Provider[servedTarget.Provider], servedTarget)
+			}
+			calls, truncated := firewallToolCalls(resp, dialect, uploadDialect, "openai-chat", "openai-responses", "anthropic")
+			fingerprint, fingerprintOK := toolCallApprovalFingerprint(callerID, calls)
+			approvalID, approvalState := "", ""
+			if fingerprintOK && s.toolApprovals != nil {
+				approvalID, approvalState = s.toolApprovals.lookup(fingerprint)
+			}
+			outcome := s.inspectToolCallsForFirewall(callerID, req, calls, truncated, approvalState == "release")
+			disposition := s.resolveToolFirewallDecision(rc, callerID, fingerprint, approvalID, approvalState, outcome)
+			if disposition.pending {
+				resp.RawResponse = false
+				resp.ToolCalls = nil
+				resp.ToolCallsTruncated = false
+				resp.Text = fmt.Sprintf(`{"status":"approval_pending","approval_id":%q,"message":"Retry this request after approval."}`, disposition.approvalID)
+				resp.StopReason = "end_turn"
+			} else if disposition.blocked {
+				resp.RawResponse = false
+				resp.ToolCalls = nil
+				resp.ToolCallsTruncated = false
+				resp.Text = "Tool call blocked by router policy."
+				resp.StopReason = "end_turn"
+			}
+		}
 		responseApply := normalizePIIApplyTo(group.PIIFilter.ApplyTo)
 		responseScopeEnabled := responseApply.messages
 		if group.PIIFilter.Enabled && group.PIIFilter.SecretsEnabled && responseScopeEnabled && !resp.Streamed {
@@ -2576,7 +2621,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		// Cache only after successful settlement so a quota-state error cannot
 		// leave an undisclosed cache/usage inconsistency. Use the pre-restore
 		// payload so PII placeholders remain redacted in cache.
-		if rc.caller != nil && cacheable(req) && !group.PIIFilter.Enabled {
+		if rc.caller != nil && cacheable(req) && !group.PIIFilter.Enabled && !toolFirewallEnabled {
 			putCaller, putProject := cacheCallerScope(rc, s.cfg)
 			s.cache.Put(targetCacheKey(req, s.cfg.Provider[served.Provider], served, putCaller, putProject, dialect), cacheResp)
 		}
@@ -4325,10 +4370,40 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		// body after stream_idle_timeout_ms without a read, which ends the
 		// response with a clear attempt error instead of a silent stall.
 		streamBody := httpResp.Body
-		if group, ok := s.cfg.Models[groupName]; ok && group.ToolRouting.Streaming.HoldUntilValidated && len(req.Tools) > 0 {
-			rc.streamToolCallHold = newStreamToolCallHold(group.ToolRouting.Streaming, req.Tools, group.ToolRouting.validationOptions(), s.lineBufferBudget)
-			if rc.secretStreamDLP != nil {
-				rc.streamToolCallHold.inspectors = append(rc.streamToolCallHold.inspectors, secretDLPToolCallInspector{dlp: rc.secretStreamDLP})
+		if group, ok := s.cfg.Models[groupName]; ok {
+			holdConfig := group.ToolRouting.Streaming
+			schemaValidationOptIn := holdConfig.HoldUntilValidated
+			firewallMode := strings.ToLower(strings.TrimSpace(s.cfg.Server.ToolFirewall.Mode))
+			firewallStreamInspection := firewallMode == toolFirewallEnforce
+			firewallShadowObservation := firewallMode == toolFirewallShadow
+			dlpToolCalls := rc.secretStreamDLP != nil && len(req.Tools) > 0
+			if firewallStreamInspection && !holdConfig.HoldUntilValidated {
+				// Firewall enforcement adds only its bounded call inspection; it
+				// does not opt the model group into schema validation.
+				holdConfig = ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 30000, HoldMaxBytes: 1 << 20}
+			}
+			if schemaValidationOptIn && len(req.Tools) == 0 && !firewallStreamInspection {
+				// A schema-only hold cannot validate calls when the request offers
+				// no tools. Shadow mode must never create a serving hold.
+				holdConfig = ToolRoutingStreamingConfig{}
+			}
+			if holdConfig.HoldUntilValidated {
+				rc.streamToolCallHold = newStreamToolCallHold(holdConfig, req.Tools, group.ToolRouting.validationOptions(), s.lineBufferBudget)
+				if !schemaValidationOptIn {
+					rc.streamToolCallHold.inspectors = nil
+				}
+				// Preserve the inspection order: schema (when opted in), firewall
+				// on original arguments, then DLP redaction of calls that will release.
+				if firewallStreamInspection || firewallShadowObservation {
+					callerID := ""
+					if rc.caller != nil {
+						callerID = rc.caller.cfg.ID
+					}
+					rc.streamToolCallHold.inspectors = append(rc.streamToolCallHold.inspectors, firewallToolCallInspector{service: s, rc: rc, callerID: callerID, request: req})
+				}
+				if dlpToolCalls {
+					rc.streamToolCallHold.inspectors = append(rc.streamToolCallHold.inspectors, secretDLPToolCallInspector{dlp: rc.secretStreamDLP})
+				}
 			}
 		}
 		streamIdle := s.streamIdleTimeout()

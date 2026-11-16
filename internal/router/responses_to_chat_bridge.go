@@ -285,7 +285,7 @@ func decodeResponsesToChatBridge(raw []byte, model string) (*IRResponse, error) 
 	if stopReason != "" {
 		responses["finish_reason"] = stopReason
 	}
-	return &IRResponse{
+	resp := &IRResponse{
 		ID:          respID,
 		Model:       model,
 		Text:        text,
@@ -293,7 +293,9 @@ func decodeResponsesToChatBridge(raw []byte, model string) (*IRResponse, error) 
 		Usage:       usage,
 		Raw:         responses,
 		RawResponse: true,
-	}, nil
+	}
+	resp.ToolCalls, resp.ToolCallsTruncated = truncatedToolCalls(toolCallsFromResponse("openai-responses", responses))
+	return resp, nil
 }
 
 func responsesOutputFromChat(chat map[string]any) (string, []map[string]any, string) {

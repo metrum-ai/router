@@ -549,6 +549,17 @@ var adminV1OperationSpecs = []Operation{
 		RateClass: AdminRateClassWrite, HandlerKey: "content.captures.purge",
 	},
 
+	// Tool approval resolution. The opaque approval ID is not a bearer token;
+	// this route requires the explicit admin:tool_approvals/resolve grant.
+	{
+		ID: "resolveToolApproval", Method: "POST", Path: "/admin/v1/tool-approvals/{approval_id}",
+		Summary: "Release or deny a pending tool call",
+		Object:  authzObjectToolApprovals, Action: authzActionResolve, Domain: AdminDomainGlobal,
+		Request: adminOpenObject{Members: []string{"decision"}}, Response: adminOpenObject{Members: []string{"approval_id", "decision"}},
+		Errors: []int{400, 404}, Concurrency: AdminConcurrencyNone, Idempotency: AdminIdempotencyNone,
+		RateClass: AdminRateClassWrite, HandlerKey: "tool.approvals.resolve",
+	},
+
 	// ---------------------------------------------------------------------
 	// Reports (admin:reports, admin:security_reports; handler-scoped domains)
 	// ---------------------------------------------------------------------

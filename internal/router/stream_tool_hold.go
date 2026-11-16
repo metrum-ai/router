@@ -92,6 +92,9 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 				return h.failClosedUnsupportedTool(stringValue(item["type"]))
 			}
 			if recognized {
+				if isHostedResponsesTool(call) && !h.shouldInspectHostedCall(call) {
+					return []stream.Event{event}, nil
+				}
 				h.calls.addDelta("openai-responses", idx, call.ID, call.Name, call.Arguments)
 				h.calls.setKind(idx, call.Kind)
 				h.indexes[idx] = true
@@ -136,6 +139,9 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 				return h.failClosedUnsupportedTool(stringValue(item["type"]))
 			}
 			if recognized {
+				if isHostedResponsesTool(call) && !h.shouldInspectHostedCall(call) {
+					return []stream.Event{event}, nil
+				}
 				h.calls.addDelta("openai-responses", idx, call.ID, call.Name, "")
 				h.calls.setKind(idx, call.Kind)
 				h.calls.setArguments(idx, call.Arguments)
@@ -158,6 +164,9 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 				return h.failClosedUnsupportedTool(stringValue(item["type"]))
 			}
 			if recognized {
+				if isHostedResponsesTool(call) && !h.shouldInspectHostedCall(call) {
+					continue
+				}
 				h.calls.addDelta("openai-responses", idx, call.ID, call.Name, "")
 				h.calls.setKind(idx, call.Kind)
 				h.calls.setArguments(idx, call.Arguments)
@@ -227,7 +236,20 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 		}
 	default:
 		if strings.HasPrefix(eventType, "response.") && (strings.Contains(eventType, "call") || strings.Contains(eventType, "tool")) {
-			return h.failClosedUnsupportedTool(eventType)
+			kind := hostedResponsesCallEventType(eventType)
+			if kind == "mcp_list_tools" {
+				return []stream.Event{event}, nil
+			}
+			if kind != "" {
+				idx := streamToolIndex(payload["output_index"])
+				if !h.indexes[idx] {
+					return []stream.Event{event}, nil
+				}
+				toolEvent = true
+				passThrough = stream.Event{}
+			} else {
+				return h.failClosedUnsupportedTool(eventType)
+			}
 		}
 		if choices, ok := payload["choices"].([]any); ok {
 			heldChoices := make([]any, 0, len(choices))
@@ -240,6 +262,7 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 					terminal, terminalReason = true, finish
 				}
 				delta, _ := choice["delta"].(map[string]any)
+				choiceIndex := streamToolIndex(choice["index"])
 				if rawLegacy, exists := delta["function_call"]; exists {
 					legacy, ok := rawLegacy.(map[string]any)
 					if !ok {
@@ -251,7 +274,9 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 						heldChoice["index"] = index
 					}
 					heldChoices = append(heldChoices, heldChoice)
-					h.calls.addDelta("openai-chat", 0, "", stringValue(legacy["name"]), stringValue(legacy["arguments"]))
+					legacyIndex := chatStreamCallIndex(choiceIndex, maxToolCallsPerResponse-1)
+					h.calls.addDelta("openai-chat", legacyIndex, "", stringValue(legacy["name"]), stringValue(legacy["arguments"]))
+					h.indexes[legacyIndex] = true
 					delete(delta, "function_call")
 				}
 				if hasUnknownToolCallDelta(delta) {
@@ -277,7 +302,7 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 					if call == nil {
 						continue
 					}
-					idx := streamToolIndex(call["index"])
+					idx := chatStreamCallIndex(choiceIndex, streamToolIndex(call["index"]))
 					function, _ := call["function"].(map[string]any)
 					if function == nil {
 						function = map[string]any{}
@@ -344,6 +369,7 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 	if terminal && len(h.held) > 0 {
 		calls := h.calls.snapshot()
 		originalCalls := append([]IRToolCall(nil), calls...)
+		replacementText := ""
 		for _, inspector := range h.inspectors {
 			if schema, ok := inspector.(*schemaToolCallInspector); ok {
 				schema.stopReason = terminalReason
@@ -356,6 +382,10 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 			if result.Action == toolCallInspectionBlock {
 				h.reset()
 				return nil, upstreamError{Class: "tool_call_hold_validation_failed", Message: "streamed tool call failed inspection", Committed: true, Fallbackable: false}
+			}
+			if result.Action == toolCallInspectionResultText {
+				replacementText = result.Text
+				break
 			}
 			if result.Action == toolCallInspectionRedact {
 				if !validToolCallRedaction(calls, result.Calls) {
@@ -372,7 +402,11 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 				return nil, upstreamError{Class: "tool_call_hold_inspection_failed", Message: "allowing inspector changed tool calls without redacting", Committed: true, Fallbackable: false}
 			}
 		}
-		if toolCallsChanged(originalCalls, calls) {
+		if replacementText != "" {
+			out = append(out, toolCallResultEvents(calls, event, replacementText)...)
+			h.finishEmission()
+			passThrough = stream.Event{}
+		} else if toolCallsChanged(originalCalls, calls) {
 			var err error
 			h.held, err = rewriteHeldToolCalls(h.held, calls)
 			if err != nil {
@@ -380,8 +414,10 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 				return nil, upstreamError{Class: "tool_call_hold_inspection_failed", Message: "unable to apply tool-call redaction", Committed: true, Fallbackable: false, Err: err}
 			}
 		}
-		out = append(out, h.held...)
-		h.finishEmission()
+		if replacementText == "" {
+			out = append(out, h.held...)
+			h.finishEmission()
+		}
 	}
 	if passThrough.Data != nil || passThrough.Name != "" || passThrough.Type != "" {
 		out = append(out, passThrough)
@@ -410,10 +446,49 @@ func (h *streamToolCallHold) pending() bool {
 	return h != nil && len(h.held) > 0
 }
 
+func (h *streamToolCallHold) shouldInspectHostedCall(call IRToolCall) bool {
+	if h == nil {
+		return false
+	}
+	for _, inspector := range h.inspectors {
+		switch firewall := inspector.(type) {
+		case firewallToolCallInspector:
+			return firewall.shouldInspectHostedCall(call)
+		case *firewallToolCallInspector:
+			return firewall.shouldInspectHostedCall(call)
+		}
+	}
+	return false
+}
+
+func hostedResponsesCallEventType(eventType string) string {
+	for _, kind := range []string{
+		"web_search_call", "file_search_call", "code_interpreter_call", "image_generation_call",
+		"browser_search_call", "vector_store_search_call", "mcp_call", "mcp_list_tools",
+	} {
+		if strings.HasPrefix(eventType, "response."+kind+".") {
+			return kind
+		}
+	}
+	switch eventType {
+	case "response.mcp_call_arguments.delta", "response.mcp_call_arguments.done":
+		return "mcp_call"
+	case "response.code_interpreter_call_code.delta", "response.code_interpreter_call_code.done":
+		return "code_interpreter_call"
+	}
+	return ""
+}
+
 func responsesToolItemCall(item map[string]any, index int) (IRToolCall, bool, bool) {
 	kind := stringValue(item["type"])
+	if strings.EqualFold(kind, "mcp_list_tools") {
+		return IRToolCall{Index: index, Dialect: "openai-responses", Kind: kind}, false, false
+	}
 	toolBearing := strings.Contains(kind, "call") || strings.Contains(kind, "tool")
 	call := IRToolCall{Index: index, Dialect: "openai-responses", Kind: kind, Name: stringValue(item["name"])}
+	if call.Name == "" && isHostedResponsesTool(call) {
+		call.Name = kind
+	}
 	call.ID = stringValue(item["call_id"])
 	if call.ID == "" {
 		call.ID = stringValue(item["id"])
@@ -425,6 +500,8 @@ func responsesToolItemCall(item map[string]any, index int) (IRToolCall, bool, bo
 		call.Arguments = toolCallArgumentsText(item["input"])
 	case "local_shell_call":
 		call.Arguments = canonicalToolCallArguments(item["action"])
+	case "web_search_call", "file_search_call", "code_interpreter_call", "image_generation_call", "browser_search_call", "vector_store_search_call", "mcp_call":
+		call.Arguments = canonicalToolCallArguments(item)
 	default:
 		return call, toolBearing, false
 	}
@@ -495,6 +572,16 @@ func (h *streamToolCallHold) clear() {
 	h.held = nil
 	h.calls = newToolCallAccumulator()
 	h.indexes = map[int]bool{}
+}
+
+func chatStreamCallIndex(choiceIndex, callIndex int) int {
+	if choiceIndex < 0 {
+		choiceIndex = 0
+	}
+	if callIndex < 0 {
+		callIndex = 0
+	}
+	return choiceIndex*maxToolCallsPerResponse + callIndex
 }
 
 func streamToolIndex(value any) int {
