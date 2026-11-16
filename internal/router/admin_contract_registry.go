@@ -79,6 +79,9 @@ const (
 	// AdminDomainCallerTarget authorizes in the stored caller's
 	// "<project>/<environment>" domain.
 	AdminDomainCallerTarget AdminDomainSource = "caller-target"
+	// AdminDomainProjectEnvironment resolves the project/environment in the
+	// request path and authorizes in that exact domain.
+	AdminDomainProjectEnvironment AdminDomainSource = "project-environment"
 	// AdminDomainCapturedRow authorizes in the domain of the captured row's
 	// originating caller, including today's fallback when the row carries none.
 	AdminDomainCapturedRow AdminDomainSource = "captured-row"
@@ -267,7 +270,7 @@ func (op Operation) validate() error {
 		}
 	}
 	switch op.Domain {
-	case AdminDomainGlobal, AdminDomainCallerTarget, AdminDomainCapturedRow, AdminDomainHandler:
+	case AdminDomainGlobal, AdminDomainCallerTarget, AdminDomainProjectEnvironment, AdminDomainCapturedRow, AdminDomainHandler:
 	default:
 		return fmt.Errorf("operation %s has invalid domain source %q", op.ID, op.Domain)
 	}

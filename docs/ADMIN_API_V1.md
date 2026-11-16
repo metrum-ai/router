@@ -203,6 +203,48 @@ Every configuration mutation accepts `dry_run: true` (and `?dry_run=true` on
 dry run creates no configuration set, bumps no revision and writes no change
 event; its response body is identical to the legacy route's.
 
+## Resource configuration
+
+The versioned API exposes provider metadata at `GET /admin/v1/providers` and
+`GET /admin/v1/providers/{provider}`. `PUT /admin/v1/providers/{provider}`
+creates or replaces one provider and requires the current configuration
+revision in `If-Match`. `DELETE /admin/v1/providers/{provider}` disables an
+unused provider; a provider referenced by a model group cannot be disabled.
+`POST /admin/v1/providers/{provider}/validate` checks a candidate provider and
+its model capability metadata without changing the active config. Provider
+writes accept `api_key_env` references; credential fields, key
+references, and headers are omitted from responses. `GET /admin/v1/models`
+lists provider catalog entries with their effective dialect and capability
+metadata. Provider and model dialect metadata is validated before activation.
+
+`POST /admin/v1/callers/{id}/quota` updates one caller's rolling quota. It
+requires `If-Match`, uses the caller's stored project/environment domain for
+authorization, and activates a new configuration revision so serving replicas
+reload it through the normal revision path. Writes require database-backed
+configuration mode.
+
+`PUT /admin/v1/retention` replaces the retention policy and requires
+`If-Match`. Shortening or removing an existing class requires the separate
+`config:force` permission; without it, the request returns `403`.
+
+`GET /admin/v1/projects` and `GET /admin/v1/projects/{project}` read projects
+and their environments. `PUT /admin/v1/projects/{project}` creates or replaces
+the project and environment list. A configured environment establishes its
+`project/environment` authorization domain. Memberships are listed at
+`GET /admin/v1/projects/{project}/environments/{environment}/memberships` and
+created or updated with `POST` at that path. Membership writes are authorized
+in the target environment domain; unconfigured environments return `404` and
+an unauthorized target domain returns `403`.
+
+Project writes may include `budget.daily_usd`, `budget.monthly_usd`, and
+`budget.alert_thresholds` (integer percentages from 1 through 100). Completed
+requests add their measured USD cost; each threshold emits one structured event
+per UTC window, and reaching a ceiling blocks subsequent requests with HTTP 503
+`project_budget_exceeded`. Budget counters are in memory per router process:
+they reset on restart and are not shared across replicas, so ceilings are
+approximate in multi-replica deployments. Remove or raise a ceiling to restore
+admission after a trip; a new window also resets it.
+
 ## Route map (legacy → `/admin/v1`)
 
 Every legacy machine admin route has exactly one `/admin/v1` operation with

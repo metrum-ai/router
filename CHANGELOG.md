@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Add versioned provider and model-catalog reads, provider validation and create/update/disable, project environments, project-environment memberships, project USD budgets with alert thresholds, caller quota updates, and retention policy writes. Writes use configuration revisions; shortening retention requires `config:force`, and provider credential references and headers never appear in responses.
+
 ### Fixed
 
 - `router-migrate --json` keeps stdout valid JSON by directing GORM diagnostics

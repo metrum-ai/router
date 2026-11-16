@@ -207,6 +207,9 @@ func newAdminV1Harness(t *testing.T) *adminV1Harness {
 			return AdminGlobalDomain
 		},
 		ResolveCallerDomain: func(r *http.Request) (string, error) {
+			if project, environment := r.PathValue("project"), r.PathValue("environment"); project != "" && environment != "" {
+				return authzDomainForProjectEnvironment(project, environment), nil
+			}
 			if r.PathValue("id") == "missing" {
 				return "", nil
 			}
@@ -310,6 +313,9 @@ func TestAdminV1RouteConformance(t *testing.T) {
 		probe = strings.ReplaceAll(probe, "{set_id}", "set-1")
 		probe = strings.ReplaceAll(probe, "{request_id}", "req-1")
 		probe = strings.ReplaceAll(probe, "{id}", "caller-1")
+		probe = strings.ReplaceAll(probe, "{provider}", "provider-1")
+		probe = strings.ReplaceAll(probe, "{project}", "project-1")
+		probe = strings.ReplaceAll(probe, "{environment}", "env-1")
 		probe = strings.ReplaceAll(probe, "{target_id...}", "prov/model")
 		handler, pattern := harness.mux.Handler(httptest.NewRequest(op.Method, probe, nil))
 		if handler == nil || pattern == "" {
@@ -338,6 +344,9 @@ func TestAdminV1SingleDecisionPoint(t *testing.T) {
 		target = strings.ReplaceAll(target, "{set_id}", "set-1")
 		target = strings.ReplaceAll(target, "{request_id}", "req-1")
 		target = strings.ReplaceAll(target, "{id}", "caller-1")
+		target = strings.ReplaceAll(target, "{provider}", "provider-1")
+		target = strings.ReplaceAll(target, "{project}", "project-1")
+		target = strings.ReplaceAll(target, "{environment}", "env-1")
 		target = strings.ReplaceAll(target, "{target_id...}", "prov/model")
 		if op.ID == "getAdminReportRequestEvidence" {
 			target += "?request_id=req-1"
@@ -352,18 +361,20 @@ func TestAdminV1SingleDecisionPoint(t *testing.T) {
 			// Reports decide per request inside the handler (asserted by the reports test);
 			// the contract layer takes no gate of its own.
 			want = nil
-		} else if op.Domain == AdminDomainCallerTarget && op.Method == "GET" {
+		} else if op.ID == "listCallers" {
 			// The caller listing takes its operation guard in the handler and then filters
 			// each row in that row's own stored domain (asserted by the DB-backed test).
 			want = []fakeAuthorizerCall{{Domain: AdminGlobalDomain, Object: authzObjectAdminCallers, Action: authzActionList}}
 		} else {
 			domain := AdminGlobalDomain
 			switch op.Domain {
-			case AdminDomainCallerTarget, AdminDomainCapturedRow:
+			case AdminDomainCallerTarget, AdminDomainProjectEnvironment, AdminDomainCapturedRow:
 				// These operations resolve a concrete stored domain.
 				switch op.ID {
-				case "issueCaller", "rotateCaller", "revokeCaller", "deleteContentCapture":
+				case "issueCaller", "rotateCaller", "revokeCaller", "updateCallerQuota", "deleteContentCapture":
 					domain = "example/prod"
+				case "listProjectEnvironmentMemberships", "putProjectEnvironmentMembership":
+					domain = authzDomainForProjectEnvironment("project-1", "env-1")
 				}
 			}
 			want = append(want, fakeAuthorizerCall{Domain: domain, Object: op.Object, Action: op.Action})
@@ -407,6 +418,41 @@ func TestAdminV1CrossDomainDenied(t *testing.T) {
 	if len(calls) != 1 || calls[0].Domain != "example/prod" {
 		t.Fatalf("decision did not use the caller's stored domain: %+v", calls)
 	}
+}
+
+func TestAdminV1ResourceWritesUseTheirResolvedDomains(t *testing.T) {
+	t.Run("provider global write denied", func(t *testing.T) {
+		harness := newAdminV1Harness(t)
+		harness.authorize.deny[AdminGlobalDomain+"|"+authzObjectAdminConfig+"|write"] = true
+		response := harness.do(t, http.MethodPut, "/admin/v1/providers/provider-1", map[string]any{"dialect": "openai"}, map[string]string{"If-Match": `"rev-7"`})
+		if response.Code != http.StatusForbidden {
+			t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+		}
+	})
+	t.Run("quota write denied in caller domain", func(t *testing.T) {
+		harness := newAdminV1Harness(t)
+		harness.authorize.deny["example/prod|"+authzObjectAdminConfig+"|write"] = true
+		response := harness.do(t, http.MethodPost, "/admin/v1/callers/caller-1/quota", map[string]any{"quota": map[string]any{}}, map[string]string{"If-Match": `"rev-7"`})
+		if response.Code != http.StatusForbidden {
+			t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+		}
+		calls := harness.authorize.snapshot()
+		if len(calls) != 1 || calls[0].Domain != "example/prod" {
+			t.Fatalf("authorization calls=%+v, want caller domain example/prod", calls)
+		}
+	})
+	t.Run("membership grant denied across project environment", func(t *testing.T) {
+		harness := newAdminV1Harness(t)
+		harness.authorize.deny["other/dev|"+authzObjectAdminConfig+"|write"] = true
+		response := harness.do(t, http.MethodPost, "/admin/v1/projects/other/environments/dev/memberships", map[string]any{"user_id": "alice", "role": "operator"}, map[string]string{"If-Match": `"rev-7"`})
+		if response.Code != http.StatusForbidden {
+			t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+		}
+		calls := harness.authorize.snapshot()
+		if len(calls) != 1 || calls[0].Domain != "other/dev" {
+			t.Fatalf("authorization calls=%+v, want target domain other/dev", calls)
+		}
+	})
 }
 
 // TestAdminV1ContentCaptureDomainFromRow proves the content-capture deletion

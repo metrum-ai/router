@@ -26,6 +26,21 @@ also enter security access events when
 `server.admin_reports.security.enabled` is true; structured log events remain
 available otherwise.
 
+## v5.0.0 admin resource API
+
+The versioned admin API adds provider and model-catalog reads, provider writes,
+project environments, project-environment memberships, project USD budgets and
+alert thresholds, caller quota updates,
+and retention policy writes. Mutations require
+database-backed configuration mode and a current `If-Match` revision. Provider
+API-key environment references and headers are write-only and do not appear in
+responses. Shortening retention requires the separate `config:force`
+permission. The existing config revision notifier and poller propagate changes
+to other serving replicas. No database migration is required for these routes.
+Project budget counters are per process and reset on restart; ceilings are
+approximate across replicas. Removing or raising a ceiling, or waiting for its
+UTC budget window to reset, restores admission after a trip.
+
 ## Pre-Upgrade Checklist
 
 1. Read the release notes for operator impact, database changes, license changes, and caller-visible behavior.

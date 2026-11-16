@@ -43,6 +43,22 @@ func AdminV1CallerResourceDomain(db *gorm.DB, runtimeScope string, r *http.Reque
 	}
 	setID := sets[0].ID
 	switch {
+	case r.PathValue("project") != "" && r.PathValue("environment") != "":
+		project := strings.TrimSpace(r.PathValue("project"))
+		environment := strings.TrimSpace(r.PathValue("environment"))
+		if project == "" || environment == "" {
+			return "", errors.New("project and environment are required")
+		}
+		cfg, err := LoadActiveCanonicalConfig(db, scope)
+		if err != nil {
+			return "", err
+		}
+		for _, configuredProject := range cfg.Projects {
+			if normalizeAccountID(configuredProject.ID) == normalizeAccountID(project) && projectHasEnvironment(configuredProject, normalizeAccountID(environment)) {
+				return authzDomainForProjectEnvironment(project, environment), nil
+			}
+		}
+		return "", nil
 	case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/issue"):
 		body := struct {
 			Project     string `json:"project"`

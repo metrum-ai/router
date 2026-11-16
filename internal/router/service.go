@@ -112,6 +112,7 @@ type Service struct {
 	responsesAffinity  *responsesAffinities
 	shaping            *upstreamShapeManager
 	providerSpend      *providerSpendBreaker
+	projectBudgets     *projectBudgetManager
 	contentCaptureKeys contentCaptureKeyResolver
 	reportCursor       [32]byte
 	tlsManager         *tlsacme.Manager
@@ -379,6 +380,7 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		affinity:           newDynamicAffinityStore(),
 		shaping:            newUpstreamShapeManager(),
 		providerSpend:      newProviderSpendBreaker(),
+		projectBudgets:     newProjectBudgetManager(),
 		contentCaptureKeys: contentCaptureKeys,
 		configSnapshot:     NewConfigSnapshot(),
 		configInstanceID:   newConfigAdminInstanceID(),
@@ -2472,6 +2474,11 @@ func (s *Service) finish(rc *requestContext, status int, code *string) {
 	populateThroughput(&rc.rec)
 	populateCosts(&rc.rec)
 	s.providerSpend.add(rc.rec.TargetProvider, s.cfg.Provider[rc.rec.TargetProvider].SpendBreaker, rc.rec.TotalCostUSD)
+	if rc.caller != nil {
+		if budget, ok := s.projectBudgetConfig(rc.caller.project); ok {
+			s.projectBudgets.add(rc.caller.project, budget, rc.rec.TotalCostUSD)
+		}
+	}
 	if rc.rec.Status == 0 {
 		rc.rec.Status = status
 	}
@@ -2804,6 +2811,10 @@ func (s *Service) pick(rc *requestContext, groupName string, group ModelGroup, r
 					break
 				}
 			}
+		}
+		if err.ErrorCode == "" && hasFilterReason(rejectedReasons, "project-budget-exceeded") {
+			err.ErrorCode = "project_budget_exceeded"
+			err.StatusCode = http.StatusServiceUnavailable
 		}
 		if err.ErrorCode == "" && len(group.Targets) > 0 && (callerDialect == "openai-chat" || callerDialect == "openai-responses" || callerDialect == "anthropic") {
 			err.CapabilityMismatch = true
@@ -4252,6 +4263,13 @@ func (s *Service) filterTargetsForRequest(rc *requestContext, targets []Target, 
 	var rejected [][]string
 	stopRouting := false
 	for _, target := range targets {
+		if rc != nil && rc.caller != nil {
+			if budget, ok := s.projectBudgetConfig(rc.caller.project); ok && !s.projectBudgets.allow(rc.caller.project, budget) {
+				rejected = append(rejected, []string{"project-budget-exceeded"})
+				stopRouting = true
+				continue
+			}
+		}
 		outDialect := targetDialect(s.cfg.Provider[target.Provider], target)
 		reasons := s.targetEligibilityReasons(target, req, callerDialect, outDialect, estimate)
 		if len(reasons) != 0 {
@@ -4272,6 +4290,18 @@ func (s *Service) filterTargetsForRequest(rc *requestContext, targets []Target, 
 		return nil, rejected
 	}
 	return out, rejected
+}
+
+func (s *Service) projectBudgetConfig(project string) (ProjectBudgetConfig, bool) {
+	if s == nil || s.cfg == nil || project == "" {
+		return ProjectBudgetConfig{}, false
+	}
+	for _, item := range s.cfg.Projects {
+		if normalizeAccountID(item.ID) == normalizeAccountID(project) {
+			return item.Budget, true
+		}
+	}
+	return ProjectBudgetConfig{}, false
 }
 
 func isChatToResponsesDialectPair(callerDialect, outDialect string) bool {

@@ -72,7 +72,7 @@ func prepareQuotaCallers(cfg *Config) (map[string]*callerRuntime, error) {
 		} else {
 			rt.projectStatus = accountStatusActive
 		}
-		if membership, ok := dir.memberships[membershipKey(rt.ownerUser, rt.project)]; ok {
+		if membership, ok := accountMembership(dir, rt.ownerUser, rt.project, rt.cfg.Environment); ok {
 			rt.membershipRole = normalizeRoleDefault(membership.Role)
 			rt.membershipStatus = normalizeStatusDefault(membership.Status)
 		} else {
@@ -210,7 +210,7 @@ func newQuotaStore(path string, cfg *Config) (*quotaStore, error) {
 		} else {
 			rt.projectStatus = accountStatusActive
 		}
-		if membership, ok := dir.memberships[membershipKey(rt.ownerUser, rt.project)]; ok {
+		if membership, ok := accountMembership(dir, rt.ownerUser, rt.project, rt.cfg.Environment); ok {
 			rt.membershipRole = normalizeRoleDefault(membership.Role)
 			rt.membershipStatus = normalizeStatusDefault(membership.Status)
 		} else {

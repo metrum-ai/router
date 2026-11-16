@@ -1130,6 +1130,21 @@ type UserConfig struct {
 }
 
 type ProjectConfig struct {
+	ID           string                     `yaml:"id" json:"id"`
+	Name         string                     `yaml:"name" json:"name"`
+	Status       string                     `yaml:"status" json:"status"`
+	Description  string                     `yaml:"description" json:"description"`
+	Environments []ProjectEnvironmentConfig `yaml:"environments,omitempty" json:"environments,omitempty"`
+	Budget       ProjectBudgetConfig        `yaml:"budget,omitempty" json:"budget,omitempty"`
+}
+
+type ProjectBudgetConfig struct {
+	DailyUSD        float64 `yaml:"daily_usd,omitempty" json:"daily_usd,omitempty"`
+	MonthlyUSD      float64 `yaml:"monthly_usd,omitempty" json:"monthly_usd,omitempty"`
+	AlertThresholds []int   `yaml:"alert_thresholds,omitempty" json:"alert_thresholds,omitempty"`
+}
+
+type ProjectEnvironmentConfig struct {
 	ID          string `yaml:"id" json:"id"`
 	Name        string `yaml:"name" json:"name"`
 	Status      string `yaml:"status" json:"status"`
@@ -1137,12 +1152,13 @@ type ProjectConfig struct {
 }
 
 type ProjectMembershipConfig struct {
-	UserID   string `yaml:"user_id" json:"user_id"`
-	Project  string `yaml:"project" json:"project"`
-	Role     string `yaml:"role" json:"role"`
-	Status   string `yaml:"status" json:"status"`
-	Source   string `yaml:"source" json:"source"`
-	JoinedAt string `yaml:"joined_at" json:"joined_at"`
+	UserID      string `yaml:"user_id" json:"user_id"`
+	Project     string `yaml:"project" json:"project"`
+	Environment string `yaml:"environment,omitempty" json:"environment,omitempty"`
+	Role        string `yaml:"role" json:"role"`
+	Status      string `yaml:"status" json:"status"`
+	Source      string `yaml:"source" json:"source"`
+	JoinedAt    string `yaml:"joined_at" json:"joined_at"`
 }
 
 type RateConfig struct {
@@ -1547,10 +1563,15 @@ func (c *Config) setDefaults() {
 	for i := range c.Projects {
 		c.Projects[i].ID = normalizeAccountID(c.Projects[i].ID)
 		c.Projects[i].Status = normalizeStatusDefault(c.Projects[i].Status)
+		for j := range c.Projects[i].Environments {
+			c.Projects[i].Environments[j].ID = normalizeAccountID(c.Projects[i].Environments[j].ID)
+			c.Projects[i].Environments[j].Status = normalizeStatusDefault(c.Projects[i].Environments[j].Status)
+		}
 	}
 	for i := range c.ProjectMemberships {
 		c.ProjectMemberships[i].UserID = normalizeAccountID(c.ProjectMemberships[i].UserID)
 		c.ProjectMemberships[i].Project = normalizeAccountID(c.ProjectMemberships[i].Project)
+		c.ProjectMemberships[i].Environment = normalizeAccountID(c.ProjectMemberships[i].Environment)
 		c.ProjectMemberships[i].Status = normalizeStatusDefault(c.ProjectMemberships[i].Status)
 		c.ProjectMemberships[i].Role = normalizeRoleDefault(c.ProjectMemberships[i].Role)
 	}
