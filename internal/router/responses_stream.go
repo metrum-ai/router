@@ -43,6 +43,13 @@ func runResponsesStream(ctx context.Context, w http.ResponseWriter, body io.Read
 	reason := stream.StopError
 	var started time.Time
 	emit := func(events []stream.Event) error {
+		if rc != nil && rc.secretStreamDLP != nil {
+			filtered, err := rc.secretStreamDLP.filterEvents(events)
+			if err != nil {
+				return upstreamError{Class: "secret_dlp_stream_filter_error", Message: "stream secret inspection failed", Retryable: !result.Committed, Fallbackable: !result.Committed, Committed: result.Committed, Err: err}
+			}
+			events = filtered
+		}
 		for _, e := range events {
 			if err := ctx.Err(); err != nil {
 				return err

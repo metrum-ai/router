@@ -7,7 +7,35 @@ doc_type: howto
 
 Model groups can redact configured text patterns before the router sends a request to an upstream model. This is useful when a deployment needs central privacy controls for LLM and agent traffic without changing every client.
 
-PII filtering is deployment-defined. Group names, rules, and placeholder names below are examples.
+PII filtering is deployment-defined. Group names, rules, and placeholder names below are examples. Set `secrets_enabled: true` to add the bounded built-in detector pack for private-key blocks, common AWS/GitHub/Slack/Stripe, OpenAI, Anthropic and Google provider credentials, router tokens, JWTs, bearer authorization values, and credential assignments. Built-in matches use the same `mode`, `apply_to`, and replacement limit as configured rules. This pack is heuristic and does not replace a full DLP product.
+
+The local deterministic matcher benchmark measured about 0.30 ms per 2.7 KiB
+benign request (`BenchmarkSecretMatcher`, Go benchmark, one run). This is a
+microbenchmark, not an end-to-end latency guarantee; actual cost depends on
+request size and the configured custom rules.
+
+The stream-window microbenchmark measured 0.392 ms per 3.4 KiB response split
+into 128-byte deltas (`BenchmarkSecretStreamWindow`, Go 1.27.4, AMD EPYC 9R14,
+one local run). This measures router CPU only; first-token delay also includes
+the 3002-byte maximum built-in credential candidate or any held private-key
+block, up to 64 KiB.
+
+With `secrets_enabled`, text-only streams that use only the built-in rules use a rolling inspection tail so
+credentials split across adjacent SSE chunks are redacted before release. A
+private-key block is held through its matching end marker, up to 64 KiB. A
+single provider-token or credential-assignment candidate longer than the
+256-byte token window fails the stream closed rather than releasing a partial
+match. A stream request with tools fails closed with HTTP 400
+`secret-dlp-stream-inspection-required` as an interim limit until the #929
+bounded tool-call inspection integration lands. Enable `secrets_enabled` only
+on groups that need this protection; the 400 applies to those DLP-enabled
+groups. Use a non-streaming request or remove tools while the interim gate is
+in place. Streams with custom rules also fail closed because those expressions
+do not declare a maximum match length. Text streaming retains the longest
+built-in candidate (3002 bytes); private-key blocks add their full size (up to
+64 KiB) to the time to first token. Response redaction runs only when
+`secrets_enabled` is active and `apply_to.messages` is enabled; custom-only PII
+configurations keep their existing response behavior.
 
 ## Model Group Configuration
 
@@ -17,6 +45,7 @@ models:
     strategy: weighted
     pii_filter:
       enabled: true
+      secrets_enabled: true
       mode: redact_only
       max_replacements_per_request: 200
       apply_to:

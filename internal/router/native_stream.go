@@ -128,6 +128,20 @@ func proxyNativeSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, 
 			if normalizeDialect(dialect) == "openai-chat" && rc != nil && !rc.chatStreamIncludeUsage && isChatUsageOnlyFrame(rawFrame) {
 				continue
 			}
+			frames := [][]byte{rawFrame}
+			if rc != nil && rc.secretStreamDLP != nil {
+				var filterErr error
+				frames, filterErr = filterNativeSecretStreamFrame(rawFrame, rc.secretStreamDLP)
+				if filterErr != nil {
+					return result, upstreamError{Class: "secret_dlp_stream_filter_error", Message: "stream secret inspection failed", Retryable: !result.Committed, Fallbackable: !result.Committed, Committed: result.Committed, Err: filterErr}
+				}
+			}
+			if len(frames) == 0 {
+				if result.Done {
+					return result, nil
+				}
+				continue
+			}
 			firstFrame := !result.Committed
 			if firstFrame {
 				w.Header().Set("Content-Type", "text/event-stream")
@@ -138,15 +152,17 @@ func proxyNativeSSE(ctx context.Context, w http.ResponseWriter, body io.Reader, 
 				result.Committed = true
 				downstreamStart = time.Now()
 			}
-			rawFrame = rewriter.rewrite(rawFrame, dialect)
-			if rc != nil && rc.wrapStreamFrame != nil {
-				rawFrame = rc.wrapStreamFrame(rawFrame)
-			}
-			if _, writeErr := w.Write(rawFrame); writeErr != nil {
-				return result, upstreamError{Class: "downstream_write_error", Message: "downstream stream write failed", Canceled: true, Committed: true, Err: writeErr}
-			}
-			if flusher, ok := w.(http.Flusher); ok {
-				flusher.Flush()
+			for _, frame := range frames {
+				frame = rewriter.rewrite(frame, dialect)
+				if rc != nil && rc.wrapStreamFrame != nil {
+					frame = rc.wrapStreamFrame(frame)
+				}
+				if _, writeErr := w.Write(frame); writeErr != nil {
+					return result, upstreamError{Class: "downstream_write_error", Message: "downstream stream write failed", Canceled: true, Committed: true, Err: writeErr}
+				}
+				if flusher, ok := w.(http.Flusher); ok {
+					flusher.Flush()
+				}
 			}
 			if firstFrame && rc != nil {
 				ttfb := durationMillis(time.Since(rc.start))
