@@ -25,9 +25,11 @@ package router
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"time"
 
@@ -158,7 +160,7 @@ func (s *Service) adminV1HandlerSet(registry *AdminV1Registry) map[string]http.H
 		"content.captures.delete": s.handleContentCaptureDelete,
 		"content.captures.purge":  s.handleContentCapturePurgeExpired,
 	}
-	return AdminV1ServiceHandlers(
+	handlers := AdminV1ServiceHandlers(
 		registry,
 		AdminV1ConfigAdminDeps(ConfigAdminDeps{
 			DB:                      s.configControlPlane,
@@ -184,6 +186,50 @@ func (s *Service) adminV1HandlerSet(registry *AdminV1Registry) map[string]http.H
 		s.handleAdminReports,
 		extra,
 	)
+	for _, key := range []string{"callers.containment", "containment.webhook"} {
+		if handler := handlers[key]; handler != nil {
+			handlers[key] = s.securityContainmentEventHandler(handler)
+		}
+	}
+	return handlers
+}
+
+func (s *Service) securityContainmentEventHandler(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		recorder := httptest.NewRecorder()
+		next(recorder, r)
+		for key, values := range recorder.Header() {
+			for _, value := range values {
+				w.Header().Add(key, value)
+			}
+		}
+		status := recorder.Code
+		if status == 0 {
+			status = http.StatusOK
+		}
+		responseBody := recorder.Body.Bytes()
+		w.WriteHeader(status)
+		_, _ = w.Write(responseBody)
+		if status < 200 || status >= 300 {
+			return
+		}
+		var result struct {
+			Status string `json:"status"`
+		}
+		if json.Unmarshal(responseBody, &result) != nil {
+			return
+		}
+		eventType := "caller_containment"
+		if result.Status == accountStatusSuspended {
+			eventType = "caller_suspended"
+		} else if result.Status == accountStatusActive {
+			eventType = "caller_released"
+		}
+		s.recordSecurityAccessEvent(securityAccessEvent{
+			TS: time.Now().UTC(), EventType: eventType, Surface: "admin_api", HTTPMethod: r.Method,
+			PathTemplate: "/admin/v1/containment", StatusCode: status, Outcome: "allowed",
+		})
+	}
 }
 
 // adminV1Authorize answers a handler's secondary check through the single

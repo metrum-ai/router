@@ -14,7 +14,7 @@ func (s *Service) securityReportsEnabled() bool {
 }
 
 func (s *Service) recordSecurityAccessEvent(event securityAccessEvent) {
-	if !s.securityReportsEnabled() {
+	if s == nil {
 		return
 	}
 	if event.TS.IsZero() {
@@ -26,6 +26,12 @@ func (s *Service) recordSecurityAccessEvent(event securityAccessEvent) {
 	if event.Outcome == "" {
 		event.Outcome = securityOutcome(event.StatusCode)
 	}
+	if s.securityEventStream != nil {
+		s.securityEventStream.record(event)
+	}
+	if !s.securityReportsEnabled() {
+		return
+	}
 	retentionDays := s.cfg.Server.AdminReports.Security.RetentionDays
 	if retentionDays > 0 {
 		s.usage.PurgeSecurityAccessEventsBefore(event.TS.Add(-time.Duration(retentionDays) * 24 * time.Hour))
@@ -34,7 +40,7 @@ func (s *Service) recordSecurityAccessEvent(event securityAccessEvent) {
 }
 
 func (s *Service) recordRequestSecurityAccess(rc *requestContext, status int, code string) {
-	if !s.securityReportsEnabled() || rc == nil {
+	if s == nil || (!s.securityReportsEnabled() && s.securityEventStream == nil) || rc == nil {
 		return
 	}
 	rec := rc.rec
@@ -43,6 +49,18 @@ func (s *Service) recordRequestSecurityAccess(rc *requestContext, status int, co
 		eventType = "api_auth_failed"
 	} else if status == http.StatusForbidden {
 		eventType = "api_authz_failed"
+	} else if status == http.StatusTooManyRequests && rc.caller != nil {
+		eventType = "caller_throttled"
+	}
+	if strings.HasSuffix(code, "-suspended") || code == "caller-suspended" {
+		eventType = "caller_suspended"
+	} else {
+		switch code {
+		case "image_url_forbidden":
+			eventType = "firewall_block"
+		case "quota-exhausted":
+			eventType = "spend_breaker_trip"
+		}
 	}
 	authSubject := ""
 	authSource := "none"
@@ -89,10 +107,13 @@ func (s *Service) recordRequestSecurityAccess(rc *requestContext, status int, co
 }
 
 func (s *Service) recordAdminSecurityAccess(r *http.Request, subject adminAuthSubject, status int, reason, object, action string) {
-	if !s.securityReportsEnabled() {
+	if s == nil || (!s.securityReportsEnabled() && s.securityEventStream == nil) {
 		return
 	}
-	ipInfo := resolveClientIP(r, s.cfg.Server.ClientIP)
+	ipInfo := clientIPInfo{}
+	if r != nil {
+		ipInfo = resolveClientIP(r, s.cfg.Server.ClientIP)
+	}
 	authSubject := ""
 	authSource := "none"
 	adminSubject := ""
@@ -128,6 +149,16 @@ func (s *Service) recordAdminSecurityAccess(r *http.Request, subject adminAuthSu
 		ModelGroup:          object,
 		RequestedModel:      action,
 		ResolvedGroup:       object + ":" + action,
+	})
+}
+
+func (s *Service) recordPIISecurityEvent(rc *requestContext, status int, outcome string) {
+	if s == nil || rc == nil {
+		return
+	}
+	s.recordSecurityAccessEvent(securityAccessEvent{
+		TS: time.Now().UTC(), RequestID: rc.id, EventType: "dlp_hit", Surface: "data_plane",
+		HTTPMethod: rc.method, PathTemplate: rc.pathTemplate, StatusCode: status, Outcome: outcome,
 	})
 }
 

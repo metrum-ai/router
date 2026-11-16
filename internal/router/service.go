@@ -91,6 +91,7 @@ type Service struct {
 	cache                    *responseCache
 	logger                   *requestLogger
 	usage                    *usageStore
+	securityEventStream      *securityEventStream
 	migrationStatusFn        func() (MigrationStatus, error)
 	metrics                  *metricsStore
 	// Admin-plane state: its own metrics registry, the audit/observation sinks, the
@@ -497,6 +498,14 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		s.Close()
 		return nil, err
 	}
+	if cfg.Server.Security.Events.Enabled {
+		stream, err := newSecurityEventStream(cfg.Server.Security.Events, os.Getenv)
+		if err != nil {
+			s.Close()
+			return nil, err
+		}
+		s.securityEventStream = stream
+	}
 	s.routes()
 	s.initAdminPlane()
 	// Admin audit retention runs once per database that holds admin audit tables, and stops
@@ -537,6 +546,9 @@ func (s *Service) TLSManager() *tlsacme.Manager {
 }
 
 func (s *Service) Close() {
+	if s.securityEventStream != nil {
+		s.securityEventStream.close()
+	}
 	if s.adminAuditJanitorStop != nil {
 		close(s.adminAuditJanitorStop)
 		s.adminAuditJanitorStop = nil
@@ -1343,6 +1355,9 @@ func (s *Service) writeMetricsPayload(w http.ResponseWriter, r *http.Request, rc
 	if s.usage != nil {
 		_, _ = io.WriteString(w, s.usage.writer.prometheus())
 	}
+	if s.securityEventStream != nil {
+		_, _ = io.WriteString(w, s.securityEventStream.prometheus())
+	}
 	// Admin-plane series are rendered only for an admin-plane scrape.
 	if adminPlaneAuthorized(r) {
 		_, _ = io.WriteString(w, s.adminMetrics().Prometheus(s.adminFreshnessSource))
@@ -1878,6 +1893,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 			rc.rec.PIIFilterMode = piiResult.Mode
 			rc.rec.PIIFilterReplacements = piiResult.Replacements
 			rc.rec.PIIFilterRuleCount = piiRuleCount(piiResult)
+			s.recordPIISecurityEvent(rc, http.StatusBadRequest, "blocked")
 			rc.rec.Warnings = append(rc.rec.Warnings, piiResult.Warnings...)
 			rc.trace("pii_filter_blocked", "pii_filter matched request content", Target{}, 0, http.StatusBadRequest, "pii-filter-blocked", false, 0)
 			s.writeError(w, rc, http.StatusBadRequest, "pii-filter-blocked")
@@ -1891,6 +1907,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		rc.rec.PIIFilterMode = piiResult.Mode
 		rc.rec.PIIFilterReplacements = piiResult.Replacements
 		rc.rec.PIIFilterRuleCount = piiRuleCount(piiResult)
+		s.recordPIISecurityEvent(rc, http.StatusOK, "redacted")
 		rc.rec.Warnings = appendWarning(rc.rec.Warnings, "pii-filter-applied")
 		rc.rec.Warnings = append(rc.rec.Warnings, piiResult.Warnings...)
 		rc.trace("pii_filter_applied", fmt.Sprintf("replacements=%d rules=%d", piiResult.Replacements, piiRuleCount(piiResult)), Target{}, 0, 0, "", false, 0)
@@ -2501,7 +2518,7 @@ func (s *Service) finish(rc *requestContext, status int, code *string) {
 }
 
 func (s *Service) recordProviderSpendEvent(provider, action, window string, ceiling float64) {
-	if !s.securityReportsEnabled() {
+	if s == nil || (!s.securityReportsEnabled() && s.securityEventStream == nil) {
 		return
 	}
 	reason := "provider_spend_breaker_" + action + "_" + window + ":" + provider

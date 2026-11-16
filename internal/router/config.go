@@ -96,8 +96,9 @@ type ServerConfig struct {
 	AdminAuth           AdminAuthConfig           `yaml:"admin_auth"`
 	// TLS configures the serving listener's own certificate (#810). The zero
 	// value keeps the v4.7 plaintext listener.
-	TLS          ListenerTLSConfig  `yaml:"tls,omitempty"`
-	AdminReports AdminReportsConfig `yaml:"admin_reports"`
+	TLS          ListenerTLSConfig    `yaml:"tls,omitempty"`
+	AdminReports AdminReportsConfig   `yaml:"admin_reports"`
+	Security     SecurityEventsConfig `yaml:"security" json:"security,omitempty"`
 	// AdminAPI is the `admin.api` block of the /admin/v1 contract. The documented defaults
 	// apply when it is absent.
 	AdminAPI          AdminAPIConfig           `yaml:"admin_api" json:"admin_api"`
@@ -123,6 +124,20 @@ type ServerConfig struct {
 	// ResponsesAffinity enables owner-bound stored Responses affinity for
 	// explicitly listed model groups (#533). It is off by default.
 	ResponsesAffinity ResponsesAffinityConfig `yaml:"responses_affinity" json:"responsesAffinity,omitempty"`
+}
+
+// SecurityEventsConfig controls the opt-in OCSF JSON Lines event stream.
+type SecurityEventsConfig struct {
+	Events SecurityEventStreamConfig `yaml:"events" json:"events,omitempty"`
+}
+
+type SecurityEventStreamConfig struct {
+	Enabled          bool   `yaml:"enabled" json:"enabled,omitempty"`
+	Version          string `yaml:"version" json:"version,omitempty"`
+	Output           string `yaml:"output" json:"output,omitempty"`
+	Path             string `yaml:"path" json:"path,omitempty"`
+	WebhookURL       string `yaml:"webhook_url" json:"webhookUrl,omitempty"`
+	WebhookSecretEnv string `yaml:"webhook_secret_env" json:"webhookSecretEnv,omitempty"`
 }
 
 // ReasoningProvenanceConfig controls opaque reasoning provenance binding.
@@ -1683,6 +1698,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 	if err := validateAdminReports(c.Server.AdminReports, c.Server.AdminAuth, c.Server.UsageDB); err != nil {
 		return err
 	}
+	if err := validateSecurityEvents(c.Server.Security.Events); err != nil {
+		return err
+	}
 	if err := validateClientIP(c.Server.ClientIP); err != nil {
 		return err
 	}
@@ -2127,6 +2145,41 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		}
 		if err := validateSpendCeiling("caller "+caller.ID+" spend_ceiling", caller.SpendCeiling, knownTiers); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func validateSecurityEvents(cfg SecurityEventStreamConfig) error {
+	if !cfg.Enabled {
+		if cfg.Version != "" || cfg.Output != "" || cfg.Path != "" || cfg.WebhookURL != "" || cfg.WebhookSecretEnv != "" {
+			return fmt.Errorf("server.security.events settings require enabled: true")
+		}
+		return nil
+	}
+	if cfg.Version != "1.4.0" {
+		return fmt.Errorf("server.security.events.version must be 1.4.0")
+	}
+	output := strings.ToLower(strings.TrimSpace(cfg.Output))
+	if output != "stdout" && output != "file" {
+		return fmt.Errorf("server.security.events.output must be stdout or file")
+	}
+	if output == "file" && strings.TrimSpace(cfg.Path) == "" {
+		return fmt.Errorf("server.security.events.path is required for file output")
+	}
+	if output == "stdout" && strings.TrimSpace(cfg.Path) != "" {
+		return fmt.Errorf("server.security.events.path is only valid with file output")
+	}
+	if cfg.WebhookURL == "" && cfg.WebhookSecretEnv != "" {
+		return fmt.Errorf("server.security.events.webhook_secret_env requires webhook_url")
+	}
+	if cfg.WebhookURL != "" {
+		u, err := url.Parse(cfg.WebhookURL)
+		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Fragment != "" {
+			return fmt.Errorf("server.security.events.webhook_url must be an https URL without userinfo or fragment")
+		}
+		if !regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`).MatchString(cfg.WebhookSecretEnv) {
+			return fmt.Errorf("server.security.events.webhook_secret_env must name an environment variable")
 		}
 	}
 	return nil

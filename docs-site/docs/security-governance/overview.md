@@ -50,6 +50,7 @@ disabled.
 
 - [Admin Authentication](../configuration/admin-authentication)
 - [Admin Authorization](../configuration/admin-authorization)
+- [Security Event Stream](./security-events)
 - [PII Filtering](../configuration/pii-filtering)
 - [Software License And Third-Party Notices](../legal/software-licenses)
 - [Security And Trust](../evaluation/security-and-trust)
