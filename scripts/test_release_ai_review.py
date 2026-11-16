@@ -55,6 +55,12 @@ class ReleaseAIReviewTest(unittest.TestCase):
     def test_diff_batcher_fails_closed_for_one_oversized_file_or_too_many_batches(self) -> None:
         with self.assertRaisesRegex(ValueError, "per-request"):
             review.pack_diff_files([("large.go", "x" * 11)], max_bytes=10)
+        with self.assertRaisesRegex(ValueError, "per-request"):
+            review.pack_diff_files(
+                [("unlisted-large.bin", "x" * (review.MAX_DIFF_BYTES + 1))],
+                max_bytes=review.INITIAL_DIFF_BYTES,
+                max_single_file_bytes=review.MAX_DIFF_BYTES,
+            )
         with self.assertRaisesRegex(ValueError, "maximum number"):
             review.pack_diff_files(
                 [(f"{index}.go", "x" * 60) for index in range(3)],
@@ -261,7 +267,9 @@ class ReleaseAIReviewTest(unittest.TestCase):
                 "schema": "metrum-ai-router-release-review-responses/v1",
                 "acceptances": {artifact["artifact_digest"]: "Accepted for this exact artifact after verifying rollback evidence."},
             }), encoding="utf-8")
-            with patch.dict(os.environ, {}, clear=True), patch.object(review, "call_model") as call_model, patch("sys.argv", [
+            with patch.dict(os.environ, {}, clear=True), \
+                 patch.object(review, "git_diff_names", return_value=[]), \
+                 patch.object(review, "call_model") as call_model, patch("sys.argv", [
                 "release_ai_review.py", "--base", "v4.8.0", "--head", "abc1234", "--tag", "v5.0.0",
                 "--responses", str(responses), "--artifact-cache", str(cache),
                 "--artifact-output", str(artifact_output), "--output", str(output),
@@ -340,6 +348,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
             ]
             stderr = io.StringIO()
             with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
+                 patch.object(review, "git_diff_names", return_value=["one.go"]), \
                  patch.object(review, "git_diff_batches", return_value=[("one diff", ("one.go",))]) as batches, \
                  patch.object(review.urllib.request, "urlopen", return_value=response) as urlopen, \
                  patch("sys.argv", args), redirect_stderr(stderr):
@@ -370,6 +379,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
                 "schema": "metrum-ai-router-release-review-responses/v1", "acceptances": {},
             }), encoding="utf-8")
             with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
+                 patch.object(review, "git_diff_names", return_value=["router.go"]), \
                  patch.object(review, "git_diff_batches", return_value=[("changed range diff", ("router.go",))]), \
                  patch.object(review, "call_model", return_value=candidate) as call_model, \
                  patch("sys.argv", args):
@@ -399,6 +409,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
             }), encoding="utf-8")
             batches = [("diff batch one", ("router.go",)), ("diff batch two", ("docs/release.md",))]
             with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
+                 patch.object(review, "git_diff_names", return_value=["router.go", "docs/release.md"]), \
                  patch.object(review, "git_diff_batches", return_value=batches), \
                  patch.object(review, "call_model", side_effect=[clean_batch, blocking_batch]) as call_model, \
                  patch("sys.argv", args):
@@ -419,18 +430,85 @@ class ReleaseAIReviewTest(unittest.TestCase):
 
     def test_artifact_requires_explicit_verification_for_generated_coverage(self) -> None:
         candidate = {"summary": "No blockers found.", "findings": []}
-        with self.assertRaisesRegex(ValueError, "file verification"):
+        with self.assertRaisesRegex(ValueError, "verification allowlist"):
             review.build_artifact(candidate, "v4.8.0", "abc1234", file_coverage=[{
                 "file": "docs/generated.json", "status": "generated-and-verified", "verification": "",
             }])
-        artifact = review.build_artifact(candidate, "v4.8.0", "abc1234", file_coverage=[{
-            "file": "docs/generated.json", "status": "generated-and-verified",
-            "verification": "OpenAPI generator consistency check",
-        }])
+        with patch.dict(review.GENERATED_FILE_VERIFICATION_ALLOWLIST, {
+            "docs/generated.json": "admin-openapi-check",
+        }):
+            with self.assertRaisesRegex(ValueError, "verification allowlist"):
+                review.build_artifact(candidate, "v4.8.0", "abc1234", file_coverage=[{
+                    "file": "docs/unlisted.json", "status": "generated-and-verified",
+                    "verification": "admin-openapi-check",
+                }])
+            with self.assertRaisesRegex(ValueError, "verification allowlist"):
+                review.build_artifact(candidate, "v4.8.0", "abc1234", file_coverage=[{
+                    "file": "docs/generated.json", "status": "generated-and-verified",
+                    "verification": "some other check",
+                }])
+            artifact = review.build_artifact(candidate, "v4.8.0", "abc1234", file_coverage=[{
+                "file": "docs/generated.json", "status": "generated-and-verified",
+                "verification": "admin-openapi-check",
+            }])
         self.assertEqual(artifact["file_coverage"], [{
             "file": "docs/generated.json", "status": "generated-and-verified",
-            "verification": "OpenAPI generator consistency check",
+            "verification": "admin-openapi-check",
         }])
+
+    def test_artifact_coverage_must_exactly_match_changed_files(self) -> None:
+        candidate = {"summary": "No blockers found.", "findings": []}
+        artifact = review.build_artifact(candidate, "v4.8.0", "abc1234", file_coverage=[{
+            "file": "one.go", "status": "reviewed",
+        }])
+        with self.assertRaisesRegex(ValueError, "coverage does not match the diff"):
+            review.validate_artifact(artifact, "v4.8.0", "abc1234", {"one.go", "two.go"})
+        with self.assertRaisesRegex(ValueError, "coverage does not match the diff"):
+            review.validate_artifact(artifact, "v4.8.0", "abc1234", set())
+
+    def test_fresh_batches_must_match_git_diff_name_only_paths(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            responses = root / "responses.json"
+            responses.write_text(json.dumps({
+                "schema": "metrum-ai-router-release-review-responses/v1", "acceptances": {},
+            }), encoding="utf-8")
+            args = [
+                "release_ai_review.py", "--base", "v4.8.0", "--head", "abc1234", "--tag", "v5.0.0",
+                "--responses", str(responses), "--artifact-cache", str(root / "absent-cache.json"),
+                "--artifact-output", str(root / "artifact.json"), "--output", str(root / "review.md"),
+            ]
+            with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
+                 patch.object(review, "git_diff_names", return_value=["one.go", "two.go"]), \
+                 patch.object(review, "git_diff_batches", return_value=[("one diff", ("one.go",))]), \
+                 patch.object(review, "call_model") as call_model, patch("sys.argv", args):
+                self.assertEqual(review.main(), 2)
+            call_model.assert_not_called()
+            self.assertFalse((root / "artifact.json").exists())
+
+    def test_cached_artifact_with_incomplete_file_coverage_fails_closed(self) -> None:
+        candidate = {"summary": "No blockers found.", "findings": []}
+        artifact = review.build_artifact(candidate, "v4.8.0", "abc1234", file_coverage=[{
+            "file": "one.go", "status": "reviewed",
+        }])
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            cache = root / "cached-review.json"
+            cache.write_text(json.dumps(artifact), encoding="utf-8")
+            responses = root / "responses.json"
+            responses.write_text(json.dumps({
+                "schema": "metrum-ai-router-release-review-responses/v1", "acceptances": {},
+            }), encoding="utf-8")
+            args = [
+                "release_ai_review.py", "--base", "v4.8.0", "--head", "abc1234", "--tag", "v5.0.0",
+                "--responses", str(responses), "--artifact-cache", str(cache),
+                "--artifact-output", str(root / "artifact.json"), "--output", str(root / "review.md"),
+            ]
+            with patch.object(review, "git_diff_names", return_value=["one.go", "two.go"]), \
+                 patch.object(review, "call_model") as call_model, patch("sys.argv", args):
+                self.assertEqual(review.main(), 2)
+            call_model.assert_not_called()
+            self.assertFalse((root / "review.md").exists())
 
     def test_uncached_review_stops_and_fails_when_batch_two_of_three_fails(self) -> None:
         clean_batch = {"summary": "No blocking findings in this batch.", "findings": []}
@@ -451,6 +529,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
                 ("diff batch three", ("three.go",)),
             ]
             with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
+                 patch.object(review, "git_diff_names", return_value=["one.go", "two.go", "three.go"]), \
                  patch.object(review, "git_diff_batches", return_value=batches), \
                  patch.object(review, "call_model", side_effect=[clean_batch, RuntimeError("AI release review request failed")]) as call_model, \
                  patch("sys.argv", args):
@@ -481,6 +560,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
                 self.assertEqual(max_single_file_bytes, review.MAX_DIFF_BYTES)
                 return [("smaller diff two-a", ("two-a.go",)), ("smaller diff two-b", ("two-b.go",))]
             with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
+                 patch.object(review, "git_diff_names", return_value=["passed.go", "two-a.go", "two-b.go"]), \
                  patch.object(review, "git_diff_batches", side_effect=batches) as git_diff_batches, \
                  patch.object(review, "call_model", side_effect=[
                      clean_batch,
@@ -525,6 +605,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
                 return [("smaller diff two-a", ("two-a.go",)), ("smaller diff two-b", ("two-b.go",))]
 
             with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
+                 patch.object(review, "git_diff_names", return_value=["passed.go", "two-a.go", "two-b.go"]), \
                  patch.object(review, "git_diff_batches", side_effect=batches) as build_batches, \
                  patch.object(review, "call_model", side_effect=[
                      clean_batch,
@@ -560,6 +641,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
 
             stderr = io.StringIO()
             with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
+                 patch.object(review, "git_diff_names", return_value=["one.go"]), \
                  patch.object(review, "git_diff_batches", side_effect=batches) as batch_builder, \
                  patch.object(review, "call_model", side_effect=review.MaxTokensStopError(
                      "AI release review response ended with stop_reason=max_tokens"
