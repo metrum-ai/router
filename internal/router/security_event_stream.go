@@ -328,8 +328,11 @@ func marshalOCSFSecurityEvent(event securityAccessEvent) ([]byte, error) {
 		obj["user"] = user
 		obj["src_endpoint"] = ocsfEndpoint(event.IPAddress)
 		obj["service"] = map[string]any{"name": "Metrum AI Router"}
-		if event.OperationID != "" || event.ReasonCode != "" {
-			obj["unmapped"] = map[string]any{"operation": safeOCSFValue(event.OperationID), "reason": safeOCSFValue(event.ReasonCode)}
+		// Successful token exchanges use a fixed event reason and a generated
+		// grant hash as operation ID. Never serialize generic authentication
+		// reason codes: some callers may supply credential-shaped input there.
+		if event.EventType == "authentication" && event.Surface == "token_exchange" && event.ReasonCode == "mission_token_issued" && event.OperationID != "" {
+			obj["unmapped"] = map[string]any{"operation": safeOCSFValue(event.OperationID), "reason": "mission_token_issued"}
 		}
 	} else {
 		obj["actor"] = map[string]any{"user": map[string]any{"name": "Metrum AI Router"}}
