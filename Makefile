@@ -481,6 +481,8 @@ ci-python: secret-contract capability-smoke-contracts
 	python3 scripts/ci_topology_test.py
 	uv run --with pyyaml python -m unittest scripts/engine_advisory_gate_test.py -q
 	python3 scripts/harbor_promotion_test.py
+	python3 scripts/harbor_nightly_budget_test.py
+	python3 scripts/harbor_e2e/prepare_catalog_tasks_test.py
 	uv run --with pyyaml python scripts/eval_infra_test.py
 	uv run --with pyyaml python scripts/direct_provider_canary_test.py
 	uv run --with pyyaml python scripts/eval_infra_matrix.py
