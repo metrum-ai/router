@@ -29,6 +29,10 @@ class ReleasePayloadTest(unittest.TestCase):
             entries.append({"filename": name})
         (root / "SHA256SUMS").write_text("\n".join(sums) + "\n", encoding="utf-8")
         (root / "release-artifacts.json").write_text(json.dumps({"artifact_set": "binary", "artifacts": entries}), encoding="utf-8")
+        (root / "upgrade-rollback-results.json").write_text(json.dumps({
+            "schema": "router.release-upgrade-rollback/v1",
+            "checks": [{"check": "candidate-serving-smoke", "passed": True}],
+        }), encoding="utf-8")
         for arch in ("amd64", "arm64"):
             name = f"metrum-ai-router-{version}-linux-{arch}-image.spdx.json"
             (root / name).write_text(json.dumps({"spdxVersion": "SPDX-2.3", "packages": [{"name": name}]}), encoding="utf-8")
