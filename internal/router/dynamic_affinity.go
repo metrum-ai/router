@@ -114,8 +114,10 @@ func dynamicAffinityKey(caller *callerRuntime, groupName, callerDialect string, 
 	}
 	type prefix struct {
 		CallerID string          `json:"caller_id"`
+		Project  string          `json:"project"`
 		Group    string          `json:"group"`
 		Dialect  string          `json:"dialect"`
+		Session  string          `json:"session,omitempty"`
 		System   string          `json:"system,omitempty"`
 		Message  *IRMessage      `json:"message,omitempty"`
 		Input    string          `json:"input,omitempty"`
@@ -123,11 +125,15 @@ func dynamicAffinityKey(caller *callerRuntime, groupName, callerDialect string, 
 	}
 	value := prefix{
 		CallerID: caller.cfg.ID,
+		Project:  callerProject(caller.cfg),
 		Group:    groupName,
 		Dialect:  normalizeDialect(callerDialect),
 		System:   req.System,
 	}
-	if len(req.Messages) > 0 {
+	if session := sanitizeConversationID(requestMetadataValue(req, "session_id", "sessionId")); session != "" {
+		value.Session = session
+		value.System = ""
+	} else if len(req.Messages) > 0 {
 		first := req.Messages[0]
 		value.Message = &first
 	} else {
@@ -159,7 +165,6 @@ func (s *Service) applyDynamicAffinity(cfg DynamicScoreConfig, caller *callerRun
 		}
 		status = "ineligible"
 	}
-	s.affinity.set(key, ordered[0], dynamicAffinityTTL(cfg.Affinity), dynamicAffinityMaxEntries(cfg.Affinity))
 	return ordered, routingSignalLogRecord{Strategy: "dynamic_score", SignalName: "affinity_" + status, Source: "dynamic_score", CandidateIndex: ordered[0].Index, BoolValue: true}
 }
 

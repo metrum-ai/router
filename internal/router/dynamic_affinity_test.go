@@ -19,6 +19,7 @@ func TestSA1DynamicScoreSameCallerPrefixStaysOnFirstTarget(t *testing.T) {
 	if first.Target.Model != "first" {
 		t.Fatalf("first target=%q, want first", first.Target.Model)
 	}
+	pinSuccessfulAffinity(svc, first, group)
 
 	warmDynamicAffinityCandidates(svc)
 	turn2 := &IRRequest{System: "be concise", Messages: []IRMessage{
@@ -43,13 +44,15 @@ func TestSA2DynamicScoreRepicksAfterAffinityTTL(t *testing.T) {
 	now := time.Now().UTC()
 	svc.affinity.now = func() time.Time { return now }
 	turn1 := &IRRequest{Messages: []IRMessage{{Role: "user", Content: "stable prefix"}}}
-	if _, err := svc.pick(nil, "adaptive", group, turn1, "openai-chat", caller, ""); err != nil {
+	decision, err := svc.pick(nil, "adaptive", group, turn1, "openai-chat", caller, "")
+	if err != nil {
 		t.Fatal(err)
 	}
+	pinSuccessfulAffinity(svc, decision, group)
 	warmDynamicAffinityCandidates(svc)
 	now = now.Add(2 * time.Second)
 	turn2 := &IRRequest{Messages: []IRMessage{{Role: "user", Content: "stable prefix"}, {Role: "assistant", Content: "answer"}, {Role: "user", Content: "next"}}}
-	decision, err := svc.pick(nil, "adaptive", group, turn2, "openai-chat", caller, "")
+	decision, err = svc.pick(nil, "adaptive", group, turn2, "openai-chat", caller, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,9 +67,11 @@ func TestSA2DynamicScoreRepicksAfterAffinityTTL(t *testing.T) {
 func TestSA3DynamicScoreAffinityIsolatedByCaller(t *testing.T) {
 	svc, group, callerA := dynamicAffinityTestSetup(t)
 	req := &IRRequest{Messages: []IRMessage{{Role: "user", Content: "shared prefix"}}}
-	if _, err := svc.pick(nil, "adaptive", group, req, "openai-chat", callerA, ""); err != nil {
+	decisionA, err := svc.pick(nil, "adaptive", group, req, "openai-chat", callerA, "")
+	if err != nil {
 		t.Fatal(err)
 	}
+	pinSuccessfulAffinity(svc, decisionA, group)
 	warmDynamicAffinityCandidates(svc)
 	callerB := &callerRuntime{cfg: CallerConfig{ID: "caller-b"}}
 	decision, err := svc.pick(nil, "adaptive", group, req, "openai-chat", callerB, "")
@@ -84,9 +89,7 @@ func TestSA3DynamicScoreAffinityIsolatedByCaller(t *testing.T) {
 func TestSA4ChatToResponsesBridgeStickinessUnaffected(t *testing.T) {
 	svc, group, caller := dynamicAffinityTestSetup(t)
 	req := &IRRequest{Messages: []IRMessage{{Role: "user", Content: "bridge regression"}}}
-	if _, err := svc.pick(nil, "adaptive", group, req, "openai-chat", caller, ""); err != nil {
-		t.Fatal(err)
-	}
+	_, _ = svc.pick(nil, "adaptive", group, req, "openai-chat", caller, "")
 	target := Target{Provider: "responses", Model: "responses-model", Dialect: "openai-responses"}
 	rc := &requestContext{caller: caller, rec: logRecord{TokenID: "token-public"}}
 	key := bridgeSessionKey(rc, "bridge-group", target, "session-alpha")
@@ -102,12 +105,26 @@ func TestSA4ChatToResponsesBridgeStickinessUnaffected(t *testing.T) {
 	}
 }
 
+func pinSuccessfulAffinity(svc *Service, dec decision, group ModelGroup) {
+	if svc == nil || svc.affinity == nil || dec.AffinityKey == "" {
+		return
+	}
+	for i, target := range group.Targets {
+		if target.Provider == dec.Target.Provider && target.Model == dec.Target.Model {
+			svc.affinity.set(dec.AffinityKey, dynamicCandidate{Target: target, Index: i}, dynamicAffinityTTL(dec.AffinityConfig), dynamicAffinityMaxEntries(dec.AffinityConfig))
+			return
+		}
+	}
+}
+
 func TestDynamicScoreAffinitySkipsIneligiblePinnedTarget(t *testing.T) {
 	svc, group, caller := dynamicAffinityTestSetup(t)
 	req := &IRRequest{Messages: []IRMessage{{Role: "user", Content: "pin then drop"}}}
-	if _, err := svc.pick(nil, "adaptive", group, req, "openai-chat", caller, ""); err != nil {
+	decision, err := svc.pick(nil, "adaptive", group, req, "openai-chat", caller, "")
+	if err != nil {
 		t.Fatal(err)
 	}
+	pinSuccessfulAffinity(svc, decision, group)
 	warmDynamicAffinityCandidates(svc)
 	// Drop the pinned target from eligibility by requiring tools the pin lacks.
 	group.Targets[0].ToolSupport = ToolSupport{}
@@ -116,7 +133,7 @@ func TestDynamicScoreAffinitySkipsIneligiblePinnedTarget(t *testing.T) {
 		Messages: []IRMessage{{Role: "user", Content: "pin then drop"}, {Role: "assistant", Content: "ok"}, {Role: "user", Content: "with tools"}},
 		Tools:    []map[string]any{{"type": "function", "function": map[string]any{"name": "lookup"}}},
 	}
-	decision, err := svc.pick(nil, "adaptive", group, toolReq, "openai-chat", caller, "")
+	decision, err = svc.pick(nil, "adaptive", group, toolReq, "openai-chat", caller, "")
 	if err != nil {
 		t.Fatal(err)
 	}

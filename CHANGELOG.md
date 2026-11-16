@@ -101,6 +101,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Add an opt-in OCSF 1.4.0 JSON Lines security-event stream for stdout, append-only files, and allow-listed signed HTTPS webhooks. Security events use bounded sink and webhook queues, timestamp/nonce HMAC signatures, rotation-aware file output, and Prometheus drop/failure counters. Containment maps to Account Change Disable/Enable with target and actor identity; detector findings use configured IDs and evidence request UIDs capped at 256 characters.
 - Add caller key containment through `/admin/v1/containment`, `routerctl contain` and `routerctl release`, plus an optional HMAC-SHA256 SOAR/EDR webhook. Webhook writes use signed nonce replay protection without ETag headers; containment can resume only containment-originated suspensions.
+- Record recomputed prompt tokens when upstream reports cached prompt tokens. Usage and cost reports now show cached and recomputed input tokens with reporting coverage.
+- Prefer targets marked `tiered_kv_cache: true` for estimated prompts of at least 32,000 tokens. Dynamic-score affinity accepts `metadata.session_id` and remains bounded per process.
 - Add opt-in shadow/enforce mapping from detector signals to temporary key throttles or suspensions, with a per-minute action cap, emergency caller exemptions, and persistent TTL state.
 - Route detector suspensions through the canonical containment API so containment and admin roles can resume them; require a finite default throttle limit for unlimited keys.
 
@@ -138,6 +140,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 | Migration id | Scope | Schema version | Change | Maintenance | Data job | Rollback class |
 | --- | --- | --- | --- | --- | --- | --- |
 | `2026111601` | `router-config` | 13 | remove v4 serving-port admin settings from stored configs | maintenance | none | `restore-required` |
+| `2026111602` | `usage` | 17 | store latest security posture summary | online | none | `restore-required` |
+| `2026111603` | `usage` | 18 | add request trace correlation metadata | online | none | `restore-required` |
+| `2026111604` | `usage` | 19 | record recomputed prompt tokens and rollup coverage | online | none | `restore-required` |
 
 ### Fixed
 
