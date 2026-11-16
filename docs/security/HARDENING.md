@@ -1,5 +1,5 @@
-<!-- Copyright 2026 Metrum AI -->
-<!-- SPDX-License-Identifier: Apache-2.0 -->
+---
+# Copyright 2026 Metrum AI
 
 # Router Hardening Guide
 
@@ -35,12 +35,14 @@ The Router does not execute client tools. Limit the tools exposed by each client
 
 ## Security events and logs
 
-Enable `server.admin_reports.security.enabled` when operators need stored security access reports, with authorized `admin:security_reports` access and a suitable retention policy. If the OCSF event stream is enabled, choose a protected file or a TLS webhook with a secret supplied through the configured environment variable. Treat downstream event storage as sensitive operational data.
+Enable `server.admin_reports.security.enabled` when operators need stored security access reports, with authorized `admin:security_reports` access and a suitable retention policy. When `server.security.events.enabled` is true, choose a protected file or a TLS webhook with a secret supplied through `server.security.events.webhook_secret_env`. Treat downstream event storage as sensitive operational data.
 
-Keep `server.logging` on protected storage with bounded rotation. Logs, events, metrics, and usage rows must not contain raw bearer tokens, provider keys, token hashes, prompts, tool outputs, or full configuration. Do not enable content capture without encryption, access controls, and an approved retention policy.
+Set `server.logging.path` to protected storage. The Router does not rotate request logs; configure rotation and retention in the deployment's log collector. Logs, events, metrics, and usage rows must not contain raw bearer tokens, provider keys, token hashes, prompts, tool outputs, or full configuration. Do not enable content capture without encryption, access controls, and an approved retention policy.
 
 ## Verification
 
-Run `routerctl doctor --security` against each deployment config and use `--target` from a separate host to check public metrics exposure. Review each warning and its remediation. Test TLS, authorization, key rotation, DLP blocking, tool restrictions, event delivery, log redaction, and replica behavior in a staging deployment before rollout.
+Run `metrum-ai-routerctl doctor --security` against each deployment config and use `--target` from a separate host to check public metrics exposure. It checks listener TLS posture, configured provider key sources and spend ceilings, admin listener settings, security-report enablement, caller limits and verifier format, caller key-age visibility, and sensitive-group DLP. A missing provider spend ceiling is advisory because ceilings are optional. Review each warning and remediation.
+
+The self-test cannot inspect certificate validity, provider-side permissions, file and database ACLs, client tool-host authorization, event-sink access, or actual log contents. Verify those controls in the deployment and test TLS, authorization, key rotation, DLP blocking, tool restrictions, event delivery, log redaction, and replica behavior in staging.
 
 See the [Threat Summary](./threat-model-v5) and [Compromise Runbook](./compromise-runbook).
