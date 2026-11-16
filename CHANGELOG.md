@@ -11,6 +11,9 @@
   a new trace. Outbound trace headers are on by default and can be disabled per
   provider; inbound `tracestate` is deliberately dropped.
 - Add nightly evaluation aggregation across the previous 30 runs, with expected-missing cells reported separately from gate failures.
+- Add virtual model groups whose eligible targets are selected from per-family
+  capability vectors imported from reproducible eval reports. The config Admin
+  API and `routerctl groups` show vectors, membership and exclusion reasons.
 - Added a release checklist and a bounded package upgrade-and-rollback check.
 - Retain AI review findings by exact commit range and artifact digest, scope the review credential to the tag-only review environment, and attest the release manifests and review evidence.
 

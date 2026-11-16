@@ -558,7 +558,7 @@ func configCommand(args []string) {
 // --admin-key-file; the router URL from --router-url or ROUTER_URL.
 func groupsCommand(args []string) {
 	if len(args) == 0 {
-		die("usage: metrum-ai-routerctl groups <list|show|set-targets|add-target|remove-target|bulk-targets|rollback|history|shadow> [flags]")
+		die("usage: metrum-ai-routerctl groups <list|show|import-eval|set-targets|add-target|remove-target|bulk-targets|rollback|history|shadow> [flags]")
 	}
 	if args[0] == "shadow" {
 		groupsShadowCommand(args[1:])
@@ -594,6 +594,8 @@ func groupsCommand(args []string) {
 			dieAdmin(err)
 		}
 		writeRawJSON(body)
+	case "import-eval":
+		virtualImportCommand(args[1:])
 	case "set-targets":
 		fs, api := addAdminAPIFlags("groups set-targets")
 		targets := stringListFlag(fs, "target", "provider/model_ref target (repeatable, ordered)")
