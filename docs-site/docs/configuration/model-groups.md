@@ -74,6 +74,10 @@ Capacity pooling is bounded by the group contract:
 
 Use usage and admin reports to verify the actual provider/model mix, upstream 429s, fallback success, latency, and throughput before increasing weights or promoting a larger traffic window.
 
+## KV-cache tiers
+
+Set `tiered_kv_cache: true` on a target when its backend supports KV-cache offload to CPU or SSD. For requests estimated at 32,000 input tokens or more, the router moves marked targets to the front of the eligible target order and keeps the other eligible targets as fallback. This marker is operator supplied; it does not query backend cache state. See [KV-cache routing and metering](../operations/usage-reporting#kv-cache-routing-and-metering).
+
 ## Rollback
 
 Roll back by restoring the prior target list, reducing or removing a bad target's weight, removing a failed capability override, or switching the caller back to a previous model group allow-list. Verify with `/v1/models`, a positive smoke for expected traffic, and a negative capability-error smoke when capability filtering changed.

@@ -11,6 +11,7 @@ var tokenBreakdownFields = map[string]string{
 	"UncachedInputCostUSD": "uncached_input_cost_usd", "CachedInputCostUSD": "cached_input_cost_usd", "CacheWriteCostUSD": "cache_write_cost_usd", "VisibleOutputCostUSD": "visible_output_cost_usd", "ReasoningOutputCostUSD": "reasoning_output_cost_usd",
 	"ReasoningTokens": "reasoning_tokens", "ReasoningReportedRequests": "reasoning_reported_request_count",
 	"CachedInputTokens": "cached_input_tokens", "CachedInputReportedRequests": "cached_input_reported_request_count",
+	"RecomputedInputTokens": "recomputed_input_tokens", "RecomputedInputReportedRequests": "recomputed_input_reported_request_count",
 	"CacheWriteInputTokens": "cache_write_input_tokens", "CacheWriteReportedRequests": "cache_write_reported_request_count",
 	"ReasoningAttemptCount": "reasoning_attempt_count", "ReasoningSuccessfulAttemptCount": "reasoning_successful_attempt_count", "ReasoningReportedAttemptCount": "reasoning_reported_attempt_count",
 }
@@ -41,5 +42,5 @@ func applyUsageTokenBreakdownMigration(db *gorm.DB) error {
 	return verifyUsageTokenBreakdownMigration(db)
 }
 func verifyUsageTokenBreakdownMigration(db *gorm.DB) error {
-	return ensureUsageRelationalSchemaExcept(db, usageEndpointColumns)
+	return ensureUsageRelationalSchemaExcept(db, mergeUsageExcludedColumns(usageRecomputedInputColumns))
 }

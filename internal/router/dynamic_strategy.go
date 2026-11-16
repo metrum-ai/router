@@ -268,6 +268,7 @@ func (s *Service) pickDynamicScore(rc *requestContext, groupName string, group M
 	coldStart := totalObservations < minObservations
 	if coldStart {
 		ordered := configuredWeightOrder(candidates)
+		ordered = preferTieredKVCandidates(ordered, req)
 		var affinitySignal routingSignalLogRecord
 		ordered, affinitySignal = s.applyDynamicAffinity(cfg, caller, groupName, callerDialect, req, ordered)
 		trace := dynamicDecisionTrace(cfg, req, ordered, true, "configured_weight")
@@ -318,6 +319,7 @@ func (s *Service) pickDynamicScore(rc *requestContext, groupName string, group M
 		}
 		return candidates[i].Index < candidates[j].Index
 	})
+	candidates = preferTieredKVCandidates(candidates, req)
 	var affinitySignal routingSignalLogRecord
 	candidates, affinitySignal = s.applyDynamicAffinity(cfg, caller, groupName, callerDialect, req, candidates)
 	trace := dynamicDecisionTrace(cfg, req, candidates, false, "score")
@@ -326,6 +328,31 @@ func (s *Service) pickDynamicScore(rc *requestContext, groupName string, group M
 	signals = appendDynamicAffinitySignal(signals, affinitySignal)
 	scoreTerms := dynamicScoreTermTelemetry(candidates, terms, groupName)
 	return decision{Target: candidates[0].Target, Fallbacks: dynamicFallbacks(candidates[1:]), Strategy: "dynamic_score", GroupName: groupName, TargetIndex: candidates[0].Index, DecisionTrace: trace, RoutingSignals: signals, DynamicScoreTerms: scoreTerms}, nil
+}
+
+func preferTieredKVCandidates(candidates []dynamicCandidate, req *IRRequest) []dynamicCandidate {
+	if len(candidates) < 2 || estimateTokens(req) < longContextKVCacheThresholdTokens {
+		return candidates
+	}
+	hasTiered := false
+	for _, candidate := range candidates {
+		hasTiered = hasTiered || candidate.Target.TieredKVCache
+	}
+	if !hasTiered {
+		return candidates
+	}
+	ordered := make([]dynamicCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate.Target.TieredKVCache {
+			ordered = append(ordered, candidate)
+		}
+	}
+	for _, candidate := range candidates {
+		if !candidate.Target.TieredKVCache {
+			ordered = append(ordered, candidate)
+		}
+	}
+	return ordered
 }
 
 func dynamicPassesThresholds(stats dynamicStats, thresholds DynamicScoreThresholds) bool {

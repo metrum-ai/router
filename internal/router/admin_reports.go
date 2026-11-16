@@ -785,6 +785,7 @@ type adminReportTableRow struct {
 
 type adminReportRequest struct {
 	CacheReadInputTokens            *int    `json:"cacheReadInputTokens,omitempty"`
+	RecomputedInputTokens           *int    `json:"recomputedInputTokens,omitempty"`
 	CacheWriteInputTokens           *int    `json:"cacheWriteInputTokens,omitempty"`
 	RequestKind                     string  `json:"requestKind"`
 	UsageSource                     string  `json:"usageSource"`
@@ -5676,6 +5677,7 @@ func adminFilterDTO(filters adminReportFilters) adminReportFilterDTO {
 func adminRequestFromRow(row usageRow) adminReportRequest {
 	return adminReportRequest{
 		CacheReadInputTokens:            row.CachedInputTokens,
+		RecomputedInputTokens:           recomputedInputTokens(row.InputTokens, row.CachedInputTokens),
 		CacheWriteInputTokens:           row.CacheWriteInputTokens,
 		RequestKind:                     row.RequestKind,
 		UsageSource:                     row.UsageSource,

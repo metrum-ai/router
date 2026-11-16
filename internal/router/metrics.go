@@ -98,7 +98,7 @@ func (m *metricsStore) Observe(rec logRecord) {
 	if rec.ReasoningCoverageMeasured {
 		reasoningTokens = rec.ReasoningTokens
 	}
-	values.UsageTokenBreakdown.addUsage(usageRow{ReasoningTokens: reasoningTokens, CachedInputTokens: rec.Usage.CachedInputTokens, CacheWriteInputTokens: rec.Usage.CacheWriteInputTokens, ReasoningAttemptCount: rec.ReasoningAttemptCount, ReasoningSuccessfulAttemptCount: rec.ReasoningSuccessfulAttemptCount, ReasoningReportedAttemptCount: rec.ReasoningReportedAttemptCount})
+	values.UsageTokenBreakdown.addUsage(usageRow{InputTokens: rec.Usage.InputTokens, ReasoningTokens: reasoningTokens, CachedInputTokens: rec.Usage.CachedInputTokens, CacheWriteInputTokens: rec.Usage.CacheWriteInputTokens, ReasoningAttemptCount: rec.ReasoningAttemptCount, ReasoningSuccessfulAttemptCount: rec.ReasoningSuccessfulAttemptCount, ReasoningReportedAttemptCount: rec.ReasoningReportedAttemptCount})
 	if rec.Cache != "hit" {
 		cachedCost := 0.0
 		if rec.Usage.CachedInputTokens != nil && *rec.Usage.CachedInputTokens >= 0 && *rec.Usage.CachedInputTokens <= rec.Usage.InputTokens {
