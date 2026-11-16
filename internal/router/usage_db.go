@@ -287,6 +287,8 @@ type usageRow struct {
 	CallerUser                         string
 	CallerProject                      string
 	CallerEnvironment                  string
+	TaskID                             string
+	HumanOwner                         string
 	CallerIP                           string
 	TokenID                            string
 	Client                             string
@@ -448,6 +450,8 @@ type usageRecord struct {
 	CallerUser                         string                             `gorm:"column:caller_user;type:text;not null"`
 	CallerProject                      string                             `gorm:"column:caller_project;type:text;not null"`
 	CallerEnvironment                  string                             `gorm:"column:caller_environment;type:text;not null"`
+	TaskID                             string                             `gorm:"column:task_id;type:text;not null;default:'';index:idx_request_usage_task"`
+	HumanOwner                         string                             `gorm:"column:human_owner;type:text;not null;default:'';index:idx_request_usage_owner"`
 	CallerIP                           string                             `gorm:"column:caller_ip;type:text;index:idx_request_usage_caller_ip,priority:1"`
 	TokenID                            string                             `gorm:"column:token_id;type:text;not null;index:idx_request_usage_token,priority:1"`
 	Client                             string                             `gorm:"column:client;type:text;not null"`
@@ -1958,7 +1962,7 @@ func verifyUsageRelationalModelExcept(db *gorm.DB, model any, excludedColumns ma
 			}
 		}
 	}
-	if err := verifyUsageIndexes(db, model, stmt.Schema); err != nil {
+	if err := verifyUsageIndexesExcept(db, model, stmt.Schema, excludedColumns[table]); err != nil {
 		return err
 	}
 	if err := verifyUsageForeignKeys(db, stmt.Schema); err != nil {
@@ -2325,13 +2329,17 @@ func usageDefaultOuterParens(value string) bool {
 }
 
 func verifyUsageIndexes(db *gorm.DB, model any, expected *schema.Schema) error {
+	return verifyUsageIndexesExcept(db, model, expected, nil)
+}
+
+func verifyUsageIndexesExcept(db *gorm.DB, model any, expected *schema.Schema, excludedColumns map[string]struct{}) error {
 	// The PostgreSQL GORM migrator's index query joins index keys through
 	// a.attnum = ANY(i.indkey) without an ORDER BY. It therefore cannot safely
 	// represent composite-key order. It also aliases indisunique as non_unique,
 	// which makes its Unique result unsuitable for this strict contract. Read the
 	// catalog directly on PostgreSQL instead of weakening the comparison.
 	if db.Dialector.Name() == "postgres" {
-		return verifyUsageIndexesPostgres(db, expected)
+		return verifyUsageIndexesPostgres(db, expected, excludedColumns)
 	}
 	indexes, err := db.Migrator().GetIndexes(model)
 	if err != nil {
@@ -2342,6 +2350,16 @@ func verifyUsageIndexes(db *gorm.DB, model any, expected *schema.Schema) error {
 		actual[index.Name()] = index
 	}
 	for _, index := range expected.ParseIndexes() {
+		excluded := false
+		for _, field := range index.Fields {
+			if _, ok := excludedColumns[field.DBName]; ok {
+				excluded = true
+				break
+			}
+		}
+		if excluded {
+			continue
+		}
 		got, ok := actual[index.Name]
 		if !ok {
 			return fmt.Errorf("required usage index %s.%s is missing", expected.Table, index.Name)
@@ -2372,8 +2390,18 @@ type usagePostgresIndexMetadata struct {
 	Keys           []string
 }
 
-func verifyUsageIndexesPostgres(db *gorm.DB, expected *schema.Schema) error {
+func verifyUsageIndexesPostgres(db *gorm.DB, expected *schema.Schema, excludedColumns map[string]struct{}) error {
 	for _, index := range expected.ParseIndexes() {
+		excluded := false
+		for _, field := range index.Fields {
+			if _, ok := excludedColumns[field.DBName]; ok {
+				excluded = true
+				break
+			}
+		}
+		if excluded {
+			continue
+		}
 		// There are no partial usage indexes today. Do not silently accept one if
 		// a future tag adds it without an exact predicate verifier.
 		if strings.TrimSpace(index.Where) != "" {
@@ -2674,7 +2702,7 @@ var usageRecomputedInputColumns = map[string]map[string]struct{}{
 }
 
 func mergeUsageExcludedColumns(groups ...map[string]map[string]struct{}) map[string]map[string]struct{} {
-	return mergeUsageColumnSets(append(groups, usageCacheBillingColumns, usageProvenanceColumns, usageCacheWriteColumns, usageRequestKindColumns, usageTokenBreakdownColumns, usageEndpointColumns, usageTraceCorrelationColumns, usageRecomputedInputColumns)...)
+	return mergeUsageColumnSets(append(groups, usageCacheBillingColumns, usageProvenanceColumns, usageCacheWriteColumns, usageRequestKindColumns, usageTokenBreakdownColumns, usageEndpointColumns, usageTraceCorrelationColumns, usageMissionAttributionColumns, usageRecomputedInputColumns)...)
 }
 
 func mergeUsageColumnSets(groups ...map[string]map[string]struct{}) map[string]map[string]struct{} {
@@ -3314,6 +3342,8 @@ func rowFromRecord(rec logRecord) usageRow {
 		CallerUser:                         rec.CallerUser,
 		CallerProject:                      rec.CallerProject,
 		CallerEnvironment:                  rec.CallerEnvironment,
+		TaskID:                             rec.TaskID,
+		HumanOwner:                         rec.HumanOwner,
 		CallerIP:                           rec.CallerIP,
 		TokenID:                            tokenID,
 		Client:                             rec.Client,
@@ -3469,6 +3499,8 @@ func recordFromRow(row usageRow) *usageRecord {
 		CallerUser:                         row.CallerUser,
 		CallerProject:                      row.CallerProject,
 		CallerEnvironment:                  row.CallerEnvironment,
+		TaskID:                             row.TaskID,
+		HumanOwner:                         row.HumanOwner,
 		CallerIP:                           row.CallerIP,
 		TokenID:                            row.TokenID,
 		Client:                             row.Client,
@@ -3575,6 +3607,8 @@ func rowFromUsageRecord(record usageRecord) (usageRow, error) {
 		CallerUser:                         record.CallerUser,
 		CallerProject:                      record.CallerProject,
 		CallerEnvironment:                  record.CallerEnvironment,
+		TaskID:                             record.TaskID,
+		HumanOwner:                         record.HumanOwner,
 		CallerIP:                           record.CallerIP,
 		TokenID:                            record.TokenID,
 		Client:                             record.Client,

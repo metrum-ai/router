@@ -41,7 +41,7 @@ func TestTraceCorrelationSchema18SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) 
 		t.Fatal(err)
 	}
 	legacyRow := recordFromRow(rowFromRecord(logRecord{RequestID: "legacy-trace-row", TS: time.Now().UTC().Format(time.RFC3339)}))
-	if err := db.Omit("TraceID", "SpanID", "ParentSpanID", "RecomputedInputTokens").Create(legacyRow).Error; err != nil {
+	if err := db.Omit("TraceID", "SpanID", "ParentSpanID", "TaskID", "HumanOwner", "RecomputedInputTokens").Create(legacyRow).Error; err != nil {
 		t.Fatal(err)
 	}
 	definitionsThrough18 := make([]MigrationDefinition, 0, len(usageMigrationDefinitions)-1)
@@ -73,7 +73,7 @@ func TestTraceCorrelationSchema18SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) 
 		t.Fatalf("legacy row=%+v err=%v", legacy, err)
 	}
 	row := recordFromRow(rowFromRecord(logRecord{RequestID: "traced-row", TS: time.Now().UTC().Format(time.RFC3339), TraceID: "4bf92f3577b34da6a3ce929d0e0e4736", SpanID: "a1b2c3d4e5f60718", ParentSpanID: "00f067aa0ba902b7"}))
-	if err := runner.db.Omit("RecomputedInputTokens").Create(row).Error; err != nil {
+	if err := runner.db.Omit("TaskID", "HumanOwner", "RecomputedInputTokens").Create(row).Error; err != nil {
 		t.Fatal(err)
 	}
 	var got usageRecord

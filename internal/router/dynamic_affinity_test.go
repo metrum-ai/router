@@ -86,6 +86,29 @@ func TestSA3DynamicScoreAffinityIsolatedByCaller(t *testing.T) {
 	}
 }
 
+func TestDynamicScoreAffinityIsolatedByProject(t *testing.T) {
+	svc, group, callerA := dynamicAffinityTestSetup(t)
+	callerA.cfg.Project = "project-a"
+	req := &IRRequest{Messages: []IRMessage{{Role: "user", Content: "shared prefix"}}}
+	decisionA, err := svc.pick(nil, "adaptive", group, req, "openai-chat", callerA, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pinSuccessfulAffinity(svc, decisionA, group)
+	warmDynamicAffinityCandidates(svc)
+	callerB := &callerRuntime{cfg: CallerConfig{ID: callerA.cfg.ID, Project: "project-b"}}
+	decisionB, err := svc.pick(nil, "adaptive", group, req, "openai-chat", callerB, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decisionB.AffinityKey == decisionA.AffinityKey {
+		t.Fatal("same caller and session shared an affinity key across projects")
+	}
+	if routingSignalsContain(decisionB.RoutingSignals, "affinity_hit") {
+		t.Fatalf("project B inherited project A's pin: %#v", decisionB.RoutingSignals)
+	}
+}
+
 func TestSA4ChatToResponsesBridgeStickinessUnaffected(t *testing.T) {
 	svc, group, caller := dynamicAffinityTestSetup(t)
 	req := &IRRequest{Messages: []IRMessage{{Role: "user", Content: "bridge regression"}}}

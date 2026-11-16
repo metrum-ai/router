@@ -11,12 +11,15 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/glebarez/sqlite"
+	jose "github.com/go-jose/go-jose/v4"
 	"gopkg.in/yaml.v3"
 	"gorm.io/gorm"
 )
@@ -484,6 +487,29 @@ func TestCallerAdminMutationsBumpRevisionAndAppendEvents(t *testing.T) {
 // AfterMutate and the revision poller.
 func TestServiceReloadActiveConfigFromDB(t *testing.T) {
 	db := callerAdminTestDB(t)
+	issuerKey := machineJWTKey(t)
+	var discoveryRequests atomic.Int64
+	var jwksRequests atomic.Int64
+	issuerURL := ""
+	issuerServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/.well-known/openid-configuration":
+			discoveryRequests.Add(1)
+			_ = json.NewEncoder(w).Encode(map[string]string{"issuer": issuerURL, "jwks_uri": issuerURL + "/keys"})
+		case "/keys":
+			jwksRequests.Add(1)
+			_ = json.NewEncoder(w).Encode(jose.JSONWebKeySet{Keys: []jose.JSONWebKey{{Key: &issuerKey.PublicKey, KeyID: "reload-kid", Algorithm: "ES256", Use: "sig"}}})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(issuerServer.Close)
+	issuerURL = issuerServer.URL
+	issuerHost := strings.TrimPrefix(issuerURL, "https://")
+	tokenExchangeConfig := TokenExchangeConfig{Enabled: true, SigningKeyEnv: "MISSION_KEY", DefaultTTL: "1m", Issuers: []TokenExchangeIssuerConfig{{
+		IssuerURL: issuerURL, Audience: "router-exchange", TaskClaim: "task_id", Algorithms: []string{"ES256"}, AllowedJWKSHosts: []string{issuerHost}, AllowPrivateNetwork: true,
+		Subjects: []TokenExchangeSubjectGrant{{Claim: "sub", Value: "automation", CallerID: "alice-search-prod", HumanOwner: "alice", AllowedGroups: []string{"default"}, MaxSpendUSD: 1, MaxTokens: 100}},
+	}}}
 	key, err := GenerateAdminAPIKey("reload-reader", nil, callerTokenHashMinIterations)
 	if err != nil {
 		t.Fatal(err)
@@ -508,6 +534,26 @@ models:
     targets:
       - provider: mock
         model: mock-model
+security:
+  token_exchange:
+    enabled: true
+    signing_key_env: MISSION_KEY
+    default_ttl: 1m
+    issuers:
+      - issuer: ` + issuerURL + `
+        audience: router-exchange
+        task_claim: task_id
+        algorithms: [ES256]
+        allowed_jwks_hosts: [` + issuerHost + `]
+        allow_private_network: true
+        subjects:
+          - claim: sub
+            value: automation
+            caller_id: alice-search-prod
+            human_owner: alice
+            allowed_groups: [default]
+            max_spend_usd: 1
+            max_tokens: 100
 callers:
   - id: alice-search-prod
     owner_user: alice
@@ -584,6 +630,18 @@ callers:
 		t.Fatal(err)
 	}
 	defer svc.Close()
+	runtime, err := newTokenExchangeRuntime(tokenExchangeConfig, nil, func(name string) (string, bool) {
+		if name == "MISSION_KEY" {
+			return strings.Repeat("k", 32), true
+		}
+		return "", false
+	}, issuerServer.Client())
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime.quota = svc.quota
+	svc.tokenExchange = runtime
+	svc.mux.HandleFunc("POST /oauth/token", svc.handleTokenExchange)
 
 	// The initial service has no callers because the bootstrap YAML had none.
 	if idx := svc.callerAuth.index.Load(); len(idx.byTokenID) != 0 {
@@ -715,6 +773,104 @@ callers:
 	}
 	if svc.configSnapshot.Load() == nil || svc.configSnapshot.Load().Callers[0].ID != "alice-search-prod" {
 		t.Fatal("config snapshot must reflect the reloaded configuration")
+	}
+
+	// A mission token minted for the active caller must stop working when the
+	// real canonical-config reload publishes the caller as suspended.
+	subjectClaims := map[string]any{"iss": issuerURL, "aud": "router-exchange", "sub": "automation", "iat": time.Now().Unix() - 1, "exp": time.Now().Unix() + 60, "task_id": "reload-task-1"}
+	subjectToken := machineSignedJWTType(t, issuerKey, "reload-kid", jose.ES256, "JWT", subjectClaims)
+	form := url.Values{"grant_type": {tokenExchangeGrantType}, "subject_token": {subjectToken}, "subject_token_type": {jwtSubjectTokenType}, "scope": {"default"}}
+	exchange := func() *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(form.Encode()))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		w := httptest.NewRecorder()
+		svc.Handler().ServeHTTP(w, req)
+		return w
+	}
+	issued := exchange()
+	if issued.Code != http.StatusOK {
+		t.Fatalf("pre-suspension exchange status=%d body=%s", issued.Code, issued.Body.String())
+	}
+	var issuedBody struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.Unmarshal(issued.Body.Bytes(), &issuedBody); err != nil || issuedBody.AccessToken == "" {
+		t.Fatalf("pre-suspension token missing: err=%v", err)
+	}
+	discoveryBeforeSuspension := discoveryRequests.Load()
+	jwksBeforeSuspension := jwksRequests.Load()
+	suspendedYAML := strings.Replace(eventsYAML, "status: active", "status: suspended", 1)
+	suspendedHash := sha256.Sum256([]byte(suspendedYAML))
+	if err := db.Exec(`UPDATE router_config_documents SET canonical_yaml = ?, content_sha256 = ?, updated_at = ? WHERE config_set_id = ?`, suspendedYAML, hex.EncodeToString(suspendedHash[:]), time.Now().UTC().Format(time.RFC3339Nano), "set-1").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`UPDATE router_config_callers SET status = ? WHERE config_set_id = ? AND caller_id = ?`, accountStatusSuspended, "set-1", "alice-search-prod").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.reloadActiveConfigFromDB(); err != nil {
+		t.Fatalf("suspend caller through config reload: %v", err)
+	}
+	if got := exchange(); got.Code != http.StatusUnauthorized {
+		t.Fatalf("exchange after suspension reload status=%d body=%s", got.Code, got.Body.String())
+	}
+	if discoveryRequests.Load() != discoveryBeforeSuspension || jwksRequests.Load() != jwksBeforeSuspension {
+		t.Fatalf("unchanged issuer was rediscovered on caller reload: discovery %d->%d, JWKS %d->%d", discoveryBeforeSuspension, discoveryRequests.Load(), jwksBeforeSuspension, jwksRequests.Load())
+	}
+	inference := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"default","messages":[{"role":"user","content":"x"}]}`))
+	inference.Header.Set("Authorization", "Bearer "+issuedBody.AccessToken)
+	inferenceResponse := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(inferenceResponse, inference)
+	if inferenceResponse.Code != http.StatusUnauthorized {
+		t.Fatalf("mission inference after suspension reload status=%d body=%s", inferenceResponse.Code, inferenceResponse.Body.String())
+	}
+
+	// Restore the caller, mint a new token, then remove only its subject grant
+	// through the canonical-config reload path.
+	activeHash := sha256.Sum256([]byte(eventsYAML))
+	if err := db.Exec(`UPDATE router_config_documents SET canonical_yaml = ?, content_sha256 = ?, updated_at = ? WHERE config_set_id = ?`, eventsYAML, hex.EncodeToString(activeHash[:]), time.Now().UTC().Format(time.RFC3339Nano), "set-1").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`UPDATE router_config_callers SET status = ? WHERE config_set_id = ? AND caller_id = ?`, accountStatusActive, "set-1", "alice-search-prod").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.reloadActiveConfigFromDB(); err != nil {
+		t.Fatalf("restore caller through config reload: %v", err)
+	}
+	restored := exchange()
+	if restored.Code != http.StatusOK {
+		t.Fatalf("exchange after restore reload status=%d body=%s", restored.Code, restored.Body.String())
+	}
+	var restoredBody struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.Unmarshal(restored.Body.Bytes(), &restoredBody); err != nil || restoredBody.AccessToken == "" {
+		t.Fatalf("restored mission token missing: err=%v", err)
+	}
+	start := strings.Index(eventsYAML, "\nsecurity:\n  token_exchange:")
+	if start < 0 {
+		t.Fatal("canonical test document lacks root token exchange section")
+	}
+	endRel := strings.Index(eventsYAML[start+1:], "\ncallers:\n")
+	if endRel < 0 {
+		t.Fatal("canonical test document lacks caller section")
+	}
+	grantRemovedYAML := eventsYAML[:start] + eventsYAML[start+1+endRel:]
+	grantRemovedHash := sha256.Sum256([]byte(grantRemovedYAML))
+	if err := db.Exec(`UPDATE router_config_documents SET canonical_yaml = ?, content_sha256 = ?, updated_at = ? WHERE config_set_id = ?`, grantRemovedYAML, hex.EncodeToString(grantRemovedHash[:]), time.Now().UTC().Format(time.RFC3339Nano), "set-1").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.reloadActiveConfigFromDB(); err != nil {
+		t.Fatalf("remove mission grant through config reload: %v", err)
+	}
+	if got := exchange(); got.Code != http.StatusUnauthorized {
+		t.Fatalf("exchange after grant removal reload status=%d body=%s", got.Code, got.Body.String())
+	}
+	inference = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"default","messages":[{"role":"user","content":"x"}]}`))
+	inference.Header.Set("Authorization", "Bearer "+restoredBody.AccessToken)
+	inferenceResponse = httptest.NewRecorder()
+	svc.Handler().ServeHTTP(inferenceResponse, inference)
+	if inferenceResponse.Code != http.StatusUnauthorized {
+		t.Fatalf("mission inference after grant removal reload status=%d body=%s", inferenceResponse.Code, inferenceResponse.Body.String())
 	}
 }
 

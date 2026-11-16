@@ -14,11 +14,11 @@ const usageRecomputedInputMigrationID = 2026111614
 func usageRecomputedInputMigrationDefinition() MigrationDefinition {
 	return MigrationDefinition{
 		ID: usageRecomputedInputMigrationID, Scope: usageMigrationScope, Name: "record recomputed prompt tokens", Release: "2026.11",
-		Checksum: MigrationChecksum("usage.recomputed-input.v1"), SchemaVersion: 19, DataVersion: 0,
+		Checksum: MigrationChecksum("usage.recomputed-input.v1"), SchemaVersion: 20, DataVersion: 0,
 		Transactional: true, MaintenanceMode: "online", RollbackClass: "restore-required",
 		HandlerKey:       "usage.recomputed-input.apply.v1@applyUsageRecomputedInputMigration",
 		PostconditionKey: "usage.recomputed-input.schema.v1@verifyUsageRecomputedInputMigration",
-		Dependencies:     []int{usageTraceCorrelationMigrationID}, ExecutionMode: "transactional", LockClass: "online", TimeoutClass: "bounded",
+		Dependencies:     []int{usageMissionAttributionMigrationID}, ExecutionMode: "transactional", LockClass: "online", TimeoutClass: "bounded",
 		Apply: applyUsageRecomputedInputMigration, Verify: verifyUsageRecomputedInputMigration,
 	}
 }

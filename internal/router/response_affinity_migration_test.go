@@ -111,8 +111,9 @@ func TestResponseAffinitySchema12SQLiteUpgradeAndDown(t *testing.T) {
 		t.Fatalf("second apply: %v", err)
 	}
 	status, err := runner.Status()
-	// 19 is the current usage schema head after recomputed-input reporting.
-	if err != nil || status.SchemaVersion != 19 {
+	// The current usage head includes mission attribution and security posture,
+	// following the admin audit and policy-runtime migrations; pin the whole tail.
+	if err != nil || status.SchemaVersion != currentUsageSchemaVersion() {
 		t.Fatalf("after: %+v err=%v", status, err)
 	}
 	if err := verifyResponseAffinityMigration(runner.db); err != nil {
@@ -129,7 +130,7 @@ func TestResponseAffinitySchema12SQLiteUpgradeAndDown(t *testing.T) {
 
 	// Earlier binaries must fail closed on the future schema instead of
 	// ignoring the table.
-	old, err := NewMigrationRunnerWithDataJobs(runner.db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 11, MinData: 0, MaxData: 1}, usageMigrationDefinitions[:len(usageMigrationDefinitions)-1], usageDataJobDefinitions)
+	old, err := NewMigrationRunnerWithDataJobs(runner.db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 11, MinData: 0, MaxData: 1}, usageMigrationDefinitionsBeforeResponseAffinity(), usageDataJobDefinitions)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -184,9 +185,10 @@ func TestResponseAffinitySchema12FreshInstall(t *testing.T) {
 		t.Fatal(err)
 	}
 	status, err := runner.Status()
-	// Fresh installs reach the current usage schema head, including trace
-	// correlation and recomputed-input reporting.
-	if err != nil || status.SchemaVersion != 19 || !status.Compatible {
+	// Fresh installs reach the current usage head, including MCP audit,
+	// automatic containment, admin audit, policy-runtime, security posture,
+	// trace correlation and mission attribution migrations.
+	if err != nil || status.SchemaVersion != currentUsageSchemaVersion() || !status.Compatible {
 		t.Fatalf("fresh install: %+v err=%v", status, err)
 	}
 	if err := verifyResponseAffinityMigration(runner.db); err != nil {
@@ -274,8 +276,9 @@ func TestResponseAffinitySchema12PostgresUpgradeAndDown(t *testing.T) {
 		t.Fatalf("second apply: %v", err)
 	}
 	after, err := runner.Status()
-	// 19 is the current usage schema head after recomputed-input reporting.
-	if err != nil || after.SchemaVersion != 19 {
+	// The current usage head includes mission attribution and security posture,
+	// following the admin audit and policy-runtime migrations.
+	if err != nil || after.SchemaVersion != currentUsageSchemaVersion() {
 		t.Fatalf("after: %+v err=%v", after, err)
 	}
 	if err := verifyResponseAffinityMigration(runner.db); err != nil {
@@ -316,7 +319,7 @@ func TestResponseAffinitySchema12PostgresUpgradeAndDown(t *testing.T) {
 	if err != nil || afterDown.SchemaVersion != 11 {
 		t.Fatalf("after down: %+v err=%v", afterDown, err)
 	}
-	old, err := NewMigrationRunnerWithDataJobs(runner.db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 11, MinData: 0, MaxData: 1}, usageMigrationDefinitions[:len(usageMigrationDefinitions)-1], usageDataJobDefinitions)
+	old, err := NewMigrationRunnerWithDataJobs(runner.db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 11, MinData: 0, MaxData: 1}, usageMigrationDefinitionsBeforeResponseAffinity(), usageDataJobDefinitions)
 	if err != nil {
 		t.Fatal(err)
 	}

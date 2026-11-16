@@ -53,6 +53,11 @@ request's usage-row data. This single small run showed more short-request cache
 hits with affinity and higher median TTFB. Provider mix differs between the
 arms, and the sample is not a causal production estimate.
 
+Across all five requests per arm, recomputed input totaled 95,070 tokens with
+affinity off and 92,513 with affinity on. The observed cost difference mostly
+reflects provider price mix, so recomputed-token counts are the more direct
+comparison of cache reuse in this run.
+
 Costs are calculated from usage rows at the configured endpoint prices, not
 provider invoice reconciliations. A missing cached-token field means unknown,
 not zero. If a run fails, retain private state long enough to reconcile any

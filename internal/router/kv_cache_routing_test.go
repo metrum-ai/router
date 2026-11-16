@@ -337,3 +337,49 @@ func TestDynamicScoreSessionAffinityHTTPWithChangedPrompt(t *testing.T) {
 		}
 	}
 }
+
+func TestDynamicScoreAffinityExplicitlyDisabledDoesNotStoreHTTPPin(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{"id": "disabled", "choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": "ok"}, "finish_reason": "stop"}}, "usage": map[string]any{"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}})
+	}))
+	defer upstream.Close()
+	cfg := testConfig(t, upstream.URL, "mock-key", t.TempDir())
+	group := cfg.Models["default"]
+	first := group.Targets[0]
+	first.Model = "first"
+	second := first
+	second.Model = "second"
+	group.Strategy = "dynamic_score"
+	group.Targets = []Target{first, second}
+	disabled := false
+	group.RoutingPolicy.DynamicScore.Affinity = DynamicScoreAffinityConfig{Enabled: &disabled, TTLSeconds: 60, MaxEntries: 10}
+	cfg.Models["default"] = group
+	svc, err := newServiceWithVerifiedFixture(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	server := httptest.NewServer(svc.Handler())
+	defer server.Close()
+	payload := `{"model":"default","metadata":{"session_id":"synthetic-session"},"messages":[{"role":"user","content":"synthetic prompt"}]}`
+	req, err := http.NewRequest(http.MethodPost, server.URL+"/v1/chat/completions", strings.NewReader(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := server.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status=%d", resp.StatusCode)
+	}
+	svc.affinity.mu.Lock()
+	defer svc.affinity.mu.Unlock()
+	if len(svc.affinity.entries) != 0 {
+		t.Fatalf("explicitly disabled affinity stored %d pins", len(svc.affinity.entries))
+	}
+}

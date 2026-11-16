@@ -145,13 +145,13 @@ func dynamicAffinityKey(caller *callerRuntime, groupName, callerDialect string, 
 	return hex.EncodeToString(sum[:])
 }
 
-func (s *Service) applyDynamicAffinity(cfg DynamicScoreConfig, caller *callerRuntime, groupName, callerDialect string, req *IRRequest, ordered []dynamicCandidate) ([]dynamicCandidate, routingSignalLogRecord) {
+func (s *Service) applyDynamicAffinity(cfg DynamicScoreConfig, caller *callerRuntime, groupName, callerDialect string, req *IRRequest, ordered []dynamicCandidate) ([]dynamicCandidate, routingSignalLogRecord, string) {
 	if !dynamicAffinityEnabled(cfg.Affinity) {
-		return ordered, routingSignalLogRecord{Strategy: "dynamic_score", SignalName: "affinity_disabled", Source: "dynamic_score", BoolValue: true}
+		return ordered, routingSignalLogRecord{Strategy: "dynamic_score", SignalName: "affinity_disabled", Source: "dynamic_score", BoolValue: true}, ""
 	}
 	key := dynamicAffinityKey(caller, groupName, callerDialect, req)
 	if key == "" || s == nil || s.affinity == nil || len(ordered) == 0 {
-		return ordered, routingSignalLogRecord{}
+		return ordered, routingSignalLogRecord{}, key
 	}
 	entry, status := s.affinity.get(key)
 	if status == "hit" {
@@ -160,12 +160,12 @@ func (s *Service) applyDynamicAffinity(cfg DynamicScoreConfig, caller *callerRun
 				pinned := append([]dynamicCandidate(nil), ordered...)
 				copy(pinned[1:i+1], pinned[0:i])
 				pinned[0] = candidate
-				return pinned, routingSignalLogRecord{Strategy: "dynamic_score", SignalName: "affinity_hit", Source: "dynamic_score", CandidateIndex: candidate.Index, BoolValue: true}
+				return pinned, routingSignalLogRecord{Strategy: "dynamic_score", SignalName: "affinity_hit", Source: "dynamic_score", CandidateIndex: candidate.Index, BoolValue: true}, key
 			}
 		}
 		status = "ineligible"
 	}
-	return ordered, routingSignalLogRecord{Strategy: "dynamic_score", SignalName: "affinity_" + status, Source: "dynamic_score", CandidateIndex: ordered[0].Index, BoolValue: true}
+	return ordered, routingSignalLogRecord{Strategy: "dynamic_score", SignalName: "affinity_" + status, Source: "dynamic_score", CandidateIndex: ordered[0].Index, BoolValue: true}, key
 }
 
 func dynamicAffinityMatches(entry dynamicAffinityEntry, candidate dynamicCandidate) bool {

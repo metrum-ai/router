@@ -101,22 +101,22 @@ func loadV471UsageDatabase(t *testing.T, db *gorm.DB) {
 	}
 }
 
-// upgradeToV480 runs the documented migration path against an existing
+// upgradeToV480 runs the documented usage deployment job against an existing
 // database: apply every pending migration, then verify-serving.
 func upgradeToV480(t *testing.T, db *gorm.DB) MigrationStatus {
 	t.Helper()
 	runner, err := newUsageMigrationRunner(db)
 	if err != nil {
-		t.Fatalf("build v4.8.0 migration runner: %v", err)
+		t.Fatalf("build usage migration runner: %v", err)
 	}
 	if err := runner.ApplyPending("v480-upgrade"); err != nil {
-		t.Fatalf("apply v4.8.0 migrations: %v", err)
+		t.Fatalf("apply usage migrations: %v", err)
 	}
 	status, err := runner.Verify()
 	if err != nil {
-		t.Fatalf("verify-serving after the v4.8.0 deployment job: %v", err)
+		t.Fatalf("verify-serving after the usage deployment job: %v", err)
 	}
-	if status.SchemaVersion != 19 || status.DataVersion != 1 || !UsageMigrationServingCompatible(status) {
+	if status.SchemaVersion != currentUsageSchemaVersion() || status.DataVersion != 1 || !UsageMigrationServingCompatible(status) {
 		t.Fatalf("upgraded database is not serving compatible: %+v", status)
 	}
 	return status
@@ -211,7 +211,7 @@ func readUsageSchemaShape(t *testing.T, db *gorm.DB) usageSchemaShape {
 	return shape
 }
 
-// Every table, column and index a fresh v4.8.0 install has must also exist after
+// Every table, column and index a fresh install has must also exist after
 // upgrading the captured v4.7.1 database. Because both sides are real schemas
 // (testdata from the released binary, and this binary's fresh install), this is the
 // guard against another model-declared index or column that no migration creates on

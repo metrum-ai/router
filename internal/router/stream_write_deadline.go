@@ -16,6 +16,7 @@ import (
 // errStreamIdleTimeout reports that a streamed response made no progress within
 // the configured stream idle window (#759).
 var errStreamIdleTimeout = errors.New("stream idle timeout: no data within the configured stream_idle_timeout_ms")
+var errStreamToolCallHoldTimeout = errors.New("stream tool-call inspection hold timed out")
 
 // streamProgressDeadline turns the absolute http.Server write deadline into a
 // progress deadline for event streams (#759).
@@ -122,21 +123,23 @@ func (s *Service) withStreamProgressDeadline(next http.Handler) http.Handler {
 // not hold the caller for the whole upstream timeout. A stream that keeps
 // producing data is never affected: the timer resets on every read.
 type streamIdleReader struct {
-	body     io.ReadCloser
-	idle     time.Duration
-	activity chan struct{}
-	stop     chan struct{}
-	stalled  atomic.Bool
-	closeOne sync.Once
+	body      io.ReadCloser
+	idleNanos atomic.Int64
+	holdUntil atomic.Int64
+	activity  chan struct{}
+	stop      chan struct{}
+	stalled   atomic.Bool
+	toolHold  atomic.Bool
+	closeOne  sync.Once
 }
 
 func newStreamIdleReader(body io.ReadCloser, idle time.Duration) *streamIdleReader {
 	r := &streamIdleReader{
 		body:     body,
-		idle:     idle,
 		activity: make(chan struct{}, 1),
 		stop:     make(chan struct{}),
 	}
+	r.idleNanos.Store(int64(idle))
 	go r.watch()
 	return r
 }
@@ -158,8 +161,25 @@ func (r *streamIdleReader) watch() {
 		case <-r.stop:
 			return
 		case <-r.activity:
+			idle := time.Duration(r.idleNanos.Load())
+			if deadline := r.holdUntil.Load(); deadline > 0 {
+				remaining := time.Until(time.Unix(0, deadline))
+				if remaining <= 0 {
+					idle = time.Nanosecond
+				} else if idle <= 0 || remaining < idle {
+					idle = remaining
+				}
+			}
+			if idle <= 0 {
+				if timer != nil {
+					timer.Stop()
+					timer = nil
+				}
+				timeout = nil
+				continue
+			}
 			if timer == nil {
-				timer = time.NewTimer(r.idle)
+				timer = time.NewTimer(idle)
 			} else {
 				if !timer.Stop() {
 					select {
@@ -167,7 +187,7 @@ func (r *streamIdleReader) watch() {
 					default:
 					}
 				}
-				timer.Reset(r.idle)
+				timer.Reset(idle)
 			}
 			timeout = timer.C
 		case <-timeout:
@@ -189,9 +209,41 @@ func (r *streamIdleReader) Read(p []byte) (int, error) {
 		}
 	}
 	if err != nil && r.stalled.Load() {
+		if r.toolHold.Load() {
+			return n, errStreamToolCallHoldTimeout
+		}
 		return n, errStreamIdleTimeout
 	}
 	return n, err
+}
+
+func (r *streamIdleReader) SetIdle(idle time.Duration, toolHold bool) {
+	if r == nil || idle < 0 {
+		return
+	}
+	r.idleNanos.Store(int64(idle))
+	r.toolHold.Store(toolHold)
+	if !toolHold {
+		r.holdUntil.Store(0)
+	}
+	select {
+	case r.activity <- struct{}{}:
+	default:
+	}
+}
+
+// SetToolHoldDeadline adds an absolute deadline alongside the normal idle
+// timeout. Read activity can renew the idle window but never this hold deadline.
+func (r *streamIdleReader) SetToolHoldDeadline(deadline time.Time) {
+	if r == nil {
+		return
+	}
+	r.holdUntil.Store(deadline.UnixNano())
+	r.toolHold.Store(true)
+	select {
+	case r.activity <- struct{}{}:
+	default:
+	}
 }
 
 func (r *streamIdleReader) Close() error {

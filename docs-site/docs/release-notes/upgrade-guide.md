@@ -29,9 +29,11 @@ deliberately dropped and never forwarded. A trusted proxy or ingress CIDR trusts
 every client behind it, so trust only the immediate router network. Schema 18
 adds scalar trace, span, and
 parent-span columns to the usage table and an index on `trace_id`; existing rows
-remain valid with empty values. Schema 19 records recomputed input tokens and
-rollup coverage after schema 18. The migration is additive and is applied by the
-deployment migration job. See [router configuration](../configuration/router-config#request-trace-correlation)
+remain valid with empty values. Schema 19 adds mission task and owner
+attribution after trace-correlation schema 18. Schema 20 records recomputed
+input tokens and rollup coverage after schema 19; migration `2026111614` depends
+on mission-attribution migration `2026111607`. The migration is additive and is
+applied by the deployment migration job. See [router configuration](../configuration/router-config#request-trace-correlation)
 for trust boundaries and examples.
 
 ## Security hardening
@@ -99,7 +101,26 @@ configurations. Update copied examples from older releases before deploying them
 
 Response-cache entries and vLLM prefix-cache salts remain isolated by caller and project by default. Project-level sharing is opt-in with `projects[].share_cache_within_project`; enabling it lets callers in that project share response entries and vLLM prefix-cache entries. Self-hosted vLLM providers receive salts when `providers[].upstream_kind: vllm` and `server.cache.upstream_salt_key_env` are configured; provide the environment key through the deployment secret manager on every router replica. SGLang prefix-cache isolation is not supported in v5.0.0. See [Tenant cache isolation](/docs/security-governance/cache-isolation) for the config example, compatibility behavior and key requirements.
 
+### Workload token exchange
+
+The opt-in `security.token_exchange` feature adds the `POST /oauth/token` route and short-lived, scoped bearer tokens. Configure the issuer, audience and subject grants before enabling it, and provide `signing_key_env` through the deployment secret manager with at least 32 random bytes. Grant-wide cumulative limits reserve estimated tokens and spend atomically, allowing concurrent requests only when their combined reservations fit; re-exchanging a token does not reset the cap. Budgets persist per grant across token expiry and are pruned when a reload removes the grant. Exchange is limited to 30 requests per configured subject per minute. Budget and rate state is process-local, shared across tasks and token refreshes, persists until grant removal or process restart, and is not shared across replicas. Mission tokens are accepted only on the scoped chat, Responses, Messages, count-token, embeddings, and model list/detail routes; all other serving routes reject them with 401, including leaked-key revocation, content-capture operations, `/metrics`, `/v1/usage` and `/mcp`. Task attribution is optional: use issuer `task_claim` with a dotted JWT claim path or pin `task_id` on a subject grant; if neither is configured, exchange succeeds without task attribution. When `task_claim` is configured and no grant task is pinned, the claim must exist and be a string; a missing or invalid claim returns HTTP 401 from `/oauth/token`. This accepts stock Kubernetes service-account and SPIFFE JWT-SVID tokens without custom task claims. Subject tokens remain replayable until expiry. A mission token cannot revoke its parent caller key. Changing the HMAC signing key is a hard cutover that invalidates all outstanding mission tokens; all replicas must use the same new key. Successful exchanges produce Authentication audit events naming the caller and grant. Review [Workload token exchange](/docs/security-governance/token-exchange) for the request format, limits and rotation behavior. Static caller keys are rejected for projects with `forbid_long_lived_keys: true`.
+
+Usage schema version 19 adds `task_id` and `human_owner` columns. With the default deployment-job migration policy, run the usage migration plan, apply and serving verification steps before starting v5.0.0. Keep the database backup and rollback procedure in the [data migration runbook](https://github.com/metrum-ai/router/blob/main/docs/DATA_MIGRATIONS.md) available for the upgrade window.
+
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
+
+## v5.0.0 bounded tool-call streaming hold
+
+Tool-aware model groups can opt in to `tool_routing.streaming.hold_until_validated` with
+`hold_timeout_ms` (1–60000) and `hold_max_bytes` (1–33554432). Tool-call frames are withheld until
+the complete call has passed inspection; ordinary text frames still stream immediately. For
+OpenAI Chat Completions, OpenAI Responses, and Anthropic Messages, the first tool-call frame incurs
+the remaining upstream tool-call generation time plus router inspection time. The hold limit applies per stream, and held bytes also count against the process-wide
+`server.streaming.max_inflight_line_bytes` budget shared with native and Responses SSE parsing. This
+budget is per router process, so configure each replica to cover its expected concurrent streams.
+The timeout is an absolute deadline from the first held tool event; upstream byte activity does not
+extend it. Responses argument delta/done events remain private through inspection, and Anthropic
+tool-use frames are released before the terminal `message_delta`.
 
 ## Virtual models
 
@@ -111,7 +132,6 @@ group list/show API now reports each target's measured vector, membership and
 exclusion reason. Missing or ambiguous report data fails without changing the
 active config. Reported context tokens are the maximum observed in the eval
 workload, not a model's theoretical context limit.
-
 
 ## v5.0.0 caller-token hygiene
 
@@ -190,11 +210,13 @@ replacement-limit exhaustion also fails closed. Response redaction requires
 `secrets_enabled` and `apply_to.messages`; custom-only PII configurations keep
 their prior response behavior.
 
-As an interim limit until the #929 bounded tool-call inspection integration
-lands, streams with advertised tools on a group with `secrets_enabled: true`
-fail with HTTP 400 `secret-dlp-stream-inspection-required`. Use non-streaming
-requests or omit tools until that integration is available. This gate does not
-apply to groups without secret DLP enabled.
+When tool routing enables `streaming.hold_until_validated`, streamed tool-call
+arguments are held until inspection completes. Secret matches are redacted in
+`redact_only` mode and block the held call in `fail_on_match` mode. Without the
+bounded hold, tool-bearing streams on a DLP-enabled group fail with HTTP 400
+`secret-dlp-stream-inspection-required`. Streams with custom rules remain
+fail-closed because the rolling text filter cannot infer a safe match bound.
+
 ## v5.0.0 KV-cache routing and metering
 
 The additive usage-schema migration adds nullable `request_usage.recomputed_input_tokens` and scalar coverage fields to usage rollups. It backfills recomputed tokens only for historical rows with reported cached-token counts; rows without that evidence remain unknown. The router computes new values as `max(input_tokens - cached_input_tokens, 0)`. Reports now include cached and recomputed token totals and coverage.

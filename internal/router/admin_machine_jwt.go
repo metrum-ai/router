@@ -294,6 +294,7 @@ func (a *adminMachineJWTAuthenticator) key(ctx context.Context, kid, alg string)
 type adminVerifiedMachineJWT struct {
 	principal    Principal
 	confirmation json.RawMessage
+	claims       map[string]json.RawMessage
 }
 
 func (a *adminMachineJWTAuthenticator) Authenticate(ctx context.Context, r *http.Request) (Principal, error) {
@@ -349,7 +350,8 @@ func (a *adminMachineJWTAuthenticator) verifyToken(ctx context.Context, raw stri
 		ClientID     string          `json:"client_id"`
 		Confirmation json.RawMessage `json:"cnf"`
 	}
-	if token.Claims(key.Key, &claims) != nil {
+	var signedClaims map[string]json.RawMessage
+	if token.Claims(key.Key, &claims) != nil || token.Claims(key.Key, &signedClaims) != nil {
 		return zero, ErrInvalidCredential
 	}
 	now := time.Now()
@@ -379,5 +381,5 @@ func (a *adminMachineJWTAuthenticator) verifyToken(ctx context.Context, raw stri
 	if subject == "" || ctx.Err() != nil {
 		return zero, ErrInvalidCredential
 	}
-	return adminVerifiedMachineJWT{principal: Principal{Subject: subject, Kind: a.cfg.Kind, Issuer: a.cfg.Issuer, CredentialID: credentialID}, confirmation: claims.Confirmation}, nil
+	return adminVerifiedMachineJWT{principal: Principal{Subject: subject, Kind: a.cfg.Kind, Issuer: a.cfg.Issuer, CredentialID: credentialID}, confirmation: claims.Confirmation, claims: signedClaims}, nil
 }

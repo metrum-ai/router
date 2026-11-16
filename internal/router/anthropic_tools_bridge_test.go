@@ -105,6 +105,31 @@ func TestAnthropicTranslatedToolStreamingAdmission(t *testing.T) {
 	}
 }
 
+func TestAnthropicCallerChatBridgeReleasesHeldToolsAtFinish(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"choices\":[{\"index\":0,\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_bridge\",\"type\":\"function\",\"function\":{\"name\":\"lookup\",\"arguments\":\"{}\"}}]},\"finish_reason\":\"tool_calls\"}]}\n\ndata: [DONE]\n\n")
+	}))
+	defer upstream.Close()
+	svc := nativeStreamTestService(t, upstream.URL, "openai-chat", []Target{anthropicToolTarget()}, func(cfg *Config) {
+		group := cfg.Models["native-stream"]
+		group.Strategy = "tool_aware"
+		group.ToolRouting = ToolRoutingConfig{Mode: "observe", Streaming: ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20}}
+		cfg.Models["native-stream"] = group
+	})
+	req := httptest.NewRequest(http.MethodPost, "/anthropic/v1/messages", strings.NewReader(`{"model":"native-stream","stream":true,"max_tokens":64,"messages":[{"role":"user","content":"lookup"}],"tools":[{"name":"lookup","input_schema":{"type":"object"}}]}`))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	rr := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(rr, req)
+	body := rr.Body.String()
+	if rr.Code != http.StatusOK || !strings.Contains(body, `"type":"tool_use"`) || strings.Index(body, "input_json_delta") > strings.Index(body, `"stop_reason":"tool_use"`) {
+		t.Fatalf("bridge tool call missing or emitted after Finish terminal: status=%d body=%s", rr.Code, body)
+	}
+	if used := svc.lineBufferBudget.Used(); used != 0 {
+		t.Fatalf("budget after bridge handler=%d, want 0", used)
+	}
+}
+
 func TestAnthropicToolTranslationEvidence(t *testing.T) {
 	for _, out := range []string{"openai-chat", "openai-responses"} {
 		target := anthropicToolTarget()
