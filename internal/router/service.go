@@ -3777,6 +3777,7 @@ func (s *Service) callUpstreams(ctx context.Context, w http.ResponseWriter, rc *
 }
 
 func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *requestContext, callerDialect string, req *IRRequest, groupName string, target Target, attemptIndex int) (*IRResponse, attemptLogRecord, error) {
+	clearStreamToolCallHold(rc)
 	provider := s.cfg.Provider[target.Provider]
 	outDialect := targetDialect(provider, target)
 	attempt := attemptLogRecord{

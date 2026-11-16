@@ -303,6 +303,52 @@ func TestStreamToolCallHoldFailsClosedOnUnknownResponsesToolType(t *testing.T) {
 	}
 }
 
+func TestStreamToolCallHoldRejectsAnthropicServerToolUse(t *testing.T) {
+	hold := newStreamToolCallHold(ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20}, nil, toolValidationOptions{})
+	event := stream.Event{Type: "content_block_start", Data: []byte(`{"type":"content_block_start","index":0,"content_block":{"type":"server_tool_use","id":"toolu_1","name":"web_search","input":{"query":"secret"}}}`)}
+	if got, err := hold.apply(event); err == nil || len(got) != 0 {
+		t.Fatalf("server_tool_use escaped inspection: events=%v err=%v", got, err)
+	} else {
+		var ue upstreamError
+		if !errors.As(err, &ue) || ue.Class != "tool_call_hold_unsupported_type" {
+			t.Fatalf("error=%v", err)
+		}
+	}
+}
+
+func TestStreamToolCallHoldPreservesUsageOnToolOnlyChatChunks(t *testing.T) {
+	hold := newStreamToolCallHold(ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20}, nil, toolValidationOptions{})
+	event := stream.Event{Data: []byte(`{"id":"chunk_1","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"lookup","arguments":"{}"}}]},"finish_reason":null}],"usage":{"prompt_tokens":7,"completion_tokens":2,"total_tokens":9}}`)}
+	got, err := hold.apply(event)
+	if err != nil || len(got) != 1 {
+		t.Fatalf("tool chunk: events=%v err=%v", got, err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(got[0].Data, &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload["usage"] == nil {
+		t.Fatalf("usage was hidden on tool-only chunk: %s", got[0].Data)
+	}
+	if strings.Contains(string(got[0].Data), `"tool_calls"`) {
+		t.Fatalf("tool data escaped hold: %s", got[0].Data)
+	}
+}
+
+func TestClearStreamToolCallHoldForFallbackReleasesReservation(t *testing.T) {
+	budget := newLineBufferBudget(1<<20, nil)
+	hold := newStreamToolCallHold(ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20}, nil, toolValidationOptions{}, budget)
+	event := stream.Event{Data: []byte(`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"call_1","function":{"name":"lookup","arguments":"{}"}}]},"finish_reason":null}]}`)}
+	if _, err := hold.apply(event); err != nil {
+		t.Fatal(err)
+	}
+	rc := &requestContext{streamToolCallHold: hold}
+	clearStreamToolCallHold(rc)
+	if rc.streamToolCallHold != nil || budget.Used() != 0 {
+		t.Fatalf("fallback hold=%v budget=%d", rc.streamToolCallHold, budget.Used())
+	}
+}
+
 func TestStreamToolCallHoldInspectsCustomAndLocalShellCalls(t *testing.T) {
 	for _, tc := range []struct {
 		name, kind, eventType, argumentField, argument string

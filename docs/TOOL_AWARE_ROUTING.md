@@ -56,6 +56,9 @@ snapshot is rewritten from the inspected call set; failed or incomplete snapshot
 stripped before forwarding. For Anthropic,
 held `tool_use` start/delta/stop frames are emitted in their original order before a terminal
 `message_delta` with `stop_reason: tool_use`.
+The conservative Responses item classifier treats any type containing `call` or `tool` as
+tool-bearing; this includes `web_search_tool_result`, which is currently rejected as unrecognized
+when the hold is enabled.
 The hold uses an ordered inspector chain: schema validation runs first, followed by the request-scoped
 #890 secret-DLP inspector when enabled; the #891 tool firewall registers through the same hook.
 Inspectors may allow, block, or return redacted arguments; redaction is applied to the held provider
