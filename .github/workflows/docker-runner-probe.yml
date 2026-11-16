@@ -1,0 +1,18 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+
+name: Docker runner probe
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  docker-info:
+    runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'aws-pub-8c' }}
+    timeout-minutes: 5
+    steps:
+      - name: Check Docker availability
+        run: docker info
