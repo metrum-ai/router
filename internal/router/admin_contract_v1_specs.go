@@ -387,6 +387,26 @@ var adminV1OperationSpecs = []Operation{
 		Concurrency: AdminConcurrencyRevision, Idempotency: AdminIdempotencyStore,
 		RateClass: AdminRateClassWrite, HandlerKey: "callers.revoke",
 	},
+	{
+		ID: "containCaller", Method: "POST", Path: "/admin/v1/containment",
+		Summary:     "Suspend or resume a caller key",
+		Description: "The containment permission can suspend and resume caller keys. It cannot issue, rotate, or grant access.",
+		Object:      authzObjectAdminContainment, Action: authzActionContain, Domain: AdminDomainGlobal,
+		Request:     callerContainmentRequest{},
+		Response:    adminOpenObject{Members: []string{"caller_id", "status", "expires_at"}},
+		Errors:      []int{400, 404, 409, 412, 422, 428},
+		Concurrency: AdminConcurrencyRevision, Idempotency: AdminIdempotencyStore,
+		RateClass: AdminRateClassWrite, HandlerKey: "callers.containment",
+	},
+	{
+		ID: "containCallerWebhook", Method: "POST", Path: "/admin/v1/containment/webhook",
+		Summary: "Suspend a caller key from a signed SOAR or EDR webhook",
+		Object:  authzObjectAdminContainment, Action: authzActionContain, Domain: AdminDomainGlobal,
+		Request: callerContainmentRequest{}, Response: adminOpenObject{Members: []string{"caller_id", "status", "expires_at"}},
+		Errors:      []int{400, 403, 404, 409, 422, 503},
+		Concurrency: AdminConcurrencyNone, Idempotency: AdminIdempotencyNone,
+		RateClass: AdminRateClassWrite, HandlerKey: "containment.webhook",
+	},
 
 	// ---------------------------------------------------------------------
 	// Training exports (content:training, global domain)
