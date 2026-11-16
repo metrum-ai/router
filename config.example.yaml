@@ -3,29 +3,36 @@
 eligibility:
   implicit_openai_to_anthropic: true
 
-# Admin control plane (v4.8.0). Machine-to-machine only: no Basic, no cookies,
-# no browser sessions, no HTML. Disabled by default so a v4.7 configuration
-# keeps exactly one listener. The human reports UI is not part of the control
-# plane and always stays on the serving port with its current login.
+# Warn for tokens whose entropy cannot be confirmed and for development keys.
+# Set enforce: true after rotating old tokens to the generated checksummed format.
+security:
+  key_hygiene:
+    min_entropy_bits: 128
+    max_age_days: 90
+    enforce: false
+
+# Admin control plane. Machine-to-machine only: no Basic, no cookies, no
+# browser sessions, no HTML. Enabled by default on loopback. The human reports
+# UI is not part of the control plane and stays on the serving port.
 admin:
-  enabled: false
+  enabled: true
   listen: 127.0.0.1:8081
   # Remote binding is an explicit opt-in and needs TLS, for example:
   #   listen: 0.0.0.0:8443
   #   tls: {mode: router, cert_file: /etc/router/admin.crt, key_file: /etc/router/admin.key}
   allow_plaintext_non_loopback: false
-  # Legacy machine /admin/* routes stay on the serving port behind
-  # Deprecation/Sunset headers. Turning this off is the v5 preparation step.
-  legacy_routes_on_serving_port: true
-  legacy_sunset: "2027-03-01T00:00:00Z"
   # Absolute base URL of the admin plane. It is the only source of absolute
   # request-URL construction (never Host or X-Forwarded-* headers).
   external_url: ""
   tls:
-    mode: off                 # off (loopback plaintext) | router | proxy
-    certificate_source: files # files (cert_file/key_file) | acme (automated issuance)
-    cert_file: ""
-    key_file: ""
+    mode: off
+    # Router certificates are valid only with mode: router; leave these unset
+    # for loopback plaintext (mode: off).
+    # certificate_source: files
+    # cert_file: /etc/router/admin.crt
+    # key_file: /etc/router/admin.key
+    # For router mode, add certificate_source: files and cert_file/key_file,
+    # or use certificate_source: acme with an acme block.
     # acme:                   # automated issuance (#810); router mode only
     #   domains: [admin.example.com]
     #   email: ops@example.com
@@ -296,6 +303,13 @@ server:
     security:
       enabled: false
       retention_days: 90
+  # OCSF JSON Lines security-event streaming is opt-in. Webhook signing keys are
+  # loaded from the named environment variable and never copied into events.
+  security:
+    events:
+      enabled: false
+      # When enabled, set version: "1.4.0" and output: stdout or file.
+      # File output needs path; webhooks need an HTTPS host allow-list and secret.
   client_ip:
     trusted_proxy_cidrs: []
     header_order:
@@ -2682,6 +2696,9 @@ callers:
 # must not be an underscore-delimited prefix of another's. The deprecated
 # token_sha256 (unsalted SHA-256 hex) still works but logs a startup warning;
 # set exactly one of the two. Validation errors name caller ids, never hashes.
+# token_issued_at is an optional UTC RFC3339 timestamp. Token generation and
+# rotation record it automatically; set the original issue time for manually
+# managed keys so `doctor --security` can enforce the 90-day maximum age.
 - id: standard-dev
   owner_user: standard
   project: example-project

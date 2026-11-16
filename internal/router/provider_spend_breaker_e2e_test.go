@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -34,6 +35,8 @@ func TestProviderSpendBreakerFailoverLocalhostE2E(t *testing.T) {
 	defer fallback.Close()
 	dir := t.TempDir()
 	cfg := testConfig(t, primary.URL, "primary-test-key", dir)
+	eventsPath := filepath.Join(dir, "security.jsonl")
+	cfg.Server.Security.Events = SecurityEventStreamConfig{Enabled: true, Version: "1.4.0", Output: "file", Path: eventsPath}
 	primaryProvider := cfg.Provider["mock"]
 	primaryProvider.SpendBreaker = ProviderSpendBreakerConfig{HourlyUSD: 1, OnTrip: "failover"}
 	cfg.Provider["mock"] = primaryProvider
@@ -142,6 +145,14 @@ func TestProviderSpendBreakerFailoverLocalhostE2E(t *testing.T) {
 		if bytes.Contains(serializedEvents, []byte(secret)) {
 			t.Fatal("provider key appeared in breaker audit events")
 		}
+	}
+	svc.securityEventStream.close()
+	streamEvents, err := os.ReadFile(eventsPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(streamEvents, []byte("provider_spend_breaker_trip")) || !bytes.Contains(streamEvents, []byte("provider_spend_breaker_reset")) || bytes.Contains(streamEvents, []byte("primary-test-key")) || bytes.Contains(streamEvents, []byte("fallback-test-key")) {
+		t.Fatalf("stream missed breaker events or exposed a credential: %s", streamEvents)
 	}
 }
 

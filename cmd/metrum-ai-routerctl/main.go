@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/metrum-ai/router/internal/buildinfo"
+	"github.com/metrum-ai/router/internal/releaseverify"
 	"github.com/metrum-ai/router/internal/router"
 	"github.com/metrum-ai/router/internal/smartrouterctl"
 	"gorm.io/gorm"
@@ -33,11 +34,13 @@ func main() {
 		return
 	}
 	if len(os.Args) < 2 {
-		die("usage: metrum-ai-routerctl <version|config|callers|contain|release|adminkeys|policies|groups|providers|models|status|usage|reports|blueprint|emergency> [flags]")
+		die("usage: metrum-ai-routerctl <version|config|callers|contain|release|adminkeys|policies|groups|providers|models|admin-resource|status|usage|reports|blueprint|emergency> [flags]")
 	}
 	switch os.Args[1] {
 	case "version":
 		fmt.Println(buildinfo.Text())
+	case "verify":
+		verifyReleaseCommand(os.Args[2:])
 	case "config":
 		configCommand(os.Args[2:])
 	case "callers":
@@ -56,6 +59,8 @@ func main() {
 		providersCommand(os.Args[2:])
 	case "models":
 		modelsCommand(os.Args[2:])
+	case "admin-resource":
+		adminResourceCommand(os.Args[2:])
 	case "status":
 		statusCommand(os.Args[2:])
 	case "usage":
@@ -66,9 +71,50 @@ func main() {
 		blueprintCommand(os.Args[2:])
 	case "emergency":
 		emergencyCommand(os.Args[2:])
+	case "doctor":
+		if code := securityDoctorCommand(os.Args[2:], os.Stdout, os.Stderr); code != 0 {
+			os.Exit(code)
+		}
 	default:
 		die("unsupported command %q", os.Args[1])
 	}
+}
+
+// adminResourceCommand exposes the versioned resource API to operators without
+// duplicating every route's request schema in the CLI.
+func adminResourceCommand(args []string) {
+	if len(args) == 0 {
+		die("usage: metrum-ai-routerctl admin-resource <GET|POST|PUT|DELETE> --path /admin/v1/... [--body JSON] [flags]")
+	}
+	method := strings.ToUpper(strings.TrimSpace(args[0]))
+	if method != http.MethodGet && method != http.MethodPost && method != http.MethodPut && method != http.MethodDelete {
+		die("unsupported admin-resource method %q", method)
+	}
+	fs, api := addAdminAPIFlags("admin-resource")
+	path := fs.String("path", "", "versioned Admin API path")
+	bodyJSON := fs.String("body", "", "JSON request body for POST/PUT")
+	fs.Parse(args[1:])
+	if fs.NArg() != 0 || !strings.HasPrefix(*path, "/admin/v1/") || strings.Contains(*path, "?") || strings.Contains(*path, "#") {
+		die("admin-resource requires a clean --path under /admin/v1")
+	}
+	var body any
+	if strings.TrimSpace(*bodyJSON) != "" {
+		if err := json.Unmarshal([]byte(*bodyJSON), &body); err != nil {
+			die("invalid --body JSON: %v", err)
+		}
+	}
+	if (method == http.MethodPost || method == http.MethodPut) && body == nil {
+		die("%s requires --body JSON", method)
+	}
+	var headers map[string]string
+	if method != http.MethodGet {
+		headers = api.mutationHeaders()
+	}
+	response, _, err := mustAdminAPIClient(api).Do(method, *path, body, headers)
+	if err != nil {
+		dieAdmin(err)
+	}
+	writeRawJSON(response)
 }
 
 func containmentCommand(action string, args []string) {
@@ -193,7 +239,7 @@ func configCommand(args []string) {
 			if strings.TrimSpace(*to) != "" {
 				query.Set("to", strings.TrimSpace(*to))
 			}
-			body, _, err := client.Do(http.MethodGet, "/admin/config/diff?"+query.Encode(), nil, nil)
+			body, _, err := client.Do(http.MethodGet, "/admin/v1/config/diff?"+query.Encode(), nil, nil)
 			if err != nil {
 				dieAdmin(err)
 			}
@@ -206,19 +252,23 @@ func configCommand(args []string) {
 		fs := flag.NewFlagSet("config import", flag.ExitOnError)
 		yamlPath := fs.String("yaml", "", "canonical YAML path to import")
 		name := fs.String("name", "", "config set name")
+		offline := fs.Bool("offline", false, "access the config database directly (router must be stopped)")
 		opts := addConfigDBFlags(fs)
 		useAPI, api := addAPIFlag(fs)
 		fs.Parse(args[1:])
 		if strings.TrimSpace(*yamlPath) == "" || strings.TrimSpace(*name) == "" {
 			die("config import requires --yaml and --name")
 		}
+		if *offline && *useAPI {
+			die("config import cannot combine --offline and --api")
+		}
 		raw, err := os.ReadFile(*yamlPath)
 		if err != nil {
 			die("%v", err)
 		}
-		if *useAPI {
+		if !*offline {
 			client := mustAdminAPIClient(api)
-			body, _, err := client.Do(http.MethodPost, "/admin/config/sets",
+			body, _, err := client.Do(http.MethodPost, "/admin/v1/config/sets",
 				map[string]any{"name": *name, "yaml": string(raw)}, api.mutationHeaders())
 			if err != nil {
 				dieAdmin(err)
@@ -240,16 +290,20 @@ func configCommand(args []string) {
 		fs := flag.NewFlagSet("config export", flag.ExitOnError)
 		setID := fs.String("set-id", "", "config set id (empty = active)")
 		outPath := fs.String("out", "", "output path (default: stdout)")
+		offline := fs.Bool("offline", false, "access the config database directly (router must be stopped)")
 		opts := addConfigDBFlags(fs)
 		useAPI, api := addAPIFlag(fs)
 		fs.Parse(args[1:])
-		if *useAPI {
+		if *offline && *useAPI {
+			die("config export cannot combine --offline and --api")
+		}
+		if !*offline {
 			id := strings.TrimSpace(*setID)
 			if id == "" {
 				id = "active"
 			}
 			client := mustAdminAPIClient(api)
-			body, _, err := client.Do(http.MethodGet, "/admin/config/sets/"+id, nil, nil)
+			body, _, err := client.Do(http.MethodGet, "/admin/v1/config/sets/"+id, nil, nil)
 			if err != nil {
 				dieAdmin(err)
 			}
@@ -286,15 +340,19 @@ func configCommand(args []string) {
 	case "activate":
 		fs := flag.NewFlagSet("config activate", flag.ExitOnError)
 		setID := fs.String("set-id", "", "config set id to activate")
+		offline := fs.Bool("offline", false, "access the config database directly (router must be stopped)")
 		opts := addConfigDBFlags(fs)
 		useAPI, api := addAPIFlag(fs)
 		fs.Parse(args[1:])
 		if strings.TrimSpace(*setID) == "" {
 			die("config activate requires --set-id")
 		}
-		if *useAPI {
+		if *offline && *useAPI {
+			die("config activate cannot combine --offline and --api")
+		}
+		if !*offline {
 			client := mustAdminAPIClient(api)
-			body, _, err := client.Do(http.MethodPost, "/admin/config/sets/"+strings.TrimSpace(*setID)+"/activate",
+			body, _, err := client.Do(http.MethodPost, "/admin/v1/config/sets/"+strings.TrimSpace(*setID)+"/activate",
 				map[string]any{}, api.mutationHeaders())
 			if err != nil {
 				dieAdmin(err)
@@ -314,15 +372,19 @@ func configCommand(args []string) {
 	case "rollback":
 		fs := flag.NewFlagSet("config rollback", flag.ExitOnError)
 		setID := fs.String("set-id", "", "prior config set id to reactivate")
+		offline := fs.Bool("offline", false, "access the config database directly (router must be stopped)")
 		opts := addConfigDBFlags(fs)
 		useAPI, api := addAPIFlag(fs)
 		fs.Parse(args[1:])
 		if strings.TrimSpace(*setID) == "" {
 			die("config rollback requires --set-id")
 		}
-		if *useAPI {
+		if *offline && *useAPI {
+			die("config rollback cannot combine --offline and --api")
+		}
+		if !*offline {
 			client := mustAdminAPIClient(api)
-			body, _, err := client.Do(http.MethodPost, "/admin/config/rollback",
+			body, _, err := client.Do(http.MethodPost, "/admin/v1/config/rollback",
 				map[string]any{"set_id": strings.TrimSpace(*setID)}, api.mutationHeaders())
 			if err != nil {
 				dieAdmin(err)
@@ -360,7 +422,7 @@ func groupsCommand(args []string) {
 		fs, api := addAdminAPIFlags("groups list")
 		fs.Parse(args[1:])
 		client := mustAdminAPIClient(api)
-		body, _, err := client.Do(http.MethodGet, "/admin/config/groups", nil, nil)
+		body, _, err := client.Do(http.MethodGet, "/admin/v1/config/groups", nil, nil)
 		if err != nil {
 			dieAdmin(err)
 		}
@@ -370,7 +432,7 @@ func groupsCommand(args []string) {
 		fs.Parse(args[1:])
 		name := groupNameArg(fs)
 		client := mustAdminAPIClient(api)
-		body, _, err := client.Do(http.MethodGet, "/admin/config/groups/"+name, nil, nil)
+		body, _, err := client.Do(http.MethodGet, "/admin/v1/config/groups/"+name, nil, nil)
 		if err != nil {
 			dieAdmin(err)
 		}
@@ -380,7 +442,7 @@ func groupsCommand(args []string) {
 		fs.Parse(args[1:])
 		name := groupNameArg(fs)
 		client := mustAdminAPIClient(api)
-		body, _, err := client.Do(http.MethodGet, "/admin/config/groups/"+name+"/history", nil, nil)
+		body, _, err := client.Do(http.MethodGet, "/admin/v1/config/groups/"+name+"/history", nil, nil)
 		if err != nil {
 			dieAdmin(err)
 		}
@@ -402,7 +464,7 @@ func groupsCommand(args []string) {
 				spec["validation"] = map[string]any{"status": v, "workload": "routerctl-cli", "validated_at": time.Now().UTC().Format("2006-01-02")}
 			}
 		}
-		body, _, err := client.Do(http.MethodPut, "/admin/config/groups/"+name+"/targets", map[string]any{
+		body, _, err := client.Do(http.MethodPut, "/admin/v1/config/groups/"+name+"/targets", map[string]any{
 			"targets": specs, "strategy": *strategy, "reason": *reason, "dry_run": *dryRun, "force": *force,
 		}, api.mutationHeaders())
 		if err != nil {
@@ -426,7 +488,7 @@ func groupsCommand(args []string) {
 		if *position >= 0 {
 			payload["position"] = *position
 		}
-		body, _, err := client.Do(http.MethodPost, "/admin/config/groups/"+name+"/targets", payload, api.mutationHeaders())
+		body, _, err := client.Do(http.MethodPost, "/admin/v1/config/groups/"+name+"/targets", payload, api.mutationHeaders())
 		if err != nil {
 			dieAdmin(err)
 		}
@@ -439,7 +501,7 @@ func groupsCommand(args []string) {
 		name := groupNameArg(fs)
 		client := mustAdminAPIClient(api)
 		provider, ref := mustParseTargetFlag(*target)
-		body, _, err := client.Do(http.MethodDelete, "/admin/config/groups/"+name+"/targets/"+provider+"/"+ref,
+		body, _, err := client.Do(http.MethodDelete, "/admin/v1/config/groups/"+name+"/targets/"+provider+"/"+ref,
 			map[string]any{"reason": *reason}, api.mutationHeaders())
 		if err != nil {
 			dieAdmin(err)
@@ -452,7 +514,7 @@ func groupsCommand(args []string) {
 		fs.Parse(args[1:])
 		name := groupNameArg(fs)
 		client := mustAdminAPIClient(api)
-		body, _, err := client.Do(http.MethodPost, "/admin/config/groups/"+name+"/rollback",
+		body, _, err := client.Do(http.MethodPost, "/admin/v1/config/groups/"+name+"/rollback",
 			map[string]any{"set_id": *setID, "reason": *reason}, api.mutationHeaders())
 		if err != nil {
 			dieAdmin(err)
@@ -481,7 +543,7 @@ func groupsShadowCommand(args []string) {
 		name := groupNameArg(fs)
 		client := mustAdminAPIClient(api)
 		provider, ref := mustParseTargetFlag(*target)
-		body, _, err := client.Do(http.MethodPost, "/admin/config/groups/"+name+"/shadow", map[string]any{
+		body, _, err := client.Do(http.MethodPost, "/admin/v1/config/groups/"+name+"/shadow", map[string]any{
 			"provider": provider, "model_ref": ref, "sample_rate": *sampleRate,
 			"max_requests": *maxRequests, "duration_seconds": *duration, "cost_cap_usd": *costCap, "reason": *reason,
 		}, api.mutationHeaders())
@@ -499,12 +561,12 @@ func groupsShadowCommand(args []string) {
 		var err error
 		switch sub {
 		case "status":
-			body, _, err = client.Do(http.MethodGet, "/admin/config/groups/"+name+"/shadow", nil, nil)
+			body, _, err = client.Do(http.MethodGet, "/admin/v1/config/groups/"+name+"/shadow", nil, nil)
 		case "promote":
-			body, _, err = client.Do(http.MethodPost, "/admin/config/groups/"+name+"/shadow/promote",
+			body, _, err = client.Do(http.MethodPost, "/admin/v1/config/groups/"+name+"/shadow/promote",
 				map[string]any{"reason": *reason}, api.mutationHeaders())
 		case "stop":
-			body, _, err = client.Do(http.MethodDelete, "/admin/config/groups/"+name+"/shadow",
+			body, _, err = client.Do(http.MethodDelete, "/admin/v1/config/groups/"+name+"/shadow",
 				map[string]any{"reason": *reason}, api.mutationHeaders())
 		}
 		if err != nil {
@@ -608,7 +670,7 @@ func writeRawJSON(body []byte) {
 func dieAdmin(err error) {
 	var apiErr *smartrouterctl.AdminAPIError
 	if errors.As(err, &apiErr) {
-		fmt.Fprintln(os.Stderr, apiErr.Raw)
+		fmt.Fprintln(os.Stderr, apiErr.Error())
 		os.Exit(1)
 	}
 	die("%v", err)
@@ -617,7 +679,7 @@ func dieAdmin(err error) {
 // addAPIFlag adds --api plus the Admin API connection flags to a config
 // subcommand, switching it from direct database access to HTTP (#395).
 func addAPIFlag(fs *flag.FlagSet) (*bool, *adminAPIFlags) {
-	useAPI := fs.Bool("api", false, "go through the Admin API over HTTP instead of opening the config database")
+	useAPI := fs.Bool("api", false, "run this online operation through the Admin API over HTTP")
 	api := &adminAPIFlags{
 		routerURL:      fs.String("router-url", "", "router base URL (or ROUTER_URL)"),
 		adminKeyFile:   fs.String("admin-key-file", "", "mode-0600 file holding the admin key (or ROUTER_ADMIN_KEY)"),
@@ -1335,3 +1397,25 @@ func writeJSON(value any) {
 	fmt.Println(string(body))
 }
 func die(format string, args ...any) { fmt.Fprintf(os.Stderr, format+"\n", args...); os.Exit(2) }
+
+func verifyReleaseCommand(args []string) {
+	fs := flag.NewFlagSet("verify", flag.ExitOnError)
+	release := fs.String("release", "", "release tag to verify, for example v5.0.0")
+	binary := fs.String("binary", "", "router executable to compare (default: sibling or PATH metrum-ai-router)")
+	_ = fs.Parse(args)
+	if fs.NArg() != 0 {
+		die("usage: metrum-ai-routerctl verify --release <tag> [--binary <path>]")
+	}
+	if strings.TrimSpace(*release) == "" {
+		die("verify requires --release <tag>")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	defer cancel()
+	result, err := releaseverify.Verify(ctx, releaseverify.Options{Release: strings.TrimSpace(*release), Binary: *binary})
+	if err != nil {
+		die("release verification failed: %v", err)
+	}
+	if err := json.NewEncoder(os.Stdout).Encode(result); err != nil {
+		die("write verification result: %v", err)
+	}
+}

@@ -5,11 +5,44 @@
 ### Added
 
 - Add a release-only tool-call run with OpenAI Chat, OpenAI Responses, and Anthropic Messages SDK client cells.
+- Add nightly evaluation aggregation across the previous 30 runs, with expected-missing cells reported separately from gate failures.
 - Added a release checklist and a bounded package upgrade-and-rollback check.
+- Retain AI review findings by exact commit range and artifact digest, scope the review credential to the tag-only review environment, and attest the release manifests and review evidence.
+
+### Security
+
+- Keep the version-pinned Grype exception for the TypeScript 7 build-time compiler: stable `typescript` 7.0.2 still embeds `golang.org/x/text` v0.38.0, which a fresh Grype database reports as GO-2026-5970 (High). The exception applies only to the compiler binary under `node_modules`; revisit when a stable release embeds fixed Go and x/text v0.41.0 or later.
+- Evaluate published Casbin advisory ranges against the exact locked version, retain range evidence, and require reviewed exact-scope exceptions. Document fail-closed recovery for advisory service outages.
+
+### Security
+
+- Keep the version-pinned Grype exception for the TypeScript 7 build-time compiler: stable `typescript` 7.0.2 still embeds `golang.org/x/text` v0.38.0, which a fresh Grype database reports as GO-2026-5970 (High). The exception applies only to the compiler binary under `node_modules`; revisit when a stable release embeds fixed Go and x/text v0.41.0 or later.
+- Evaluate published Casbin advisory ranges against the exact locked version, retain range evidence, and require reviewed exact-scope exceptions. Document fail-closed recovery for advisory service outages.
+
+### Security
+
+- Keep the version-pinned Grype exception for the TypeScript 7 build-time compiler: stable `typescript` 7.0.2 still embeds `golang.org/x/text` v0.38.0, which a fresh Grype database reports as GO-2026-5970 (High). The exception applies only to the compiler binary under `node_modules`; revisit when a stable release embeds fixed Go and x/text v0.41.0 or later.
+- Evaluate published Casbin advisory ranges against the exact locked version, retain range evidence, and require reviewed exact-scope exceptions. Document fail-closed recovery for advisory service outages.
+
+### Security
+
+- Keep the version-pinned Grype exception for the TypeScript 7 build-time compiler: stable `typescript` 7.0.2 still embeds `golang.org/x/text` v0.38.0, which a fresh Grype database reports as GO-2026-5970 (High). The exception applies only to the compiler binary under `node_modules`; revisit when a stable release embeds fixed Go and x/text v0.41.0 or later.
+- Evaluate published Casbin advisory ranges against the exact locked version, retain range evidence, and require reviewed exact-scope exceptions. Document fail-closed recovery for advisory service outages.
+
+### Security
+
+- Ship the example external detector's per-rule bounded-LRU auth-failure storm, tiny-request sweep, denied-model enumeration, and spend-spike rules. Signals retain the router's opaque key ID and bounded evidence IDs; source-IP-only signals have no key. Configured detectors default to report mode, and the example rule thresholds are flags with documented defaults.
+- Keep the version-pinned Grype exception for the TypeScript 7 build-time compiler: stable `typescript` 7.0.2 still embeds `golang.org/x/text` v0.38.0, which a fresh Grype database reports as GO-2026-5970 (High). The exception applies only to the compiler binary under `node_modules`; revisit when a stable release embeds fixed Go and x/text v0.41.0 or later.
+- Evaluate published Casbin advisory ranges against the exact locked version, retain range evidence, and require reviewed exact-scope exceptions. Document fail-closed recovery for advisory service outages.
+### Security
+
+- Partition response-cache entries and vLLM prefix-cache salts by caller and project by default, add opt-in sharing inside a project, and forward stable salts only to explicitly configured vLLM providers. SGLang prefix-cache isolation is not supported in v5.0.0.
 
 ### Fixed
 
+- Roll back failed automatic suspensions so they release their action-cap slot; exempting a caller during config refresh releases an active automatic throttle before its TTL.
 - Migrate the API compatibility suite to Anthropic Python SDK 2.3.0 and test API-key and bearer authentication with separate clients.
+- Add a caller-authenticated MCP gateway with per-server egress allow-lists, `ROUTER_MCP_` credential forwarding, HTTPS upstreams (cleartext HTTP is limited to loopback), compositional tool allow-lists, bounded JSON-RPC traffic, persistent caller/tool rate and estimated-spend limits, and keyed invocation audit digests instead of raw arguments.
 
 - `router-migrate --json` keeps stdout valid JSON by directing GORM diagnostics
   to stderr.
@@ -25,6 +58,16 @@
   digest-pinned official vLLM v0.33.0 images after scanning the full deployment tree.
 - Move the AMD reference and edge images to the digest-pinned upstream vLLM
   ROCm 10.0 image at v0.33.0, which is outside the affected range of GHSA-v97p-wpxp-px84.
+- Add `metrum-ai-routerctl doctor --security` with bounded probes, JSON output,
+  configurable failure thresholds, and findings for admin exposure, caller limits,
+  key format and recorded entropy, sensitive-group DLP, and serving-port metrics
+  authorization. Engine pins use the release advisory snapshot; offline operation
+  never executes config-adjacent scripts or makes advisory network calls.
+- Add opt-in latest posture summary reporting through the authenticated admin
+  security reports surface. Usage migration 2026111602 adds a singleton summary table at usage schema version 17.
+- Record UTC issuance timestamps for generated and rotated caller keys; the
+  security self-test warns when age is unknown and fails keys older than the configured
+  maximum age (90 days by default; set `security.key_hygiene.max_age_days`).
 
 All notable changes to Metrum AI Router are documented in this file.
 
@@ -33,16 +76,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Direct `model` targets inherit catalog capabilities (reasoning, tools, modalities, and request-shape/bridge support) for matching model IDs while retaining their configured dialect, pricing, and routing values. Ambiguous model IDs across dialects do not inherit capabilities unless one catalog entry matches the target dialect. Mixed reasoning rejections identify the caller field (such as `reasoning_effort` for Chat Completions) when the error parameter is otherwise unset.
+
 ### Added
 
+- Add delayed daily report-mode provider usage reconciliation for OpenAI, Anthropic, and Bedrock CloudWatch metrics, with bounded catch-up/retries, HTTPS-only allow-listed egress for provider APIs and Bedrock/STS, partial-data watermarks, auth-failure fast paths, and security-stream events.
+- Add a standalone prompt-injection detector example with a commit-pinned model revision, downloaded-weight checksum verification, and overlapping chunk scoring for opted-in tool-result and document segments.
+
+- Add an opt-in OCSF 1.4.0 JSON Lines security-event stream for stdout, append-only files, and allow-listed signed HTTPS webhooks. Security events use bounded sink and webhook queues, timestamp/nonce HMAC signatures, rotation-aware file output, and Prometheus drop/failure counters. Containment maps to Account Change Disable/Enable with target and actor identity; detector findings use configured IDs and evidence request UIDs capped at 256 characters.
 - Add caller key containment through `/admin/v1/containment`, `routerctl contain` and `routerctl release`, plus an optional HMAC-SHA256 SOAR/EDR webhook. Webhook writes use signed nonce replay protection without ETag headers; containment can resume only containment-originated suspensions.
+- Add opt-in shadow/enforce mapping from detector signals to temporary key throttles or suspensions, with a per-minute action cap, emergency caller exemptions, and persistent TTL state.
+- Route detector suspensions through the canonical containment API so containment and admin roles can resume them; require a finite default throttle limit for unlimited keys.
+
+- Add versioned provider and model-catalog reads, provider validation and create/update/disable, project and environment lifecycle, project-environment membership CRUD, project USD budgets with alert thresholds, caller quota reads and updates, and retention policy writes. Writes use configuration revisions; retention changes that can delete more data require `admin:retention:force`, and provider credential references and headers never appear in responses.
+
+- Cap process-wide in-flight SSE line-buffer capacity and expose current usage and rejections in Prometheus metrics.
 
 ### Security
 
 - Add the versioned external detector contract and bounded asynchronous detector queue. Operator detector code runs in separate services; see the detector security guide.
 - Reject userinfo in external-policy and detector URLs, including redirect targets.
 
+- Add a Security Console to admin reports with detector and authentication risk ranking, a timeline of detector/auth/containment events, scoped serving-port containment with CSRF and audit, admin-only release instructions, and time-filtered JSON/Markdown incident bundles.
+
+### Breaking
+
+- v5.0.0 removes legacy machine `/admin/*` routes from the serving port. Use `/admin/v1` on the
+  admin listener. Configs that still set `admin.legacy_routes_on_serving_port` or
+  `admin.legacy_sunset` fail at load with migration guidance. `admin.enabled` defaults to `true`;
+  the authenticated admin listener binds `127.0.0.1:8081`. Set it to `false` for a single-listener
+  deployment. Browser reports and `/admin/auth/*` routes remain on the serving port. Database-mode
+  operators must run the router-config maintenance migration before startup; it removes the v4-only
+  keys from stored canonical configurations and refreshes their content hashes.
+- `metrum-ai-routerctl config import|export|activate|rollback` now use the Admin API by default;
+  use `--offline` for deliberate direct database access while the router is stopped. The default
+  Admin API endpoint is `http://127.0.0.1:8081`; non-loopback endpoints require HTTPS. Reports use
+  `/admin/v1/reports`, and the former `/admin/reports` `--reports-prefix` value is rejected.
+
+### Migrations
+
+| Migration id | Scope | Schema version | Change | Maintenance | Data job | Rollback class |
+| --- | --- | --- | --- | --- | --- | --- |
+| `2026111601` | `router-config` | 13 | remove v4 serving-port admin settings from stored configs | maintenance | none | `restore-required` |
+
 ### Fixed
+
+- Re-evaluate project budget trips against current ceilings on every admission, preserve provider spend-breaker settings during admin updates, normalize project/environment identifiers before authorization, and require retention force for every change that can purge additional data.
 
 - Remove the in-process TypeScript routing strategy and its goja/esbuild dependencies. Configurations using `strategy: script`, `script`, `script_max_concurrent`, or `script_http` now fail at load with migration guidance to `strategy: external`. Port request-shape and PII-aware policy examples to standalone services.
 
@@ -50,8 +131,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Allow oversized upstream lines to fall back before downstream commitment; retain reported usage from discarded attempts with explicit audit provenance.
 - Cover large streaming tool calls, repeated Responses completion payloads, limit errors, fallback boundaries, and tool-result continuation.
 
+### Changed
+
+- Online `metrum-ai-routerctl` operations now use `/admin/v1`; offline bootstrap commands remain
+  local.
+
 ### Security
 
+- Generate checksummed v2 caller tokens, reject malformed checksums before lookup, add database-backed leaked-key self-revocation enforced by every authenticated route and propagated to replicas, and warn or enforce caller-token hygiene. Revoked verifiers live in a sticky denylist independent of config sets, so rollback and YAML import cannot restore a leaked key; rotation installs a new verifier.
 - Pin `golang.org/x/crypto` to the upstream fix commit for GO-2026-5932, removing the unused `openpgp` packages from the dependency graph.
 - Add optional per-provider hourly and daily spend breakers. Breaker state uses estimated costs in memory, emits structured trip/reset events, and returns `503 provider_spend_breaker` when configured to stop.
 - Raise the Go patch floor to 1.27.4 for GO-2026-6859 (CVE-2026-97054), an HTTP/1

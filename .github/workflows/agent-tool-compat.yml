@@ -5,6 +5,7 @@ name: Agent tool compatibility
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'tests/agent_compat/**'
       - '**/*.go'
@@ -31,6 +32,7 @@ concurrency:
 
 jobs:
   local-agent-mock:
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: ${{ vars.ROUTER_LIGHT_RUNNER || 'router-arc-small' }}
     timeout-minutes: 20
     steps:
@@ -65,6 +67,7 @@ jobs:
         run: make agent-tool-mock
 
   codex-workspace-sandbox:
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     # Codex requires unprivileged user namespaces for its workspace sandbox,
     # which router-arc containers do not currently provide. This one VM job is
     # an intentional exception to the ARC runner contract; never bypass sandboxing.

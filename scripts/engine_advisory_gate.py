@@ -10,6 +10,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -305,19 +306,45 @@ def run_gate(images: list[EngineImage], deploy_root: Path = DEPLOY) -> dict[str,
         "checked_images": len(images),
         "advisories": len(findings),
         "unexcepted": len(failures),
+        "images": [
+            {
+                "source": display_path(image.source),
+                "image": image.reference,
+                "engine": image.engine,
+                "package": image.package,
+                "version": image.version,
+            }
+            for image in images
+        ],
         "findings": findings,
     }
+
+
+def write_snapshot(path: Path, result: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as stream:
+        json.dump(result, stream, indent=2, sort_keys=True)
+        stream.write("\n")
+        temporary = Path(stream.name)
+    os.replace(temporary, path)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="check deploy images and return nonzero on unexcepted advisories")
+    parser.add_argument("--snapshot", type=Path, help="write the bounded advisory result to a JSON snapshot")
     args = parser.parse_args()
     try:
         result = run_gate(enumerate_images(DEPLOY), deploy_root=DEPLOY)
     except GateError as exc:
         print(f"engine advisory gate failed closed: {exc}", file=sys.stderr)
         return 2
+    if args.snapshot is not None:
+        try:
+            write_snapshot(args.snapshot, result)
+        except OSError:
+            print("engine advisory gate could not write its JSON snapshot", file=sys.stderr)
+            return 2
     print(json.dumps(result, indent=2, sort_keys=True))
     return 1 if args.check and result["unexcepted"] else 0
 

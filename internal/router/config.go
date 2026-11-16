@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"math"
@@ -35,11 +36,11 @@ func (c EligibilityConfig) implicitEnabled() bool {
 }
 
 type Config struct {
-	Eligibility EligibilityConfig `yaml:"eligibility"`
-	Server      ServerConfig      `yaml:"server"`
-	// Admin is the control plane's own listener (#809). An absent or disabled
-	// block keeps the v4.7 surface: no second listener, legacy /admin/* and
-	// /metrics on the serving port.
+	Eligibility EligibilityConfig    `yaml:"eligibility"`
+	Security    RouterSecurityConfig `yaml:"security" json:"security,omitempty"`
+	Server      ServerConfig         `yaml:"server"`
+	// Admin is the control plane's own listener (#809). File configuration
+	// enables it by default; explicit false keeps one listener.
 	Admin              AdminPlaneConfig          `yaml:"admin" json:"admin"`
 	Users              []UserConfig              `yaml:"users"`
 	Projects           []ProjectConfig           `yaml:"projects"`
@@ -47,6 +48,7 @@ type Config struct {
 	Provider           map[string]ProviderConfig `yaml:"providers"`
 	Models             map[string]ModelGroup     `yaml:"models"`
 	Callers            []CallerConfig            `yaml:"callers"`
+	MCP                MCPGatewayConfig          `yaml:"mcp"`
 	StatePath          string                    `yaml:"state_path"`
 	baseDir            string
 	// secretEnvRefs names the environment variables expanded into this
@@ -55,13 +57,67 @@ type Config struct {
 	secretEnvRefs []string
 }
 
+// MCPGatewayConfig configures the caller-authenticated MCP gateway.
+type MCPGatewayConfig struct {
+	Enabled   bool                 `yaml:"enabled"`
+	Path      string               `yaml:"path"`
+	TimeoutMS int                  `yaml:"timeout_ms"`
+	RPM       int                  `yaml:"rpm"`
+	Servers   []MCPServerConfig    `yaml:"servers"`
+	Policies  []MCPPolicyConfig    `yaml:"policies"`
+	Limits    []MCPToolLimitConfig `yaml:"limits"`
+}
+
+// MCPServerConfig identifies one upstream MCP server and an optional static credential.
+type MCPServerConfig struct {
+	Name            string   `yaml:"name"`
+	URL             string   `yaml:"url"`
+	CredentialEnv   string   `yaml:"credential_env"`
+	AllowHosts      []string `yaml:"allow_hosts"`
+	AllowHTTP       bool     `yaml:"allow_http"`
+	ProtocolVersion string   `yaml:"protocol_version"`
+}
+
+// MCPPolicyConfig limits selected callers, projects, or model groups to named tools.
+type MCPPolicyConfig struct {
+	Caller        string   `yaml:"caller"`
+	Project       string   `yaml:"project"`
+	ModelGroup    string   `yaml:"model_group"`
+	Tools         []string `yaml:"tools"`
+	DenyByDefault bool     `yaml:"deny_by_default"`
+}
+
+// MCPToolLimitConfig caps requests and estimated spend for one caller. An
+// empty tool applies the spend ceiling to the caller across all MCP tools.
+type MCPToolLimitConfig struct {
+	Caller         string  `yaml:"caller"`
+	Tool           string  `yaml:"tool"`
+	RPM            int     `yaml:"rpm"`
+	HourlyUSD      float64 `yaml:"hourly_usd"`
+	DailyUSD       float64 `yaml:"daily_usd"`
+	CostPerCallUSD float64 `yaml:"cost_per_call_usd"`
+}
+
+type RouterSecurityConfig struct {
+	KeyHygiene KeyHygieneConfig `yaml:"key_hygiene" json:"keyHygiene,omitempty"`
+}
+
+type KeyHygieneConfig struct {
+	MinEntropyBits int  `yaml:"min_entropy_bits" json:"minEntropyBits,omitempty"`
+	MaxAgeDays     int  `yaml:"max_age_days" json:"maxAgeDays,omitempty"`
+	Enforce        bool `yaml:"enforce" json:"enforce,omitempty"`
+}
+
 const defaultMaxSSELineBytes = 8 << 20
+const defaultMaxInflightSSELineBytes = 64 << 20
 const minMaxSSELineBytes = 64 << 10
 const maxMaxSSELineBytes = 32 << 20
+const maxMaxInflightSSELineBytes = 1 << 30
 
 type StreamingConfig struct {
-	MaxSSELineBytes int    `yaml:"max_sse_line_bytes" json:"maxSseLineBytes"`
-	Translator      string `yaml:"translator" json:"translator"`
+	MaxSSELineBytes      int    `yaml:"max_sse_line_bytes" json:"maxSseLineBytes"`
+	MaxInflightLineBytes int    `yaml:"max_inflight_line_bytes" json:"maxInflightLineBytes"`
+	Translator           string `yaml:"translator" json:"translator"`
 }
 
 // Model identity modes for server.responses.model_identity. Upstream reports
@@ -78,8 +134,9 @@ type ResponsesConfig struct {
 }
 
 type ServerConfig struct {
-	Detectors []DetectorConfig `yaml:"detectors,omitempty" json:"detectors,omitempty"`
-	Streaming StreamingConfig  `yaml:"streaming" json:"streaming"`
+	Detectors       []DetectorConfig      `yaml:"detectors,omitempty" json:"detectors,omitempty"`
+	AutoContainment AutoContainmentConfig `yaml:"auto_containment,omitempty" json:"auto_containment,omitempty"`
+	Streaming       StreamingConfig       `yaml:"streaming" json:"streaming"`
 	// HTTP server deadlines (#759). Zero selects the default. The write
 	// deadline is absolute, so it defaults above the upstream budget; event
 	// streams additionally get a progress deadline (StreamIdleTimeoutMS).
@@ -96,22 +153,24 @@ type ServerConfig struct {
 	ContainmentWebhook  ContainmentWebhookConfig  `yaml:"containment_webhook" json:"containmentWebhook,omitempty"`
 	// TLS configures the serving listener's own certificate (#810). The zero
 	// value keeps the v4.7 plaintext listener.
-	TLS          ServerTLSConfig    `yaml:"tls,omitempty"`
-	AdminReports AdminReportsConfig `yaml:"admin_reports"`
+	TLS          ServerTLSConfig      `yaml:"tls,omitempty"`
+	AdminReports AdminReportsConfig   `yaml:"admin_reports"`
+	Security     SecurityEventsConfig `yaml:"security" json:"security,omitempty"`
 	// AdminAPI is the `admin.api` block of the /admin/v1 contract. The documented defaults
 	// apply when it is absent.
-	AdminAPI          AdminAPIConfig           `yaml:"admin_api" json:"admin_api"`
-	ClientIP          ClientIPConfig           `yaml:"client_ip" json:"client_ip"`
-	Cache             CacheConfig              `yaml:"cache"`
-	Logging           LoggingConfig            `yaml:"logging"`
-	UsageDB           UsageDBConfig            `yaml:"usage_db"`
-	ConfigSource      ConfigSourceConfig       `yaml:"config_source" json:"config_source"`
-	Upstream          UpstreamConfig           `yaml:"upstream"`
-	Diagnostics       DiagnosticsConfig        `yaml:"diagnostics"`
-	ContentCapture    ContentCaptureConfig     `yaml:"content_capture"`
-	Retention         RetentionConfig          `yaml:"retention"`
-	DecisionTelemetry DecisionTelemetryConfig  `yaml:"decision_telemetry"`
-	TrafficShape      ServerTrafficShapeConfig `yaml:"traffic_shape" json:"traffic_shape"`
+	AdminAPI                    AdminAPIConfig                    `yaml:"admin_api" json:"admin_api"`
+	ClientIP                    ClientIPConfig                    `yaml:"client_ip" json:"client_ip"`
+	Cache                       CacheConfig                       `yaml:"cache"`
+	Logging                     LoggingConfig                     `yaml:"logging"`
+	UsageDB                     UsageDBConfig                     `yaml:"usage_db"`
+	ProviderUsageReconciliation ProviderUsageReconciliationConfig `yaml:"provider_usage_reconciliation" json:"providerUsageReconciliation,omitempty"`
+	ConfigSource                ConfigSourceConfig                `yaml:"config_source" json:"config_source"`
+	Upstream                    UpstreamConfig                    `yaml:"upstream"`
+	Diagnostics                 DiagnosticsConfig                 `yaml:"diagnostics"`
+	ContentCapture              ContentCaptureConfig              `yaml:"content_capture"`
+	Retention                   RetentionConfig                   `yaml:"retention"`
+	DecisionTelemetry           DecisionTelemetryConfig           `yaml:"decision_telemetry"`
+	TrafficShape                ServerTrafficShapeConfig          `yaml:"traffic_shape" json:"traffic_shape"`
 	// ExperimentProfiles holds opt-in, scoped TTFT delay and delivered-token
 	// pacing profiles for endpoint-bound agent studies (#379). They are off by
 	// default, must be scoped to experiment callers/groups/targets, and never
@@ -123,6 +182,24 @@ type ServerConfig struct {
 	// ResponsesAffinity enables owner-bound stored Responses affinity for
 	// explicitly listed model groups (#533). It is off by default.
 	ResponsesAffinity ResponsesAffinityConfig `yaml:"responses_affinity" json:"responsesAffinity,omitempty"`
+}
+
+// AutoContainmentConfig maps enforce-mode detector signals to bounded key actions.
+// It is off by default; shadow mode records proposed actions without changing admission.
+type AutoContainmentConfig struct {
+	Mode                   string                      `yaml:"mode" json:"mode,omitempty"`
+	MaxActionsPerMinute    int                         `yaml:"max_actions_per_minute" json:"maxActionsPerMinute,omitempty"`
+	UnlimitedThrottleLimit int                         `yaml:"unlimited_throttle_limit,omitempty" json:"unlimitedThrottleLimit,omitempty"`
+	ExemptCallers          []string                    `yaml:"exempt_callers,omitempty" json:"exemptCallers,omitempty"`
+	Rules                  []AutoContainmentRuleConfig `yaml:"rules,omitempty" json:"rules,omitempty"`
+}
+
+type AutoContainmentRuleConfig struct {
+	DetectorID      string `yaml:"detector_id" json:"detectorId"`
+	Severity        string `yaml:"severity" json:"severity"`
+	Action          string `yaml:"action" json:"action"`
+	TTLMS           int    `yaml:"ttl_ms" json:"ttlMs"`
+	ThrottlePercent int    `yaml:"throttle_percent,omitempty" json:"throttlePercent,omitempty"`
 }
 
 // ContainmentWebhookConfig enables signed SOAR/EDR containment requests.
@@ -212,6 +289,21 @@ type AdminReportsConfig struct {
 type AdminSecurityReportsConfig struct {
 	Enabled       bool `yaml:"enabled" json:"enabled"`
 	RetentionDays int  `yaml:"retention_days" json:"retention_days"`
+}
+
+// SecurityEventsConfig controls the opt-in OCSF JSON Lines event stream.
+type SecurityEventsConfig struct {
+	Events SecurityEventStreamConfig `yaml:"events" json:"events,omitempty"`
+}
+
+type SecurityEventStreamConfig struct {
+	Enabled           bool     `yaml:"enabled" json:"enabled,omitempty"`
+	Version           string   `yaml:"version" json:"version,omitempty"`
+	Output            string   `yaml:"output" json:"output,omitempty"`
+	Path              string   `yaml:"path" json:"path,omitempty"`
+	WebhookURL        string   `yaml:"webhook_url" json:"webhookUrl,omitempty"`
+	WebhookAllowHosts []string `yaml:"webhook_allow_hosts,omitempty" json:"webhookAllowHosts,omitempty"`
+	WebhookSecretEnv  string   `yaml:"webhook_secret_env" json:"webhookSecretEnv,omitempty"`
 }
 
 type ClientIPConfig struct {
@@ -355,9 +447,10 @@ type RetentionClassConfig struct {
 }
 
 type CacheConfig struct {
-	Enabled    bool          `yaml:"enabled"`
-	MaxBytes   int64         `yaml:"max_bytes"`
-	DefaultTTL time.Duration `yaml:"default_ttl"`
+	Enabled            bool          `yaml:"enabled"`
+	MaxBytes           int64         `yaml:"max_bytes"`
+	DefaultTTL         time.Duration `yaml:"default_ttl"`
+	UpstreamSaltKeyEnv string        `yaml:"upstream_salt_key_env,omitempty" json:"upstreamSaltKeyEnv,omitempty"`
 }
 
 type LoggingConfig struct {
@@ -373,6 +466,27 @@ type UsageDBConfig struct {
 	DSN             string `yaml:"dsn"`
 	Enable          *bool  `yaml:"enabled"`
 	MigrationPolicy string `yaml:"migration_policy"`
+}
+
+// ProviderUsageReconciliationConfig enables a bounded daily comparison with provider billing data.
+type ProviderUsageReconciliationConfig struct {
+	Enabled         bool                               `yaml:"enabled" json:"enabled,omitempty"`
+	ThresholdUSD    float64                            `yaml:"threshold_usd" json:"thresholdUsd,omitempty"`
+	TimeoutMS       int                                `yaml:"timeout_ms" json:"timeoutMs,omitempty"`
+	MaxPages        int                                `yaml:"max_pages" json:"maxPages,omitempty"`
+	ScheduleHourUTC *int                               `yaml:"schedule_hour_utc" json:"scheduleHourUtc,omitempty"`
+	MaxCatchUpDays  int                                `yaml:"max_catch_up_days" json:"maxCatchUpDays,omitempty"`
+	Providers       []ProviderUsageReconciliationEntry `yaml:"providers" json:"providers,omitempty"`
+}
+
+// ProviderUsageReconciliationEntry maps one router provider to its vendor billing identity.
+type ProviderUsageReconciliationEntry struct {
+	Provider      string `yaml:"provider" json:"provider"`
+	Kind          string `yaml:"kind" json:"kind"`
+	CredentialEnv string `yaml:"credential_env" json:"credentialEnv,omitempty"`
+	ProviderKeyID string `yaml:"provider_key_id" json:"providerKeyId,omitempty"`
+	AWSRegion     string `yaml:"aws_region" json:"awsRegion,omitempty"`
+	AWSRoleARN    string `yaml:"aws_role_arn" json:"awsRoleArn,omitempty"`
 }
 
 // ConfigSourceConfig selects whether the router serves from a local YAML file
@@ -1131,12 +1245,15 @@ type CallerConfig struct {
 	TokenHash string `yaml:"token_hash,omitempty" json:"token_hash,omitempty"`
 	// TokenSHA256 is the deprecated unsalted SHA-256 hex of the caller token.
 	// It is still accepted, with a startup warning; use TokenHash instead.
-	TokenSHA256    string               `yaml:"token_sha256,omitempty" json:"token_sha256,omitempty"`
-	TokenID        string               `yaml:"token_id" json:"token_id"`
-	Allow          []string             `yaml:"allow" json:"allow"`
-	MetricsAdmin   bool                 `yaml:"metrics_admin" json:"metrics_admin"`
-	ContentAdmin   bool                 `yaml:"content_admin" json:"content_admin"`
-	ContentCapture ContentCaptureConfig `yaml:"content_capture" json:"content_capture"`
+	TokenSHA256        string               `yaml:"token_sha256,omitempty" json:"token_sha256,omitempty"`
+	TokenID            string               `yaml:"token_id" json:"token_id"`
+	TokenFormatVersion int                  `yaml:"token_format_version,omitempty" json:"token_format_version,omitempty"`
+	TokenEntropyBits   int                  `yaml:"token_entropy_bits,omitempty" json:"token_entropy_bits,omitempty"`
+	RevokedTokenHash   string               `yaml:"revoked_token_hash,omitempty" json:"revoked_token_hash,omitempty"`
+	Allow              []string             `yaml:"allow" json:"allow"`
+	MetricsAdmin       bool                 `yaml:"metrics_admin" json:"metrics_admin"`
+	ContentAdmin       bool                 `yaml:"content_admin" json:"content_admin"`
+	ContentCapture     ContentCaptureConfig `yaml:"content_capture" json:"content_capture"`
 	// SpendCeiling is the caller's opt-in entitlement for semantic/dynamic_score escalation.
 	SpendCeiling SpendCeilingConfig  `yaml:"spend_ceiling" json:"spend_ceiling"`
 	Rate         RateConfig          `yaml:"rate" json:"rate"`
@@ -1144,6 +1261,8 @@ type CallerConfig struct {
 	Quota        QuotaConfig         `yaml:"quota" json:"quota"`
 	Key          KeyConfig           `yaml:"key" json:"key"`
 	Binding      CallerBindingConfig `yaml:"binding,omitempty" json:"binding,omitempty"`
+	// TokenIssuedAt is the UTC RFC3339 issuance time used by posture checks.
+	TokenIssuedAt string `yaml:"token_issued_at,omitempty" json:"token_issued_at,omitempty"`
 }
 
 type UserConfig struct {
@@ -1156,6 +1275,22 @@ type UserConfig struct {
 }
 
 type ProjectConfig struct {
+	ID                      string                     `yaml:"id" json:"id"`
+	Name                    string                     `yaml:"name" json:"name"`
+	Status                  string                     `yaml:"status" json:"status"`
+	Description             string                     `yaml:"description" json:"description"`
+	Environments            []ProjectEnvironmentConfig `yaml:"environments,omitempty" json:"environments,omitempty"`
+	Budget                  ProjectBudgetConfig        `yaml:"budget,omitempty" json:"budget,omitempty"`
+	ShareCacheWithinProject bool                       `yaml:"share_cache_within_project,omitempty" json:"shareCacheWithinProject,omitempty"`
+}
+
+type ProjectBudgetConfig struct {
+	DailyUSD        float64 `yaml:"daily_usd,omitempty" json:"daily_usd,omitempty"`
+	MonthlyUSD      float64 `yaml:"monthly_usd,omitempty" json:"monthly_usd,omitempty"`
+	AlertThresholds []int   `yaml:"alert_thresholds,omitempty" json:"alert_thresholds,omitempty"`
+}
+
+type ProjectEnvironmentConfig struct {
 	ID          string `yaml:"id" json:"id"`
 	Name        string `yaml:"name" json:"name"`
 	Status      string `yaml:"status" json:"status"`
@@ -1163,12 +1298,13 @@ type ProjectConfig struct {
 }
 
 type ProjectMembershipConfig struct {
-	UserID   string `yaml:"user_id" json:"user_id"`
-	Project  string `yaml:"project" json:"project"`
-	Role     string `yaml:"role" json:"role"`
-	Status   string `yaml:"status" json:"status"`
-	Source   string `yaml:"source" json:"source"`
-	JoinedAt string `yaml:"joined_at" json:"joined_at"`
+	UserID      string `yaml:"user_id" json:"user_id"`
+	Project     string `yaml:"project" json:"project"`
+	Environment string `yaml:"environment,omitempty" json:"environment,omitempty"`
+	Role        string `yaml:"role" json:"role"`
+	Status      string `yaml:"status" json:"status"`
+	Source      string `yaml:"source" json:"source"`
+	JoinedAt    string `yaml:"joined_at" json:"joined_at"`
 }
 
 type RateConfig struct {
@@ -1265,10 +1401,54 @@ func loadConfigFile(path string, redactor *secretRedactor) (*Config, error) {
 	if err := yaml.Unmarshal(cleaned, &cfg); err != nil {
 		return nil, err
 	}
+	if err := applyV5AdminConfig(cleaned, &cfg); err != nil {
+		return nil, err
+	}
 	cfg.setDefaults()
 	cfg.baseDir = filepath.Dir(path)
 	cfg.secretEnvRefs = envRefs
 	return &cfg, cfg.Validate()
+}
+
+func applyV5AdminConfig(raw []byte, cfg *Config) error {
+	adminEnabledSet, err := validateV5AdminConfig(raw)
+	if err != nil {
+		return err
+	}
+	if cfg != nil {
+		cfg.Admin.enabledSet = adminEnabledSet
+	}
+	return nil
+}
+
+// validateV5AdminConfig rejects removed v4.8 admin settings and reports
+// whether admin.enabled was explicitly set. Omission enables the listener.
+func validateV5AdminConfig(raw []byte) (bool, error) {
+	var root yaml.Node
+	if err := yaml.Unmarshal(raw, &root); err != nil {
+		return false, err
+	}
+	if root.Kind != yaml.DocumentNode || len(root.Content) == 0 || root.Content[0].Kind != yaml.MappingNode {
+		return false, nil
+	}
+	for i := 0; i+1 < len(root.Content[0].Content); i += 2 {
+		if root.Content[0].Content[i].Value != "admin" || root.Content[0].Content[i+1].Kind != yaml.MappingNode {
+			continue
+		}
+		admin := root.Content[0].Content[i+1]
+		enabledSet := false
+		for j := 0; j+1 < len(admin.Content); j += 2 {
+			key := admin.Content[j].Value
+			switch key {
+			case "enabled":
+				enabledSet = true
+			case "legacy_routes_on_serving_port", "legacy_sunset":
+				return false, fmt.Errorf("config key admin.%s was removed in v5.0.0; remove it from file configuration, or run `metrum-ai-router-migrate --scope router-config --action apply` followed by `metrum-ai-router-migrate --scope router-config --action maintenance --backup-evidence-ref <backup-reference>` for stored configurations; use /admin/v1 on the admin listener", key)
+			}
+		}
+		return enabledSet, nil
+	}
+	return false, nil
 }
 
 func validateRemovedScriptConfig(raw []byte) error {
@@ -1509,11 +1689,14 @@ func (c *Config) attemptChainBudgetMS() int {
 }
 
 func (c *Config) setDefaults() {
+	if !c.Admin.enabledSet {
+		c.Admin.Enabled = true
+	}
 	defaultAdminPlaneConfig(&c.Admin)
 	for i := range c.Server.Detectors {
 		detector := &c.Server.Detectors[i]
 		if detector.Mode == "" {
-			detector.Mode = "off"
+			detector.Mode = "report"
 		}
 		if detector.TimeoutMS == 0 {
 			detector.TimeoutMS = 500
@@ -1527,6 +1710,9 @@ func (c *Config) setDefaults() {
 	}
 	if c.Server.Streaming.MaxSSELineBytes == 0 {
 		c.Server.Streaming.MaxSSELineBytes = defaultMaxSSELineBytes
+	}
+	if c.Server.Streaming.MaxInflightLineBytes == 0 {
+		c.Server.Streaming.MaxInflightLineBytes = defaultMaxInflightSSELineBytes
 	}
 	if c.Server.Streaming.Translator == "" {
 		c.Server.Streaming.Translator = "incremental"
@@ -1700,10 +1886,15 @@ func (c *Config) setDefaults() {
 	for i := range c.Projects {
 		c.Projects[i].ID = normalizeAccountID(c.Projects[i].ID)
 		c.Projects[i].Status = normalizeStatusDefault(c.Projects[i].Status)
+		for j := range c.Projects[i].Environments {
+			c.Projects[i].Environments[j].ID = normalizeAccountID(c.Projects[i].Environments[j].ID)
+			c.Projects[i].Environments[j].Status = normalizeStatusDefault(c.Projects[i].Environments[j].Status)
+		}
 	}
 	for i := range c.ProjectMemberships {
 		c.ProjectMemberships[i].UserID = normalizeAccountID(c.ProjectMemberships[i].UserID)
 		c.ProjectMemberships[i].Project = normalizeAccountID(c.ProjectMemberships[i].Project)
+		c.ProjectMemberships[i].Environment = normalizeAccountID(c.ProjectMemberships[i].Environment)
 		c.ProjectMemberships[i].Status = normalizeStatusDefault(c.ProjectMemberships[i].Status)
 		c.ProjectMemberships[i].Role = normalizeRoleDefault(c.ProjectMemberships[i].Role)
 	}
@@ -1743,6 +1934,9 @@ func (c *Config) setDefaults() {
 			})
 		}
 	}
+	if c.MCP.Enabled && c.MCP.RPM == 0 {
+		c.MCP.RPM = 60
+	}
 }
 
 func (c *Config) Validate() error {
@@ -1762,8 +1956,32 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 	if err := validateDetectorConfigs(c.Server.Detectors); err != nil {
 		return err
 	}
+	if err := validateAutoContainment(c.Server.AutoContainment); err != nil {
+		return err
+	}
+	if c.Server.AutoContainment.Mode == "enforce" && c.Server.ConfigSource.Mode != "database" {
+		for _, rule := range c.Server.AutoContainment.Rules {
+			if rule.Action == "suspend" {
+				return errors.New("server.auto_containment suspend rules require server.config_source.mode database so containment can be resumed")
+			}
+		}
+	}
+	if c.Security.KeyHygiene.MinEntropyBits < 0 || c.Security.KeyHygiene.MinEntropyBits > 256 {
+		return fmt.Errorf("security.key_hygiene.min_entropy_bits must be 0 (default) or between 1 and 256")
+	}
+	if c.Security.KeyHygiene.MaxAgeDays < 0 || c.Security.KeyHygiene.MaxAgeDays > 3650 {
+		return fmt.Errorf("security.key_hygiene.max_age_days must be 0 (default) or between 1 and 3650")
+	}
+	entropyFloor := c.Security.KeyHygiene.MinEntropyBits
+	if entropyFloor == 0 {
+		entropyFloor = 128
+	}
+
 	if n := c.Server.Streaming.MaxSSELineBytes; n != 0 && (n < minMaxSSELineBytes || n > maxMaxSSELineBytes) {
 		return fmt.Errorf("server.streaming.max_sse_line_bytes must be between %d and %d (zero selects %d)", minMaxSSELineBytes, maxMaxSSELineBytes, defaultMaxSSELineBytes)
+	}
+	if n := c.Server.Streaming.MaxInflightLineBytes; n != 0 && (n < minMaxSSELineBytes || n > maxMaxInflightSSELineBytes) {
+		return fmt.Errorf("server.streaming.max_inflight_line_bytes must be between %d and %d (zero selects %d)", minMaxSSELineBytes, maxMaxInflightSSELineBytes, defaultMaxInflightSSELineBytes)
 	}
 	switch c.Server.Streaming.Translator {
 	case "", "incremental", "synthesized":
@@ -1848,6 +2066,18 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 	if err := validateAdminReports(c.Server.AdminReports, c.Server.AdminAuth, c.Server.UsageDB); err != nil {
 		return err
 	}
+	if err := validateProviderUsageReconciliation(c.Server.ProviderUsageReconciliation, c.Provider, c.Server.UsageDB, c.Server.AdminReports.Security.Enabled, requireAdminKeyEnv); err != nil {
+		return err
+	}
+	if err := validateMCPGateway(c.MCP, requireAdminKeyEnv); err != nil {
+		return err
+	}
+	if c.MCP.Enabled && c.Server.UsageDB.Enable != nil && !*c.Server.UsageDB.Enable {
+		return fmt.Errorf("mcp.enabled requires usage_db enabled for invocation audit")
+	}
+	if err := validateSecurityEvents(c.Server.Security.Events); err != nil {
+		return err
+	}
 	if err := validateClientIP(c.Server.ClientIP); err != nil {
 		return err
 	}
@@ -1899,6 +2129,11 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 	if _, err := c.validateAccounts(); err != nil {
 		return err
 	}
+	if err := validateMCPPolicyReferences(c.MCP, c.Callers, c.Projects, c.Models); err != nil {
+		return err
+	}
+	cacheSaltProviderConfigured := false
+	unsupportedCacheSaltProviderConfigured := false
 	for name, p := range c.Provider {
 		breaker := p.SpendBreaker
 		if breaker.HourlyUSD < 0 || breaker.DailyUSD < 0 || math.IsNaN(breaker.HourlyUSD) || math.IsNaN(breaker.DailyUSD) || math.IsInf(breaker.HourlyUSD, 0) || math.IsInf(breaker.DailyUSD, 0) {
@@ -1913,8 +2148,18 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		if normalizeDialect(p.Dialect) == "" {
 			return fmt.Errorf("provider %s has unsupported dialect %q", name, p.Dialect)
 		}
-		if p.UpstreamKind != "" && p.UpstreamKind != "router" {
+		if p.UpstreamKind != "" && p.UpstreamKind != "router" && p.UpstreamKind != "vllm" && p.UpstreamKind != "sglang" {
 			return fmt.Errorf("provider %s has unsupported upstream_kind %q", name, p.UpstreamKind)
+		}
+		if p.UpstreamKind == "vllm" {
+			cacheSaltProviderConfigured = true
+			dialect := normalizeDialect(p.Dialect)
+			if dialect != "openai-chat" && dialect != "openai-responses" {
+				return fmt.Errorf("provider %s cache salting requires an OpenAI-compatible dialect", name)
+			}
+		}
+		if p.UpstreamKind == "sglang" {
+			unsupportedCacheSaltProviderConfigured = true
 		}
 		if p.UpstreamKind == "router" && isBedrock(p) {
 			return fmt.Errorf("provider %s cannot use upstream_kind router with bedrock", name)
@@ -1987,6 +2232,15 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 				return err
 			}
 		}
+	}
+	if unsupportedCacheSaltProviderConfigured && c.Server.Cache.UpstreamSaltKeyEnv != "" {
+		return fmt.Errorf("server.cache.upstream_salt_key_env supports vllm only; SGLang prefix-cache isolation is not supported")
+	}
+	if cacheSaltProviderConfigured && !validEnvName(c.Server.Cache.UpstreamSaltKeyEnv) {
+		return fmt.Errorf("server.cache.upstream_salt_key_env is required for vllm providers")
+	}
+	if !cacheSaltProviderConfigured && c.Server.Cache.UpstreamSaltKeyEnv != "" && !validEnvName(c.Server.Cache.UpstreamSaltKeyEnv) {
+		return fmt.Errorf("server.cache.upstream_salt_key_env must name an environment variable")
 	}
 	if len(c.Models) == 0 {
 		return fmt.Errorf("at least one model group is required")
@@ -2203,6 +2457,32 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 			return fmt.Errorf("duplicate caller id %q for callers %s and %s", caller.ID, previousCallerID, caller.ID)
 		}
 		callerIDs[caller.ID] = caller.ID
+		entropyBits := caller.TokenEntropyBits
+		if caller.TokenFormatVersion != 0 && caller.TokenFormatVersion != 2 {
+			return fmt.Errorf("caller %s token_format_version must be 2 when set", caller.ID)
+		}
+		if entropyBits < 0 || entropyBits > 256 {
+			return fmt.Errorf("caller %s token_entropy_bits must be between 1 and 256", caller.ID)
+		}
+		if caller.TokenFormatVersion == 2 && !strings.HasPrefix(caller.TokenID, tokenPrefixName+"_") {
+			return fmt.Errorf("caller %s token_format_version requires a structured token_id", caller.ID)
+		}
+		if entropyBits > 0 && caller.TokenFormatVersion != 2 {
+			return fmt.Errorf("caller %s token_entropy_bits requires token_format_version 2", caller.ID)
+		}
+		devKey := callerHasDevelopmentToken(caller)
+		if entropyBits < entropyFloor {
+			if c.Security.KeyHygiene.Enforce {
+				return fmt.Errorf("caller %s token entropy is below security.key_hygiene.min_entropy_bits", caller.ID)
+			}
+			log.Printf("WARNING: caller %q token entropy is unknown or below configured floor; rotate to a checksummed v2 token with at least %d bits", caller.ID, entropyFloor)
+		}
+		if devKey {
+			if c.Security.KeyHygiene.Enforce {
+				return fmt.Errorf("caller %s uses a development environment token", caller.ID)
+			}
+			log.Printf("WARNING: caller %q uses a development environment token", caller.ID)
+		}
 		if ownerUser == "" && (caller.Project != "" || caller.User != "" || caller.OwnerUser != "") {
 			return fmt.Errorf("caller %s has invalid owner_user", caller.ID)
 		}
@@ -2251,6 +2531,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 			}
 			callerTokenHashes[tokenHashKey] = caller.ID
 		}
+		if caller.RevokedTokenHash != "" && caller.RevokedTokenHash != caller.TokenHash && !strings.EqualFold(caller.RevokedTokenHash, caller.TokenSHA256) {
+			return fmt.Errorf("caller %s revoked_token_hash must match its stored token verifier", caller.ID)
+		}
 		if caller.TokenID != "" {
 			if previousCallerID, ok := callerTokenIDs[caller.TokenID]; ok {
 				return fmt.Errorf("duplicate caller token_id for callers %s and %s", previousCallerID, caller.ID)
@@ -2273,6 +2556,56 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		}
 		if err := validateSpendCeiling("caller "+caller.ID+" spend_ceiling", caller.SpendCeiling, knownTiers); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+func validateAutoContainment(cfg AutoContainmentConfig) error {
+	if cfg.Mode != "" && cfg.Mode != "off" && cfg.Mode != "shadow" && cfg.Mode != "enforce" {
+		return errors.New("server.auto_containment.mode must be off, shadow, or enforce")
+	}
+	if cfg.MaxActionsPerMinute < 0 || cfg.MaxActionsPerMinute > 60 {
+		return errors.New("server.auto_containment.max_actions_per_minute must be between 1 and 60 when set")
+	}
+	if cfg.Mode != "" && cfg.Mode != "off" && (cfg.MaxActionsPerMinute == 0 || len(cfg.Rules) == 0) {
+		return errors.New("server.auto_containment requires max_actions_per_minute and rules when enabled")
+	}
+	if cfg.UnlimitedThrottleLimit < 0 || cfg.UnlimitedThrottleLimit > 1000000 {
+		return errors.New("server.auto_containment.unlimited_throttle_limit must be between 0 and 1000000")
+	}
+	if len(cfg.Rules) > 64 || len(cfg.ExemptCallers) > 256 {
+		return errors.New("server.auto_containment exceeds bounded rule or exemption limits")
+	}
+	seen := map[string]bool{}
+	for i, rule := range cfg.Rules {
+		if !safeDetectorID(rule.DetectorID) || (rule.Severity != "low" && rule.Severity != "medium" && rule.Severity != "high" && rule.Severity != "critical") {
+			return fmt.Errorf("server.auto_containment.rules[%d] has invalid detector_id or severity", i)
+		}
+		if rule.Action != "throttle" && rule.Action != "suspend" {
+			return fmt.Errorf("server.auto_containment.rules[%d].action must be throttle or suspend", i)
+		}
+		if rule.TTLMS < 1000 || rule.TTLMS > 24*60*60*1000 {
+			return fmt.Errorf("server.auto_containment.rules[%d].ttl_ms must be between 1000 and 86400000", i)
+		}
+		if rule.Action == "throttle" && (rule.ThrottlePercent < 1 || rule.ThrottlePercent > 100) {
+			return fmt.Errorf("server.auto_containment.rules[%d].throttle_percent must be between 1 and 100", i)
+		}
+		if rule.Action == "throttle" && cfg.UnlimitedThrottleLimit < 1 {
+			return errors.New("server.auto_containment.unlimited_throttle_limit is required for throttle rules")
+		}
+		if rule.Action == "suspend" && rule.ThrottlePercent != 0 {
+			return fmt.Errorf("server.auto_containment.rules[%d] suspend cannot set throttle_percent", i)
+		}
+		key := rule.DetectorID + ":" + rule.Severity
+		if seen[key] {
+			return fmt.Errorf("server.auto_containment has duplicate rule %s", key)
+		}
+		seen[key] = true
+	}
+	for _, caller := range cfg.ExemptCallers {
+		if !safeDetectorID(caller) {
+			return errors.New("server.auto_containment.exempt_callers contains invalid caller id")
 		}
 	}
 	return nil
@@ -3294,6 +3627,9 @@ func validateRetentionConfig(cfg RetentionConfig) error {
 		if class.RetentionDays <= 0 {
 			return fmt.Errorf("%s retention_days must be positive", label)
 		}
+		if class.RetentionDays > 36500 {
+			return fmt.Errorf("%s retention_days must not exceed 36500", label)
+		}
 		if class.BatchSize <= 0 {
 			return fmt.Errorf("%s batch_size must be positive", label)
 		}
@@ -3535,18 +3871,26 @@ func (c *Config) resolveTarget(group string, target Target) (Target, error) {
 	if !ok {
 		return target, fmt.Errorf("model group %s references unknown provider %s", group, target.Provider)
 	}
-	if target.ModelRef == "" {
+	var catalog ProviderModel
+	directModel := target.ModelRef == ""
+	if directModel {
 		if target.Model == "" {
 			return target, fmt.Errorf("model group %s target for provider %s missing model or model_ref", group, target.Provider)
 		}
-		return target, nil
-	}
-	catalog, ok := provider.Models[target.ModelRef]
-	if !ok {
-		return target, fmt.Errorf("model group %s target references unknown model_ref %s for provider %s", group, target.ModelRef, target.Provider)
-	}
-	if target.Model == "" {
-		target.Model = catalog.Model
+		catalog, ok = providerModelByID(provider.Models, target.Model, target.Dialect, provider.Dialect)
+		if !ok {
+			// Preserve direct-model targets that are not represented in the provider catalog.
+			return target, nil
+		}
+		return mergeTargetCapabilities(target, catalog), nil
+	} else {
+		catalog, ok = provider.Models[target.ModelRef]
+		if !ok {
+			return target, fmt.Errorf("model group %s target references unknown model_ref %s for provider %s", group, target.ModelRef, target.Provider)
+		}
+		if target.Model == "" {
+			target.Model = catalog.Model
+		}
 	}
 	if target.Dialect == "" {
 		target.Dialect = catalog.Dialect
@@ -3636,6 +3980,73 @@ func (c *Config) resolveTarget(group string, target Target) (Target, error) {
 		return target, fmt.Errorf("model group %s target model_ref %s for provider %s resolved without model", group, target.ModelRef, target.Provider)
 	}
 	return target, nil
+}
+
+// providerModelByID finds the unique catalog entry for a direct model target.
+// When multiple entries describe the same provider-facing ID, only a matching
+// target/provider dialect disambiguates them; otherwise no metadata is inherited.
+func providerModelByID(models map[string]ProviderModel, modelID, targetDialect, providerDialect string) (ProviderModel, bool) {
+	var matches []ProviderModel
+	for key, catalog := range models {
+		if key == modelID || catalog.Model == modelID {
+			matches = append(matches, catalog)
+		}
+	}
+	if len(matches) == 0 {
+		return ProviderModel{}, false
+	}
+	wantDialect := normalizeDialect(targetDialect)
+	if wantDialect == "" {
+		wantDialect = normalizeDialect(providerDialect)
+	}
+	if wantDialect != "" {
+		var dialectMatches []ProviderModel
+		for _, catalog := range matches {
+			if normalizeDialect(catalog.Dialect) == wantDialect {
+				dialectMatches = append(dialectMatches, catalog)
+			}
+		}
+		if len(dialectMatches) == 1 {
+			return dialectMatches[0], true
+		}
+	}
+	if len(matches) == 1 {
+		return matches[0], true
+	}
+	return ProviderModel{}, false
+}
+
+// Direct model IDs have historically kept their explicitly configured routing,
+// dialect and pricing values. Only inherit capabilities needed for eligibility.
+func mergeTargetCapabilities(target Target, catalog ProviderModel) Target {
+	if toolSupportEmpty(target.ToolSupport) {
+		target.ToolSupport = catalog.ToolSupport
+	}
+	if reasoningSupportEmpty(target.Reasoning) {
+		target.Reasoning = catalog.Reasoning
+	}
+	if len(target.InputModalities) == 0 {
+		target.InputModalities = catalog.InputModalities
+	}
+	if len(target.OutputModalities) == 0 {
+		target.OutputModalities = catalog.OutputModalities
+	}
+	if target.EmbeddingSpace == "" {
+		target.EmbeddingSpace = catalog.EmbeddingSpace
+	}
+	if len(target.EmbeddingDimensions) == 0 {
+		target.EmbeddingDimensions = catalog.EmbeddingDimensions
+	}
+	if target.DefaultEmbeddingDimensions == 0 {
+		target.DefaultEmbeddingDimensions = catalog.DefaultEmbeddingDimensions
+	}
+	if target.HonorsMaxTokens == nil {
+		target.HonorsMaxTokens = catalog.HonorsMaxTokens
+	}
+	target.Bridges = mergeBridgeSupport(catalog.Bridges, target.Bridges)
+	target.RequestShapeSupport = mergeRequestShapeSupport(catalog.RequestShapeSupport, target.RequestShapeSupport)
+	target.ResponsesToChat = mergeResponsesToChatBridge(catalog.ResponsesToChat, target.ResponsesToChat)
+	return target
 }
 
 func mergeBridgeSupport(base, override BridgeSupport) BridgeSupport {
@@ -4521,4 +4932,48 @@ func normalizeDialect(d string) string {
 	default:
 		return ""
 	}
+}
+
+func validateSecurityEvents(cfg SecurityEventStreamConfig) error {
+	if !cfg.Enabled {
+		if cfg.Version != "" || cfg.Output != "" || cfg.Path != "" || cfg.WebhookURL != "" || len(cfg.WebhookAllowHosts) != 0 || cfg.WebhookSecretEnv != "" {
+			return fmt.Errorf("server.security.events settings require enabled: true")
+		}
+		return nil
+	}
+	if cfg.Version != "1.4.0" {
+		return fmt.Errorf("server.security.events.version must be 1.4.0")
+	}
+	output := strings.ToLower(strings.TrimSpace(cfg.Output))
+	if output != "stdout" && output != "file" {
+		return fmt.Errorf("server.security.events.output must be stdout or file")
+	}
+	if output == "file" && strings.TrimSpace(cfg.Path) == "" {
+		return fmt.Errorf("server.security.events.path is required for file output")
+	}
+	if output == "stdout" && strings.TrimSpace(cfg.Path) != "" {
+		return fmt.Errorf("server.security.events.path is only valid with file output")
+	}
+	if cfg.WebhookURL == "" && cfg.WebhookSecretEnv != "" {
+		return fmt.Errorf("server.security.events.webhook_secret_env requires webhook_url")
+	}
+	if cfg.WebhookURL == "" && len(cfg.WebhookAllowHosts) != 0 {
+		return fmt.Errorf("server.security.events.webhook_allow_hosts requires webhook_url")
+	}
+	if cfg.WebhookURL != "" {
+		u, err := url.Parse(cfg.WebhookURL)
+		if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Fragment != "" {
+			return fmt.Errorf("server.security.events.webhook_url must be an https URL without userinfo or fragment")
+		}
+		if !regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`).MatchString(cfg.WebhookSecretEnv) {
+			return fmt.Errorf("server.security.events.webhook_secret_env must name an environment variable")
+		}
+		if len(cfg.WebhookAllowHosts) == 0 {
+			return fmt.Errorf("server.security.events.webhook_allow_hosts must allow the webhook host")
+		}
+		if err := validateSecurityEventWebhookURL(u, cfg.WebhookAllowHosts); err != nil {
+			return fmt.Errorf("server.security.events.webhook_url: %w", err)
+		}
+	}
+	return nil
 }

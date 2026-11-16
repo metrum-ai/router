@@ -1,6 +1,6 @@
 # Grype ignore rules for this repository. Every entry must carry an owner, a
 # reason, and a concrete expiry condition tied to an upstream event, not to a
-# closed issue. Re-validated 2026-10-27 during the 2026-W44 scan (Refs #380):
+# closed issue. Re-validated 2026-11-16 against Grype DB built 2026-11-15 (Refs #276):
 #
 # - The braces exception (GHSA-vfj7-8cjw-p6xm) was removed: GitHub withdrew
 #   the advisory on 2026-10-23 and current grype databases no longer report
@@ -13,12 +13,12 @@
 # (@typescript/typescript-<os>-<arch>/lib/tsc), a build-time-only
 # devDependency of internal/router/admindist/web that is never shipped in the
 # router binary or image. typescript 7.0.2, the latest stable release
-# (checked 2026-10-27), is built with golang.org/x/text v0.38.0, which
+# (checked 2026-11-16), is built with go1.26.4 and golang.org/x/text v0.38.0, which
 # GO-2026-5970 (infinite loop on invalid input) affects. A local type-check
 # never parses attacker-controlled input through x/text, so build-time
 # exposure is negligible.
 # Owner: release/compliance. Expiry: when a stable typescript release ships a
-# tsc built with golang.org/x/text >= 0.39.0; revisit on every admin
+# tsc built with fixed Go and golang.org/x/text >= 0.41.0; revisit on every admin
 # dependency refresh (Refs #276).
 ignore:
   - vulnerability: GO-2026-5970

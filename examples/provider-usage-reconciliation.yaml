@@ -1,0 +1,30 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+
+# Merge this server block into a configuration that defines the referenced
+# providers and has its usage database enabled.
+server:
+  admin_reports:
+    security:
+      enabled: true
+      retention_days: 90
+  provider_usage_reconciliation:
+    enabled: true
+    threshold_usd: 1.00
+    timeout_ms: 10000
+    max_pages: 20
+    schedule_hour_utc: 6
+    max_catch_up_days: 7
+    providers:
+      - provider: openai-primary
+        kind: openai
+        credential_env: ROUTER_PROVIDER_USAGE_OPENAI_ADMIN_KEY
+        provider_key_id: key_abc123
+      - provider: anthropic-primary
+        kind: anthropic
+        credential_env: ROUTER_PROVIDER_USAGE_ANTHROPIC_ADMIN_KEY
+        provider_key_id: apikey_example123
+      - provider: bedrock-primary
+        kind: bedrock
+        aws_region: us-east-1
+        aws_role_arn: arn:aws:iam::123456789012:role/router-usage-read

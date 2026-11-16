@@ -164,10 +164,12 @@ func (g *adminOpenAPIGenerator) operation(op Operation) (map[string]any, error) 
 		for _, check := range op.ExtraChecks {
 			entry := map[string]any{"object": check.Object, "action": check.Action}
 			if check.When == AdminCheckBodyForce {
-				// Conditional: today's handlers ask for force only when the request
-				// body sets force: true, so a plain write does not need the grant.
+				// Conditional: the request body determines whether this grant applies.
 				entry["when"] = string(AdminCheckBodyForce)
 				entry["description"] = "Required only when the request body sets force: true."
+			} else if check.When == AdminCheckBodyBudget {
+				entry["when"] = string(AdminCheckBodyBudget)
+				entry["description"] = "Required only when the request body supplies a budget object."
 			} else {
 				entry["when"] = "always"
 			}
@@ -230,9 +232,19 @@ func (g *adminOpenAPIGenerator) operation(op Operation) (map[string]any, error) 
 	}
 
 	if op.Request != nil {
-		schema, err := g.schemaFor(reflect.TypeOf(op.Request))
-		if err != nil {
-			return nil, err
+		var schema any
+		if open, ok := op.Request.(adminOpenObject); ok {
+			description := "Unspecified object"
+			if len(open.Members) > 0 {
+				description = "Open object. Documented members: " + strings.Join(open.Members, ", ") + "."
+			}
+			schema = map[string]any{"type": "object", "additionalProperties": true, "description": description}
+		} else {
+			var err error
+			schema, err = g.schemaFor(reflect.TypeOf(op.Request))
+			if err != nil {
+				return nil, err
+			}
 		}
 		item["requestBody"] = map[string]any{
 			"required": op.Method != "DELETE",

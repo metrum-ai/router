@@ -5,6 +5,7 @@ name: DCO
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
   merge_group:
 
 concurrency:
@@ -17,6 +18,7 @@ permissions:
 
 jobs:
   signed-off-commits:
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: ${{ vars.ROUTER_LIGHT_RUNNER || 'router-arc-small' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

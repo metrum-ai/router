@@ -4,6 +4,7 @@ name: Inspect coding evaluation
 
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths: ["cmd/metrum-ai-router-usage-report/**", "internal/router/**", "config.example.yaml", "Makefile", "scripts/inspect_coding_eval.py", "scripts/inspect_coding_eval_test.py", "config/evaluation-policy.example.json", ".gitignore", "examples/inspect-coding-evaluation.env.example", "docs/INSPECT_CODING_EVALUATIONS.md", "docs-site/docs/evaluation/evaluate-smart-router.md", ".github/workflows/inspect-coding-evaluation.yml"]
   workflow_dispatch:
     inputs:
@@ -27,7 +28,7 @@ permissions: { contents: read }
 
 jobs:
   contract:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
     runs-on: ${{ vars.ROUTER_LIGHT_RUNNER || 'router-arc-small' }}
     timeout-minutes: 15
     steps:
@@ -35,7 +36,7 @@ jobs:
       - run: python3 scripts/inspect_coding_eval_test.py
 
   smoke:
-    if: github.event_name == 'workflow_dispatch' && inputs.tier == 'smoke'
+    if: github.event_name == 'workflow_dispatch' && inputs.tier == 'smoke' && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
     runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     environment: evaluation
     timeout-minutes: 15
@@ -60,7 +61,7 @@ jobs:
         with: { name: inspect-smoke-sanitized, path: tmp/inspect-evals/**/evaluation-summary.*, if-no-files-found: ignore, retention-days: 7 }
 
   full-or-promotion:
-    if: github.event_name == 'workflow_dispatch' && inputs.tier != 'smoke'
+    if: github.event_name == 'workflow_dispatch' && inputs.tier != 'smoke' && (github.event_name != 'pull_request' || !github.event.pull_request.draft)
     runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     environment: evaluation
     permissions: { contents: read }

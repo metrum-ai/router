@@ -4,9 +4,13 @@
 package buildinfo
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 	"runtime"
+	"sync"
 )
 
 var (
@@ -15,24 +19,58 @@ var (
 	BuildDate = "unknown"
 )
 
+var (
+	binaryDigestOnce sync.Once
+	binaryDigest     string
+)
+
+func init() {
+	CurrentBinarySHA256()
+}
+
 type Info struct {
-	Version   string `json:"version"`
-	Commit    string `json:"commit"`
-	BuildDate string `json:"build_date"`
-	GoVersion string `json:"go_version"`
-	GOOS      string `json:"goos"`
-	GOARCH    string `json:"goarch"`
+	Version      string `json:"version"`
+	Commit       string `json:"commit"`
+	BuildDate    string `json:"build_date"`
+	GoVersion    string `json:"go_version"`
+	GOOS         string `json:"goos"`
+	GOARCH       string `json:"goarch"`
+	BinarySHA256 string `json:"binary_sha256"`
 }
 
 func Current() Info {
 	return Info{
-		Version:   Version,
-		Commit:    Commit,
-		BuildDate: BuildDate,
-		GoVersion: runtime.Version(),
-		GOOS:      runtime.GOOS,
-		GOARCH:    runtime.GOARCH,
+		Version:      Version,
+		Commit:       Commit,
+		BuildDate:    BuildDate,
+		GoVersion:    runtime.Version(),
+		GOOS:         runtime.GOOS,
+		GOARCH:       runtime.GOARCH,
+		BinarySHA256: CurrentBinarySHA256(),
 	}
+}
+
+// CurrentBinarySHA256 returns the SHA-256 digest of the running executable.
+// It is computed once so reporting build metadata does not reread the binary
+// on every request.
+func CurrentBinarySHA256() string {
+	binaryDigestOnce.Do(func() {
+		executable, err := os.Executable()
+		if err != nil {
+			return
+		}
+		file, err := os.Open(executable)
+		if err != nil {
+			return
+		}
+		defer file.Close()
+		digest := sha256.New()
+		if _, err := io.Copy(digest, file); err != nil {
+			return
+		}
+		binaryDigest = fmt.Sprintf("%x", digest.Sum(nil))
+	})
+	return binaryDigest
 }
 
 func Text() string {

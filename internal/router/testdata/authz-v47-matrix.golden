@@ -79,6 +79,62 @@
       "Decisions": ""
     },
     {
+      "Fixture": "../../config/cache-isolation.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../config/cache-isolation.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../config/cache-isolation.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../config/cache-isolation.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config/cache-isolation.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config/cache-isolation.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config/cache-isolation.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../config/cache-isolation.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
       "Fixture": "../../config/usage-postgres.example.yaml",
       "Credential": "oauth::unknown",
       "Domain": "foreign/prod",
@@ -2313,6 +2369,62 @@
     },
     {
       "Fixture": "../../examples/fine-tune-qwen3p8-27b/config.qwen3p8-ft.example.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "basic-only",
+      "Decisions": ""
+    },
+    {
+      "Fixture": "../../examples/provider-usage-reconciliation.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/provider-usage-reconciliation.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "*",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/provider-usage-reconciliation.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "cross-domain-policy",
+      "Decisions": "000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/provider-usage-reconciliation.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "permission",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/provider-usage-reconciliation.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "object",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/provider-usage-reconciliation.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "public",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/provider-usage-reconciliation.yaml",
+      "Credential": "oauth::unknown",
+      "Domain": "foreign/prod",
+      "Mode": "global",
+      "Decisions": "000000000000000000"
+    },
+    {
+      "Fixture": "../../examples/provider-usage-reconciliation.yaml",
       "Credential": "oauth::unknown",
       "Domain": "foreign/prod",
       "Mode": "basic-only",

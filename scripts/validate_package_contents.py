@@ -186,12 +186,14 @@ def is_docker_package(archive: Path) -> bool:
     return "-docker-linux-" in archive.name
 
 
-def expected_package_files(archive: Path, allowed_docs: set[str]) -> tuple[set[str], str | None]:
+def expected_package_files(archive: Path, allowed_docs: set[str], require_advisory_snapshot: bool = False) -> tuple[set[str], str | None]:
     docs = {f"docs/{doc}" for doc in allowed_docs}
     arch = expected_arch(archive)
     if is_docker_package(archive):
         return DOCKER_PACKAGE_FILES | docs, arch
     package_files = set(BINARY_PACKAGE_FILES)
+    if require_advisory_snapshot and not is_docker_package(archive):
+        package_files.add("bin/engine-advisories.json")
     if is_windows_package(archive):
         package_files.difference_update(_PACKAGE_BINARY_PATHS)
         package_files.update(f"{path}.exe" for path in _PACKAGE_BINARY_PATHS)
@@ -319,12 +321,12 @@ def decode_text(blob: bytes) -> str | None:
         return None
 
 
-def validate_archive(archive: Path, allowed_docs: set[str]) -> list[str]:
+def validate_archive(archive: Path, allowed_docs: set[str], require_advisory_snapshot: bool = False) -> list[str]:
     errors: list[str] = []
     actual_docs: set[str] = set()
     actual_files: set[str] = set()
     image_files: set[str] = set()
-    expected_files, arch = expected_package_files(archive, allowed_docs)
+    expected_files, arch = expected_package_files(archive, allowed_docs, require_advisory_snapshot)
     windows_package = is_windows_package(archive)
     windows_binary_paths = {f"{path}.exe" for path in _PACKAGE_BINARY_PATHS}
 
@@ -350,6 +352,13 @@ def validate_archive(archive: Path, allowed_docs: set[str]) -> list[str]:
             return
 
         blob = read_blob()
+        if rel == "bin/engine-advisories.json":
+            try:
+                snapshot = json.loads(blob)
+                if snapshot.get("schema") != "metrum.ai/engine-advisory-gate/v1" or not isinstance(snapshot.get("images"), list) or not isinstance(snapshot.get("findings"), list):
+                    errors.append(f"{archive}: engine advisory snapshot has an invalid schema: {rel}")
+            except (UnicodeDecodeError, json.JSONDecodeError, AttributeError):
+                errors.append(f"{archive}: engine advisory snapshot is not valid JSON: {rel}")
         if rel in PACKAGE_BINARIES and arch is not None:
             arch_error = validate_elf_arch(blob[:64], arch)
             if arch_error:
@@ -445,21 +454,22 @@ def validate_archive(archive: Path, allowed_docs: set[str]) -> list[str]:
     return errors
 
 
-def validate_archives(archives: Iterable[Path], allowlist: Path) -> list[str]:
+def validate_archives(archives: Iterable[Path], allowlist: Path, require_advisory_snapshot: bool = False) -> list[str]:
     allowed_docs = load_allowlist(allowlist)
     errors: list[str] = []
     for archive in archives:
-        errors.extend(validate_archive(archive, allowed_docs))
+        errors.extend(validate_archive(archive, allowed_docs, require_advisory_snapshot))
     return errors
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--allowlist", default="scripts/package_docs_allowlist.txt", type=Path)
+    parser.add_argument("--advisories-snapshot", action="store_true", help="require and validate the packaged engine advisory snapshot")
     parser.add_argument("archives", nargs="+", type=Path)
     args = parser.parse_args()
 
-    errors = validate_archives(args.archives, args.allowlist)
+    errors = validate_archives(args.archives, args.allowlist, args.advisories_snapshot)
     if errors:
         print("package content validation failed:", file=sys.stderr)
         for error in errors:

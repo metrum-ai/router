@@ -148,6 +148,18 @@ def expect_ok(archive: Path, allowlist: Path) -> None:
         raise AssertionError(f"{archive}: unexpected errors {errors!r}")
 
 
+def expect_advisory_snapshot(archive: Path, allowlist: Path) -> None:
+    errors = validate_package_contents.validate_archives([archive], allowlist, require_advisory_snapshot=True)
+    if errors:
+        raise AssertionError(f"{archive}: unexpected advisory snapshot errors {errors!r}")
+
+
+def expect_missing_advisory_snapshot(archive: Path, allowlist: Path) -> None:
+    errors = validate_package_contents.validate_archives([archive], allowlist, require_advisory_snapshot=True)
+    if not any("required package file is missing: bin/engine-advisories.json" in error for error in errors):
+        raise AssertionError(f"{archive}: missing snapshot was not rejected: {errors!r}")
+
+
 def binary_package_files(root: str = "metrum-ai-router-v1.0.0-linux-amd64") -> dict[str, str | bytes]:
     files: dict[str, str | bytes] = {
         f"{root}/bin/metrum-ai-router": elf(62),
@@ -250,6 +262,21 @@ def main() -> int:
         good = root / "metrum-ai-router-v1.0.0-linux-amd64.tar.gz"
         write_tar(good, binary_package_files())
         expect_ok(good, allowlist)
+        expect_missing_advisory_snapshot(good, allowlist)
+
+        with_advisories = root / "with-advisories.tar.gz"
+        snapshot_files = binary_package_files()
+        snapshot_files["metrum-ai-router-v1.0.0-linux-amd64/bin/engine-advisories.json"] = json.dumps(
+            {"schema": "metrum.ai/engine-advisory-gate/v1", "images": [], "findings": []}
+        )
+        write_tar(with_advisories, snapshot_files)
+        expect_advisory_snapshot(with_advisories, allowlist)
+
+        invalid_advisories = root / "invalid-advisories.tar.gz"
+        invalid_snapshot_files = binary_package_files()
+        invalid_snapshot_files["metrum-ai-router-v1.0.0-linux-amd64/bin/engine-advisories.json"] = "{}\n"
+        write_tar(invalid_advisories, invalid_snapshot_files)
+        expect_errors(invalid_advisories, allowlist, ["engine advisory snapshot has an invalid schema"])
 
         good_windows = root / "metrum-ai-router-v1.0.0-windows-amd64.zip"
         write_zip(good_windows, windows_package_files())

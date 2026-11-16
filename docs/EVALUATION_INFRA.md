@@ -4,10 +4,10 @@
 # Evaluation infrastructure (#330)
 
 The eval-infra tracker relocated from #271/#94. This document describes the
-**offline** infrastructure: the preregistered matrix, the pairwise coverage
-generator, and the report schema. Paid nightly/live runs are tracked on #330
-with bounded-spend approvals; this repository's CI only validates the
-infrastructure deterministically.
+preregistered matrix, pairwise coverage generator, report schema, and bounded
+nightly direct-provider canary. Pull-request CI validates infrastructure
+deterministically; paid requests run only from `main` in the protected
+`evaluation` Actions environment.
 
 ## Preregistered matrix (EVAL-01, EVAL-03)
 
@@ -18,7 +18,8 @@ infrastructure deterministically.
   Identical tasks, client versions, tool implementation, caps, and verifier;
   the seed is recorded, without claiming temperature zero is deterministic.
 - **Cells** (EVAL-03): each cell declares its suite, mode, environment,
-  `sample_size` (chosen before evaluation), and allowed regression deltas
+  `sample_size` tasks per cell (chosen before evaluation, accumulated across
+  nights), and allowed regression deltas
   (`allowed_score_delta`, `allowed_error_rate`). A single trial of a cell is
   a smoke gate, never broad statistical certification. Regression thresholds
   reference `config/evaluation-policy.example.json`.
@@ -81,6 +82,62 @@ side by side.
 Missing controls or insufficient samples are reported as violations; they
 cannot silently become certification.
 
+### Bounded nightly run (#762)
+
+`.github/workflows/eval-infra-nightly.yml` runs on a daily schedule or manual
+dispatch, with both jobs restricted to `main` and protected by the existing
+`evaluation` environment. It has no pull-request trigger. The non-Docker job
+uses `COMPAT_MATRIX_OPENAI_API_KEY` and `COMPAT_MATRIX_CALLER_TOKEN`; the
+separate Docker-backed Harbor job uses only `COMPAT_MATRIX_OPENAI_API_KEY`.
+Both secrets stay in the environment-scoped secret store. No repository-wide
+secret is used. The non-Docker job runs the
+four preregistered differential-canary rows. The three Humaneval rows remain
+explicitly listed as expected-missing in the aggregate until their live
+evaluation runtime is available; they do not fail nightly collection. An
+unexpected missing live cell or task-level gate violation still fails the
+nightly job. An under-sampled rolling window is reported without certification
+and does not fail collection. The hosted Docker
+job runs the bespoke HARBOR-02…HARBOR-06 task trees live each night through the
+Router, using their independent task verifiers. HARBOR-07…HARBOR-18 remain
+offline fixture stubs in v5.0.0; their live task implementations move to v5.1
+and are tracked in [#999](https://github.com/metrum-ai/router/issues/999). The
+sanitized Harbor result records each cell's cost only from the Router's
+measured `request_usage` rows; a cell without usage rows has no cost value and
+fails the live job rather than substituting an estimate.
+
+The enforced ceiling is **$1.50 total per workflow run and per UTC night**:
+$1.00 for the non-Docker canary and $0.50 for Harbor. Before the first provider
+request, the canary reserves a conservative bound for all direct and router
+calls, pinned and current-stable, and adds reservations from earlier same-day
+runs. The aggregate combines the current report with retained reports from the
+previous 30 nightly workflow runs across dates, plus all earlier same-day runs
+for spend accounting. Harbor runs after the canary, sums earlier same-day Harbor reservations,
+and sets the relay's reservation cap to the remaining portion of its $0.50
+allowance. Same-day history is downloaded from sanitized workflow artifacts; a
+missing or malformed prior report fails closed. Each canary invocation also
+has a $0.50 guard. The canary report records router charges from the local
+usage database and direct-provider token usage priced at the recorded list
+rates; direct charges are estimates and are not invoice reconciled. The rolling
+artifact reports task attempts, passes, Wilson 95% intervals, paired outcomes,
+missing/under-sampled cells, violations and cost totals. It is evidence only,
+not a certification claim.
+
+Harbor's per-cell `charged_usd` values come from the Router usage rows created
+during that cell's single live trial. The first main-branch nightly run is the
+first source of measured live costs; before that, no Harbor cell cost is
+reported. The relay's $0.50 reservation cap is an upper-bound safety control,
+not a reported cell cost.
+
+The workflow retains only schema reports, the rolling aggregate, and the
+sanitized Harbor result summary for 90 days. Prompts, raw provider responses,
+credentials, router logs and temporary usage databases are not uploaded. Key
+rotation is performed on the existing
+`evaluation` environment secrets, one provider at a time, then checked with a
+manual main-branch run. Break glass is to remove or disable the affected
+environment secret and let the run fail closed; do not copy the key to a
+repository secret or use a local fallback. PR, fork and offline CI lanes never
+receive these keys.
+
 ## Direct-provider differential canary (ARCH-05)
 
 The last ARCH-05 layer compares the router against the provider itself. The same
@@ -138,16 +195,19 @@ pinned cells do not declare `baseline_kind: pinned`, and sets each
 `<cell>-current-stable` row's `provenance.baseline_of` to its pinned cell before
 validating the merged report with the same schema and gates.
 
-## What still needs paid runs (tracked on #330)
+## What still needs paid runs
 
-- Nightly repeated trials of the `nightly-live` cells (EVAL-01/03/05) —
-  real provider calls.
-- Live runs of the direct-provider differential canary (ARCH-05): the layer is
-  implemented and offline-tested; a recorded live run needs bounded spend.
+- Nightly repeated trials of the three Humaneval rows in `nightly-live`
+  (EVAL-01/03/05); the current nightly workflow runs only the four
+  non-Docker differential-canary rows.
+- Additional repeated live runs of the direct-provider differential canary
+  (ARCH-05) are recorded by the nightly workflow and accumulate toward the
+  preregistered sample size.
 - Real-client runs with images and reasoning (AGENT-06).
-- Live Harbor coverage beyond HARBOR-01 (HARBOR-02…HARBOR-18).
+- Live task implementations and measurements for HARBOR-07…HARBOR-18, which
+  remain offline fixture stubs in v5.0.0 and move to v5.1 (#999).
 
-Each is skipped explicitly until its bounded-spend approval lands; skipped
-cells are never counted as certification.
+Cells without a supported live runtime remain explicit as missing or blocked;
+they are never counted as passing or certified.
 
 Metrum AI

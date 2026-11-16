@@ -51,6 +51,9 @@ func loadActiveCanonicalConfig(db *gorm.DB, runtimeScope string, redactor *secre
 	if err := yaml.Unmarshal(cleaned, &cfg); err != nil {
 		return nil, fmt.Errorf("parse active canonical YAML: %w", err)
 	}
+	if err := applyV5AdminConfig(cleaned, &cfg); err != nil {
+		return nil, fmt.Errorf("parse active canonical YAML: %w", err)
+	}
 	if len(identifiers) > 1 {
 		return nil, fmt.Errorf("only one identifier configuration is allowed")
 	}

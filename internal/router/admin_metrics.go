@@ -357,6 +357,17 @@ func (s *Service) adminObserveHookFor() func(AdminObservation) {
 	}
 	return func(observation AdminObservation) {
 		s.adminMetrics().Observe(observation)
+		if s.securityEventStream == nil || (!observation.AuthFailed && !observation.RateLimited) {
+			return
+		}
+		eventType := "admin_auth_failed"
+		if observation.RateLimited {
+			eventType = "admin_auth_throttled"
+		}
+		s.recordSecurityAccessEvent(securityAccessEvent{
+			TS: time.Now().UTC(), EventType: eventType, Surface: "admin_api", HTTPMethod: observation.Method,
+			StatusCode: observation.Status, Outcome: "denied", CallerID: observation.CallerID, IPAddress: observation.SourceIP,
+		})
 	}
 }
 

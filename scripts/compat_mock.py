@@ -56,6 +56,32 @@ def build_tester(kind, commit):
     return tester, mock
 
 
+def disable_admin_plane(config_text):
+    # Compatibility fixtures do not exercise admin APIs; avoid binding the
+    # shared default 127.0.0.1:8081 while CI lanes run in parallel.
+    lines = config_text.splitlines(keepends=True)
+    for index, line in enumerate(lines):
+        if line.rstrip('\r\n') != 'admin:':
+            continue
+        end = index + 1
+        while end < len(lines) and (not lines[end].strip() or lines[end][0].isspace()):
+            end += 1
+        child_indent = min(
+            len(lines[setting]) - len(lines[setting].lstrip())
+            for setting in range(index + 1, end)
+            if lines[setting].strip()
+        ) if any(lines[setting].strip() for setting in range(index + 1, end)) else 2
+        for setting in range(index + 1, end):
+            line = lines[setting]
+            indent = len(line) - len(line.lstrip())
+            if indent == child_indent and line.lstrip().startswith('enabled:'):
+                lines[setting] = ' ' * child_indent + 'enabled: false\n'
+                return ''.join(lines)
+        lines.insert(index + 1, ' ' * child_indent + 'enabled: false\n')
+        return ''.join(lines)
+    return 'admin:\n  enabled: false\n' + config_text
+
+
 def wait_listening(port_number, process):
     for _ in range(200):
         if process.poll() is not None:
@@ -109,7 +135,9 @@ def main():
                 wait_listening(ports[kind], processes[-1])
             token = 'local-compat-token'
             digest = hashlib.sha256(token.encode()).hexdigest()
-            config = f'''server:
+            config = f'''admin:
+  enabled: false
+server:
   listen: "127.0.0.1:{ports['router']}"
   identifiers: {{mode: passthrough}}
   default_model_group: chat
