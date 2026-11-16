@@ -875,10 +875,20 @@ func secretStreamJWTReleaseBoundary(value string, boundary int) (int, error) {
 				return 0, errSecretStreamWindowExceeded
 			}
 			if cursor == len(value) {
-				if valid && start < boundary {
-					boundary = start
+				if valid {
+					if start < boundary {
+						boundary = start
+					}
+					return boundary, nil
 				}
-				return boundary, nil
+				// Invalid candidates may contain a later real eyJ marker;
+				// keep scanning from just past this marker even at the current
+				// buffer edge.
+				search = start + 3
+				if search >= len(value) {
+					return boundary, nil
+				}
+				break
 			}
 			minimum := 8
 			if segment == 0 {
@@ -903,7 +913,10 @@ func secretStreamJWTReleaseBoundary(value string, boundary int) (int, error) {
 				boundary = start
 			}
 		}
-		search = max(start+3, cursor+1)
+		// An invalid candidate can contain another real eyJ start (for
+		// example, a short malformed segment followed by a hyphen and JWT).
+		// Resume just after the current marker so nested candidates are scanned.
+		search = start + 3
 		if search > len(value) {
 			return boundary, nil
 		}

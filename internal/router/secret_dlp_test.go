@@ -264,6 +264,128 @@ func FuzzSecretMatcher(f *testing.F) {
 	})
 }
 
+func differentialSecretSamples() []string {
+	return []string{
+		fakeAWSAccessKey(), fakeGitHubToken(),
+		"xoxb-" + strings.Repeat("s", 24),
+		"sk_live_" + strings.Repeat("t", 24),
+		"sk-proj-" + strings.Repeat("u", 32),
+		"sk-" + strings.Repeat("v", 40),
+		"gsk_" + strings.Repeat("w", 40),
+		"sk-or-v1-" + strings.Repeat("a", 64),
+		"sk-ant-api03-" + strings.Repeat("b", 32),
+		"AIza" + strings.Repeat("C", 35),
+		"rtr_metrum_" + strings.Repeat("d", 20),
+		fakeLongJWTToken(),
+		"Authorization: Bearer " + strings.Repeat("e", 32),
+		fakeCredentialAssignment(), fakePasswordAssignment(), fakePrivateKeyBlock(),
+	}
+}
+
+func differentialSecretInput(seed []byte) (string, []string, func(int) int) {
+	var rng uint64 = 1469598103934665603
+	for _, b := range seed {
+		rng = (rng ^ uint64(b)) * 1099511628211
+	}
+	if rng == 0 {
+		rng = 1
+	}
+	next := func() uint64 {
+		rng ^= rng << 13
+		rng ^= rng >> 7
+		rng ^= rng << 17
+		return rng
+	}
+	choose := func(n int) int { return int(next() % uint64(n)) }
+	text := func(n int) string {
+		const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ,.;:/_"
+		var out strings.Builder
+		for i := 0; i < n; i++ {
+			out.WriteByte(alphabet[choose(len(alphabet))])
+		}
+		return out.String()
+	}
+	secrets := differentialSecretSamples()
+	// Vary order and surrounding text while including every built-in family in
+	// each generated case, so each iteration exercises the complete detector set.
+	shift := choose(len(secrets))
+	secrets = append(secrets[shift:], secrets[:shift]...)
+	var input strings.Builder
+	for _, secret := range secrets {
+		input.WriteString(text(choose(40)))
+		input.WriteByte('#')
+		input.WriteString(secret)
+		input.WriteByte('#')
+		input.WriteString(text(choose(40)))
+	}
+	return input.String(), secrets, choose
+}
+
+func assertStreamMatchesUnarySecretBoundary(t *testing.T, seed []byte) {
+	t.Helper()
+	rules, err := compilePIIRules(builtinSecretRules())
+	if err != nil {
+		t.Fatal(err)
+	}
+	newState := func() *piiRedactionState {
+		return &piiRedactionState{rules: rules, limit: 200, result: &piiFilterResult{RuleCounts: map[string]int{}}, placeholderFor: map[string]string{}}
+	}
+	input, secrets, choose := differentialSecretInput(seed)
+	unary := newState().redact(input)
+	for _, secret := range secrets {
+		if strings.Contains(unary, secret) {
+			t.Fatalf("unary redactor did not redact generated secret %q", secret)
+		}
+	}
+
+	state := newState()
+	var pending string
+	var released strings.Builder
+	failedClosed := false
+	for start := 0; start < len(input); {
+		end := min(start+1+choose(64), len(input))
+		safe, next, streamErr := redactSecretStreamChunk(state, pending, input[start:end], false)
+		if streamErr != nil {
+			// A bounded fail-closed stream is safe if all previously released
+			// bytes satisfy the differential property.
+			failedClosed = true
+			break
+		}
+		released.WriteString(safe)
+		pending = next
+		start = end
+	}
+	if !failedClosed {
+		if safe, _, streamErr := redactSecretStreamChunk(state, pending, "", true); streamErr == nil {
+			released.WriteString(safe)
+		}
+	}
+	output := released.String()
+	for _, secret := range secrets {
+		if strings.Contains(output, secret) {
+			t.Fatalf("stream released a secret detected by unary redaction: %q", secret)
+		}
+	}
+}
+
+func TestSecretDLPStreamMatchesUnaryQuickProperty(t *testing.T) {
+	for i := 0; i < 8; i++ {
+		assertStreamMatchesUnarySecretBoundary(t, []byte{byte(i), 0x51, byte(i * 31)})
+	}
+}
+
+func FuzzSecretStreamMatchesUnary(f *testing.F) {
+	f.Add([]byte("quick seed"))
+	f.Add([]byte{0, 1, 2, 3, 4, 5})
+	f.Add([]byte(strings.Repeat("nightly differential fuzz seed ", 8)))
+	f.Fuzz(func(t *testing.T, seed []byte) {
+		if len(seed) > 4096 {
+			t.Skip()
+		}
+		assertStreamMatchesUnarySecretBoundary(t, seed)
+	})
+}
+
 func BenchmarkSecretMatcher(b *testing.B) {
 	rules, err := compilePIIRules(builtinSecretRules())
 	if err != nil {
@@ -852,6 +974,46 @@ func TestSecretDLPStreamHyphenatedJWTReleaseEdges(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestSecretDLPStreamJWTResumesInsideInvalidCandidate(t *testing.T) {
+	rules, err := compilePIIRules(builtinSecretRules())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The malformed eyJab.cd- candidate must not make the scanner skip the
+	// real JWT immediately following its hyphen.
+	token := "eyJ" + strings.Repeat("h", 64) + "." + strings.Repeat("p", 600) + "." + strings.Repeat("s", 64)
+	input := "see eyJab.cd-" + token + " " + strings.Repeat("Z", 600)
+	initState := func() *piiRedactionState {
+		return &piiRedactionState{rules: rules, limit: 200, result: &piiFilterResult{RuleCounts: map[string]int{}}, placeholderFor: map[string]string{}}
+	}
+	unary := initState().redact(input)
+	if strings.Contains(unary, token) {
+		t.Fatal("unary redactor did not identify the regression token")
+	}
+	state := initState()
+	var pending string
+	var released strings.Builder
+	for start := 0; start < len(input); {
+		end := min(start+16, len(input))
+		safe, next, err := redactSecretStreamChunk(state, pending, input[start:end], false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		released.WriteString(safe)
+		pending = next
+		start = end
+	}
+	safe, _, err := redactSecretStreamChunk(state, pending, "", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	released.WriteString(safe)
+	if strings.Contains(released.String(), token) {
+		t.Fatalf("stream released JWT after malformed candidate: %q", released.String())
+	}
+	assertNoSecretFragment(t, released.String(), token, 12)
 }
 
 func TestSecretDLPStreamKeywordPaddingIsHeld(t *testing.T) {
