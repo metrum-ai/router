@@ -245,7 +245,7 @@ func builtinSecretRules() []PIIFilterRule {
 		{Name: "router_token", Expression: `\brtr_metrum_[A-Za-z0-9_-]{12,256}\b`, PlaceholderPrefix: "SECRET_ROUTER"},
 		{Name: "jwt", Expression: `\beyJ[A-Za-z0-9_-]{8,1000}\.[A-Za-z0-9_-]{8,1000}\.[A-Za-z0-9_-]{8,1000}\b`, PlaceholderPrefix: "SECRET_JWT"},
 		{Name: "bearer_token", Expression: `(?i)\bAuthorization\s*:\s*Bearer\s+[A-Za-z0-9._~+/-]{16,256}={0,2}`, PlaceholderPrefix: "SECRET_BEARER"},
-		{Name: "credential_assignment", Expression: `(?i)\b(?:api[_-]?key|access[_-]?token|client[_-]?secret)\s*[:=]\s*["']?[A-Za-z0-9_./+=-]{16,256}|\bpassword\s*[:=]\s*["'][A-Za-z0-9_./+=-]{16,256}["']`, PlaceholderPrefix: "SECRET_CREDENTIAL"},
+		{Name: "credential_assignment", Expression: `(?i)\b(?:api[_-]?key|access[_-]?token|client[_-]?secret)\s*[:=]\s*["']?[A-Za-z0-9_./+=-]{16,256}|\bpassword\s*[:=]\s*["']?[A-Za-z0-9_./+=-]{24,256}`, PlaceholderPrefix: "SECRET_CREDENTIAL"},
 	}
 }
 

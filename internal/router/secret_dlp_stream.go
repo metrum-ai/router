@@ -24,7 +24,7 @@ const (
 
 var errSecretStreamWindowExceeded = errors.New("secret DLP stream inspection window exceeded")
 
-var secretStreamOversizeCandidate = regexp.MustCompile(`(?i)(?:\b(?:gh[pousr]_|github_pat_|xox[baprs]-|sk_(?:live|test)_|sk-proj-|sk-svcacct-|sk-ant-api03-|sk-or-v1-|sk-|gsk_|AIza|rtr_metrum_)[A-Za-z0-9_-]{257}|\beyJ[A-Za-z0-9_-]{1000}[A-Za-z0-9_-]+|\beyJ[A-Za-z0-9_-]{8,1000}\.[A-Za-z0-9_-]{1000}[A-Za-z0-9_-]+|\beyJ[A-Za-z0-9_-]{8,1000}\.[A-Za-z0-9_-]{8,1000}\.[A-Za-z0-9_-]{1000}[A-Za-z0-9_-]+|\b(?:api[_-]?key|access[_-]?token|client[_-]?secret)\s*[:=]\s*["']?[A-Za-z0-9_./+=-]{257}|\bpassword\s*[:=]\s*["'][A-Za-z0-9_./+=-]{257}["']|\bAuthorization\s*:\s*Bearer\s+[A-Za-z0-9._~+/-]{257})`)
+var secretStreamOversizeCandidate = regexp.MustCompile(`(?i)(?:\b(?:gh[pousr]_|github_pat_|xox[baprs]-|sk_(?:live|test)_|sk-proj-|sk-svcacct-|sk-ant-api03-|sk-or-v1-|sk-|gsk_|AIza|rtr_metrum_)[A-Za-z0-9_-]{257}|\beyJ[A-Za-z0-9_-]{1000}[A-Za-z0-9_-]+|\beyJ[A-Za-z0-9_-]{8,1000}\.[A-Za-z0-9_-]{1000}[A-Za-z0-9_-]+|\beyJ[A-Za-z0-9_-]{8,1000}\.[A-Za-z0-9_-]{8,1000}\.[A-Za-z0-9_-]{1000}[A-Za-z0-9_-]+|\b(?:api[_-]?key|access[_-]?token|client[_-]?secret|password)\s*[:=]\s*["']?[A-Za-z0-9_./+=-]{257}|\bAuthorization\s*:\s*Bearer\s+[A-Za-z0-9._~+/-]{257})`)
 
 // secretStreamDLP is request-local state shared by stream text and held tool
 // call inspection. A holder invokes redactCandidate only after the complete

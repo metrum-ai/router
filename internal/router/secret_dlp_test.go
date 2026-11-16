@@ -27,6 +27,9 @@ func fakeJWTToken() string {
 func fakeCredentialAssignment() string {
 	return "api_key=" + strings.Repeat("a", 16) + "Q7r9W2x4"
 }
+func fakePasswordAssignment() string {
+	return "password=" + strings.Repeat("p", 24) + "Q7r9W2x4"
+}
 func fakePrivateKeyBlock() string {
 	return "-----BEGIN " + "PRIVATE KEY-----\nmaterial\n-----END " + "PRIVATE KEY-----"
 }
@@ -616,6 +619,7 @@ func TestSecretDLPBuiltinsAndBenign(t *testing.T) {
 		{"authorization_bearer_benign", "Authorization: Basic abcdefghijklmnopqrstuvwxyz123456", "Authorization: Basic abcdefghijklmnopqrstuvwxyz123456"},
 		{"credential_assignment", fakeCredentialAssignment(), "[SECRET_CREDENTIAL_1]"},
 		{"credential_assignment_benign", "password: supplied during the demo", "password: supplied during the demo"},
+		{"password_assignment", fakePasswordAssignment(), "[SECRET_CREDENTIAL_1]"},
 		{"sha512_integrity", "sha512-" + strings.Repeat("A", 64), "sha512-" + strings.Repeat("A", 64)},
 		{"camel_case_identifier", "LongCamelCaseIdentifierThatIsNotASecretValue", "LongCamelCaseIdentifierThatIsNotASecretValue"},
 		{"password_prose", "password: supplied during the demo", "password: supplied during the demo"},
@@ -645,6 +649,7 @@ func TestSecretDLPStreamWindowLongPrefixSplitOffsets(t *testing.T) {
 		fakeJWTToken(),
 		"Authorization: Bearer abcdefghijklmnopqrstuvwxyz123456",
 		fakeCredentialAssignment(),
+		fakePasswordAssignment(),
 		"-----BEGIN ENCRYPTED" + " PRIVATE KEY-----\\nmaterial\\n-----END ENCRYPTED" + " PRIVATE KEY-----",
 	}
 	rules, err := compilePIIRules(builtinSecretRules())
