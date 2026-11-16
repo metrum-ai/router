@@ -7955,6 +7955,77 @@
         "x-admin-object": "admin:retention"
       }
     },
+    "/admin/v1/tool-approvals/{approval_id}": {
+      "post": {
+        "operationId": "resolveToolApproval",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "approval_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "description": "Open object. Documented members: decision.",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: approval_id, decision.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Release or deny a pending tool call",
+        "tags": [
+          "admin"
+        ],
+        "x-admin-action": "resolve",
+        "x-admin-concurrency": "none",
+        "x-admin-domain": "global",
+        "x-admin-idempotency": "none",
+        "x-admin-object": "admin:tool_approvals"
+      }
+    },
     "/admin/v1/training/export": {
       "post": {
         "description": "Keeps today's content:training/export decision in the whole-plane domain and the durable security-event precondition: the export fails closed unless its audit event commits first.",

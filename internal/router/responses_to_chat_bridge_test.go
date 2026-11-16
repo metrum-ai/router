@@ -211,4 +211,7 @@ func TestResponsesToChatBridgeDecodesChatTextAndToolCalls(t *testing.T) {
 	if len(output) != 1 || output[0]["type"] != "function_call" || output[0]["name"] != "echo" || output[0]["call_id"] != "call_1" {
 		t.Fatalf("output=%#v", output)
 	}
+	if len(resp.ToolCalls) != 1 || resp.ToolCalls[0].Name != "echo" || resp.ToolCalls[0].Arguments != `{"text":"hi"}` {
+		t.Fatalf("normalized tool calls=%#v", resp.ToolCalls)
+	}
 }

@@ -132,6 +132,32 @@ type ResponsesConfig struct {
 	ModelIdentity string `yaml:"model_identity" json:"model_identity"`
 }
 
+type ToolFirewallConfig struct {
+	Mode                   string                     `yaml:"mode" json:"mode,omitempty"`
+	URLAllowHosts          []string                   `yaml:"url_allow_hosts" json:"urlAllowHosts,omitempty"`
+	Deny                   []ToolFirewallDenyRule     `yaml:"deny" json:"deny,omitempty"`
+	Sequences              []ToolFirewallSequenceRule `yaml:"sequences" json:"sequences,omitempty"`
+	ApprovalTimeoutMS      int                        `yaml:"approval_timeout_ms" json:"approvalTimeoutMs,omitempty"`
+	MaxPendingApprovals    int                        `yaml:"max_pending_approvals" json:"maxPendingApprovals,omitempty"`
+	ConversationTTLSeconds int                        `yaml:"conversation_ttl_seconds" json:"conversationTtlSeconds,omitempty"`
+	MaxConversations       int                        `yaml:"max_conversations" json:"maxConversations,omitempty"`
+}
+
+type ToolFirewallDenyRule struct {
+	Tool           string `yaml:"tool" json:"tool,omitempty"`
+	ToolRegex      string `yaml:"tool_regex" json:"toolRegex,omitempty"`
+	ArgsRegex      string `yaml:"args_regex" json:"argsRegex,omitempty"`
+	AnyArgContains string `yaml:"any_arg_contains" json:"anyArgContains,omitempty"`
+}
+
+type ToolFirewallSequenceRule struct {
+	FirstTool      string `yaml:"first_tool" json:"firstTool"`
+	FirstArgsRegex string `yaml:"first_args_regex" json:"firstArgsRegex,omitempty"`
+	ThenTool       string `yaml:"then_tool" json:"thenTool"`
+	WithinTurns    int    `yaml:"within_turns" json:"withinTurns"`
+	Action         string `yaml:"action" json:"action"`
+}
+
 type ServerConfig struct {
 	Detectors       []DetectorConfig      `yaml:"detectors,omitempty" json:"detectors,omitempty"`
 	AutoContainment AutoContainmentConfig `yaml:"auto_containment,omitempty" json:"auto_containment,omitempty"`
@@ -181,6 +207,7 @@ type ServerConfig struct {
 	// ResponsesAffinity enables owner-bound stored Responses affinity for
 	// explicitly listed model groups (#533). It is off by default.
 	ResponsesAffinity ResponsesAffinityConfig `yaml:"responses_affinity" json:"responsesAffinity,omitempty"`
+	ToolFirewall      ToolFirewallConfig      `yaml:"tool_firewall" json:"toolFirewall,omitempty"`
 }
 
 // AutoContainmentConfig maps enforce-mode detector signals to bounded key actions.
@@ -2103,6 +2130,9 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 		return err
 	}
 	if err := validateResponsesAffinityConfig(c.Server.ResponsesAffinity, c.Models, c.Provider, c.Server.UsageDB); err != nil {
+		return err
+	}
+	if err := validateToolFirewallConfig(c.Server.ToolFirewall, c.Admin.Enabled); err != nil {
 		return err
 	}
 	if c.Server.ResponsesAffinity.enabled() {

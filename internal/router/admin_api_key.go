@@ -110,6 +110,7 @@ var knownAdminKeyPermissions = map[string]bool{
 	"admin:security_reports:read":   true,
 	"admin:security_reports:write":  true,
 	"admin:security_reports:export": true,
+	"admin:tool_approvals:resolve":  true,
 	"admin:training:export":         true,
 	"admin:training:label":          true,
 	"metrics:read":                  true,
