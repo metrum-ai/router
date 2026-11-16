@@ -148,3 +148,8 @@ can resume it before its TTL. Shadow mode writes only proposed actions and does
 not affect admission. The router records detector ID, caller ID, action, and
 expiry metadata. It never copies token values or prompt text into containment
 state or events.
+## Prompt-injection reference detector
+
+The [`examples/detectors/prompt-injection/`](https://github.com/metrum-ai/router/tree/main/examples/detectors/prompt-injection) service implements the same contract with the local ProtectAI DeBERTa-v3-small prompt-injection model. It scores `tool_result` and `document` segments only. Configure `include_segments` explicitly and begin with `mode: report`; this sends those selected texts to that detector's allow-listed endpoint. Prompts and user messages are never sent in v5.0.0, and the service emits metadata-only signals.
+
+The classifier runs outside the router and after request completion. Its cost is one inference per selected segment; result time also includes queueing and network response time. It has no cost on the completed request's serving latency, and report mode cannot change that response. See the example README for local deployment, model limitations, configuration, timeout behavior, and latency measurement guidance.
