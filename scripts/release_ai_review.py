@@ -30,6 +30,8 @@ REQUEST_TIMEOUT_SECONDS = 900.0
 MIN_DIFF_BYTES = 32 * 1024
 MAX_OUTPUT_TOKENS = 32_000
 MAX_REVIEW_BATCHES = 32
+# Generated files are accepted only when a named CI check is explicitly mapped here.
+GENERATED_FILE_VERIFICATION_ALLOWLIST: dict[str, str] = {}
 REVIEW_CONTEXT_PATHS = ("CHANGELOG.md", "docs-site/docs/release-notes/upgrade-guide.md")
 REVIEW_OUTPUT_SCHEMA = {
     "type": "object",
@@ -163,13 +165,7 @@ def git_diff_batches(
     only_paths: set[str] | None = None,
     max_single_file_bytes: int | None = None,
 ) -> list[tuple[str, tuple[str, ...]]]:
-    names = subprocess.run(
-        ["git", "--literal-pathspecs", "diff", "--no-renames", "--name-only", "-z", f"{base}..{head}"],
-        check=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-    ).stdout.split(b"\0")
-    paths = [os.fsdecode(path) for path in names if path]
+    paths = git_diff_names(base, head)
     if only_paths is not None:
         paths = [path for path in paths if path in only_paths]
     file_diffs: list[tuple[str, str]] = []
@@ -189,6 +185,16 @@ def git_diff_batches(
         max_bytes=max_bytes,
         max_single_file_bytes=max_single_file_bytes,
     )
+
+
+def git_diff_names(base: str, head: str) -> list[str]:
+    names = subprocess.run(
+        ["git", "--literal-pathspecs", "diff", "--no-renames", "--name-only", "-z", f"{base}..{head}"],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    ).stdout.split(b"\0")
+    return [os.fsdecode(path) for path in names if path]
 
 
 def read_streaming_response(response: Any, *, timeout: float, started: float | None = None) -> tuple[str, str]:
@@ -327,6 +333,7 @@ def build_artifact(
     head: str,
     *,
     allowed_files: set[str] | frozenset[str] | None = None,
+    file_coverage: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     if not isinstance(base, str) or not base or not isinstance(head, str) or not head:
         raise ValueError("AI release review range is invalid")
@@ -387,28 +394,70 @@ def build_artifact(
             "locations": [{"file": file_path, "line": line} for file_path, line in ordered_locations],
             "files": sorted({file_path for file_path, _ in ordered_locations}),
         })
+    normalized_coverage: list[dict[str, str]] = []
+    seen_coverage: set[str] = set()
+    for item in file_coverage or []:
+        if not isinstance(item, dict):
+            raise ValueError("AI release review file coverage entry must be an object")
+        file_path = item.get("file")
+        status = item.get("status")
+        verification = item.get("verification", "")
+        if (
+            not isinstance(file_path, str)
+            or not file_path
+            or file_path.startswith("/")
+            or ".." in Path(file_path).parts
+            or file_path in seen_coverage
+        ):
+            raise ValueError("AI release review file coverage contains an invalid or duplicate path")
+        if status == "reviewed" and not verification:
+            normalized_coverage.append({"file": file_path, "status": status})
+        elif status == "generated-and-verified":
+            required_check = GENERATED_FILE_VERIFICATION_ALLOWLIST.get(file_path)
+            if not required_check or verification != required_check:
+                raise ValueError("AI release review generated-file coverage is not in the verification allowlist")
+            normalized_coverage.append({
+                "file": file_path,
+                "status": status,
+                "verification": required_check,
+            })
+        else:
+            raise ValueError("AI release review file coverage has an invalid status")
+        seen_coverage.add(file_path)
+    normalized_coverage.sort(key=lambda item: item["file"])
     payload = {
-        "schema": "metrum-ai-router-release-review-artifact/v1",
+        "schema": "metrum-ai-router-release-review-artifact/v2",
         "base": base,
         "head": head,
         "summary": summary,
         "findings": normalized,
+        "file_coverage": normalized_coverage,
     }
     digest = hashlib.sha256(json.dumps(payload, ensure_ascii=True, separators=(",", ":"), sort_keys=True).encode("utf-8")).hexdigest()
     return {**payload, "artifact_digest": digest}
 
 
-def validate_artifact(artifact: dict[str, Any], base: str, head: str) -> dict[str, Any]:
-    if artifact.get("schema") != "metrum-ai-router-release-review-artifact/v1" or artifact.get("base") != base or artifact.get("head") != head:
+def validate_artifact(
+    artifact: dict[str, Any],
+    base: str,
+    head: str,
+    expected_files: set[str],
+) -> dict[str, Any]:
+    if artifact.get("schema") != "metrum-ai-router-release-review-artifact/v2" or artifact.get("base") != base or artifact.get("head") != head:
         raise ValueError("stored AI release review artifact does not match the requested range")
-    rebuilt = build_artifact(artifact, base, head)
+    rebuilt = build_artifact(artifact, base, head, file_coverage=artifact.get("file_coverage"))
     if rebuilt != artifact:
         raise ValueError("stored AI release review artifact digest or contents are invalid")
+    covered_files = {item["file"] for item in artifact["file_coverage"]}
+    if covered_files != expected_files:
+        missing = len(expected_files - covered_files)
+        extra = len(covered_files - expected_files)
+        raise ValueError(f"stored AI release review file coverage does not match the diff (missing={missing}, extra={extra})")
     return artifact
 
 
 def evaluate(review: dict[str, Any], acceptances: dict[str, Any], base: str, head: str) -> tuple[dict[str, Any], int]:
-    artifact = validate_artifact(review, base, head) if review.get("schema") == "metrum-ai-router-release-review-artifact/v1" else build_artifact(review, base, head)
+    artifact = review if review.get("schema") == "metrum-ai-router-release-review-artifact/v2" else build_artifact(review, base, head)
     digest = artifact["artifact_digest"]
     raw_acceptance = acceptances.get(digest, "")
     acceptance = safe_text(raw_acceptance, "artifact acceptance") if raw_acceptance else ""
@@ -475,18 +524,21 @@ def main() -> int:
             raise ValueError("maintainer artifact acceptances must be an object")
         cache_hit = False
         artifact = None
+        expected_files: set[str] | None = None
         if args.artifact_cache and args.artifact_cache.exists():
             try:
                 artifact = json.loads(args.artifact_cache.read_text(encoding="utf-8"))
             except json.JSONDecodeError as exc:
                 raise ValueError("stored AI release review artifact is malformed") from exc
-            artifact = validate_artifact(artifact, args.base, args.head)
+            expected_files = set(git_diff_names(args.base, args.head))
+            artifact = validate_artifact(artifact, args.base, args.head, expected_files)
             cache_hit = True
         else:
             api_key = os.environ.get("ANTHROPIC_API_KEY", "")
             if not api_key:
                 print("AI release review failed: required API credential is unavailable", file=sys.stderr)
                 return 2
+            expected_files = set(git_diff_names(args.base, args.head))
             diff_limit = INITIAL_DIFF_BYTES
             batches = git_diff_batches(
                 args.base,
@@ -494,6 +546,9 @@ def main() -> int:
                 max_bytes=diff_limit,
                 max_single_file_bytes=MAX_DIFF_BYTES,
             )
+            batched_files = {path for _diff, paths in batches for path in paths}
+            if batched_files != expected_files:
+                raise ValueError("release review batches do not match git diff --name-only")
             findings_by_id: dict[str, dict[str, Any]] = {}
             batch_index = 0
             while batch_index < len(batches):
@@ -546,10 +601,14 @@ def main() -> int:
                 print(f"AI release review batch {batch_label} completed", file=sys.stderr)
                 batch_index += 1
             changed_files = len({path for _diff, paths in batches for path in paths})
+            reviewed_paths = sorted({path for _diff, paths in batches for path in paths})
             artifact = build_artifact({
                 "summary": f"Reviewed {changed_files} changed files across {len(batches)} bounded batches.",
                 "findings": list(findings_by_id.values()),
-            }, args.base, args.head)
+            }, args.base, args.head, file_coverage=[
+                {"file": path, "status": "reviewed"} for path in reviewed_paths
+            ])
+            artifact = validate_artifact(artifact, args.base, args.head, expected_files)
         report, unanswered = evaluate(artifact, acceptances, args.base, args.head)
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(render(report, args.base, args.head, args.tag), encoding="utf-8")
