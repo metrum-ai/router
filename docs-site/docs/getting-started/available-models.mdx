@@ -53,7 +53,7 @@ Codex CLI additionally reads a local Codex-native model catalog for deployment-d
 
 The returned IDs are router model groups, not a full inventory of every upstream provider model. A deployment might expose groups such as `default`, `fast`, `coding`, `vision`, or different names chosen by the platform team. Metrum AI Router does not require any specific group names.
 
-Each group is a policy contract. The platform team can change the upstream model or provider model mix, weights, fallbacks, TypeScript policy, tool support, VLM support, cost controls, and validation criteria behind the group without changing the caller-facing name.
+Each group is a policy contract. The platform team can change the upstream model or provider model mix, weights, fallbacks, external policy, tool support, VLM support, cost controls, and validation criteria behind the group without changing the caller-facing name.
 
 The same group can expose different effective target pools by API surface. OpenAI Chat clients use OpenAI Chat-compatible targets, Codex uses Responses-compatible targets, and Claude Code uses Anthropic Messages-compatible targets. If a group is listed but a specific client receives a 400 compatibility or modality error, the group may lack an eligible target for that request shape; see [Error Reference](../reference/errors).
 
