@@ -16,7 +16,6 @@ type IRRequest struct {
 	MaxTokens      int               `json:"max_tokens,omitempty"`
 	MaxTokensField string            `json:"-"`
 	Temperature    *float64          `json:"temperature,omitempty"`
-	TopP           *float64          `json:"top_p,omitempty"`
 	Stream         bool              `json:"stream,omitempty"`
 	Thinking       map[string]any    `json:"thinking,omitempty"`
 	Reasoning      ReasoningIntent   `json:"reasoning,omitempty"`

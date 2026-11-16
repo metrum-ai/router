@@ -6,11 +6,11 @@ Metrum AI Router includes, builds with, or refers to the dependencies below. The
 
 | Ecosystem | Unique pinned records | Distribution role |
 | --- | ---: | --- |
-| Go | 86 | Imported by repository Go builds and compiled into shipped binaries |
+| Go | 88 | Imported by repository Go builds and compiled into shipped binaries |
 | npm | 1462 | Documentation/admin build inputs and browser artifacts; dashboard operator/development tooling |
 | Python | 39 | Tests and evaluation tooling; not shipped in the router binary |
 | Vendored JavaScript | 2 | Checked-in browser assets shipped with documentation |
-| **Total** | **1589** | Deduplicated by ecosystem, name, version, license, and homepage |
+| **Total** | **1591** | Deduplicated by ecosystem, name, version, license, and homepage |
 
 ## Dependency records
 
@@ -44,8 +44,10 @@ Metrum AI Router includes, builds with, or refers to the dependencies below. The
 | Go | github.com/coreos/go-oidc/v3 | v3.19.0 | Apache-2.0 | [project](https://github.com/coreos/go-oidc) | shipped binary; packages imported by repository Go builds |
 | Go | github.com/davecgh/go-spew | v1.1.1 | ISC | [project](https://github.com/davecgh/go-spew) | shipped binary; packages imported by repository Go builds |
 | Go | github.com/dlclark/regexp2/v2 | v2.2.1 | MIT | [project](https://github.com/dlclark/regexp2) | shipped binary; packages imported by repository Go builds |
+| Go | github.com/dop251/goja | v0.0.0-20260607120635-348e6bea910d | MIT | [project](https://github.com/dop251/goja) | shipped binary; packages imported by repository Go builds |
 | Go | github.com/dustin/go-humanize | v1.0.1 | MIT | [project](https://github.com/dustin/go-humanize) | shipped binary; packages imported by repository Go builds |
 | Go | github.com/emicklei/go-restful/v3 | v3.12.2 | MIT | [project](https://github.com/emicklei/go-restful) | shipped binary; packages imported by repository Go builds |
+| Go | github.com/evanw/esbuild | v0.28.1 | MIT | [project](https://github.com/evanw/esbuild) | shipped binary; packages imported by repository Go builds |
 | Go | github.com/fxamacker/cbor/v2 | v2.9.0 | MIT | [project](https://github.com/fxamacker/cbor) | shipped binary; packages imported by repository Go builds |
 | Go | github.com/glebarez/go-sqlite | v1.21.2 | BSD-3-Clause | [project](https://github.com/glebarez/go-sqlite) | shipped binary; packages imported by repository Go builds |
 | Go | github.com/glebarez/sqlite | v1.11.0 | MIT | [project](https://github.com/glebarez/sqlite) | shipped binary; packages imported by repository Go builds |

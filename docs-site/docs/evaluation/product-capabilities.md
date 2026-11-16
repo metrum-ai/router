@@ -12,7 +12,7 @@ This page summarizes Metrum AI Router capabilities for enterprise deployments.
 | Area | Capability |
 |---|---|
 | API compatibility | OpenAI Chat Completions, OpenAI Responses, Anthropic Messages, filtered `/v1/models`, caller `/v1/usage`, health/version endpoints |
-| Routing | Static, weighted, failover, dynamic-score, and external-policy model group routing |
+| Routing | Static, weighted, failover, dynamic-score, TypeScript-scripted, and external-policy model group routing |
 | Capacity pooling | Compatible requests can use several separately rate-limited upstream providers, accounts, models, or private endpoints behind one model group |
 | Caller governance | Router-issued caller tokens, per-key allow lists, rate limits, traffic shaping, token budgets, concurrency limits |
 | Provider control | Server-side provider keys, deployment-defined provider catalogs, active targets separate from catalog metadata |

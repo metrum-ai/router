@@ -392,7 +392,26 @@ durable counters on the failed path. For Chat callers using
 the field and return a final usage event—the router forwards but does not
 synthesize a missing caller-visible usage chunk.
 
-For `routing-policy-error`, inspect the external policy outcome, duration, timeout, response class, and selected candidate index. `mode: shadow` records recommendations without changing the served target, `mode: enforce` applies valid recommendations, and `mode: baseline` skips the policy call. User code never runs inside the router process. Roll back policy influence with `baseline`; do not weaken target eligibility or caller model-group access to work around policy failures.
+For `routing-policy-error`, separate TypeScript from external-policy failures.
+TypeScript groups should check script load/runtime errors and whether
+`script_max_concurrent` is saturated; requests waiting for a VM slot honor
+caller cancellation, and increasing the cap above the default `16` increases
+simultaneous Goja work in the router process. External groups should inspect
+safe policy execution outcome, duration, timeout, response class, and selected
+candidate index. `mode: shadow` records recommendations without changing the
+served target, `mode: enforce` applies valid recommendations, and
+`mode: baseline` skips the policy call. Roll back policy influence with
+`baseline`; do not weaken target eligibility or caller model-group access to
+work around policy failures.
+
+If a `dynamic_score` conversation unexpectedly changes targets, inspect its
+safe affinity signal. `affinity_expired` means the TTL elapsed;
+`affinity_ineligible` means the pinned target no longer passed current request
+shape, contract, spend, or health gates; and `affinity_miss` means no active
+pin matched. Pins are caller-isolated and process-local, so a restart or a
+request routed to another replica also starts without the previous pin. Disable
+only the affinity layer with `routing_policy.dynamic_score.affinity.enabled:
+false`; switch to `weighted` for a full dynamic-score rollback.
 
 ## License Errors
 

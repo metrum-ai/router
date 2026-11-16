@@ -28,7 +28,7 @@ Edit `config/config.yaml` for the deployment:
 - set `state_path`;
 - configure `server.usage_db`;
 - configure providers, model groups, and caller access;
-- package any external routing policy service separately from the router binary.
+- point TypeScript routing to packaged script paths only when used.
 
 Populate `config/env.json` or the process environment with provider credentials. Keep credentials server-side and restrict file permissions.
 

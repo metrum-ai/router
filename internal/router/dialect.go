@@ -66,9 +66,6 @@ func decodeRequest(dialect string, body []byte, h http.Header) (*IRRequest, erro
 	if temp, ok := numberAsFloat(raw["temperature"]); ok {
 		req.Temperature = &temp
 	}
-	if topP, ok := numberAsFloat(raw["top_p"]); ok {
-		req.TopP = &topP
-	}
 	req.Stop = decodeStopSequences(raw)
 	if h.Get("Cache-Control") == "no-cache" || strings.Contains(strings.ToLower(h.Get("Cache-Control")), "no-store") {
 		req.NoCache = true
@@ -218,9 +215,6 @@ func encodeUpstreamForTarget(dialect, model string, req *IRRequest, target Targe
 		applyDefaultOpenAIChatThinking(body, target)
 		if req.Temperature != nil {
 			body["temperature"] = *req.Temperature
-		}
-		if req.TopP != nil {
-			body["top_p"] = *req.TopP
 		}
 		if len(req.Stop) > 0 {
 			body["stop"] = req.Stop

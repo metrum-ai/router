@@ -9,7 +9,7 @@ Allowed for Launch A:
 
 - Open-source self-hosted AI gateway / router
 - Configurable model groups with YAML providers
-- External routing policy extensibility
+- TypeScript `route(ctx)` and HTTP external policy extensibility
 - Governed request-path controls (auth, quotas, allow lists, usage)
 - Same-dialect native SSE for OpenAI Chat and Anthropic Messages
 - Process-local dynamic-score affinity

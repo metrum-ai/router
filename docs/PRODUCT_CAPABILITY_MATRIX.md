@@ -17,7 +17,7 @@ This matrix records what is visible in this repository and current docs. Keep it
 | Dynamic-score routing | Implemented | In-process rolling observations for latency, throughput, reliability, plus catalog cost and evaluation metadata. Response-cache hits are excluded from adaptive observations. |
 | Dynamic-score conversation affinity | Implemented | Caller-isolated, process-local, fixed-TTL prefix pins reorder only currently eligible targets; hits do not refresh TTL and successful fallback does not repin. |
 | Model-group routing contracts | Implemented | Optional `models.<group>.contract` filters group-local targets by declared API surfaces, capability requirements, validation metadata, quality floors, and operational thresholds before strategy selection. |
-| Custom routing | Implemented | External policy services receive safe derived context by default and return target decisions validated against current eligibility. |
+| TypeScript routing | Implemented | Fresh synchronous Goja VM per decision with a bounded per-group admission cap and optional allowlisted HTTP helper; pure JavaScript has no execution deadline after admission. |
 | External routing policy | Implemented | Trusted HTTP policy service receives derived context and deployment/caller inventory, then returns validated eligible targets. Baseline, shadow, and enforce modes support controlled promotion and rollback. |
 | External provider keys | Implemented | Provider credentials are server-side env/config values. |
 | Tool-aware routing | Implemented | Tool support metadata is dialect-specific. |

@@ -406,13 +406,13 @@ func TestResolveTargetInheritsCachedInputPrice(t *testing.T) {
 	}
 }
 
-func TestBuildExternalPolicyTargetsCarryCachedInputPrice(t *testing.T) {
+func TestBuildScriptTargetsCarryCachedInputPrice(t *testing.T) {
 	price := 0.3
-	targets := buildExternalPolicyTargets([]Target{{
+	targets := buildScriptTargets([]Target{{
 		Provider: "mock", Model: "m", Weight: 1, CachedInputPricePerMillionUSD: &price,
 	}}, map[string]ProviderConfig{"mock": {BaseURL: "https://example.test", Dialect: "openai-chat"}})
 	if len(targets) != 1 || targets[0].CachedInputPricePerMillionUSD == nil || *targets[0].CachedInputPricePerMillionUSD != 0.3 {
-		t.Fatalf("external policy target cached price: %#v", targets)
+		t.Fatalf("script target cached price: %#v", targets)
 	}
 }
 

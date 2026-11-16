@@ -69,15 +69,15 @@ For Chat, Responses, and Messages, a configured group with no target supporting 
 
 ### Which routing strategy should I use?
 
-Start with [Routing Strategy Decision Tree](./routing/strategy-decision-tree). It links to the detailed pages for static, failover, weighted, dynamic score, external policy, and contracts.
+Start with [Routing Strategy Decision Tree](./routing/strategy-decision-tree). It links to the detailed pages for static, failover, weighted, dynamic score, TypeScript, external policy, and contracts.
 
 ### How do I route by cost, latency, quality, or request shape?
 
 Use [Dynamic Score Routing](./configuration/dynamic-score-routing) unless the policy needs local code or an external service; compare the choices in [Routing Strategy Decision Tree](./routing/strategy-decision-tree).
 
-### How do I migrate from TypeScript routing?
+### When should I use TypeScript routing?
 
-The in-process strategy was removed in v5.0.0. Move custom logic to a standalone service using `strategy: external`; see [TypeScript Routing Migration](./configuration/routing-typescript).
+Use it for trusted deployment-local policy code. See [TypeScript Routing Policy](./configuration/routing-typescript).
 
 ### When should I use an external policy service?
 

@@ -167,7 +167,7 @@ func (s *externalPolicyStrategy) postFeedbackOnce(ctx context.Context, feedbackU
 		headers = s.cfg.Headers
 	}
 	for name, value := range headers {
-		if !externalPolicyConfigHeaderAllowed(name) {
+		if !scriptConfigHeaderAllowed(name) {
 			return fmt.Errorf("feedback header %s is not allowed", name)
 		}
 		req.Header.Set(name, value)

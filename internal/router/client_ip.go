@@ -29,46 +29,11 @@ func resolveClientIP(r *http.Request, cfg ClientIPConfig) clientIPInfo {
 		return applyIPStoragePolicy(info, cfg)
 	}
 	for _, header := range clientIPHeaderOrder(cfg.HeaderOrder) {
-		var ip net.IP
-		if strings.EqualFold(strings.TrimSpace(header), "X-Forwarded-For") {
-			ip = forwardedClientIP(r, remote, cfg.TrustedProxyCIDRs)
-		} else {
-			ip = firstHeaderIP(r, header)
-		}
-		if ip != nil {
+		if ip := firstHeaderIP(r, header); ip != nil {
 			return applyIPStoragePolicy(classifyClientIP(ip, header, true), cfg)
 		}
 	}
 	return applyIPStoragePolicy(info, cfg)
-}
-
-// forwardedClientIP walks the proxy chain from the socket peer toward the
-// client. Each trusted proxy appends its peer to X-Forwarded-For, so the
-// rightmost untrusted address is the client. Leftmost values are client
-// supplied and must never override a later address added by a trusted proxy.
-func forwardedClientIP(r *http.Request, remote net.IP, trusted []string) net.IP {
-	var chain []net.IP
-	for _, value := range r.Header.Values("X-Forwarded-For") {
-		for _, part := range strings.Split(value, ",") {
-			if ip := parseIPFromHostPort(strings.TrimSpace(part)); ip != nil {
-				chain = append(chain, ip)
-			}
-		}
-	}
-	if len(chain) == 0 {
-		return nil
-	}
-	hop := remote
-	for i := len(chain) - 1; i >= 0; i-- {
-		if !remoteTrusted(hop, trusted) {
-			return hop
-		}
-		hop = chain[i]
-		if !remoteTrusted(hop, trusted) {
-			return hop
-		}
-	}
-	return hop
 }
 
 func clientIPHeaderOrder(configured []string) []string {

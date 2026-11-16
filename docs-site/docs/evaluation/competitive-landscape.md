@@ -25,7 +25,7 @@ The strongest fit is an enterprise smart router that must combine:
 - tool-aware, image-aware, reasoning-aware, and request-shape-aware target eligibility;
 - private OpenAI-compatible upstreams alongside hosted providers and aggregators;
 - per-caller access, budgets, quotas, traffic shaping, and metrics-admin isolation;
-- external policy for deployment-owned routing logic;
+- TypeScript or external policy for deployment-owned routing logic;
 - request-time cost, latency, throughput, fallback, cache, and selected-target reporting.
 
 ## Buyer Task Flow
@@ -47,7 +47,7 @@ Many products cover one or two pieces very well: public model access, generic pr
 |---|---|
 | Combine the major gateway controls | High-performance routing, telemetry, budgets, rate limits, quotas, caching, fallback, model metadata, request diagnostics, optional governed content capture, usage reporting, and request-time cost accounting are handled by the router instead of split across multiple systems. |
 | Optimize for outcomes, not only model preference | Validation harnesses such as Harbor can run real coding-agent workloads through model groups and compare success outcomes against cost, latency, token volume, fallback rate, and throughput. This lets teams adjust weights and group composition until the group maintains positive task results while capturing substantial cost benefits. |
-| Keep routing policy close to the deployment | Policies live in the router config and standalone external policy services. Teams can route by prompt size, caller metadata, project, environment, tool requirements, image presence, target health, weights, failover order, or an allowlisted policy service. |
+| Keep routing policy close to the deployment | Policies live in the router config and optional TypeScript scripts. Teams can route by prompt size, caller metadata, project, environment, tool requirements, image presence, target health, weights, failover order, or an allowlisted policy service. |
 | Serve coding agents and normal apps from one endpoint | The same deployment can support OpenAI Chat Completions, OpenAI Responses, and Anthropic Messages clients, including Codex CLI, Claude Code CLI, and OpenAI Chat tool clients. |
 | Avoid manual model switching for mixed agent tasks | Text-only requests can use normal text/tool targets, while image-bearing requests through the same model group are filtered to VLM-capable targets. Developers do not need to exit an agent workflow just to switch from code generation to image/OCR/browser-control context. |
 | Give every key a precise policy | Router keys can encode allowed groups, caller user/project/environment, RPM/TPM limits, traffic-shaping buckets, concurrency caps, token/request budgets, and metrics-admin privileges. This supports evaluation keys, restricted project keys, production service keys, and operator keys on the same deployment. |
@@ -63,7 +63,7 @@ Many products cover one or two pieces very well: public model access, generic pr
 - Tool-call safety: tool requests route only to targets validated for the caller's tool dialect.
 - Cost-allocation usage records: reports can answer which user, project, caller token, group, provider, and model produced spend.
 - Private model integration: internally hosted vLLM or SGLang endpoints can sit behind the same public API contract as hosted providers.
-- Custom policy without client rewrites: External policies can route by prompt size, caller metadata, project, environment, API dialect, tool requirement, image presence, cache eligibility, model health, or external policy response.
+- Custom policy without client rewrites: TypeScript policies can route by prompt size, caller metadata, project, environment, API dialect, tool requirement, image presence, cache eligibility, model health, or external policy response.
 
 ## Deployment Fit
 
@@ -74,14 +74,14 @@ Metrum AI Router is best evaluated as the governed routing and accounting layer 
 | Product | Typical shape | Strong fit | Metrum AI Router fit |
 |---|---|---|---|
 | Metrum AI Router | Self-hosted, enterprise cloud, or Metrum-managed smart router | Controlled multi-provider routing, private upstreams, multimodal and agent clients, detailed usage accounting | Strong fit when teams need high-performance routing, telemetry, budgets/rate limits, programmable policy, private upstreams, VLM/tool-aware eligibility, agent compatibility, outcome-oriented evaluation, and cost-allocation-ready accounting together. |
-| LiteLLM | Open-source proxy with enterprise features | Broad provider abstraction, virtual keys, budgets, and proxy management | Metrum AI Router also supports budgets and rate limits, then adds stronger deployment-defined model-group policy, validated target metadata, dialect-specific VLM/tool eligibility, external routing policy, private upstream rollout workflow, and durable request-time cost records. |
+| LiteLLM | Open-source proxy with enterprise features | Broad provider abstraction, virtual keys, budgets, and proxy management | Metrum AI Router also supports budgets and rate limits, then adds stronger deployment-defined model-group policy, validated target metadata, dialect-specific VLM/tool eligibility, TypeScript routing logic, private upstream rollout workflow, and durable request-time cost records. |
 | Bifrost | High-performance open-source AI gateway | Fast OpenAI-compatible gateway, failover, load balancing, and telemetry | Metrum AI Router also supports high-performance gateway deployment and telemetry, then adds stronger caller-key governance, budgets, multimodal/tool eligibility, request-time cost persistence, detailed usage reporting, and deployment-specific policy logic. |
 | OpenRouter | Public model marketplace and routing service | Easy access to many public hosted models | Metrum AI Router can use OpenRouter as one upstream while adding enterprise allow lists, quotas, private upstreams, programmable routing, model validation, and cost accounting under the customer's control. |
 | Portkey | AI gateway/control-plane SaaS | Observability, guardrails, gateway management, and hosted control-plane workflows | Metrum AI Router is stronger for teams that want the gateway itself deployed under their control with private/provider-neutral target control, programmable routing, per-key quotas, and durable usage/cost records. |
 | Helicone | Observability and AI gateway tooling | Request logs, cost tracking, debugging, and analytics | Metrum AI Router includes usage reporting and telemetry while also making routing decisions, quota enforcement, VLM/tool eligibility, private upstream control, and cost records part of the same request path. |
 | Cloudflare AI Gateway | Edge gateway and AI application control plane | Edge deployment, caching, logs, rate limiting, retries, and model fallback | Metrum AI Router is stronger where model policy must be provider-neutral and deployment-owned, with detailed model metadata, private upstream configuration, caller-key policy, agent/VLM eligibility, and request-time accounting in the router itself. |
 | Kong AI Gateway | API gateway platform with AI plugins | Existing Kong/API management environments | Metrum AI Router is purpose-built for GenAI routing, model-group governance, VLM/tool eligibility, quotas, cost reporting, private inference endpoints, and agent-client compatibility without requiring a broader API gateway rollout. |
-| TrueFoundry AI Gateway | Enterprise AI platform gateway | Platform-level governance and MLOps integration | Metrum AI Router is stronger for teams that want direct gateway-layer control over model groups, upstream weights, external policy, per-key access, cost accounting, and private inference endpoints. |
+| TrueFoundry AI Gateway | Enterprise AI platform gateway | Platform-level governance and MLOps integration | Metrum AI Router is stronger for teams that want direct gateway-layer control over model groups, upstream weights, TypeScript policy, per-key access, cost accounting, and private inference endpoints. |
 | Martian | Model routing/intelligence product | Dynamic model selection and optimization | Metrum AI Router exposes explicit deployment-owned policy, validation, usage records, quotas, and upstream routing controls that operators can inspect and change. |
 | vLLM Semantic Router | Programmable Mixture-of-Models routing layer for heterogeneous LLM infrastructure | Request-signal classification and model-path composition across mixed compute and locations | Complementary fit: Semantic Router can advise or compose a model path, while Metrum AI Router remains the governed hop for caller authentication, quotas, model-group selection, provider credentials, usage accounting, and upstream calls. It does not replace those controls, and it is optional/off-path in the Kubernetes layer boundary ([deployment spec](https://github.com/metrum-ai/router/blob/main/docs/specs/kubernetes-deployment.md), [31 Aug successor](https://github.com/metrum-ai/router/blob/main/docs/specs/kubernetes-deployment-31aug2026.md)). |
 | NVIDIA NeMo Switchyard | Open-source agent model-routing library (embeddable algorithms, gateway/plugin paths, optional standalone proxy) | Per-call model selection for agent and gateway workloads without rewriting client APIs | Fit when teams want library- or plugin-level model picking inside an existing harness. Metrum AI Router fit remains stronger when the deployment must own model groups, caller quotas, multi-provider credentials, private upstreams, and request-time usage/cost records in one self-hosted control point. As of 2026-09-19, Switchyard’s README publishes pre-alpha maturity (experimental; not for production). |
@@ -96,7 +96,7 @@ Use concrete workloads instead of feature checklists alone:
 - An OpenAI Chat tool-call request from an agent client.
 - An image request through the same model group a developer would normally use.
 - A request that exercises quotas and `/v1/models` allow-list filtering.
-- A external policy route, such as prompt-size routing within one caller-visible model group.
+- A TypeScript policy route, such as prompt-size routing within one caller-visible model group.
 - A validation run that compares model-group outcome, cost, latency, token volume, fallback behavior, and provider/model mix.
 - A usage report showing caller, provider, model, token, latency, cache, and cost fields.
 - A private vLLM or SGLang upstream smoke when internal models are part of the enterprise requirement.

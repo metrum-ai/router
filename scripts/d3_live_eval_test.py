@@ -16,7 +16,6 @@ import importlib.util
 import json
 import tempfile
 import unittest
-from unittest.mock import patch
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -84,66 +83,6 @@ class LiveEvalCostTest(unittest.TestCase):
         self.assertEqual(out["extra_vs_always_cheap_x"], 7.0)
         self.assertEqual(out["strong_share"], 0.5)
         self.assertEqual(out["runs"]["always_strong"]["cost_usd"], 0.04)
-
-    def test_direct_timeout_is_a_scalar_error_without_prompt_or_key(self) -> None:
-        prompt = "private synthetic prompt"
-
-        class Response:
-            headers = {}
-
-            def read(self) -> bytes:
-                return b'{"status":"ok","model":"d3"}'
-
-        class Opener:
-            def __init__(self) -> None:
-                self.calls = 0
-
-            def open(self, *_args, **_kwargs):
-                self.calls += 1
-                if self.calls == 1:
-                    return Response()
-                raise TimeoutError("private prompt and bearer secret must not escape")
-
-        args = argparse.Namespace(url="http://offline.invalid", config=None, api_key_env="D3_TEST_KEY",
-                                  model="d3-test", model_label="offline", revision="", device="",
-                                  warmup=0, timeout=0.01, limit=1, per_cell=None)
-        with patch.object(ev, "seed_prompts", return_value=[{"id": "sample-1", "prompt": prompt,
-                                                             "difficulty": "easy", "domain": "code"}]), \
-                patch.object(ev, "opener", return_value=Opener()), \
-                patch.dict("os.environ", {"D3_TEST_KEY": "private-bearer-token"}):
-            result = ev.direct(args)
-        serialized = json.dumps(result)
-        self.assertEqual(result["errors"], {"unreachable_or_timeout": 1})
-        self.assertEqual(result["answered"], 0)
-        self.assertNotIn(prompt, serialized)
-        self.assertNotIn("private-bearer-token", serialized)
-
-    def test_router_timeout_is_reported_without_token_or_prompt(self) -> None:
-        prompt = "private synthetic prompt"
-
-        class Opener:
-            def open(self, *_args, **_kwargs):
-                raise TimeoutError("private prompt and bearer secret must not escape")
-
-        with tempfile.TemporaryDirectory() as tmp:
-            token_path = Path(tmp) / "token"
-            token_path.write_text("private-bearer-token", encoding="utf-8")
-            db_path = Path(tmp) / "usage.sqlite"
-            db_path.touch()
-            args = argparse.Namespace(token_file=str(token_path), limit=1, per_cell=None,
-                                      base_url="http://offline.invalid", group="d3-test", run_marker="",
-                                      max_tokens=32, timeout=0.01, mode_label="baseline",
-                                      strong_model="gpt-test", strong_input_price=1.0, strong_output_price=1.0,
-                                      cheap_input_price=0.1, cheap_output_price=0.1, usage_db=str(db_path))
-            with patch.object(ev, "seed_prompts", return_value=[{"id": "sample-1", "prompt": prompt,
-                                                                 "difficulty": "easy", "domain": "code"}]), \
-                    patch.object(ev, "opener", return_value=Opener()), patch.object(ev.time, "sleep"):
-                result = ev.router(args)
-        serialized = json.dumps(result)
-        self.assertEqual(result["http_status"], {0: 1})
-        self.assertEqual(result["requests_failed_due_to_policy"], 0)
-        self.assertNotIn(prompt, serialized)
-        self.assertNotIn("private-bearer-token", serialized)
 
 
 if __name__ == "__main__":

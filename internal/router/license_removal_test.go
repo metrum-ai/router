@@ -148,7 +148,7 @@ func TestL004StrategiesServeWithoutLicenseGate(t *testing.T) {
 	}
 }
 
-func TestL005PrivateUpstreamPIIUnchanged(t *testing.T) {
+func TestL005PrivateUpstreamPIIAndScriptHTTPUngated(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = io.WriteString(w, `{"id":"chatcmpl-1","object":"chat.completion","choices":[{"index":0,"message":{"role":"assistant","content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":1,"completion_tokens":1,"total_tokens":2}}`)

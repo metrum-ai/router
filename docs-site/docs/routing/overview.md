@@ -38,7 +38,7 @@ Routing](../configuration/dynamic-score-routing).
 | Learned policy | The router should pick the cheapest eligible target that clears a measured quality floor, using per-target models calibrated on your own outcome data. | See [Learned Routing Policy](./learned-routing-policy). |
 | Dynamic score | The router should adapt within the group using cost, latency, throughput, reliability, request shape, and validation signals. | See [Dynamic Score Routing](../configuration/dynamic-score-routing). |
 | External policy | Routing policy should live in a trusted standalone service with its own deployment and observability. | See [External Routing Policy Service](../configuration/external-routing-policy). |
-| External policy | Routing policy should run as a trusted standalone service. | See [External Routing Policy](../configuration/external-routing-policy). |
+| TypeScript policy | Routing policy should be deployment-local and programmable inside the router process. | See [TypeScript Routing Policy](../configuration/routing-typescript). |
 | Model-group contract | The group needs explicit workload requirements, quality floors, and validation gates before selection. | A contract is a pre-filter used with another strategy, not a standalone selector. See [Model Group Contracts](../configuration/model-group-contracts). |
 | Failover | Targets should be tried in a deterministic priority order. | Useful when one target is primary and others are fallback only. |
 | Weighted | Validated targets should share traffic by configured percentages. | Common choice for conservative production mixes and gradual promotion. |

@@ -7,7 +7,7 @@ doc_type: explanation
 
 Metrum AI Router is not a black-box global model chooser. A caller requests one allowed, deployment-defined model group, and the deployment owner controls which providers, private upstreams, capabilities, policies, validation gates, and fallback paths exist inside that group.
 
-Use this page as the routing-policy ownership map. Start with the [Routing Strategy Decision Tree](./strategy-decision-tree) when choosing between static, failover, weighted, dynamic score, external, or contract-backed routing. The detailed reference pages remain the source of truth for [router config](../configuration/router-config), [model metadata](../reference/model-metadata), [dynamic score routing](../configuration/dynamic-score-routing), [TypeScript routing migration](../configuration/routing-typescript), [external policy services](../configuration/external-routing-policy), [model-group contracts](../configuration/model-group-contracts), [PII filtering](../configuration/pii-filtering), [usage reporting](../operations/usage-reporting), and [deployment readiness](../evaluation/deployment-readiness).
+Use this page as the routing-policy ownership map. Start with the [Routing Strategy Decision Tree](./strategy-decision-tree) when choosing between static, failover, weighted, dynamic score, TypeScript, external, or contract-backed routing. The detailed reference pages remain the source of truth for [router config](../configuration/router-config), [model metadata](../reference/model-metadata), [dynamic score routing](../configuration/dynamic-score-routing), [TypeScript routing](../configuration/routing-typescript), [external policy services](../configuration/external-routing-policy), [model-group contracts](../configuration/model-group-contracts), [PII filtering](../configuration/pii-filtering), [usage reporting](../operations/usage-reporting), and [deployment readiness](../evaluation/deployment-readiness).
 
 Model group names are deployment-defined. Examples on this page use names such as `regulated-review`, `agent-coding`, `adaptive-support`, and `team-local-coding` only as examples. Callers should discover their allowed groups from [`/v1/models`](../getting-started/available-models).
 
@@ -34,7 +34,7 @@ The router does not route across unauthorized groups and does not activate provi
 | Weighted mix | `weighted` | Gradual rollout, cost mix, provider diversity | Needs monitoring and rollback criteria |
 | Fast configurable scoring | `dynamic_score` | Cost, latency, reliability, request-shape, and evaluation scoring with scalar terms and observed signals | Keep terms lightweight and group-local; this is the mature built-in adaptive scorer |
 | Legacy stubs only | `latency`, `cost`, `semantic` | Older configs that still parse these names | Stub maturity only: configured RPM/cost ranks or keyword classification, not live observations or embeddings; prefer `dynamic_score` |
-| Custom routing logic | External policy service | Deployment-specific routing using safe derived context | User code runs outside the router process |
+| Custom logic in config | TypeScript `script` | Deployment-specific routing using safe context | Scripts are trusted deployment code |
 | Separate policy service | `external` | Enterprise policy engine, sidecar, or ML scorer | Secure network, auth, timeout, and fail-closed behavior are required |
 | Reserved decision-model contract | `intelligent` | Validate licensed bounded configuration while serving the deterministic baseline | Baseline-only in the current release; it does not call the decision model or alter selection |
 | Hard capability promise | Model-group `contract` | Quality and capability floor per group | Stale validation or strict floors can remove all targets |
@@ -164,9 +164,38 @@ models:
             expression: "0.40 * cost_score + 0.30 * latency_score + 0.20 * reliability_score + 0.10 * eval_quality_score"
 ```
 
-### TypeScript Routing Migration
+### TypeScript Script Policy
 
-The in-process TypeScript `strategy: script` option was removed in v5.0.0. Move custom routing to a standalone service configured with `strategy: external`. The request-shape example is now a service at `examples/typescript-request-shape/request_shape_policy.py`. See [TypeScript Routing Migration](../configuration/routing-typescript).
+Use `strategy: script` when policy should run inside the router process and can be packaged with deployment config. The checked-in request-shape example under `examples/typescript-request-shape/router.ts` routes by prompt size, tools, images, structured outputs, and explicit reasoning signals:
+
+```yaml
+models:
+  script-request-shape:
+    strategy: script
+    script: examples/typescript-request-shape/router.ts
+    targets:
+      - { provider: hosted_openai_compatible, model_ref: compact, tier: cheap, weight: 70 }
+      - { provider: hosted_openai_compatible, model_ref: long-context, tier: heavy, weight: 20 }
+      - { provider: hosted_openai_compatible, model_ref: tool-model, tier: tool, weight: 10 }
+```
+
+```typescript
+export function route(ctx) {
+  const preferredTiers = ctx.text.length > 8000 ? ["heavy"] : ["cheap"];
+  // The checked-in example also inspects ctx.context.toolCount, imageCount,
+  // hasStructuredOutput, and reasoning.requested before picking a tier.
+  const entries = ctx.targets.map((target, index) => ({ target, index }));
+  const preferred =
+    entries.find((entry) => preferredTiers.includes(entry.target.tier)) || entries[0];
+  return {
+    targetIndex: preferred.index,
+    fallbackIndexes: entries.filter((entry) => entry.index !== preferred.index).map((entry) => entry.index),
+    classLabel: `request-shape:${preferred.target.tier}`,
+  };
+}
+```
+
+Scripts receive safe caller and target metadata, not raw provider keys, raw router tokens, or token hashes. If a group enables `pii_filter`, the script context is built from the redacted request. The packaged `scripts/router.ts` sample is a caller-regex weighted picker; use `examples/typescript-request-shape/` for request-shape routing.
 
 ### External Policy Service
 

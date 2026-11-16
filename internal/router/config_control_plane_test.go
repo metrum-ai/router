@@ -122,24 +122,6 @@ func TestLoadActiveConfigFromDBReadsValidatedCoreProjection(t *testing.T) {
 	}
 }
 
-func TestLoadActiveConfigFromDBRejectsRemovedScriptStrategy(t *testing.T) {
-	db := configAdminTestDB(t)
-	var setID string
-	if err := db.Raw(`SELECT id FROM router_config_sets WHERE runtime_scope = ? AND status = ?`, "prod", "active").Scan(&setID).Error; err != nil {
-		t.Fatal(err)
-	}
-	if setID == "" {
-		t.Fatal("active config set missing")
-	}
-	if err := db.Table("router_config_model_groups").Where("config_set_id = ? AND group_name = ?", setID, "agent-default").Update("strategy", "script").Error; err != nil {
-		t.Fatal(err)
-	}
-	_, err := LoadActiveConfigFromDB(db, "prod", IdentifierConfig{Mode: "passthrough"})
-	if err == nil || !strings.Contains(err.Error(), "strategy: script was removed in v5.0.0") {
-		t.Fatalf("DB config load error = %v, want script migration message", err)
-	}
-}
-
 func TestLoadActiveConfigFromDBLoadsNormalizedProviderModelCapabilities(t *testing.T) {
 	r, closeDB, err := ConfigControlPlaneMigrationRunner(UsageDBConfig{Driver: "sqlite", Path: filepath.Join(t.TempDir(), "config.sqlite")})
 	if err != nil {

@@ -9,11 +9,7 @@ Distinct from pure gateways, which load-balance or failover but do not select
 per request on measured quality and cost signals.
 
 ## Routing
-- User code never runs inside the router process. The in-process TypeScript
-  routing strategy (`strategy: script`) was removed in v5.0.0; migrate custom
-  routing to a standalone policy service with `strategy: external`.
-- [Learned Routing Policy](./docs/routing/learned-routing-policy)
-- [Dynamic Score Routing](./docs/configuration/dynamic-score-routing)
-- [Model Group Contracts](./docs/configuration/model-group-contracts)
-- [External Routing Policy](./docs/configuration/external-routing-policy)
-- [TypeScript Routing Migration](./docs/configuration/routing-typescript)
+- [Learned Routing Policy](https://llm-api.apps.metrum.ai/docs/routing/learned-routing-policy)
+- [Dynamic Score Routing](https://llm-api.apps.metrum.ai/docs/configuration/dynamic-score-routing)
+- [Model Group Contracts](https://llm-api.apps.metrum.ai/docs/configuration/model-group-contracts)
+- [External Routing Policy](https://llm-api.apps.metrum.ai/docs/configuration/external-routing-policy)

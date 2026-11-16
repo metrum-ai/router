@@ -57,7 +57,7 @@ requires a processing location, operators must validate the provider and
 infrastructure controls and encode that requirement in reviewed group
 eligibility or policy; ordinary callers see allowed model groups through
 `/v1/models`, not the per-target inventory. `region` is not passed to
-external-policy inputs and does not itself filter candidates.
+TypeScript or external-policy inputs and does not itself filter candidates.
 Use separate caller-authorized groups or another explicitly policy-visible,
 validated classification when routing must enforce location.
 
@@ -72,7 +72,7 @@ Use `required_capabilities.reasoning` when the group itself promises reasoning o
 5. Apply the group contract and target validation floor.
 6. Run the configured strategy on the remaining targets.
 
-`static`, `weighted`, `failover`, `dynamic_score`, and `external` all receive the same contract-filtered target list. External policies receive safe contract and target validation metadata, but their decisions are still validated against eligible targets.
+`static`, `weighted`, `failover`, `dynamic_score`, `script`, and `external` all receive the same contract-filtered target list. TypeScript and external policies receive safe contract and target validation metadata, but their decisions are still validated against eligible targets.
 
 ## Validation
 

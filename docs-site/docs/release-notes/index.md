@@ -5,11 +5,6 @@ doc_type: reference
 
 # Release Notes
 
-## v5.0.0 planned breaking change
-
-The in-process TypeScript routing strategy is removed. Move custom logic to a standalone external policy service; see the [upgrade guide](/docs/release-notes/upgrade-guide). User code never runs inside the router process.
-
-
 Release notes help customer operators decide whether to deploy, how to validate the release, and how to roll back if needed. Each packaged router build also displays its router version and build timestamp on every docs page.
 
 For upgrade execution, see [Upgrade Guide](/docs/release-notes/upgrade-guide). For the docs package index, see [Releases](/docs/releases).
@@ -1399,7 +1394,7 @@ for this documentation/positioning release.
   streaming remain router-encoded after a unary upstream call.
 - `dynamic_score` adds caller-isolated, process-local conversation affinity
   with bounded fixed-TTL storage.
-- The in-process TypeScript routing strategy is removed in v5.0.0;
+- TypeScript decisions use fresh VMs with per-group concurrency admission;
   external policy adds explicit `baseline`, `shadow`, and `enforce` modes with
   reusable cancellation-aware HTTP clients.
 - The outbound Gemini `generateContent` codec supports evidence-gated unary
@@ -1429,7 +1424,7 @@ for this documentation/positioning release.
   inference retains its bounded worker slot. These results do not establish
   production quality, concurrency capacity, HTTP/router latency, or expected
   customer savings.
-- Config: review `dynamic_score.affinity`,
+- Config: review `dynamic_score.affinity`, `script_max_concurrent`,
   `external_policy.mode`, and optional `targets[].region`. New external
   policies should begin in `shadow`; `baseline` skips policy calls.
 - Database: migration `2026090901` adds non-null text
@@ -1462,7 +1457,7 @@ for this documentation/positioning release.
   smokes, plus Responses and bridge regressions.
 - Exercise affinity hit, miss, expiry, ineligible replacement, caller
   isolation, restart, and multi-replica behavior.
-- Load-test external-policy
+- Load-test TypeScript admission/cancellation and compare external-policy
   `shadow` recommendation with the served baseline before promotion.
 - Plan, apply, and verify migration `2026090901`; confirm serving-target region
   attribution after successful fallback.

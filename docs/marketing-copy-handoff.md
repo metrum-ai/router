@@ -34,7 +34,7 @@ language as "LLM router" and keep gateway functions subordinate to routing.
 Current feature-card language that stops at "external-policy routing" should be
 extended to name learned routing. Proposed string:
 
-> Policy-owned model groups with dynamic score, external-policy, and
+> Policy-owned model groups with dynamic score, TypeScript, external-policy, and
 > Learned Routing Policy selection. The router picks an eligible upstream per
 > request, records the decision as evidence, and keeps gateway controls
 > (quotas, keys, budgets, telemetry) enforceable underneath routing.

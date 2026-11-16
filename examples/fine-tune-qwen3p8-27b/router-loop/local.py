@@ -20,7 +20,6 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import sqlite3
 import bcrypt
 import collect
-from canary_policy import PolicyHandler
 
 
 # Local/evaluation capacity, NOT production defaults or a spend authorization.
@@ -82,8 +81,6 @@ def demonstrate_canary(binary, out, cfg, env, test_rate_limiting=False):
             self.send_response(200); self.send_header('Content-Type', 'application/json'); self.end_headers(); self.wfile.write(body)
     mock = ThreadingHTTPServer(('127.0.0.1', 18411), Mock)
     thread = threading.Thread(target=mock.serve_forever, daemon=True); thread.start()
-    policy = ThreadingHTTPServer(('127.0.0.1', 0), PolicyHandler)
-    policy_thread = threading.Thread(target=policy.serve_forever, daemon=True); policy_thread.start()
     env['TRACE_MOCK_KEY'] = secrets.token_urlsafe(24)
     cfg['providers']['ft-canary'] = {'dialect': 'openai-chat', 'base_url': 'http://127.0.0.1:18411/v1', 'api_key_env': 'TRACE_MOCK_KEY', 'api_key': '${TRACE_MOCK_KEY}'}
     cfg['state_path'] = str(out / 'canary-state.json')
@@ -91,10 +88,8 @@ def demonstrate_canary(binary, out, cfg, env, test_rate_limiting=False):
     if test_rate_limiting:
         cfg['callers'][0]['quota']['day']['requests'] = 1
     group = cfg['models']['support-agent']
-    group['strategy'] = 'external'
-    group['external_policy'] = {'url': f'http://127.0.0.1:{policy.server_port}/route',
-        'allow_hosts': ['127.0.0.1'], 'timeout_ms': 1000, 'max_response_bytes': 4096,
-        'on_error': 'fail_closed'}
+    group['script_max_concurrent'] = 256
+    group['strategy'] = 'script'; group['script'] = str(Path(__file__).with_name('canary.ts').resolve())
     group['targets'].append({'provider': 'ft-canary', 'model': 'synthetic-ft-standin', 'context_tokens': 131072})
     path = out / 'canary-config.json'; path.write_text(json.dumps(cfg)); path.chmod(0o600)
     evidence = []
@@ -137,7 +132,6 @@ def demonstrate_canary(binary, out, cfg, env, test_rate_limiting=False):
             try: router.wait(timeout=15)
             except subprocess.TimeoutExpired: router.kill(); router.wait()
         mock.shutdown(); mock.server_close(); thread.join()
-        policy.shutdown(); policy.server_close(); policy_thread.join()
     with sqlite3.connect(out / 'usage.sqlite') as db:
         for result in evidence:
             provider, model = db.execute('SELECT target_provider,target_model FROM request_usage WHERE request_id=?', (result['request_id'],)).fetchone()

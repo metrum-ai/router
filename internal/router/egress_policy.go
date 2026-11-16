@@ -61,7 +61,7 @@ func validateEgressURL(u *url.URL, allowHosts []string, allowHTTP bool, label st
 }
 
 func validateEgressHost(host string, allowHosts []string, label string) error {
-	if !externalPolicyHostAllowed(host, allowHosts) {
+	if !scriptHostAllowed(host, allowHosts) {
 		return &egressPolicyError{label: label, msg: fmt.Sprintf("host %s is not allowed", host)}
 	}
 	return nil

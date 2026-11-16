@@ -26,7 +26,7 @@ Metrum AI Router keeps client integrations stable by separating caller-facing na
 | Model group | A caller-facing policy name such as an organization-defined general, coding, low-cost, VLM, or private-upstream group. |
 | Target | One configured upstream/provider model entry inside a model group. |
 | Provider catalog | Metadata about upstream providers and models, including model IDs, pricing, modalities, tool support, and validation notes. |
-| Routing policy | The strategy that selects an eligible target: weighted, failover, dynamic score, or external policy service. |
+| Routing policy | The strategy that selects an eligible target: weighted, failover, dynamic score, TypeScript script, or external policy service. |
 | API dialect | The request/response surface: OpenAI Chat Completions, OpenAI Responses, or Anthropic Messages. |
 | Tool dialect | The tool-call protocol a target has been validated to support, such as OpenAI Chat tools, Responses function tools, or Anthropic client tools. |
 | VLM | Vision-language model behavior for image-bearing prompts, OCR, screenshots, diagrams, or browser-control context. |

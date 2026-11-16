@@ -58,12 +58,12 @@ For private vLLM, SGLang, Baseten-style, or other OpenAI-compatible upstreams:
 - keep private upstream tokens in the deployment environment;
 - configure media-domain restrictions for VLM services that fetch image URLs.
 
-For `strategy: external` policy egress:
+For TypeScript `router.fetchJSON` and `strategy: external` policy egress:
 
 - keep policy services inside trusted infrastructure because they receive routing context and eligible target metadata;
 - use exact hostname allowlists, not suffixes or wildcards;
 - prefer HTTPS for all non-local policy services;
-- approve `external_policy.allow_http: true` only for trusted internal endpoints that cannot use HTTPS;
+- approve `script_http.allow_http: true` or `external_policy.allow_http: true` only for trusted internal endpoints that cannot use HTTPS;
 - verify redirects are blocked when they point to non-allowlisted hosts, including loopback addresses that were not listed.
 - enforce private-network and CIDR restrictions with deployment network policy until native router CIDR egress controls are added.
 
@@ -86,7 +86,7 @@ Each deployment should follow the organization's security process for:
 - dependency scanning for packaged docs and runtime dependencies;
 - verification that release images are built with the pinned Docker builder Go patch version, not a floating language image tag;
 - secret scanning of release artifacts;
-- security review for external policy services;
+- static analysis or policy review for TypeScript routing scripts;
 - review of third-party script dependencies before packaging;
 - verification that the router does not install packages or fetch dependency code at runtime.
 

@@ -20,6 +20,7 @@ metrum-ai-router-<version>-linux-<arch>/
   bin/metrum-ai-routerctl
   config/config.example.yaml
   config/env.example.json
+  config/scripts/router.ts
   caddy/Caddyfile
   docs/
 ```
@@ -36,6 +37,7 @@ metrum-ai-router-<version>-windows-<arch>/
   bin/metrum-ai-routerctl.exe
   config/config.example.yaml
   config/env.example.json
+  config/scripts/router.ts
   caddy/Caddyfile
   docs/
   LICENSE
@@ -64,6 +66,7 @@ metrum-ai-router-<version>-docker-linux-<arch>/
   compose/.env
   config/config.example.yaml
   config/env.example.json
+  config/scripts/router.ts
   images/metrum-ai-router-<version>-linux-<arch>.tar
   docs/
 ```

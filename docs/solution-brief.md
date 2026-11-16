@@ -190,7 +190,7 @@ Core capabilities:
 - Server-side provider key injection, keeping upstream credentials out of client machines and application code.
 - Caller API tokens with traceable public prefixes, hashed token storage, per-caller allow lists, rate limits, quotas, and lifetime token budgets.
 - Configurable deployment-defined model groups. Names such as `small`, `medium`, `high`, `default`, `fast`, `big-coder`, or `vision` are example/reference deployment names, not product-required names.
-- Routing strategies including static, weighted, failover, dynamic_score observed-performance policy, and external policy services. Dynamic score includes caller-isolated, TTL-bounded, process-local conversation affinity. External policy supports baseline, shadow, and enforce promotion states without bypassing eligibility. Legacy `latency`/`cost`/`semantic` selectors remain compatibility stubs; `strategy: intelligent` is baseline-only licensed config, not an active decision-model picker.
+- Routing strategies including static, weighted, failover, dynamic_score observed-performance policy, TypeScript-driven custom policy, and external policy services. Dynamic score includes caller-isolated, TTL-bounded, process-local conversation affinity. External policy supports baseline, shadow, and enforce promotion states without bypassing eligibility. Legacy `latency`/`cost`/`semantic` selectors remain compatibility stubs; `strategy: intelligent` is baseline-only licensed config, not an active decision-model picker.
 - Same-dialect OpenAI Chat and Anthropic Messages native SSE with incremental tool/usage events, cancellation propagation, and no replay or fallback after response commitment. Same-dialect OpenAI Responses streaming and explicitly enabled Responses-to-Chat streaming are also incremental; the latter translates Chat SSE into Responses lifecycle events. Set `server.streaming.translator: synthesized` to retain unary upstream synthesis.
 - In-process LRU plus TTL cache for eligible unary responses.
 - Structured request logs, Prometheus-compatible metrics, and durable relational usage reporting with request-time pricing/cost fields.
@@ -323,7 +323,7 @@ The router is configured with YAML plus environment-loaded provider keys. The ty
 
 - `config.yaml`: routing policy, providers, model groups, caller tokens, limits, cache, logs, and usage DB.
 - `env.json`: provider API keys, kept outside source control.
-- External routing-policy service: optional standalone custom routing logic.
+- `router.ts`: optional TypeScript policy script for advanced routing.
 
 Minimal shape:
 
@@ -448,9 +448,36 @@ callers:
 
 The `allow` list is the model-group authorization boundary for each router key. Each key references an active `owner_user`, project, and project membership. User ids, project ids, caller `id`, `token_hash` (salted PBKDF2-HMAC-SHA3-512 verifier; deprecated `token_sha256` still accepted), and non-empty `token_id` values must be unique after normalization. A disallowed request is rejected with `403 model-not-allowed` before provider routing and before any upstream provider key is used. Global `/metrics` access is a separate Casbin-authorized `metrics` `read` action; existing `metrics_admin: true` callers remain compatible and should not be application keys. Governed content-capture maintenance uses separate Casbin-authorized `content:capture` `delete`/`purge` actions; delete-by-request is scoped to the captured row's caller project/environment domain, and existing `content_admin: true` callers remain compatible for their own domain.
 
-## Custom Routing Policies
+## Custom TypeScript Routing
 
-The in-process TypeScript policy was removed in v5.0.0. Custom routing runs in a standalone service through `strategy: external`; user code never runs inside the router process. The request-shape and PII-aware examples are external services.
+For advanced policy, a model group can delegate selection to a TypeScript script evaluated inside the router process. The script receives safe request metadata, caller metadata, and target metadata. It does not receive raw caller tokens or raw provider API keys.
+
+Admins configure this with `strategy: script` on a model group and a script path such as `scripts/router.ts`. Proxy users still request the model group name; the script chooses one configured backing target internally.
+
+Script policy can be split across local TypeScript helper files and bundled at router startup. Each decision runs in a fresh isolated VM; `script_max_concurrent` bounds concurrent VMs per model group (default `16`, maximum `256`) without pooling mutable script state, and queued decisions honor caller cancellation. Deployments that need third-party helpers package locked dependencies or a pre-bundled artifact with the routing script. External policy-service calls are available only when the model group enables `script_http` with deployment-owned allowed hosts, timeouts, and response-size limits.
+
+For teams that want policy to live outside the router process, a model group can use `strategy: external`. The router sends normalized request context, safe caller metadata, eligible target metadata, pricing, tools, and modalities to a standalone external routing policy service. The service returns a target decision, and the router validates that decision against the configured eligible targets before calling any provider.
+
+Example use cases:
+
+- Route a specific owner user or project to a dedicated model group.
+- Bias smaller models for short prompts and larger models for complex prompts.
+- Prefer a provider during business hours and another provider after hours.
+- Exclude targets when the caller is not allowed to use premium models.
+- Implement staged rollouts by traffic percentage.
+
+Conceptual policy flow:
+
+```mermaid
+flowchart TD
+  Start[Request metadata] --> Caller[Caller metadata]
+  Caller --> Rules[TypeScript routing rules]
+  Rules --> Filter[Filter eligible targets]
+  Filter --> Score[Score by weight, tier, cost, text, policy]
+  Score --> Pick[Return selected target index]
+```
+
+A documented and regression-tested pattern uses `ctx.text.length` to keep short prompts on a `cheap` tier target and send larger prompts to a `heavy` tier target, while returning fallback indexes for the remaining configured targets. The full customer-facing example is in the hosted Docusaurus TypeScript routing policy page.
 
 ## Authentication And Key Handling
 

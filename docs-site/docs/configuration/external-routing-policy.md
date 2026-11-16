@@ -5,9 +5,9 @@ doc_type: howto
 
 # External Routing Policy Service
 
-Use `strategy: external` when a deployment wants routing decisions to come from a standalone policy service. User code never runs inside the router process. Callers still request one deployment-defined model group. The router filters the group to eligible targets, applies any optional model-group contract, sends safe request context to the policy service, validates the returned target, and then calls the selected upstream.
+Use `strategy: external` when a deployment wants routing decisions to come from a standalone policy service instead of from TypeScript running inside the router. Callers still request one deployment-defined model group. The router filters the group to eligible targets, applies any optional model-group contract, sends safe request context to the policy service, validates the returned target, and then calls the selected upstream.
 
-This is useful when the routing policy should be developed, tested, deployed, and observed as its own service. The former in-process TypeScript strategy was removed in v5.0.0; see [TypeScript Routing Migration](./routing-typescript).
+This is useful when the routing policy should be developed, tested, deployed, and observed as its own service. For smaller local rules, see [TypeScript Routing Policy](./routing-typescript).
 
 For the canonical strategy comparison, start with [Routing Strategy Decision Tree](../routing/strategy-decision-tree). For the broader routing-policy ownership model, see [Customer-Controlled Routing](../routing/customer-controlled-routing).
 

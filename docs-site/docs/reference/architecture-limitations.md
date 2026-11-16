@@ -126,16 +126,17 @@ Edge and hierarchy reference deployments set these explicitly; see
 - After the first flushed caller SSE frame, the HTTP response is committed. A later
   failure cannot change the caller's `200`, append a reliable error envelope,
   or fall back to another target; clients must detect a missing terminal event.
-- Custom user code does not run inside the router process. External routing
-  policies run as separate services and are bounded by configured network
-  timeouts.
+- TypeScript policies run synchronously in the serving process. Per-group
+  concurrency limits bound admitted VMs but do not impose a pure-JavaScript
+  execution timeout or preempt an unbounded loop.
 - The Gemini `generateContent` adapter is an outbound unary text codec, not a
   caller-facing Gemini endpoint. Active targets require exact-model direct and
   router evidence; tools, images, reasoning, structured output, and streaming
   are not enabled for that adapter.
 - `targets[].region` is operator-declared diagnostics metadata. It does not by
   itself enforce residency, retention, transfer, jurisdiction, or provider
-  training behavior and is not included in external-policy inputs.
+  training behavior and is not included in TypeScript or external-policy
+  inputs.
 - The `intelligent` strategy is a baseline-only configuration
   foundation in the current release. It does not invoke its decision model or
   alter serving-target selection.

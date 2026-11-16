@@ -20,7 +20,7 @@ sanitized usage and performance fields.
 
 - provider optionality behind stable application configuration;
 - server-side key custody and scoped caller access;
-- weighted, failover, dynamic-score, and external-service policy;
+- weighted, failover, dynamic-score, TypeScript, and external-service policy;
 - caller-isolated dynamic-score affinity and reversible external-policy
   baseline/shadow/enforce promotion;
 - native incremental OpenAI Chat and Anthropic Messages streaming, with
