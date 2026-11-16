@@ -4,6 +4,7 @@
 package main
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,12 +12,19 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/metrum-ai/router/internal/smartrouterctl"
 )
 
 func TestOnlineCommandsUseAdminV1WithoutDatabaseCredentials(t *testing.T) {
 	const token = "rtr_admin_test_only_parity_key"
 	var requests []string
+	contract := loadAdminV1Contract(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !contractAllows(contract, r.Method, r.URL.Path) {
+			http.Error(w, "unexpected route", http.StatusNotFound)
+			return
+		}
 		if got := r.Header.Get("Authorization"); got != "Bearer "+token {
 			t.Errorf("Authorization = %q, want admin bearer credential", got)
 		}
@@ -37,10 +45,10 @@ func TestOnlineCommandsUseAdminV1WithoutDatabaseCredentials(t *testing.T) {
 	}
 	commands := [][]string{
 		{"config", "diff", "--api", "--router-url", server.URL},
-		{"config", "import", "--api", "--router-url", server.URL, "--yaml", yamlPath, "--name", "demo"},
-		{"config", "export", "--api", "--router-url", server.URL},
-		{"config", "activate", "--api", "--router-url", server.URL, "--set-id", "set-1"},
-		{"config", "rollback", "--api", "--router-url", server.URL, "--set-id", "set-1"},
+		{"config", "import", "--router-url", server.URL, "--yaml", yamlPath, "--name", "demo"},
+		{"config", "export", "--router-url", server.URL},
+		{"config", "activate", "--router-url", server.URL, "--set-id", "set-1"},
+		{"config", "rollback", "--router-url", server.URL, "--set-id", "set-1"},
 		{"groups", "list", "--router-url", server.URL},
 		{"groups", "show", "--router-url", server.URL, "default"},
 		{"groups", "history", "--router-url", server.URL, "default"},
@@ -67,6 +75,12 @@ func TestOnlineCommandsUseAdminV1WithoutDatabaseCredentials(t *testing.T) {
 		"DELETE /admin/v1/config/groups/default/shadow", "GET /admin/v1/reports/cfo",
 		"GET /admin/v1/reports/cfo/export.csv", "GET /admin/v1/reports/cfo/export.md",
 	}
+	commands = append(commands,
+		[]string{"contain", "--router-url", server.URL, "--caller-id", "caller-1", "--reason", "test"},
+		[]string{"release", "--router-url", server.URL, "--caller-id", "caller-1", "--reason", "test"},
+		[]string{"policies", "list", "--router-url", server.URL},
+	)
+	want = append(want, "POST /admin/v1/containment", "POST /admin/v1/containment", "GET /admin/v1/policy-sets")
 	for _, args := range commands {
 		cmd := exec.Command(binary, args...)
 		cmd.Dir = dir
@@ -87,6 +101,56 @@ func TestOnlineCommandsUseAdminV1WithoutDatabaseCredentials(t *testing.T) {
 			t.Errorf("request %d = %q, want %q", i, requests[i], want[i])
 		}
 	}
+}
+
+func loadAdminV1Contract(t *testing.T) map[string]map[string]json.RawMessage {
+	t.Helper()
+	raw, err := os.ReadFile("../../docs/specs/admin-v1.openapi.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var spec struct {
+		Paths map[string]map[string]json.RawMessage `json:"paths"`
+	}
+	if err := json.Unmarshal(raw, &spec); err != nil {
+		t.Fatal(err)
+	}
+	return spec.Paths
+}
+
+func contractAllows(contract map[string]map[string]json.RawMessage, method, path string) bool {
+	// Policy routes are maintained by the policy CLI dispatcher and are not yet
+	// represented in the generated Admin API OpenAPI document.
+	if path == "/admin/v1/policy-sets" && (method == http.MethodGet || method == http.MethodPost) {
+		return path == smartrouterctl.PolicySetCollectionPath
+	}
+	for pattern, operations := range contract {
+		if _, documented := operations[strings.ToLower(method)]; !documented {
+			continue
+		}
+		want, got := strings.Split(strings.Trim(pattern, "/"), "/"), strings.Split(strings.Trim(path, "/"), "/")
+		if len(got) < len(want) {
+			continue
+		}
+		matched := true
+		for i, segment := range want {
+			if strings.HasPrefix(segment, "{") && strings.HasSuffix(segment, "}") {
+				if i != len(want)-1 && i >= len(got) {
+					matched = false
+					break
+				}
+				continue
+			}
+			if i >= len(got) || segment != got[i] {
+				matched = false
+				break
+			}
+		}
+		if matched && (len(got) == len(want) || strings.HasPrefix(want[len(want)-1], "{")) {
+			return true
+		}
+	}
+	return false
 }
 
 func envWithoutDatabaseCredentials(token string) []string {

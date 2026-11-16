@@ -55,6 +55,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deployment. Browser reports and `/admin/auth/*` routes remain on the serving port. Database-mode
   operators must run the router-config maintenance migration before startup; it removes the v4-only
   keys from stored canonical configurations and refreshes their content hashes.
+- `metrum-ai-routerctl config import|export|activate|rollback` now use the Admin API by default;
+  use `--offline` for deliberate direct database access while the router is stopped. The default
+  Admin API endpoint is `http://127.0.0.1:8081`; non-loopback endpoints require HTTPS. Reports use
+  `/admin/v1/reports`, and the former `/admin/reports` `--reports-prefix` value is rejected.
 
 ### Migrations
 

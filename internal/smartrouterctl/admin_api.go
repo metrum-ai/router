@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -61,11 +62,20 @@ func NewAdminAPIClient(routerURL, keyFile string) (*AdminAPIClient, error) {
 		base = strings.TrimSpace(os.Getenv("ROUTER_URL"))
 	}
 	if base == "" {
-		return nil, fmt.Errorf("router URL required: --router-url or ROUTER_URL")
+		base = "http://127.0.0.1:8081"
 	}
 	parsed, err := url.Parse(base)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return nil, fmt.Errorf("router URL %q is invalid", base)
+	}
+	if parsed.Path != "" && parsed.Path != "/" {
+		return nil, fmt.Errorf("router URL must be an origin without a path")
+	}
+	if parsed.Scheme != "https" {
+		ip := net.ParseIP(parsed.Hostname())
+		if parsed.Scheme != "http" || (parsed.Hostname() != "localhost" && (ip == nil || !ip.IsLoopback())) {
+			return nil, fmt.Errorf("admin API endpoint requires HTTPS except on loopback")
+		}
 	}
 	token, err := ResolveAdminCredential(keyFile)
 	if err != nil {
@@ -74,7 +84,7 @@ func NewAdminAPIClient(routerURL, keyFile string) (*AdminAPIClient, error) {
 	return &AdminAPIClient{
 		BaseURL: strings.TrimRight(base, "/"),
 		Token:   token,
-		HTTP:    &http.Client{Timeout: 60 * time.Second},
+		HTTP:    &http.Client{Timeout: 60 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
 	}, nil
 }
 
@@ -127,14 +137,14 @@ func (c *AdminAPIClient) DoWithHeaders(method, path string, body any, headers ma
 	}
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, 0, nil, fmt.Errorf("admin API request failed: %w", err)
+		return nil, 0, nil, fmt.Errorf("admin API request failed: %w (check admin.enabled, admin.listen, and ROUTER_ADMIN_KEY or ROUTER_ADMIN_KEY_FILE)", err)
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
 	if err != nil {
 		return nil, resp.StatusCode, resp.Header.Clone(), err
 	}
-	if resp.StatusCode >= 400 {
+	if resp.StatusCode >= 300 {
 		apiErr := &AdminAPIError{Status: resp.StatusCode, Type: "error", Raw: string(raw)}
 		var parsed struct {
 			Error struct {
@@ -145,6 +155,9 @@ func (c *AdminAPIClient) DoWithHeaders(method, path string, body any, headers ma
 		if err := json.Unmarshal(raw, &parsed); err == nil && parsed.Error.Type != "" {
 			apiErr.Type = parsed.Error.Type
 			apiErr.Message = parsed.Error.Message
+		}
+		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusServiceUnavailable {
+			apiErr.Message = fmt.Sprintf("%s; check admin.enabled, admin.listen, and ROUTER_ADMIN_KEY or ROUTER_ADMIN_KEY_FILE", http.StatusText(resp.StatusCode))
 		}
 		return nil, resp.StatusCode, resp.Header.Clone(), apiErr
 	}

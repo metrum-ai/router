@@ -206,17 +206,21 @@ func configCommand(args []string) {
 		fs := flag.NewFlagSet("config import", flag.ExitOnError)
 		yamlPath := fs.String("yaml", "", "canonical YAML path to import")
 		name := fs.String("name", "", "config set name")
+		offline := fs.Bool("offline", false, "access the config database directly (router must be stopped)")
 		opts := addConfigDBFlags(fs)
 		useAPI, api := addAPIFlag(fs)
 		fs.Parse(args[1:])
 		if strings.TrimSpace(*yamlPath) == "" || strings.TrimSpace(*name) == "" {
 			die("config import requires --yaml and --name")
 		}
+		if *offline && *useAPI {
+			die("config import cannot combine --offline and --api")
+		}
 		raw, err := os.ReadFile(*yamlPath)
 		if err != nil {
 			die("%v", err)
 		}
-		if *useAPI {
+		if !*offline {
 			client := mustAdminAPIClient(api)
 			body, _, err := client.Do(http.MethodPost, "/admin/v1/config/sets",
 				map[string]any{"name": *name, "yaml": string(raw)}, api.mutationHeaders())
@@ -240,10 +244,14 @@ func configCommand(args []string) {
 		fs := flag.NewFlagSet("config export", flag.ExitOnError)
 		setID := fs.String("set-id", "", "config set id (empty = active)")
 		outPath := fs.String("out", "", "output path (default: stdout)")
+		offline := fs.Bool("offline", false, "access the config database directly (router must be stopped)")
 		opts := addConfigDBFlags(fs)
 		useAPI, api := addAPIFlag(fs)
 		fs.Parse(args[1:])
-		if *useAPI {
+		if *offline && *useAPI {
+			die("config export cannot combine --offline and --api")
+		}
+		if !*offline {
 			id := strings.TrimSpace(*setID)
 			if id == "" {
 				id = "active"
@@ -286,13 +294,17 @@ func configCommand(args []string) {
 	case "activate":
 		fs := flag.NewFlagSet("config activate", flag.ExitOnError)
 		setID := fs.String("set-id", "", "config set id to activate")
+		offline := fs.Bool("offline", false, "access the config database directly (router must be stopped)")
 		opts := addConfigDBFlags(fs)
 		useAPI, api := addAPIFlag(fs)
 		fs.Parse(args[1:])
 		if strings.TrimSpace(*setID) == "" {
 			die("config activate requires --set-id")
 		}
-		if *useAPI {
+		if *offline && *useAPI {
+			die("config activate cannot combine --offline and --api")
+		}
+		if !*offline {
 			client := mustAdminAPIClient(api)
 			body, _, err := client.Do(http.MethodPost, "/admin/v1/config/sets/"+strings.TrimSpace(*setID)+"/activate",
 				map[string]any{}, api.mutationHeaders())
@@ -314,13 +326,17 @@ func configCommand(args []string) {
 	case "rollback":
 		fs := flag.NewFlagSet("config rollback", flag.ExitOnError)
 		setID := fs.String("set-id", "", "prior config set id to reactivate")
+		offline := fs.Bool("offline", false, "access the config database directly (router must be stopped)")
 		opts := addConfigDBFlags(fs)
 		useAPI, api := addAPIFlag(fs)
 		fs.Parse(args[1:])
 		if strings.TrimSpace(*setID) == "" {
 			die("config rollback requires --set-id")
 		}
-		if *useAPI {
+		if *offline && *useAPI {
+			die("config rollback cannot combine --offline and --api")
+		}
+		if !*offline {
 			client := mustAdminAPIClient(api)
 			body, _, err := client.Do(http.MethodPost, "/admin/v1/config/rollback",
 				map[string]any{"set_id": strings.TrimSpace(*setID)}, api.mutationHeaders())
@@ -608,7 +624,7 @@ func writeRawJSON(body []byte) {
 func dieAdmin(err error) {
 	var apiErr *smartrouterctl.AdminAPIError
 	if errors.As(err, &apiErr) {
-		fmt.Fprintln(os.Stderr, apiErr.Raw)
+		fmt.Fprintln(os.Stderr, apiErr.Error())
 		os.Exit(1)
 	}
 	die("%v", err)
