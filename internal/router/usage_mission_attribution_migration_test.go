@@ -44,7 +44,7 @@ func TestUsageMissionAttributionMigrationAndRoundTrip(t *testing.T) {
 		}
 	}
 	legacy := logRecord{RequestID: "before-mission-attribution", TS: time.Now().UTC().Format(time.RFC3339Nano), CallerID: "worker"}
-	if err := store.db.Omit("TaskID", "HumanOwner", "RecomputedInputTokens", "ToolCallCount", "ToolFirstFailureClass", "ToolRetries", "ToolEscalations", "ToolReliabilityBucket", "ToolReliabilitySource").Create(recordFromRow(rowFromRecord(legacy))).Error; err != nil {
+	if err := store.db.Omit("TaskID", "HumanOwner", "RecomputedInputTokens", "ToolCallCount", "ToolFirstFailureClass", "ToolRetries", "ToolEscalations", "ToolReliabilityBucket", "ToolReliabilitySource", "OrganizationID", "TeamID").Create(recordFromRow(rowFromRecord(legacy))).Error; err != nil {
 		t.Fatalf("write row before migration: %v", err)
 	}
 	currentDefinitions := append(append([]MigrationDefinition(nil), priorDefinitions...), UsageMissionAttributionMigrationDefinition())
@@ -59,7 +59,7 @@ func TestUsageMissionAttributionMigrationAndRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec := logRecord{RequestID: "mission-attribution", TS: time.Now().UTC().Format(time.RFC3339Nano), CallerID: "worker", TaskID: "task-7", HumanOwner: "team-ml"}
-	if err := store.db.Omit("RecomputedInputTokens", "ToolCallCount", "ToolFirstFailureClass", "ToolRetries", "ToolEscalations", "ToolReliabilityBucket", "ToolReliabilitySource").Create(recordFromRow(rowFromRecord(rec))).Error; err != nil {
+	if err := store.db.Omit("RecomputedInputTokens", "ToolCallCount", "ToolFirstFailureClass", "ToolRetries", "ToolEscalations", "ToolReliabilityBucket", "ToolReliabilitySource", "OrganizationID", "TeamID").Create(recordFromRow(rowFromRecord(rec))).Error; err != nil {
 		t.Fatal(err)
 	}
 	var stored usageRecord

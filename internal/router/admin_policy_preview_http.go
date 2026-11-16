@@ -65,7 +65,7 @@ func (h *policyAdminHandler) simulate(w http.ResponseWriter, r *http.Request) {
 		policyHTTPProblem(w, r, ErrAdminForbidden)
 		return
 	}
-	if err := validatePolicyPrincipalRequest(principal, meta.Domain, input.Object, input.Action, r.Context().Value(authorizationGuardKey{}) == true, true); err != nil {
+	if err := validatePolicyPrincipalRequest(principal, meta.Domain, input.Object, input.Action, r.Context().Value(authorizationGuardKey{}) == true, false, true); err != nil {
 		policyHTTPProblem(w, r, err)
 		return
 	}

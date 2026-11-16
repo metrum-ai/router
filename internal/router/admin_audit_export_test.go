@@ -533,8 +533,8 @@ func TestAdminAuditRetentionUsesInjectedClock(t *testing.T) {
 	}
 	fakeNow := time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC)
 	for _, row := range []AdminAuditRecord{
-		{EventID: "expired", At: fakeNow.Add(-31 * 24 * time.Hour), Outcome: "committed"},
-		{EventID: "fresh", At: fakeNow.Add(-29 * 24 * time.Hour), Outcome: "committed"},
+		{EventID: "expired", At: fakeNow.Add(-31 * 24 * time.Hour), Domain: "team/prod", Outcome: "committed"},
+		{EventID: "fresh", At: fakeNow.Add(-29 * 24 * time.Hour), Domain: "team/prod", Outcome: "committed"},
 	} {
 		if err := insertAdminAuditUsageTx(store.db, row); err != nil {
 			t.Fatal(err)
@@ -575,8 +575,19 @@ func TestAdminAuditRetentionUsesInjectedClock(t *testing.T) {
 	if err := store.db.Table(usageAdminAuditTable).Where("event_id = ?", "fresh").Count(&fresh).Error; err != nil {
 		t.Fatal(err)
 	}
-	if expired != 1 || fresh != 1 {
+	if expired != 0 || fresh != 1 {
 		t.Fatalf("checkpoint=%d fresh=%d", expired, fresh)
+	}
+	usageExport := adminAuditExportHandlers(store.db, nil)["admin.audit.export"]
+	usageRequest := httptest.NewRequest(http.MethodGet, "/admin/v1/audit-events/export", nil)
+	usageResponse := httptest.NewRecorder()
+	usageRequest = usageRequest.WithContext(WithAdminAuditMeta(context.Background(), AdminAuditMeta{Subject: "operator", Domain: "team/prod"}))
+	usageExport(usageResponse, usageRequest)
+	if usageResponse.Code != http.StatusOK {
+		t.Fatalf("usage export after retention=%d %s", usageResponse.Code, usageResponse.Body.String())
+	}
+	if err := VerifyAdminAuditExport(strings.NewReader(usageResponse.Body.String())); err != nil {
+		t.Fatalf("verify usage chain after retention: %v", err)
 	}
 	var controlExpired, controlFresh int64
 	if err := control.Table("router_config_change_events").Where("event_id = ?", "control-expired").Count(&controlExpired).Error; err != nil {
@@ -585,7 +596,7 @@ func TestAdminAuditRetentionUsesInjectedClock(t *testing.T) {
 	if err := control.Table("router_config_change_events").Where("event_id = ?", "control-fresh").Count(&controlFresh).Error; err != nil {
 		t.Fatal(err)
 	}
-	if controlExpired != 1 || controlFresh != 1 {
+	if controlExpired != 0 || controlFresh != 1 {
 		t.Fatalf("control-plane checkpoint=%d fresh=%d", controlExpired, controlFresh)
 	}
 }

@@ -110,7 +110,7 @@ func (s *Service) Authorize(ctx context.Context, principal Principal, domain, ob
 	}()
 	internalObject := strings.HasPrefix(object, internalAuthorizationSubjectPrefix)
 	guardQuery := internalObject && ctx.Value(authorizationGuardKey{}) == true
-	if err := validatePolicyPrincipalRequest(principal, domain, object, action, guardQuery, false); err != nil {
+	if err := validatePolicyPrincipalRequest(principal, domain, object, action, guardQuery, isLegacy, false); err != nil {
 		return err
 	}
 	if isLegacy {
@@ -160,7 +160,7 @@ func (s *Service) Authorize(ctx context.Context, principal Principal, domain, ob
 
 // validatePolicyPrincipalRequest applies the non-legacy principal and internal-object
 // restrictions shared by enforcement and candidate-policy simulation.
-func validatePolicyPrincipalRequest(principal Principal, domain, object, action string, guardQuery, requireMachine bool) error {
+func validatePolicyPrincipalRequest(principal Principal, domain, object, action string, guardQuery, legacy, requireMachine bool) error {
 	if strings.HasPrefix(principal.Subject, internalAuthorizationSubjectPrefix) || strings.TrimSpace(principal.Subject) == "" || principal.Subject == securityAdministratorRole {
 		return ErrAdminForbidden
 	}
@@ -168,7 +168,7 @@ func validatePolicyPrincipalRequest(principal Principal, domain, object, action 
 		return ErrAdminForbidden
 	}
 	internalObject := strings.HasPrefix(object, internalAuthorizationSubjectPrefix)
-	if internalObject && (!guardQuery || object != securityAdministratorCapability) {
+	if internalObject && !legacy && (!guardQuery || object != securityAdministratorCapability) {
 		return ErrAdminForbidden
 	}
 	if requireMachine && (!validMachinePrincipal(principal) || strings.TrimSpace(domain) == "" || strings.TrimSpace(object) == "" || strings.TrimSpace(action) == "") {
