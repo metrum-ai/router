@@ -30,6 +30,13 @@
 - Move the AMD reference and edge images to the digest-pinned upstream vLLM
   ROCm 10.0 image at v0.33.0, which is outside the affected range of GHSA-v97p-wpxp-px84.
 
+### Added
+
+- Add an opt-in CPU-first small-work model group to the hierarchy reference. It
+  uses the official pinned vLLM CPU image, limits the CPU candidate to 800
+  estimated input tokens and 128 requested output tokens, and falls back to the
+  frontier candidate on upstream failure or timeout.
+
 All notable changes to Metrum AI Router are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
