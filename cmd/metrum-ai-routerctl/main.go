@@ -790,7 +790,11 @@ func (f *adminAPIFlags) mutationHeaders() map[string]string {
 }
 
 func mustAdminAPIClient(api *adminAPIFlags) *smartrouterctl.AdminAPIClient {
-	client, err := smartrouterctl.NewAdminAPIClientWithSocket(*api.routerURL, *api.adminKeyFile, *api.socketPath)
+	socketPath := ""
+	if api.socketPath != nil {
+		socketPath = *api.socketPath
+	}
+	client, err := smartrouterctl.NewAdminAPIClientWithSocket(*api.routerURL, *api.adminKeyFile, socketPath)
 	if err != nil {
 		die("%v", err)
 	}
