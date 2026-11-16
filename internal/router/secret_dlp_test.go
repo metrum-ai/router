@@ -801,6 +801,10 @@ func TestSecretDLPStreamCandidateUsesConfiguredAction(t *testing.T) {
 	if err == nil || blocked != "" {
 		t.Fatalf("fail-on-match candidate=%q err=%v", blocked, err)
 	}
+	oversized, err := (&secretStreamDLP{state: newState(), mode: "redact_only"}).redactCandidate("ghp_" + strings.Repeat("x", 257))
+	if err == nil || oversized != "" {
+		t.Fatalf("oversized candidate=%q err=%v", oversized, err)
+	}
 }
 
 func TestSecretDLPStreamEventFailsOnSplitMatch(t *testing.T) {

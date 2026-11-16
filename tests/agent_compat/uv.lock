@@ -893,15 +893,19 @@ name = "router-agent-compat"
 version = "0.0.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "httpx2" },
     { name = "langchain-openai" },
     { name = "langgraph" },
+    { name = "mcp" },
     { name = "openai-agents" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "httpx2", specifier = "==2.16.0" },
     { name = "langchain-openai", specifier = "==1.7.3" },
     { name = "langgraph", specifier = "==1.2.18" },
+    { name = "mcp", specifier = "==2.3.0" },
     { name = "openai-agents", specifier = "==0.24.0" },
 ]
 

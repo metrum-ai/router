@@ -43,6 +43,9 @@ func (d *secretStreamDLP) redactCandidate(value string) (string, error) {
 	if d == nil || d.state == nil || d.state.result == nil {
 		return value, nil
 	}
+	if hasSecretStreamOversizeCandidate(value) {
+		return "", errSecretStreamWindowExceeded
+	}
 	before := d.state.result.Replacements
 	redacted := d.state.redact(value)
 	if err := d.failIfMatched(before); err != nil {

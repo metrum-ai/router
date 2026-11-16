@@ -3,6 +3,7 @@
 name: Expert routing benchmark smoke
 on:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'examples/expert-routing-benchmark/**'
       - 'examples/catalog/**'
@@ -15,6 +16,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   mock:
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: ${{ vars.ROUTER_LIGHT_RUNNER || 'router-arc-small' }}
     timeout-minutes: 15
     steps:

@@ -4107,7 +4107,10 @@ func retentionTablesForClass(dataClass string) []retentionTableSpec {
 			{DataClass: retentionDataClassDecisionTelemetry, TableName: "request_cache_reasons", TSColumn: "ts", UseRequestUsageTS: true},
 		}
 	case retentionDataClassSecurityAccess:
-		return []retentionTableSpec{{DataClass: retentionDataClassSecurityAccess, TableName: "security_access_events", TSColumn: "ts"}}
+		return []retentionTableSpec{
+			{DataClass: retentionDataClassSecurityAccess, TableName: "security_access_events", TSColumn: "ts"},
+			{DataClass: retentionDataClassSecurityAccess, TableName: mcpToolAuditTable, TSColumn: "ts"},
+		}
 	case retentionDataClassContentCapture:
 		return []retentionTableSpec{{DataClass: retentionDataClassContentCapture, TableName: "request_content_captures", TSColumn: "ts"}}
 	case retentionDataClassUsageDetail:
@@ -7747,6 +7750,16 @@ func (s *usageStore) EmitSecurityAccessEvent(event securityAccessEvent) {
 		return
 	}
 	_ = s.db.Create(securityAccessRecordFromEvent(event)).Error
+}
+
+func (s *usageStore) RecordSecurityAccessEvent(event securityAccessEvent) error {
+	if s == nil || s.db == nil {
+		return errors.New("security access event store unavailable")
+	}
+	if event.TS.IsZero() {
+		event.TS = time.Now().UTC()
+	}
+	return s.db.Create(securityAccessRecordFromEvent(event)).Error
 }
 
 func (s *usageStore) PurgeSecurityAccessEventsBefore(cutoff time.Time) {

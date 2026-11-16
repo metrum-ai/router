@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -72,7 +73,7 @@ func prepareQuotaCallers(cfg *Config) (map[string]*callerRuntime, error) {
 		} else {
 			rt.projectStatus = accountStatusActive
 		}
-		if membership, ok := dir.memberships[membershipKey(rt.ownerUser, rt.project)]; ok {
+		if membership, ok := accountMembership(dir, rt.ownerUser, rt.project, rt.cfg.Environment); ok {
 			rt.membershipRole = normalizeRoleDefault(membership.Role)
 			rt.membershipStatus = normalizeStatusDefault(membership.Status)
 		} else {
@@ -125,6 +126,7 @@ type callerRuntime struct {
 	inFlightReservedTokens int64
 	reqTimes               []time.Time
 	tokenTimes             []tokenEvent
+	autoContainment        atomic.Pointer[automaticContainmentState]
 }
 
 type tokenEvent struct {
@@ -133,8 +135,18 @@ type tokenEvent struct {
 }
 
 type persistentState struct {
-	Callers              map[string]*callerState `json:"callers"`
-	PersistenceUnhealthy bool                    `json:"persistence_unhealthy,omitempty"`
+	Callers              map[string]*callerState       `json:"callers"`
+	MCPToolLimits        map[string]*mcpToolQuotaState `json:"mcp_tool_limits,omitempty"`
+	PersistenceUnhealthy bool                          `json:"persistence_unhealthy,omitempty"`
+}
+
+type mcpToolQuotaState struct {
+	HourKey      string      `json:"hour_key"`
+	DayKey       string      `json:"day_key"`
+	HourlyUSD    float64     `json:"hourly_usd"`
+	DailyUSD     float64     `json:"daily_usd"`
+	RequestTimes []time.Time `json:"request_times,omitempty"`
+	UpdatedAt    time.Time   `json:"updated_at"`
 }
 
 type callerState struct {
@@ -210,7 +222,7 @@ func newQuotaStore(path string, cfg *Config) (*quotaStore, error) {
 		} else {
 			rt.projectStatus = accountStatusActive
 		}
-		if membership, ok := dir.memberships[membershipKey(rt.ownerUser, rt.project)]; ok {
+		if membership, ok := accountMembership(dir, rt.ownerUser, rt.project, rt.cfg.Environment); ok {
 			rt.membershipRole = normalizeRoleDefault(membership.Role)
 			rt.membershipStatus = normalizeStatusDefault(membership.Status)
 		} else {
@@ -231,6 +243,14 @@ func newQuotaStore(path string, cfg *Config) (*quotaStore, error) {
 }
 
 func (q *quotaStore) Admit(c *callerRuntime, estTokens int) admission {
+	return q.admit(c, estTokens, 0)
+}
+
+func (q *quotaStore) AdmitMCP(c *callerRuntime, rpm int) admission {
+	return q.admit(c, 0, rpm)
+}
+
+func (q *quotaStore) admit(c *callerRuntime, estTokens, rpmOverride int) admission {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	if ad := q.persistenceGuardLocked(); !ad.OK {
@@ -246,11 +266,15 @@ func (q *quotaStore) Admit(c *callerRuntime, estTokens int) admission {
 		}
 		return admission{Status: http.StatusForbidden, Reason: "key-exhausted", QuotaState: "ok", KeyState: "exhausted"}
 	}
-	if c.cfg.Rate.Concurrent > 0 && c.inFlight >= c.cfg.Rate.Concurrent {
+	if limit := c.effectiveRateLimit(c.cfg.Rate.Concurrent); limit > 0 && c.inFlight >= limit {
 		return admission{Status: http.StatusTooManyRequests, Reason: "concurrency-exceeded", RetryAfter: "1", QuotaState: "ok", KeyState: keyState}
 	}
 	c.reqTimes = pruneTimes(c.reqTimes, now.Add(-time.Minute))
-	if c.cfg.Rate.RPM > 0 && len(c.reqTimes) >= c.cfg.Rate.RPM {
+	effectiveRPM := c.effectiveRateLimit(c.cfg.Rate.RPM)
+	if rpmOverride > 0 && (effectiveRPM == 0 || rpmOverride < effectiveRPM) {
+		effectiveRPM = rpmOverride
+	}
+	if effectiveRPM > 0 && len(c.reqTimes) >= effectiveRPM {
 		return admission{Status: http.StatusTooManyRequests, Reason: "rpm-exceeded", RetryAfter: "60", QuotaState: "ok", KeyState: keyState}
 	}
 	c.tokenTimes = pruneTokens(c.tokenTimes, now.Add(-time.Minute))
@@ -290,6 +314,73 @@ func (q *quotaStore) Admit(c *callerRuntime, estTokens int) admission {
 	return admission{OK: true, Status: http.StatusOK, QuotaState: quotaState, KeyState: keyState, WarningText: warning, Reservation: res}
 }
 
+func (q *quotaStore) AdmitMCPTool(caller, tool string, limits []MCPToolLimitConfig) admission {
+	if q == nil || caller == "" || tool == "" || len(limits) == 0 {
+		return admission{OK: true, Status: http.StatusOK}
+	}
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if ad := q.persistenceGuardLocked(); !ad.OK {
+		return ad
+	}
+	now := time.Now().UTC()
+	hourKey := now.Format("2006-01-02T15")
+	dayKey := now.Format("2006-01-02")
+	if q.state.MCPToolLimits == nil {
+		q.state.MCPToolLimits = map[string]*mcpToolQuotaState{}
+	}
+	states := make([]*mcpToolQuotaState, 0, len(limits))
+	for _, limit := range limits {
+		keyTool := limit.Tool
+		key := caller + "\x00" + keyTool
+		state := q.state.MCPToolLimits[key]
+		if state == nil {
+			state = &mcpToolQuotaState{}
+			q.state.MCPToolLimits[key] = state
+		}
+		if state.HourKey != hourKey {
+			state.HourKey, state.HourlyUSD = hourKey, 0
+		}
+		if state.DayKey != dayKey {
+			state.DayKey, state.DailyUSD = dayKey, 0
+		}
+		state.RequestTimes = pruneTimes(state.RequestTimes, now.Add(-time.Minute))
+		if limit.RPM > 0 && len(state.RequestTimes) >= limit.RPM {
+			return admission{Status: http.StatusTooManyRequests, Reason: "mcp-tool-rpm-exceeded", RetryAfter: "60"}
+		}
+		cost := limit.CostPerCallUSD
+		if limit.HourlyUSD > 0 && roundUSD(state.HourlyUSD+cost) > limit.HourlyUSD || limit.DailyUSD > 0 && roundUSD(state.DailyUSD+cost) > limit.DailyUSD {
+			return admission{Status: http.StatusTooManyRequests, Reason: "mcp-tool-spend-exceeded", RetryAfter: "60"}
+		}
+		states = append(states, state)
+	}
+	for i, state := range states {
+		limit := limits[i]
+		state.RequestTimes = append(state.RequestTimes, now)
+		state.HourlyUSD = roundUSD(state.HourlyUSD + limit.CostPerCallUSD)
+		state.DailyUSD = roundUSD(state.DailyUSD + limit.CostPerCallUSD)
+		state.UpdatedAt = now
+	}
+	if err := q.saveLocked(); err != nil {
+		for i, state := range states {
+			state.RequestTimes = state.RequestTimes[:len(state.RequestTimes)-1]
+			state.HourlyUSD = roundUSD(state.HourlyUSD - limits[i].CostPerCallUSD)
+			state.DailyUSD = roundUSD(state.DailyUSD - limits[i].CostPerCallUSD)
+		}
+		q.markPersistenceUnhealthyLocked()
+		return admission{Status: http.StatusServiceUnavailable, Reason: "quota-state-error", RetryAfter: "1"}
+	}
+	if len(q.state.MCPToolLimits) > 10000 {
+		cutoff := now.Add(-30 * 24 * time.Hour)
+		for key, state := range q.state.MCPToolLimits {
+			if state.UpdatedAt.Before(cutoff) {
+				delete(q.state.MCPToolLimits, key)
+			}
+		}
+	}
+	return admission{OK: true, Status: http.StatusOK}
+}
+
 // AcquireConcurrency reserves one in-flight slot without counting a request
 // against RPM/day/month budgets. Used to bound body buffering before the
 // full Admit that runs after traffic-shape queue waits.
@@ -309,7 +400,7 @@ func (q *quotaStore) AcquireConcurrency(c *callerRuntime) admission {
 		}
 		return admission{Status: http.StatusForbidden, Reason: "key-exhausted", QuotaState: "ok", KeyState: "exhausted"}
 	}
-	if c.cfg.Rate.Concurrent > 0 && c.inFlight >= c.cfg.Rate.Concurrent {
+	if limit := c.effectiveRateLimit(c.cfg.Rate.Concurrent); limit > 0 && c.inFlight >= limit {
 		return admission{Status: http.StatusTooManyRequests, Reason: "concurrency-exceeded", RetryAfter: "1", QuotaState: "ok", KeyState: keyState}
 	}
 	c.inFlight++
@@ -456,7 +547,7 @@ func (q *quotaStore) reserveTokensLocked(c *callerRuntime, st *callerState, estT
 	reservedBefore := c.inFlightReservedTokens
 	keyState := q.keyState(c.cfg, st, reservedBefore)
 	c.tokenTimes = pruneTokens(c.tokenTimes, now.Add(-time.Minute))
-	if c.cfg.Rate.TPM > 0 && int64(sumTokenEvents(c.tokenTimes)+estTokens)+reservedBefore > int64(c.cfg.Rate.TPM) {
+	if limit := c.effectiveRateLimit(c.cfg.Rate.TPM); limit > 0 && int64(sumTokenEvents(c.tokenTimes)+estTokens)+reservedBefore > int64(limit) {
 		return nil, admission{Status: http.StatusTooManyRequests, Reason: "tpm-exceeded", RetryAfter: "60", QuotaState: "ok", KeyState: keyState}
 	}
 	reservedEstimate := reservedBefore + int64(estTokens)
