@@ -2695,6 +2695,9 @@ callers:
 # must not be an underscore-delimited prefix of another's. The deprecated
 # token_sha256 (unsalted SHA-256 hex) still works but logs a startup warning;
 # set exactly one of the two. Validation errors name caller ids, never hashes.
+# token_issued_at is an optional UTC RFC3339 timestamp. Token generation and
+# rotation record it automatically; set the original issue time for manually
+# managed keys so `doctor --security` can enforce the 90-day maximum age.
 - id: standard-dev
   owner_user: standard
   project: example-project

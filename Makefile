@@ -874,6 +874,10 @@ package-one-no-docs: capability-smoke-unit
 		CGO_ENABLED=0 GOOS="$${GOOS}" GOARCH="$${GOARCH}" go build -trimpath -buildvcs=false -ldflags "$(BUILD_LDFLAGS)" -o "$$pkg_dir/bin/$$bin$$bin_suffix" "./cmd/$$bin"; \
 	done; \
 	cp config.example.yaml "$$pkg_dir/config/config.example.yaml"; \
+	if [ -n "$${ENGINE_ADVISORY_SNAPSHOT:-}" ]; then \
+		if [ ! -s "$${ENGINE_ADVISORY_SNAPSHOT}" ]; then echo "engine advisory snapshot missing: $${ENGINE_ADVISORY_SNAPSHOT}" >&2; exit 2; fi; \
+		cp "$${ENGINE_ADVISORY_SNAPSHOT}" "$$pkg_dir/bin/engine-advisories.json"; \
+	fi; \
 	cp env.example.json "$$pkg_dir/config/env.example.json"; \
 	cp deploy/Caddyfile "$$pkg_dir/caddy/Caddyfile"; \
 	for legal in LICENSE NOTICE THIRD_PARTY_NOTICES.md MODEL_LICENSES.md; do \
@@ -893,7 +897,11 @@ package-one-no-docs: capability-smoke-unit
 		$(TAR_ENV) tar --sort=name --mtime="@$${SOURCE_DATE_EPOCH}" --owner=0 --group=0 --numeric-owner -C "$${DIST_DIR}/pkg" -czf "$${DIST_DIR}/$$pkg_name.tar.gz" "$$pkg_name"; \
 	fi; \
 	if [ "$${GOOS}" = windows ]; then archive="$${DIST_DIR}/$$pkg_name.zip"; else archive="$${DIST_DIR}/$$pkg_name.tar.gz"; fi; \
-	python3 scripts/validate_package_contents.py --allowlist "$(PACKAGE_DOC_ALLOWLIST)" "$$archive"
+	if [ -n "$${ENGINE_ADVISORY_SNAPSHOT:-}" ]; then \
+		python3 scripts/validate_package_contents.py --advisories-snapshot --allowlist "$(PACKAGE_DOC_ALLOWLIST)" "$$archive"; \
+	else \
+		python3 scripts/validate_package_contents.py --allowlist "$(PACKAGE_DOC_ALLOWLIST)" "$$archive"; \
+	fi
 package-all: validate-release-clean docs-build admin-build capability-smoke-unit
 	RELEASE_CLEAN_VALIDATED=1 GOOS=linux GOARCH=amd64 $(MAKE) package-one-no-docs
 	RELEASE_CLEAN_VALIDATED=1 GOOS=linux GOARCH=arm64 $(MAKE) package-one-no-docs

@@ -244,6 +244,13 @@ func adminListenIsLoopback(listen string) (bool, error) {
 	return ip.IsLoopback(), nil
 }
 
+// AdminListenIsLoopback reports whether an address is explicitly bound to a
+// loopback interface. It shares the validation semantics used for admin.listen.
+func AdminListenIsLoopback(listen string) bool {
+	loopback, err := adminListenIsLoopback(listen)
+	return err == nil && loopback
+}
+
 // validateAdminPlane fails closed on combinations that would expose the
 // control plane unintentionally or make its configuration a no-op. It runs at
 // config load, so a bad admin block stops the process before any listener

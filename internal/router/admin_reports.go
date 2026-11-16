@@ -989,6 +989,9 @@ func (s *Service) handleAdminReports(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	action := "read"
+	if r.Method == http.MethodPost && strings.HasSuffix(relPath, "/api/security/posture/latest") {
+		action = "write"
+	}
 	if strings.HasSuffix(r.URL.Path, "/export.md") || strings.HasSuffix(r.URL.Path, "/export.csv") || strings.HasSuffix(r.URL.Path, "/export.json") {
 		action = "export"
 	}
@@ -1094,6 +1097,11 @@ func (s *Service) handleAdminReports(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.handleAdminReportsContainment(w, r, subject)
+	case r.URL.Path == prefix+"/api/security/posture/latest":
+		if !s.requireAdminReportUsageStore(w) || !s.requireAdminSecurityReports(w) {
+			return
+		}
+		s.handleAdminSecurityPostureReport(w, r)
 	case r.URL.Path == prefix+"/api/retention-status":
 		if !s.requireAdminReportUsageStore(w) {
 			return

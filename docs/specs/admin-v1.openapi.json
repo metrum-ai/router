@@ -7393,6 +7393,172 @@
         "x-admin-object": "admin:security_reports"
       }
     },
+    "/admin/v1/reports/security/posture/latest": {
+      "get": {
+        "operationId": "getAdminSecurityPostureReport",
+        "parameters": [
+          {
+            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: schema, generated_at, outcome, findings.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "412": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Get the latest security posture self-test summary",
+        "tags": [
+          "reports"
+        ],
+        "x-admin-action": "read",
+        "x-admin-concurrency": "",
+        "x-admin-domain": "handler",
+        "x-admin-idempotency": "",
+        "x-admin-object": "admin:security_reports"
+      },
+      "post": {
+        "operationId": "saveAdminSecurityPostureReport",
+        "parameters": [
+          {
+            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "description": "Open object. Documented members: schema, generated_at, outcome, findings.",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: saved.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "412": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "413": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Save the latest security posture self-test summary",
+        "tags": [
+          "reports"
+        ],
+        "x-admin-action": "write",
+        "x-admin-concurrency": "",
+        "x-admin-domain": "handler",
+        "x-admin-idempotency": "",
+        "x-admin-object": "admin:security_reports"
+      }
+    },
     "/admin/v1/reports/summary": {
       "get": {
         "operationId": "getAdminReportSummary",

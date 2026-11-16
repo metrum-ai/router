@@ -2585,6 +2585,7 @@ var usageRelationalTables = []string{
 	"authz_role_links",
 	"authz_policy_audit_events",
 	"security_access_events",
+	securityPostureReportTable,
 	"usage_rollup_runs",
 	"usage_rollup_hourly",
 	"usage_rollup_daily",

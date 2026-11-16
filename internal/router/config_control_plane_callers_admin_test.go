@@ -348,6 +348,9 @@ func TestCallerAdminMutationsSyncCanonicalDocument(t *testing.T) {
 	if !strings.Contains(docYAML, issueResp.Caller.TokenHash) {
 		t.Fatalf("canonical document missing issued caller token hash: %s", docYAML)
 	}
+	if !strings.Contains(docYAML, "token_issued_at:") || !strings.Contains(docYAML, "2026-07-21T12:00:00Z") {
+		t.Fatalf("canonical document missing issued caller timestamp: %s", docYAML)
+	}
 	if strings.Contains(docYAML, issueResp.Token) {
 		t.Fatal("canonical document must never contain a raw token")
 	}
@@ -366,6 +369,9 @@ func TestCallerAdminMutationsSyncCanonicalDocument(t *testing.T) {
 	}
 	if !canonicalDocumentHasTokenHashFor(t, docYAML, rotateResp.Token) {
 		t.Fatalf("canonical document missing rotated token hash: %s", docYAML)
+	}
+	if !strings.Contains(docYAML, "token_issued_at:") || !strings.Contains(docYAML, "2026-07-21T12:00:00Z") {
+		t.Fatalf("canonical document missing rotated caller timestamp: %s", docYAML)
 	}
 	if strings.Contains(docYAML, rotateResp.Token) {
 		t.Fatal("canonical document must never contain a raw token")

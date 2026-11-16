@@ -232,9 +232,19 @@ func (g *adminOpenAPIGenerator) operation(op Operation) (map[string]any, error) 
 	}
 
 	if op.Request != nil {
-		schema, err := g.schemaFor(reflect.TypeOf(op.Request))
-		if err != nil {
-			return nil, err
+		var schema any
+		if open, ok := op.Request.(adminOpenObject); ok {
+			description := "Unspecified object"
+			if len(open.Members) > 0 {
+				description = "Open object. Documented members: " + strings.Join(open.Members, ", ") + "."
+			}
+			schema = map[string]any{"type": "object", "additionalProperties": true, "description": description}
+		} else {
+			var err error
+			schema, err = g.schemaFor(reflect.TypeOf(op.Request))
+			if err != nil {
+				return nil, err
+			}
 		}
 		item["requestBody"] = map[string]any{
 			"required": op.Method != "DELETE",
