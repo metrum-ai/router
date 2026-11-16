@@ -28,6 +28,18 @@ type streamToolCallHold struct {
 	baseIdle   time.Duration
 }
 
+// clearStreamToolCallHold starts a clean per-target attempt and releases any
+// reservation left by a previous attempt before fallback selects a new group.
+func clearStreamToolCallHold(rc *requestContext) {
+	if rc == nil {
+		return
+	}
+	if rc.streamToolCallHold != nil {
+		rc.streamToolCallHold.reset()
+		rc.streamToolCallHold = nil
+	}
+}
+
 func newStreamToolCallHold(cfg ToolRoutingStreamingConfig, tools []map[string]any, options toolValidationOptions, budgets ...stream.LineBufferBudget) *streamToolCallHold {
 	h := &streamToolCallHold{
 		timeout:    time.Duration(cfg.HoldTimeoutMS) * time.Millisecond,
@@ -293,7 +305,7 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 				heldEvent := event
 				heldEvent.Data = encoded
 				event = heldEvent
-				if len(choices) > 0 && choicesContainOnlyNonTerminalToolData(payload) {
+				if len(choices) > 0 && choicesContainOnlyNonTerminalToolData(payload) && payload["usage"] == nil {
 					passThrough = stream.Event{}
 				} else {
 					passThrough.Data, err = json.Marshal(payload)
