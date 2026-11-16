@@ -11,5 +11,8 @@ detection:
   selection:
     class_uid: 2004
     severity_id: 3
-  condition: selection
+  selection_critical:
+    class_uid: 2004
+    severity_id: 5
+  condition: selection or selection_critical
 level: high
