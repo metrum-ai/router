@@ -8,5 +8,7 @@ requires-python = ">=3.12,<3.14"
 dependencies = [
   "langgraph==1.2.18",
   "langchain-openai==1.7.3",
+  "mcp==2.3.0",
+  "httpx2==2.16.0",
   "openai-agents==0.24.0",
 ]

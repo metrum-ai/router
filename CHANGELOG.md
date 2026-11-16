@@ -22,9 +22,15 @@
 - Keep the version-pinned Grype exception for the TypeScript 7 build-time compiler: stable `typescript` 7.0.2 still embeds `golang.org/x/text` v0.38.0, which a fresh Grype database reports as GO-2026-5970 (High). The exception applies only to the compiler binary under `node_modules`; revisit when a stable release embeds fixed Go and x/text v0.41.0 or later.
 - Evaluate published Casbin advisory ranges against the exact locked version, retain range evidence, and require reviewed exact-scope exceptions. Document fail-closed recovery for advisory service outages.
 
+### Security
+
+- Keep the version-pinned Grype exception for the TypeScript 7 build-time compiler: stable `typescript` 7.0.2 still embeds `golang.org/x/text` v0.38.0, which a fresh Grype database reports as GO-2026-5970 (High). The exception applies only to the compiler binary under `node_modules`; revisit when a stable release embeds fixed Go and x/text v0.41.0 or later.
+- Evaluate published Casbin advisory ranges against the exact locked version, retain range evidence, and require reviewed exact-scope exceptions. Document fail-closed recovery for advisory service outages.
+
 ### Fixed
 
 - Migrate the API compatibility suite to Anthropic Python SDK 2.3.0 and test API-key and bearer authentication with separate clients.
+- Add a caller-authenticated MCP gateway with per-server egress allow-lists, `ROUTER_MCP_` credential forwarding, HTTPS upstreams (cleartext HTTP is limited to loopback), compositional tool allow-lists, bounded JSON-RPC traffic, persistent caller/tool rate and estimated-spend limits, and keyed invocation audit digests instead of raw arguments.
 
 - `router-migrate --json` keeps stdout valid JSON by directing GORM diagnostics
   to stderr.
@@ -47,6 +53,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Changed
+
+- Direct `model` targets inherit catalog capabilities (reasoning, tools, modalities, and request-shape/bridge support) for matching model IDs while retaining their configured dialect, pricing, and routing values. Ambiguous model IDs across dialects do not inherit capabilities unless one catalog entry matches the target dialect. Mixed reasoning rejections identify the caller field (such as `reasoning_effort` for Chat Completions) when the error parameter is otherwise unset.
 
 ### Added
 

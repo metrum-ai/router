@@ -39,6 +39,79 @@ func TestLoadEnvJSONSetsMissingValuesOnly(t *testing.T) {
 	}
 }
 
+func TestDirectModelTargetInheritsCapabilitiesOnly(t *testing.T) {
+	price := 0.25
+	catalog := ProviderModel{
+		Model:                    "shared-model",
+		Dialect:                  "openai-chat",
+		RPM:                      900,
+		Tier:                     "catalog-tier",
+		Cost:                     99,
+		InputPricePerMillionUSD:  100,
+		OutputPricePerMillionUSD: 200,
+		ToolSupport:              ToolSupport{OpenAIChat: []string{"function"}},
+		Reasoning:                ReasoningSupport{Supported: true, Mode: reasoningModeOptIn, Control: reasoningControlEffortEnum},
+		InputModalities:          []string{"text"},
+	}
+	cfg := Config{Provider: map[string]ProviderConfig{
+		"openai": {Dialect: "openai-chat", Models: map[string]ProviderModel{"catalog-key": catalog}},
+	}}
+	target := Target{
+		Provider:                 "openai",
+		Model:                    "shared-model",
+		Dialect:                  "openai-chat",
+		RPM:                      17,
+		Tier:                     "explicit-tier",
+		Cost:                     3,
+		InputPricePerMillionUSD:  price,
+		OutputPricePerMillionUSD: 0.5,
+	}
+	got, err := cfg.resolveTarget("test", target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Dialect != target.Dialect || got.RPM != target.RPM || got.Tier != target.Tier || got.Cost != target.Cost ||
+		got.InputPricePerMillionUSD != target.InputPricePerMillionUSD || got.OutputPricePerMillionUSD != target.OutputPricePerMillionUSD {
+		t.Fatalf("direct target inherited non-capability catalog metadata: got %#v, want dialect/pricing/routing from %#v", got, target)
+	}
+	if !got.Reasoning.Supported || got.Reasoning.Control != reasoningControlEffortEnum || !supportsAnyCapability(got.ToolSupport.OpenAIChat, "function") {
+		t.Fatalf("direct target did not inherit catalog capabilities: %#v", got)
+	}
+	if len(got.InputModalities) != 1 || got.InputModalities[0] != "text" {
+		t.Fatalf("input modalities=%v, want inherited text capability", got.InputModalities)
+	}
+}
+
+func TestProviderModelByIDPrefersTargetDialectAndAvoidsAmbiguousFallback(t *testing.T) {
+	models := map[string]ProviderModel{
+		"chat-entry": {
+			Model:     "shared-model",
+			Dialect:   "openai-chat",
+			Reasoning: ReasoningSupport{Supported: true, Mode: reasoningModeOptIn, Control: reasoningControlEffortEnum},
+		},
+		"responses-entry": {
+			Model:       "shared-model",
+			Dialect:     "openai-responses",
+			ToolSupport: ToolSupport{OpenAIResponses: []string{"function"}},
+		},
+	}
+
+	got, ok := providerModelByID(models, "shared-model", "openai-chat", "openai-responses")
+	if !ok || !got.Reasoning.Supported || len(got.ToolSupport.OpenAIResponses) != 0 {
+		t.Fatalf("chat lookup=%#v, %t; wanted only matching openai-chat catalog entry", got, ok)
+	}
+	got, ok = providerModelByID(models, "shared-model", "anthropic", "")
+	if ok || got.Reasoning.Supported || len(got.ToolSupport.OpenAIResponses) != 0 {
+		t.Fatalf("mismatched ambiguous lookup=%#v, %t; want no inherited capabilities", got, ok)
+	}
+
+	unique := map[string]ProviderModel{"only": models["responses-entry"]}
+	got, ok = providerModelByID(unique, "shared-model", "openai-chat", "")
+	if !ok || len(got.ToolSupport.OpenAIResponses) != 1 {
+		t.Fatalf("unique fallback=%#v, %t; want sole catalog entry", got, ok)
+	}
+}
+
 func TestUsageDBMigrationPolicyValidation(t *testing.T) {
 	cfg := minimalConfig(t)
 	cfg.Server.UsageDB.MigrationPolicy = "not-a-policy"

@@ -185,8 +185,8 @@ func TestResponseAffinitySchema12FreshInstall(t *testing.T) {
 		t.Fatal(err)
 	}
 	status, err := runner.Status()
-	// Fresh installs reach the current usage head (16) including automatic containment
-	// and policy-runtime migrations.
+	// Fresh installs reach the current usage head (16), including MCP audit,
+	// automatic containment, admin audit and policy-runtime migrations.
 	if err != nil || status.SchemaVersion != 16 || !status.Compatible {
 		t.Fatalf("fresh install: %+v err=%v", status, err)
 	}
