@@ -5,6 +5,7 @@ package router
 
 import (
 	"fmt"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -126,6 +127,9 @@ func applyAdminAuditChainControl(db *gorm.DB) error {
 }
 
 func backfillControlAuditChain(db *gorm.DB) error {
+	if err := normalizeLegacyControlAuditTimestamps(db); err != nil {
+		return err
+	}
 	previous := map[string]string{}
 	var cursorDomain, cursorAt, cursorID string
 	hasCursor := false
@@ -159,6 +163,45 @@ func backfillControlAuditChain(db *gorm.DB) error {
 				return err
 			}
 			cursorDomain, cursorAt, cursorID, hasCursor = e.AuthzDomain, e.At, e.EventID, true
+		}
+	}
+}
+
+type legacyControlAuditTimestamp struct {
+	EventID string
+	At      string
+}
+
+// normalizeLegacyControlAuditTimestamps gives pre-chain control rows fixed
+// precision timestamps before lexical ordering is used to build and export the
+// chain. RFC3339Nano omits trailing zeroes, so raw text order is not always
+// chronological when fractional seconds differ.
+func normalizeLegacyControlAuditTimestamps(db *gorm.DB) error {
+	var cursor string
+	for {
+		var batch []legacyControlAuditTimestamp
+		query := db.Table("router_config_change_events").Select("event_id, at").Where("row_hash = ''").Order("event_id ASC").Limit(adminAuditChainMigrationBatchSize)
+		if cursor != "" {
+			query = query.Where("event_id > ?", cursor)
+		}
+		if err := query.Find(&batch).Error; err != nil {
+			return err
+		}
+		if len(batch) == 0 {
+			return nil
+		}
+		for _, row := range batch {
+			at, err := time.Parse(time.RFC3339Nano, row.At)
+			if err != nil {
+				return fmt.Errorf("parse legacy control audit timestamp for event %s: %w", row.EventID, err)
+			}
+			stamp := adminAuditFormatTime(at)
+			if stamp != row.At {
+				if err := db.Exec(`UPDATE router_config_change_events SET at=? WHERE event_id=? AND row_hash=''`, stamp, row.EventID).Error; err != nil {
+					return err
+				}
+			}
+			cursor = row.EventID
 		}
 	}
 }

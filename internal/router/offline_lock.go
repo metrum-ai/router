@@ -171,8 +171,25 @@ func consumeOfflineConfigMaintenance(configDB, usageDB *gorm.DB) error {
 				eventID := fmt.Sprintf("offline-config-%s-%d", marker.Scope, marker.ID)
 				requestID := fmt.Sprintf("offline-config-%s-marker-%d", marker.Scope, marker.ID)
 				detail := fmt.Sprintf("command=%s revision=%d actor=%s", marker.Command, marker.Revision, marker.Actor)
-				if err := tx.Exec(`INSERT INTO router_config_change_events (event_id, runtime_scope, config_set_id, action, actor, at, config_revision, actor_kind, authz_domain, object, authz_action, operation_id, request_id, outcome, detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(event_id) DO NOTHING`, eventID, marker.Scope, setID, "offline_config_maintenance", marker.Actor, marker.At, marker.Revision, "offline", AdminGlobalDomain, "admin:config", "maintenance", "offline_config_maintenance", requestID, outcome, detail).Error; err != nil {
+				unlock, err := lockAdminAuditChain(tx, "control", string(AdminGlobalDomain))
+				if err != nil {
 					return err
+				}
+				defer unlock()
+				var existing int64
+				if err := tx.Model(&adminAuditControlExportRecord{}).Where("event_id = ?", eventID).Count(&existing).Error; err != nil {
+					return err
+				}
+				if existing == 0 {
+					if err := insertChainedConfigChangeEventTx(tx, chainedConfigChangeEvent{
+						EventID: eventID, RuntimeScope: marker.Scope, ConfigSetID: setID,
+						Action: "offline_config_maintenance", Actor: marker.Actor, At: marker.At,
+						ConfigRevision: marker.Revision, Detail: detail, ActorKind: "offline",
+						AuthzDomain: string(AdminGlobalDomain), Object: "admin:config", AuthzAction: "maintenance",
+						OperationID: "offline_config_maintenance", RequestID: requestID, Outcome: outcome,
+					}); err != nil {
+						return err
+					}
 				}
 			}
 			ids := make([]int64, 0, len(markers))

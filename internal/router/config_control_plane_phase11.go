@@ -183,14 +183,18 @@ func insertAdminCredentialEventTx(tx *gorm.DB, event AdminCredentialEvent) error
 	if err != nil {
 		return err
 	}
-	if err := tx.Exec(
+	result := tx.Exec(
 		`INSERT INTO router_admin_credential_events (event_id, at, kind, credential_id, subject, issuer, outcome, reason_code, request_id, client_ip_hash, lifecycle, count, client_id, actor, previous_hash, row_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`,
 		event.EventID, storedAt, adminAuditFieldValue(event.Kind),
 		adminAuditFieldValue(event.CredentialID), adminAuditFieldValue(event.Subject), adminAuditFieldValue(event.Issuer),
 		adminAuditFieldValue(event.Outcome), adminAuditFieldValue(event.ReasonCode), adminAuditFieldValue(event.RequestID),
 		adminAuditFieldValue(event.ClientIPHash), adminAuditFieldValue(event.Lifecycle), event.Count, event.ClientID, event.Actor, previous, rowHash,
-	).Error; err != nil {
-		return fmt.Errorf("append credential event: %w", err)
+	)
+	if result.Error != nil {
+		return fmt.Errorf("append credential event: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return nil
 	}
 	if err := updateAdminAuditChainHead(tx, "credential", string(AdminDomainCredential), previous, rowHash); err != nil {
 		return fmt.Errorf("update credential audit chain anchor: %w", err)

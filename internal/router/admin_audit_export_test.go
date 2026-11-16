@@ -290,6 +290,12 @@ func TestAdminAuditRetentionDeletesControlTargetsAndReanchors(t *testing.T) {
 	if err := db.Exec("PRAGMA foreign_keys = ON").Error; err != nil {
 		t.Fatal(err)
 	}
+	if err := ensureAdminAuditChainAnchors(db); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec(`INSERT INTO `+adminAuditChainAnchorsTable+` (source, domain, start_hash, head_hash, updated_at) VALUES ('control', 'team/prod', '', 'hash-retention', ?) ON CONFLICT(source, domain) DO UPDATE SET head_hash=excluded.head_hash`, time.Now().UTC().Format(time.RFC3339Nano)).Error; err != nil {
+		t.Fatal(err)
+	}
 	var runtime configControlPlaneRuntimeRow
 	if err := db.Where("runtime_scope = ?", "prod").First(&runtime).Error; err != nil {
 		t.Fatal(err)
@@ -313,6 +319,41 @@ func TestAdminAuditRetentionDeletesControlTargetsAndReanchors(t *testing.T) {
 	}
 	if events != 0 || targets != 0 {
 		t.Fatalf("retention left event/target rows: %d/%d", events, targets)
+	}
+	var start string
+	if err := db.Raw(`SELECT start_hash FROM ` + adminAuditChainAnchorsTable + ` WHERE source='control' AND domain='team/prod'`).Row().Scan(&start); err != nil {
+		t.Fatal(err)
+	}
+	if start != "hash-retention" {
+		t.Fatalf("retention checkpoint=%q, want pruned row hash %q", start, "hash-retention")
+	}
+}
+
+func TestLegacyControlAuditBackfillNormalizesTimestampsForOrdering(t *testing.T) {
+	db := configAdminTestDB(t)
+	var runtime configControlPlaneRuntimeRow
+	if err := db.Where("runtime_scope = ?", "prod").First(&runtime).Error; err != nil {
+		t.Fatal(err)
+	}
+	for _, event := range []struct {
+		id, at string
+	}{{"legacy-no-fraction", "2026-11-06T12:00:00Z"}, {"legacy-fraction", "2026-11-06T12:00:00.100000000Z"}} {
+		if err := db.Exec(`INSERT INTO router_config_change_events (event_id, runtime_scope, config_set_id, action, at, actor, authz_domain, object, authz_action, operation_id, request_id, outcome, config_revision) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, event.id, "prod", runtime.ActiveSetID, "replace", event.at, "operator", "team/legacy-time", "admin:config", "write", "replace", event.id, "committed", 1).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := backfillControlAuditChain(db); err != nil {
+		t.Fatal(err)
+	}
+	var rows []adminAuditControlExportRecord
+	if err := db.Where("authz_domain = ?", "team/legacy-time").Order("at ASC").Order("event_id ASC").Find(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 || rows[0].EventID != "legacy-no-fraction" || rows[1].EventID != "legacy-fraction" {
+		t.Fatalf("legacy control rows ordered incorrectly after backfill: %+v", rows)
+	}
+	if rows[0].At != "2026-11-06T12:00:00.000000000Z" || rows[1].At != "2026-11-06T12:00:00.100000000Z" || rows[1].PreviousHash != rows[0].RowHash {
+		t.Fatalf("legacy timestamps/chain were not normalized: %+v", rows)
 	}
 }
 

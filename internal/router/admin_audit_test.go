@@ -1232,6 +1232,26 @@ func TestAdminCredentialEventTimestampOrderingKeepsSubsecondRowsDistinct(t *test
 	if rows != 2 || count != 2 {
 		t.Fatalf("subsecond events produced %d rows and count %d, want two immutable rows", rows, count)
 	}
+	var headBefore string
+	if err := db.Raw(`SELECT head_hash FROM `+adminAuditChainAnchorsTable+` WHERE source='credential' AND domain=?`, string(AdminDomainCredential)).Row().Scan(&headBefore); err != nil {
+		t.Fatal(err)
+	}
+	event.EventID = "subsecond-0"
+	event.At = base.Add(time.Second)
+	event.Subject = "replayed-with-different-content"
+	if err := db.Transaction(func(tx *gorm.DB) error { return insertAdminCredentialEventTx(tx, event) }); err != nil {
+		t.Fatal(err)
+	}
+	var headAfter string
+	if err := db.Raw(`SELECT head_hash FROM `+adminAuditChainAnchorsTable+` WHERE source='credential' AND domain=?`, string(AdminDomainCredential)).Row().Scan(&headAfter); err != nil {
+		t.Fatal(err)
+	}
+	if headAfter != headBefore {
+		t.Fatalf("duplicate credential event moved chain head from %s to %s", headBefore, headAfter)
+	}
+	if err := db.Table(adminCredentialEventsTable).Count(&rows).Error; err != nil || rows != 2 {
+		t.Fatalf("duplicate credential event rows=%d err=%v, want 2", rows, err)
+	}
 }
 
 // TestAdminAuthenticationFailureFloodIsBounded proves failed-auth events are append-only
