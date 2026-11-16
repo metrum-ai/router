@@ -5,6 +5,7 @@ package router
 
 import (
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -129,6 +130,27 @@ func TestImportCanonicalYAMLStoresDraftDocument(t *testing.T) {
 	}
 	if event.RuntimeScope != "staging" || event.Actor != "test-actor" {
 		t.Fatalf("unexpected change event: %+v", event)
+	}
+}
+
+func TestImportCanonicalYAMLStripsEmptyV4ScriptFieldsFromStoredDocument(t *testing.T) {
+	r, closeDB, err := ConfigControlPlaneMigrationRunner(UsageDBConfig{Driver: "sqlite", Path: filepath.Join(t.TempDir(), "config.sqlite")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = closeDB() }()
+	applyConfigControlPlaneMigrationsThroughPhase6ForTest(t, r)
+	legacy := regexp.MustCompile(`(?m)^([ \t]*)strategy: static$`).ReplaceAllString(testCanonicalYAML, "${1}strategy: static\n${1}script: \"\"\n${1}script_max_concurrent: 0\n${1}script_http:\n${1}    enabled: false")
+	setID, err := ImportCanonicalYAML(r.db, "staging", "v4-shaped", []byte(legacy), "test-actor")
+	if err != nil {
+		t.Fatalf("ImportCanonicalYAML rejected v4-shaped stored config: %v", err)
+	}
+	var stored string
+	if err := r.db.Raw(`SELECT canonical_yaml FROM router_config_documents WHERE config_set_id = ?`, setID).Row().Scan(&stored); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(stored, "script_max_concurrent") || strings.Contains(stored, "script_http") || regexp.MustCompile(`(?m)^\s+script:`).MatchString(stored) {
+		t.Fatalf("empty legacy script fields remained in stored document:\n%s", stored)
 	}
 }
 

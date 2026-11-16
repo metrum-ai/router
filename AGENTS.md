@@ -14,3 +14,7 @@ locally on this machine.
 
 Record the commands that actually ran and their outcomes before opening a pull
 request or declaring the work finished.
+
+## Extension boundary
+
+User code never runs inside the router process. Custom routing logic must run as a standalone external policy service.

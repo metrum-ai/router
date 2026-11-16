@@ -50,11 +50,11 @@ type externalPolicyInput struct {
 	Group           string                      `json:"group"`
 	Request         *IRRequest                  `json:"request,omitempty"`
 	Context         requestSummary              `json:"context"`
-	Contract        *scriptContract             `json:"contract,omitempty"`
+	Contract        *externalPolicyContract     `json:"contract,omitempty"`
 	Requirements    []string                    `json:"requirements"`
-	Targets         []scriptTarget              `json:"targets"`
-	AllTargets      []scriptTarget              `json:"allTargets,omitempty"`
-	Caller          *scriptCaller               `json:"caller,omitempty"`
+	Targets         []externalPolicyTarget      `json:"targets"`
+	AllTargets      []externalPolicyTarget      `json:"allTargets,omitempty"`
+	Caller          *externalPolicyCaller       `json:"caller,omitempty"`
 	Text            string                      `json:"text,omitempty"`
 	InputModalities []string                    `json:"inputModalities"`
 	VerifierHint    *externalPolicyVerifierHint `json:"verifierHint,omitempty"`
@@ -239,10 +239,10 @@ func (s *externalPolicyStrategy) pick(ctx context.Context, group string, req *IR
 	input := externalPolicyInput{
 		Group:           group,
 		Context:         summary,
-		Contract:        buildScriptContract(contract),
+		Contract:        buildExternalPolicyContract(contract),
 		Requirements:    routingRequirements(req, callerDialect),
-		Targets:         buildScriptTargets(eligibleTargets, providers),
-		Caller:          buildScriptCaller(caller, tokenID),
+		Targets:         buildExternalPolicyTargets(eligibleTargets, providers),
+		Caller:          buildExternalPolicyCaller(caller, tokenID),
 		InputModalities: requestInputModalities(req),
 		Now:             time.Now().UTC().Format(time.RFC3339),
 	}
@@ -267,15 +267,15 @@ func (s *externalPolicyStrategy) pick(ctx context.Context, group string, req *IR
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		return decision{}, fmt.Errorf("external policy response is not JSON")
 	}
-	out, err := exportDecisionOutput(payload, "external policy")
+	out, err := exportPolicyDecisionOutput(payload, "external policy")
 	if err != nil {
 		return decision{}, err
 	}
-	primary, err := resolveScriptTarget(out, eligibleTargets)
+	primary, err := resolvePolicyTarget(out, eligibleTargets)
 	if err != nil {
 		return decision{}, err
 	}
-	fallbacks, err := resolveScriptFallbacks(out, primary, eligibleTargets)
+	fallbacks, err := resolvePolicyFallbacks(out, primary, eligibleTargets)
 	if err != nil {
 		return decision{}, err
 	}
@@ -319,7 +319,7 @@ func (s *externalPolicyStrategy) call(ctx context.Context, body []byte) ([]byte,
 	httpReq.Header.Set("Accept", "application/json")
 	httpReq.Header.Set("Content-Type", "application/json")
 	for name, value := range s.cfg.Headers {
-		if !scriptConfigHeaderAllowed(name) {
+		if !externalPolicyConfigHeaderAllowed(name) {
 			return nil, fmt.Errorf("configured external_policy header %s is not allowed", name)
 		}
 		httpReq.Header.Set(name, value)
