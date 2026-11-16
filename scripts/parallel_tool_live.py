@@ -39,6 +39,24 @@ ROOT = Path(__file__).resolve().parents[1]
 TOKEN = os.environ.get("PARALLEL_LIVE_TOKEN") or "rtr_metrum_parallel_gate_local_k1_localsecret"
 MAX_OUTPUT = 256
 MARKERS = {"a": "GATE-A-7731", "b": "GATE-B-4192", "c": "GATE-C-6605"}
+RELEASE_CLIENT_CELLS = (
+    ("openai-chat-sdk", "openai-chat", "openai-chat-sdk"),
+    ("openai-responses-sdk", "openai-responses", "openai-responses-sdk"),
+    ("anthropic-messages-sdk", "anthropic-messages", "anthropic-messages-sdk"),
+)
+GATE_ARTIFACT_CELL_FIELDS = (
+    "cell",
+    "group",
+    "problems",
+    "cost_usd",
+    "turn1_status",
+    "turn2_status",
+    "call_count",
+)
+
+
+def client_cells_for_set(cell_set: str) -> tuple[tuple[str, str, str], ...]:
+    return RELEASE_CLIENT_CELLS if cell_set == "release" else ()
 
 
 def free_port() -> int:
@@ -260,14 +278,140 @@ class Gate:
         finally:
             self.cells.append(result)
 
+    def client_cell(
+        self,
+        name: str,
+        surface: str,
+        base_url: str,
+        model: str = "gate",
+        group: str | None = None,
+        timeout: float = 90.0,
+    ) -> None:
+        """Run one real SDK tool call and continuation against the local router."""
+        result = {"cell": name, "surface": surface, "client": name.split("-", 1)[0], "group": group or model, "problems": [], "cost_usd": 0.0}
+        token = TOKEN
+        tools = [{"name": "read_file", "description": "Read one fixed test file.", "parameters": {
+            "type": "object", "properties": {"path": {"type": "string"}},
+            "required": ["path"], "additionalProperties": False,
+        }}]
+        expected = "LIVE-EVAL-MARKER-A"
+
+        def invoke(provider: str, payload: dict, call):
+            try:
+                body = json.dumps(payload, default=lambda value: value.model_dump(mode="json")).encode()
+                reservation = self.budget.reserve(provider, body)
+            except (ValueError, RuntimeError):
+                result["problems"].append("budget-refused")
+                return None
+            try:
+                response = call()
+                raw = json.dumps(response.model_dump(mode="json")).encode()
+                from parallel_live_budget import read_usage
+                usage = read_usage(provider, raw, False)
+                cost = self.budget.settle(provider, usage, reservation)
+                result["cost_usd"] += float(cost or 0)
+                return response
+            except Exception:
+                self.budget.settle(provider, None, reservation)
+                result["problems"].append("request-failed")
+                return None
+
+        try:
+            if surface == "openai-chat":
+                from openai import OpenAI
+                client = OpenAI(api_key=token, base_url=base_url + "/v1", max_retries=0, timeout=timeout)
+                schema = [{"type": "function", "function": {**tools[0], "strict": False}}]
+                first_body = {"model": group or model, "max_tokens": MAX_OUTPUT, "temperature": 0, "messages": [{"role": "user", "content": "Use read_file once for notes/a.txt."}], "tools": schema, "tool_choice": {"type": "function", "function": {"name": "read_file"}}}
+                first = invoke("openai-chat", first_body, lambda: client.chat.completions.create(**first_body))
+                calls = (first.choices[0].message.tool_calls if first and first.choices else None) or []
+                if len(calls) != 1 or calls[0].function.name != "read_file":
+                    result["problems"].append("tool-call-mismatch")
+                    return
+                try:
+                    args = json.loads(calls[0].function.arguments)
+                except (ValueError, TypeError):
+                    result["problems"].append("tool-arguments-invalid")
+                    return
+                if args.get("path") != "notes/a.txt":
+                    result["problems"].append("tool-arguments-mismatch")
+                    return
+                follow = "Reply with the exact marker from the tool result."
+                second_body = {"model": group or model, "max_tokens": MAX_OUTPUT, "messages": [
+                    {"role": "user", "content": "Use read_file once for notes/a.txt."},
+                    {"role": "assistant", "tool_calls": [{"id": calls[0].id, "type": "function", "function": {"name": "read_file", "arguments": calls[0].function.arguments}}]},
+                    {"role": "tool", "tool_call_id": calls[0].id, "content": expected},
+                    {"role": "user", "content": follow},
+                ], "tools": schema}
+                second = invoke("openai-chat", second_body, lambda: client.chat.completions.create(**second_body))
+                text = second.choices[0].message.content or "" if second and second.choices else ""
+            elif surface == "openai-responses":
+                from openai import OpenAI
+                client = OpenAI(api_key=token, base_url=base_url + "/v1", max_retries=0, timeout=timeout)
+                schema = [{"type": "function", **tools[0], "strict": False}]
+                first_body = {"model": group or model, "max_output_tokens": MAX_OUTPUT, "temperature": 0, "input": "Use read_file once for notes/a.txt.", "tools": schema, "tool_choice": {"type": "function", "name": "read_file"}}
+                first = invoke("openai-responses", first_body, lambda: client.responses.create(**first_body))
+                calls = [item for item in (first.output if first else []) if item.type == "function_call"]
+                if len(calls) != 1 or calls[0].name != "read_file":
+                    result["problems"].append("tool-call-mismatch")
+                    return
+                try:
+                    args = json.loads(calls[0].arguments)
+                except (ValueError, TypeError):
+                    result["problems"].append("tool-arguments-invalid")
+                    return
+                if args.get("path") != "notes/a.txt":
+                    result["problems"].append("tool-arguments-mismatch")
+                    return
+                second_body = {"model": group or model, "max_output_tokens": MAX_OUTPUT, "input": [
+                    *first.output,
+                    {"type": "function_call_output", "call_id": calls[0].call_id, "output": expected},
+                    {"role": "user", "content": "Reply with the exact marker from the tool result."},
+                ], "tools": schema}
+                second = invoke("openai-responses", second_body, lambda: client.responses.create(**second_body))
+                text = second.output_text if second else ""
+            else:
+                from anthropic import Anthropic
+                client = Anthropic(api_key=token, base_url=base_url, max_retries=0, timeout=timeout)
+                schema = [{"name": tools[0]["name"], "description": tools[0]["description"], "input_schema": tools[0]["parameters"]}]
+                first_body = {"model": group or model, "max_tokens": MAX_OUTPUT, "temperature": 0, "system": "You are a tool-using agent.", "messages": [{"role": "user", "content": "Use read_file once for notes/a.txt."}], "tools": schema, "tool_choice": {"type": "tool", "name": "read_file"}}
+                # anthropic-python 2.3 models temperature as an extra body
+                # field rather than a typed Messages.create keyword.
+                first = invoke("anthropic", first_body, lambda: client.messages.create(
+                    **{key: value for key, value in first_body.items() if key != "temperature"},
+                    extra_body={"temperature": first_body["temperature"]},
+                ))
+                calls = [block for block in (first.content if first else []) if block.type == "tool_use"]
+                if len(calls) != 1 or calls[0].name != "read_file":
+                    result["problems"].append("tool-call-mismatch")
+                    return
+                if calls[0].input.get("path") != "notes/a.txt":
+                    result["problems"].append("tool-arguments-mismatch")
+                    return
+                second_body = {"model": group or model, "max_tokens": MAX_OUTPUT, "system": "You are a tool-using agent.", "messages": [
+                    {"role": "user", "content": "Use read_file once for notes/a.txt."},
+                    {"role": "assistant", "content": [block.model_dump(mode="json", exclude_none=True) for block in first.content]},
+                    {"role": "user", "content": [{"type": "tool_result", "tool_use_id": calls[0].id, "content": expected}, {"type": "text", "text": "Reply with the exact marker from the tool result."}]},
+                ], "tools": schema}
+                second = invoke("anthropic", second_body, lambda: client.messages.create(**second_body))
+                text = "".join(block.text for block in second.content if block.type == "text") if second else ""
+            if expected not in text:
+                result["problems"].append("continuation-marker-missing")
+        except Exception as exc:
+            result["problems"].append(f"client-error-{type(exc).__name__}")
+        finally:
+            self.cells.append(result)
+
 
 def router_config(temp: Path, openai_key: str | None, anthropic_key: str | None) -> tuple[Path, int]:
     port = free_port()
     providers = {}
     targets = []
     if openai_key:
+        openai_target = {"model": "gpt-4o-mini", "input_price_per_million_usd": 0.15, "output_price_per_million_usd": 0.6, "pricing_source": "https://platform.openai.com/docs/pricing", "pricing_updated_at": "2026-11-02", "request_shape_support": {"supported_inbound_dialects": ["openai-chat", "openai-responses", "anthropic"], "validation_status": "passed"}, "tool_support": {"openai_chat": ["tools", "tool_choice"], "openai_responses": ["function", "tool_choice"], "anthropic_messages": ["client_tools", "tool_choice"]}}
         providers["openai"] = {"base_url": "https://api.openai.com/v1", "dialect": "openai-chat", "api_key": "${OPENAI_API_KEY}", "api_key_env": "OPENAI_API_KEY"}
-        targets.append({"provider": "openai", "model": "gpt-4o-mini", "input_price_per_million_usd": 0.15, "output_price_per_million_usd": 0.6, "pricing_source": "https://platform.openai.com/docs/pricing", "pricing_updated_at": "2026-11-02", "request_shape_support": {"supported_inbound_dialects": ["openai-chat", "openai-responses", "anthropic"], "validation_status": "passed"}, "tool_support": {"openai_chat": ["tools", "tool_choice"], "openai_responses": ["function", "tool_choice"], "anthropic_messages": ["client_tools", "tool_choice"]}})
+        providers["openai-responses"] = {"base_url": "https://api.openai.com/v1", "dialect": "openai-responses", "api_key": "${OPENAI_API_KEY}", "api_key_env": "OPENAI_API_KEY"}
+        targets.append({"provider": "openai", **openai_target})
+        targets.append({"provider": "openai-responses", **openai_target})
     if anthropic_key:
         providers["anthropic"] = {"base_url": "https://api.anthropic.com", "dialect": "anthropic", "api_key": "${ANTHROPIC_API_KEY}", "api_key_env": "ANTHROPIC_API_KEY"}
         targets.append({"provider": "anthropic", "model": "claude-haiku-4-5", "input_price_per_million_usd": 1, "output_price_per_million_usd": 5, "pricing_source": "https://platform.claude.com/docs/en/about-claude/pricing", "pricing_updated_at": "2026-11-02", "request_shape_support": {"supported_inbound_dialects": ["anthropic", "openai-chat", "openai-responses"], "validation_status": "passed"}, "tool_support": {"anthropic_messages": ["client_tools", "tool_choice"], "openai_chat": ["tools", "tool_choice"], "openai_responses": ["function", "tool_choice"]}})
@@ -281,8 +425,11 @@ def router_config(temp: Path, openai_key: str | None, anthropic_key: str | None)
             "gate": {"strategy": "static", "targets": targets},
             "gate-chat-to-messages": {"strategy": "static", "targets": [t for t in targets if t["provider"] == "anthropic"]},
             "gate-messages-to-chat": {"strategy": "static", "targets": [t for t in targets if t["provider"] == "openai"]},
+            "openai-chat-sdk": {"strategy": "static", "targets": [t for t in targets if t["provider"] == "openai"]},
+            "openai-responses-sdk": {"strategy": "static", "targets": [t for t in targets if t["provider"] == "openai-responses"]},
+            "anthropic-messages-sdk": {"strategy": "static", "targets": [t for t in targets if t["provider"] == "anthropic"]},
         },
-        "callers": [{"id": "live-gate", "token_hash": token_hash, "token_id": token_id, "allow": ["gate", "gate-chat-to-messages", "gate-messages-to-chat"], "rate": {"rpm": 60, "tpm": 400000, "concurrent": 2}, "quota": {"day": {"requests": 100, "tokens": 1000000}, "month": {"tokens": 5000000}}, "key": {"lifetime_tokens": 5000000}}],
+        "callers": [{"id": "live-gate", "token_hash": token_hash, "token_id": token_id, "allow": ["gate", "gate-chat-to-messages", "gate-messages-to-chat", "openai-chat-sdk", "openai-responses-sdk", "anthropic-messages-sdk"], "rate": {"rpm": 60, "tpm": 400000, "concurrent": 2}, "quota": {"day": {"requests": 100, "tokens": 1000000}, "month": {"tokens": 5000000}}, "key": {"lifetime_tokens": 5000000}}],
     }
     path = temp / "config.yaml"
     import yaml  # noqa: PLC0415 - optional dependency for this harness only
@@ -290,17 +437,51 @@ def router_config(temp: Path, openai_key: str | None, anthropic_key: str | None)
     return path, port
 
 
+def sanitize_gate_report(report: dict) -> dict:
+    """Return the bounded per-cell artifact without provider response bodies."""
+    cells = report.get("cells")
+    if not isinstance(cells, list):
+        raise ValueError("gate report cells must be a list")
+    rows = report.get("router_usage_rows")
+    if not isinstance(rows, list):
+        raise ValueError("gate report router_usage_rows must be a list")
+    safe_rows = []
+    row_errors = 0
+    for row in rows:
+        if not isinstance(row, dict) or "total_cost_usd" not in row:
+            row_errors += 1
+            continue
+        safe_rows.append({"total_cost_usd": row["total_cost_usd"]})
+    safe_cells = []
+    for cell in cells:
+        if not isinstance(cell, dict) or not isinstance(cell.get("cell"), str):
+            raise ValueError("gate report contains an invalid cell")
+        safe_cells.append({key: cell[key] for key in GATE_ARTIFACT_CELL_FIELDS if key in cell})
+    return {
+        "cell_set": report.get("cell_set"),
+        "cells": safe_cells,
+        "router_usage_rows": safe_rows,
+        "router_usage_row_errors": row_errors,
+        "reserved_usd": report.get("reserved_usd"),
+        "list_rate_usage_usd": report.get("list_rate_usage_usd"),
+        "unknown_usage_turns": report.get("unknown_usage_turns"),
+        "halted": report.get("halted"),
+        "cap_usd": report.get("cap_usd"),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--router-bin", type=Path, default=None)
     parser.add_argument("--cap", default="5")
+    parser.add_argument("--cell-set", choices=("nightly", "release"), default="nightly")
     args = parser.parse_args()
 
     openai_key = os.environ.get("OPENAI_API_KEY", "").strip()
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
-    if not openai_key and not anthropic_key:
-        raise SystemExit("no provider keys in the environment")
+    if not openai_key or not anthropic_key:
+        raise SystemExit("OpenAI and Anthropic evaluation keys are both required")
 
     budget = Budget(Decimal(args.cap))
     gate = Gate(budget, args.out)
@@ -339,6 +520,8 @@ def main() -> int:
                 # own dialect and the router translates to the other provider.
                 gate.cell("chat-caller-to-messages-target", "openai-chat", f"http://127.0.0.1:{port}", routed_headers_openai, True, "claude-haiku-4-5", "gate-chat-to-messages")
                 gate.cell("messages-caller-to-chat-target", "anthropic", f"http://127.0.0.1:{port}", routed_headers_anthropic, True, "gpt-4o-mini", "gate-messages-to-chat")
+            for name, surface, group in client_cells_for_set(args.cell_set):
+                gate.client_cell(name, surface, f"http://127.0.0.1:{port}", group=group)
         finally:
             process.terminate()
             try:
@@ -358,9 +541,9 @@ def main() -> int:
                     usage_rows.append({"error": type(exc).__name__})
                 finally:
                     connection.close()
-        report = {"cells": gate.cells, "router_usage_rows": usage_rows, "reserved_usd": float(budget.reserved), "list_rate_usage_usd": float(budget.list_usage_cost), "unknown_usage_turns": budget.unknown_usage, "halted": budget.blocked, "cap_usd": float(budget.cap)}
+        report = {"cell_set": args.cell_set, "cells": gate.cells, "router_usage_rows": usage_rows, "reserved_usd": float(budget.reserved), "list_rate_usage_usd": float(budget.list_usage_cost), "unknown_usage_turns": budget.unknown_usage, "halted": budget.blocked, "cap_usd": float(budget.cap)}
         args.out.parent.mkdir(parents=True, exist_ok=True)
-        args.out.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+        args.out.write_text(json.dumps(sanitize_gate_report(report), indent=2) + "\n", encoding="utf-8")
     failed = [cell["cell"] for cell in gate.cells if cell["problems"]]
     print(f"cells={len(gate.cells)} failed={len(failed)} routed_cost={budget.list_usage_cost}")
     for cell in gate.cells:
