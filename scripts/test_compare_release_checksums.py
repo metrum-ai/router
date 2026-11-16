@@ -5,9 +5,10 @@ from __future__ import annotations
 
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
-from compare_release_checksums import read_checksums
+from compare_release_checksums import compare_archive_members, read_checksums
 
 
 class ReleaseChecksumTest(unittest.TestCase):
@@ -41,6 +42,21 @@ class ReleaseChecksumTest(unittest.TestCase):
                     manifest.write_text(content, encoding="utf-8")
                     with self.assertRaises(ValueError):
                         read_checksums(manifest)
+
+    def test_compares_archive_member_payloads(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            first = Path(temporary) / "first.zip"
+            second = Path(temporary) / "second.zip"
+            with zipfile.ZipFile(first, "w") as archive:
+                archive.writestr("bin/router.exe", b"release binary")
+                archive.writestr("docs/README.md", b"same")
+            with zipfile.ZipFile(second, "w") as archive:
+                archive.writestr("bin/router.exe", b"rebuilt binary")
+                archive.writestr("docs/README.md", b"same")
+            self.assertEqual(
+                compare_archive_members(first, second),
+                (["bin/router.exe"], [], []),
+            )
 
 
 if __name__ == "__main__":

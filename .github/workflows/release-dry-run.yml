@@ -158,7 +158,9 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/release_artifact_inventory.py --dist-dir dist --version "${VERSION}" --commit "${COMMIT}" --build-date "${BUILD_DATE}" --set binary
-          python3 scripts/compare_release_checksums.py "${RUNNER_TEMP}/primary-dist/SHA256SUMS" dist/SHA256SUMS
+          python3 scripts/compare_release_checksums.py \
+            "${RUNNER_TEMP}/primary-dist/SHA256SUMS" dist/SHA256SUMS \
+            --primary-dist "${RUNNER_TEMP}/primary-dist" --rebuild-dist dist
       - name: Download and verify the previous production package
         env:
           GH_TOKEN: ${{ github.token }}
