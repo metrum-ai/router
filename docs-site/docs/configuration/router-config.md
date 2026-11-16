@@ -44,7 +44,7 @@ Use these pages as the canonical homes for each configuration area:
 | Model-group quality contracts | [Model Group Contracts](./model-group-contracts) |
 | Reasoning eligibility | [Reasoning Routing](./reasoning-routing) |
 | Dynamic-score routing | [Dynamic Score Routing](./dynamic-score-routing) |
-| TypeScript routing | [TypeScript Routing](./routing-typescript) |
+| TypeScript routing migration | [TypeScript Routing Migration](./routing-typescript) |
 | External policy services | [External Routing Policy](./external-routing-policy) |
 | Self-hosted OpenAI-compatible upstreams | [Self-Hosted Upstreams](./self-hosted-upstreams) |
 | Image/VLM routing | [Image Analysis And VLM Routing](./image-analysis-vlm) |

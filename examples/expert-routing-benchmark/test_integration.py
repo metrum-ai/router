@@ -15,6 +15,7 @@ from urllib.request import urlopen
 import reconcile
 import run
 import setup
+from policy_service import PolicyHandler
 
 
 class FakeProvider(BaseHTTPRequestHandler):
@@ -36,7 +37,11 @@ class Integration(unittest.TestCase):
         if not binary:self.skipTest('set ROUTER_TEST_BINARY')
         with ExitStack() as stack:
             root=Path(stack.enter_context(tempfile.TemporaryDirectory()));tmp=Path(stack.enter_context(tempfile.TemporaryDirectory(dir='/dev/shm')))
-            state=root/'state';token_dir=tmp/'tokens';setup.build(state,token_dir)
+            policy_server=ThreadingHTTPServer(('127.0.0.1',0),PolicyHandler)
+            policy_thread=threading.Thread(target=policy_server.serve_forever,daemon=True);policy_thread.start()
+            stack.callback(policy_thread.join,5);stack.callback(policy_server.server_close);stack.callback(policy_server.shutdown)
+            policy_url=f'http://127.0.0.1:{policy_server.server_port}/route'
+            state=root/'state';token_dir=tmp/'tokens';setup.build(state,token_dir,policy_url)
             servers={}
             for name in (*setup.PERSONAS,'baseline'):
                 server=ThreadingHTTPServer(('127.0.0.1',0),FakeProvider);thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()

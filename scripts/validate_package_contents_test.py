@@ -157,7 +157,6 @@ def binary_package_files(root: str = "metrum-ai-router-v1.0.0-linux-amd64") -> d
         f"{root}/bin/metrum-ai-routerctl": elf(62),
         f"{root}/config/config.example.yaml": "server: {}\n",
         f"{root}/config/env.example.json": "{}\n",
-        f"{root}/config/scripts/router.ts": "export function route() {}\n",
         f"{root}/caddy/Caddyfile": ":80\n",
     }
     files.update(
@@ -229,7 +228,6 @@ def docker_package_files(root: str = "metrum-ai-router-v1.0.0-docker-linux-amd64
         f"{root}/compose/.env": "SMART_LLMROUTER_VERSION=v1.0.0-linux-amd64\n",
         f"{root}/config/config.example.yaml": "server: {}\n",
         f"{root}/config/env.example.json": "{}\n",
-        f"{root}/config/scripts/router.ts": "export function route() {}\n",
         f"{root}/images/metrum-ai-router-v1.0.0-linux-amd64.tar": docker_image_tar(),
     }
     files.update(
