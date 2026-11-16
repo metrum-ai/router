@@ -115,9 +115,14 @@ for spend accounting. Harbor runs after the canary, sums earlier same-day Harbor
 and sets the relay's reservation cap to the remaining portion of its $0.50
 allowance. Same-day history is downloaded from sanitized workflow artifacts; a
 missing or malformed prior report fails closed. Each canary invocation also
-has a $0.50 guard. The canary report records router charges from the local
-usage database and direct-provider token usage priced at the recorded list
-rates; direct charges are estimates and are not invoice reconciled. The rolling
+has a $0.50 guard. The canary report labels Router charges from local usage
+rows as measured `request_usage` spend, and labels direct-provider charges as a
+list-rate estimate; the latter is not invoice reconciled. The `nightly_cost`
+and aggregate `cost_basis` report fields identify these sources explicitly.
+Gate violations from reports older than 30 days are listed in
+`historical_gate_violations` with the age window in
+`historical_gate_violation_max_age_days`; they do not fail a later nightly
+run. The rolling
 artifact reports task attempts, passes, Wilson 95% intervals, paired outcomes,
 missing/under-sampled cells, violations and cost totals. It is evidence only,
 not a certification claim.

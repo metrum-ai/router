@@ -11,7 +11,7 @@ import json
 import math
 import sys
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +22,22 @@ import eval_report_schema  # noqa: E402
 
 class AggregateError(ValueError):
     pass
+
+
+HISTORY_GATE_VIOLATION_MAX_AGE_DAYS = 30
+
+
+def report_is_historical(report: dict[str, Any], cutoff: datetime) -> bool:
+    value = report.get("started_utc")
+    if not isinstance(value, str):
+        raise AggregateError("run report is missing started_utc")
+    try:
+        started = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise AggregateError("run report started_utc is invalid") from exc
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
+    return started.astimezone(timezone.utc) < cutoff
 
 
 def wilson_interval(passes: int, attempts: int, z: float = 1.959963984540054) -> list[float]:
@@ -48,18 +64,29 @@ def aggregate_reports(reports: list[dict[str, Any]], matrix: dict[str, Any]) -> 
     seen_runs: set[str] = set()
     rows: dict[str, list[tuple[str, dict[str, Any]]]] = defaultdict(list)
     violations: list[str] = []
+    historical_violations: list[str] = []
+    historical_run_ids: set[str] = set()
+    cutoff = datetime.now(timezone.utc) - timedelta(days=HISTORY_GATE_VIOLATION_MAX_AGE_DAYS)
     paired_outcomes: dict[str, int] = defaultdict(int)
     cost_totals: dict[str, float] = defaultdict(float)
     for report in reports:
+        run_id = report.get("run_id")
+        if not isinstance(run_id, str) or not run_id:
+            raise AggregateError("run report is missing run_id")
+        historical = report_is_historical(report, cutoff)
+        if historical:
+            historical_run_ids.add(run_id)
         errors = eval_report_schema.validate_report(report, matrix)
         # Per-run reports intentionally accumulate below the preregistered
         # sample size; that condition is decided over the rolling window.
         errors = [error for error in errors if "below the preregistered sample size" not in error]
         if errors:
-            violations.extend(f"{report.get('run_id', '?')}: {error}" for error in errors)
+            target = historical_violations if historical else violations
+            target.extend(f"{run_id}: {error}" for error in errors)
         for error in report.get("gate_violations", []):
             if isinstance(error, str):
-                violations.append(f"{report.get('run_id', '?')}: {error}")
+                target = historical_violations if historical else violations
+                target.append(f"{run_id}: {error}")
         for name, count in ((report.get("canary") or {}).get("classification") or {}).items():
             if isinstance(count, int) and not isinstance(count, bool) and count >= 0:
                 paired_outcomes[name] += count
@@ -68,9 +95,6 @@ def aggregate_reports(reports: list[dict[str, Any]], matrix: dict[str, Any]) -> 
             value = nightly_cost.get(name)
             if isinstance(value, (int, float)) and not isinstance(value, bool):
                 cost_totals[name] += float(value)
-        run_id = report.get("run_id")
-        if not isinstance(run_id, str) or not run_id:
-            raise AggregateError("run report is missing run_id")
         if run_id in seen_runs:
             raise AggregateError(f"duplicate run_id {run_id!r}")
         seen_runs.add(run_id)
@@ -145,7 +169,11 @@ def aggregate_reports(reports: list[dict[str, Any]], matrix: dict[str, Any]) -> 
         candidate_errors = eval_report_schema.validate_report(candidate, matrix)
         # Sample size is a certification refusal, not a nightly gate failure.
         candidate_errors = [error for error in candidate_errors if "below the preregistered sample size" not in error]
-        violations.extend(candidate_errors)
+        for error in candidate_errors:
+            if any(f"/{run_id}/" in error for run_id in historical_run_ids):
+                historical_violations.append(error)
+            else:
+                violations.append(error)
     except eval_report_schema.ReportError as exc:
         raise AggregateError(f"aggregated report is invalid: {exc}") from exc
 
@@ -159,8 +187,14 @@ def aggregate_reports(reports: list[dict[str, Any]], matrix: dict[str, Any]) -> 
         "expected_missing_cells": expected_missing_cells,
         "under_sampled_cells": under_sampled,
         "gate_violations": sorted(set(violations)),
+        "historical_gate_violations": sorted(set(historical_violations)),
+        "historical_gate_violation_max_age_days": HISTORY_GATE_VIOLATION_MAX_AGE_DAYS,
         "paired_outcomes": dict(sorted(paired_outcomes.items())),
         "cost_totals_usd": {name: round(value, 8) for name, value in sorted(cost_totals.items())},
+        "cost_basis": {
+            "router_usage_rows_usd": "measured request_usage rows",
+            "direct_provider_usage_estimate_usd": "list-rate estimate",
+        },
     }
     return candidate
 
