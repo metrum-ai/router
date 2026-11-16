@@ -144,12 +144,8 @@ func (s *Service) targetRequestShapeFit(target Target, req *IRRequest, callerDia
 		fit.ToolSchemaFit = false
 	}
 	reason := ""
-	// Bedrock currently uses a Chat-to-Converse adapter, not a native
-	// Anthropic codec. Preserve main's fail-closed behavior for opaque
-	// Anthropic history rather than stripping it on the way to Bedrock.
-	if s.cfg != nil && normalizeDialect(callerDialect) == "anthropic" && isBedrock(s.cfg.Provider[target.Provider]) && reasoningHistoryPresent(req) {
-		reason = "bedrock-opaque-reasoning-unsupported"
-	}
+	// Anthropic tool bridging carries opaque reasoning only for Bedrock's
+	// explicit Converse codec; bedrockInput validates every block before dispatch.
 	// Bedrock's Converse adapter consumes neither OpenAI off control, even
 	// though the intermediate dialect is Chat. Do not silently drop it.
 	if reason == "" && s.cfg != nil && req != nil && req.Reasoning.Disabled && strings.HasPrefix(req.Reasoning.Source, "openai_") && isBedrock(s.cfg.Provider[target.Provider]) {

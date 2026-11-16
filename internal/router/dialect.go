@@ -298,6 +298,7 @@ func geminiGenerateContentTextEligible(req *IRRequest) bool {
 
 func encodeResponsesPassthrough(model string, req *IRRequest, target Target) ([]byte, error) {
 	body := providerPassthroughBody(req)
+	delete(body, "bedrock_reasoning")
 	body["model"] = model
 	if requestHasForbiddenProviderHostedTools(req) {
 		return nil, fmt.Errorf("provider-hosted-tools-forbidden")
@@ -330,6 +331,26 @@ func encodeResponsesPassthrough(model string, req *IRRequest, target Target) ([]
 
 func encodeChatPassthrough(model string, req *IRRequest, target Target) ([]byte, error) {
 	body := providerPassthroughBody(req)
+	delete(body, "bedrock_reasoning")
+	// bedrock_content is an internal Anthropic-to-Bedrock bridge field. Never
+	// accept it from a caller's OpenAI Chat message.
+	if messages, ok := body["messages"].([]any); ok {
+		clean := make([]any, len(messages))
+		for i, value := range messages {
+			if message, ok := value.(map[string]any); ok {
+				copy := make(map[string]any, len(message))
+				for key, field := range message {
+					if key != "bedrock_content" {
+						copy[key] = field
+					}
+				}
+				clean[i] = copy
+			} else {
+				clean[i] = value
+			}
+		}
+		body["messages"] = clean
+	}
 	body["model"] = model
 	// The router calls upstreams in unary mode and synthesizes downstream SSE.
 	// This keeps tool-call responses and usage accounting deterministic.

@@ -16,6 +16,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	bt "github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
@@ -174,6 +175,7 @@ func TestBedrockRecordedStream(t *testing.T) {
 	t.Setenv("AWS_ACCESS_KEY_ID", "fixture")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "fixture")
 	t.Setenv("AWS_SESSION_TOKEN", "")
+	t.Setenv("AWS_BEARER_TOKEN_BEDROCK", "")
 	for _, stream := range []bool{false, true} {
 		body := `{"model":"mistral.mistral-large-3-675b-instruct","messages":[{"role":"user","content":"Say OK"}],"max_tokens":16,"stream":` + fmt.Sprint(stream) + `}`
 		r, err := bedrockDo(context.Background(), "us-east-1", []byte(body), &http.Client{Transport: bedrockFixtureTransport{t, stream}})
@@ -197,10 +199,179 @@ func TestBedrockRecordedStream(t *testing.T) {
 	}
 }
 
+type bedrockReasoningTransport struct {
+	t      *testing.T
+	stream bool
+	calls  *int
+}
+
+func (f bedrockReasoningTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	f.t.Helper()
+	if !strings.Contains(r.Header.Get("Authorization"), "AWS4-HMAC-SHA256") {
+		f.t.Error("request was not signed")
+	}
+	requestBody, err := io.ReadAll(r.Body)
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	if f.calls != nil {
+		*f.calls++
+		if *f.calls > 1 && (!bytes.Contains(requestBody, []byte(`"reasoningContent"`)) || !bytes.Contains(requestBody, []byte(`"signature":"signature"`))) {
+			f.t.Errorf("Converse request lost opaque reasoning: %s", requestBody)
+		}
+	} else if !bytes.Contains(requestBody, []byte(`"reasoningContent"`)) || !bytes.Contains(requestBody, []byte(`"signature":"signature"`)) {
+		f.t.Errorf("Converse request lost opaque reasoning: %s", requestBody)
+	}
+	if strings.HasSuffix(r.URL.Path, "/converse") {
+		body := `{"output":{"message":{"role":"assistant","content":[{"reasoningContent":{"reasoningText":{"text":"thought","signature":"signature"}}},{"text":"hello"},{"reasoningContent":{"redactedContent":"Y2lwaGVy"}},{"toolUse":{"toolUseId":"call_1","name":"write","input":{"path":"a"}}}]}} ,"stopReason":"tool_use","usage":{"inputTokens":5,"outputTokens":2,"totalTokens":7}}`
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/json"}}, Body: io.NopCloser(strings.NewReader(body))}, nil
+	}
+	if f.stream && strings.HasSuffix(r.URL.Path, "/converse-stream") {
+		fixtures := []struct {
+			event   string
+			payload string
+		}{
+			{"messageStart", `{"role":"assistant"}`},
+			{"contentBlockDelta", `{"contentBlockIndex":0,"delta":{"reasoningContent":{"text":"thought"}}}`},
+			{"contentBlockDelta", `{"contentBlockIndex":0,"delta":{"reasoningContent":{"signature":"signature"}}}`},
+			{"contentBlockStop", `{"contentBlockIndex":0}`},
+			{"contentBlockDelta", `{"contentBlockIndex":1,"delta":{"reasoningContent":{"redactedContent":"Y2lwaGVy"}}}`},
+			{"contentBlockStop", `{"contentBlockIndex":1}`},
+			{"contentBlockStart", `{"contentBlockIndex":2,"start":{"toolUse":{"toolUseId":"call_1","name":"write"}}}`},
+			{"contentBlockDelta", `{"contentBlockIndex":2,"delta":{"toolUse":{"input":"{\"path\":\"a\"}"}}}`},
+			{"contentBlockStop", `{"contentBlockIndex":2}`},
+			{"messageStop", `{"stopReason":"tool_use"}`},
+			{"metadata", `{"usage":{"inputTokens":5,"outputTokens":2,"totalTokens":7}}`},
+		}
+		var buf bytes.Buffer
+		encoder := eventstream.NewEncoder()
+		for _, fixture := range fixtures {
+			var headers eventstream.Headers
+			headers.Set(":message-type", eventstream.StringValue("event"))
+			headers.Set(":event-type", eventstream.StringValue(fixture.event))
+			headers.Set(":content-type", eventstream.StringValue("application/json"))
+			if err := encoder.Encode(&buf, eventstream.Message{Headers: headers, Payload: []byte(fixture.payload)}); err != nil {
+				f.t.Fatal(err)
+			}
+		}
+		return &http.Response{StatusCode: 200, Header: http.Header{"Content-Type": []string{"application/vnd.amazon.eventstream"}}, Body: io.NopCloser(bytes.NewReader(buf.Bytes()))}, nil
+	}
+	return nil, fmt.Errorf("unexpected Bedrock request path %q", r.URL.Path)
+}
+
+func TestBedrockReasoningConverseRoundTrip(t *testing.T) {
+	t.Setenv("AWS_ACCESS_KEY_ID", "fixture")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "fixture")
+	t.Setenv("AWS_SESSION_TOKEN", "")
+	t.Setenv("AWS_BEARER_TOKEN_BEDROCK", "")
+	body := `{"model":"anthropic.claude-fixture","max_tokens":64,"bedrock_reasoning":true,"messages":[{"role":"assistant","bedrock_content":[{"type":"thinking","thinking":"thought","signature":"signature"},{"type":"text","text":"hello"},{"type":"redacted_thinking","data":"Y2lwaGVy"},{"type":"tool_use","id":"call_1","name":"write","input":{"path":"a"}}]}]}`
+	response, err := bedrockDo(context.Background(), "us-east-1", []byte(body), &http.Client{Transport: bedrockReasoningTransport{t: t}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		data, _ := io.ReadAll(response.Body)
+		t.Fatalf("status=%d body=%s", response.StatusCode, data)
+	}
+	var chat map[string]any
+	if err := json.NewDecoder(response.Body).Decode(&chat); err != nil {
+		t.Fatal(err)
+	}
+	if choices := valueAsSlice(chat["choices"]); len(choices) != 1 {
+		t.Fatalf("choices=%#v", choices)
+	} else if choice, ok := choices[0].(map[string]any); !ok || len(valueAsSlice(choice["message"].(map[string]any)["bedrock_content"])) != 4 {
+		t.Fatalf("ordered response=%#v", choices[0])
+	}
+}
+
+func TestBedrockReasoningConverseStreamRoundTrip(t *testing.T) {
+	t.Setenv("AWS_ACCESS_KEY_ID", "fixture")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "fixture")
+	t.Setenv("AWS_SESSION_TOKEN", "")
+	t.Setenv("AWS_BEARER_TOKEN_BEDROCK", "")
+	body := `{"model":"anthropic.claude-fixture","max_tokens":64,"stream":true,"bedrock_reasoning":true,"messages":[{"role":"assistant","bedrock_content":[{"type":"thinking","thinking":"thought","signature":"signature"}]}]}`
+	response, err := bedrockDo(context.Background(), "us-east-1", []byte(body), &http.Client{Transport: bedrockReasoningTransport{t: t, stream: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	data, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{"bedrock_events", "thinking_delta", "signature_delta", "[DONE]"} {
+		if !strings.Contains(string(data), expected) {
+			t.Fatalf("stream missing %q: %s", expected, data)
+		}
+	}
+}
+
+func TestBedrockAnthropicHandlerToolContinuation(t *testing.T) {
+	t.Setenv("AWS_ACCESS_KEY_ID", "fixture")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "fixture")
+	t.Setenv("AWS_SESSION_TOKEN", "")
+	t.Setenv("AWS_BEARER_TOKEN_BEDROCK", "")
+	calls := 0
+	target := anthropicToolTarget()
+	target.Model = "anthropic.claude-fixture"
+	svc := nativeStreamTestService(t, "https://bedrock-runtime.us-east-1.amazonaws.com", "openai-chat", []Target{target})
+	provider := svc.cfg.Provider[target.Provider]
+	provider.AuthScheme = "bedrock"
+	svc.cfg.Provider[target.Provider] = provider
+	svc.httpClient = &http.Client{Transport: bedrockReasoningTransport{t: t, stream: true, calls: &calls}}
+	first := `{"model":"native-stream","max_tokens":64,"stream":true,"messages":[{"role":"user","content":"write a file"}],"tools":[{"name":"write","input_schema":{"type":"object"}}]}`
+	request := httptest.NewRequest(http.MethodPost, "/anthropic/v1/messages", strings.NewReader(first))
+	request.Header.Set("Authorization", "Bearer "+testToken)
+	response := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("first status=%d body=%s", response.Code, response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), "event: content_block_start") || !strings.Contains(response.Body.String(), `"type":"thinking"`) || !strings.Contains(response.Body.String(), `"type":"signature_delta"`) || !strings.Contains(response.Body.String(), `"type":"redacted_thinking"`) || !strings.Contains(response.Body.String(), `"type":"tool_use"`) {
+		t.Fatalf("first response lost reasoning/tool call: %s", response.Body.String())
+	}
+	second := `{"model":"native-stream","max_tokens":64,"messages":[{"role":"user","content":"write a file"},{"role":"assistant","content":[{"type":"thinking","thinking":"thought","signature":"signature"},{"type":"redacted_thinking","data":"Y2lwaGVy"},{"type":"tool_use","id":"call_1","name":"write","input":{"path":"a"}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"call_1","content":"done"}]}],"tools":[{"name":"write","input_schema":{"type":"object"}}]}`
+	request = httptest.NewRequest(http.MethodPost, "/anthropic/v1/messages", strings.NewReader(second))
+	request.Header.Set("Authorization", "Bearer "+testToken)
+	response = httptest.NewRecorder()
+	svc.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK || calls != 2 {
+		t.Fatalf("continuation status=%d calls=%d body=%s", response.Code, calls, response.Body.String())
+	}
+}
+
+type bedrockTimeoutTransport struct{}
+
+func (bedrockTimeoutTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	<-r.Context().Done()
+	return nil, r.Context().Err()
+}
+
+func TestBedrockReasoningStreamTimeoutDoesNotComplete(t *testing.T) {
+	t.Setenv("AWS_ACCESS_KEY_ID", "fixture")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "fixture")
+	t.Setenv("AWS_SESSION_TOKEN", "")
+	t.Setenv("AWS_BEARER_TOKEN_BEDROCK", "")
+	ctx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	defer cancel()
+	body := `{"model":"anthropic.claude-fixture","max_tokens":64,"stream":true,"messages":[{"role":"user","content":"continue"}]}`
+	response, err := bedrockDo(ctx, "us-east-1", []byte(body), &http.Client{Transport: bedrockTimeoutTransport{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	data, _ := io.ReadAll(response.Body)
+	if response.StatusCode != http.StatusBadGateway || strings.Contains(string(data), "[DONE]") {
+		t.Fatalf("timeout status=%d body=%s", response.StatusCode, data)
+	}
+}
+
 func TestBedrockThrottleFailover(t *testing.T) {
 	t.Setenv("AWS_ACCESS_KEY_ID", "fixture")
 	t.Setenv("AWS_SECRET_ACCESS_KEY", "fixture")
 	t.Setenv("AWS_SESSION_TOKEN", "")
+	t.Setenv("AWS_BEARER_TOKEN_BEDROCK", "")
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/converse") {
 			w.Header().Set("x-amzn-errortype", "ThrottlingException")

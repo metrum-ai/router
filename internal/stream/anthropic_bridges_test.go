@@ -15,6 +15,38 @@ import (
 	"testing"
 )
 
+func TestChatUpstreamToAnthropicPreservesBedrockReasoningEvents(t *testing.T) {
+	translator := ChatUpstreamToAnthropicCaller{ResponseID: "msg_fixture", Model: "claude", IncludeReasoning: true}
+	if _, err := translator.Begin(TokenEstimate{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, fixture := range []struct {
+		chunk string
+		want  []string
+	}{
+		{`{"choices":[{"delta":{"bedrock_events":[{"event":"start","index":3,"type":"thinking"},{"event":"thinking_delta","index":3,"text":"thought"}]}}]}`, []string{"content_block_start", "content_block_delta"}},
+		{`{"choices":[{"delta":{"bedrock_events":[{"event":"signature_delta","index":3,"signature":"signed"},{"event":"stop","index":3}]}}]}`, []string{"content_block_delta", "content_block_stop"}},
+		{`{"choices":[{"delta":{"bedrock_events":[{"event":"start","index":4,"type":"redacted_thinking","data":"Y2lwaGVy"},{"event":"stop","index":4}]}}]}`, []string{"content_block_start", "content_block_stop"}},
+	} {
+		events, err := translator.Next(Event{Data: []byte(fixture.chunk)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(events) != len(fixture.want) {
+			got := make([]string, len(events))
+			for i := range events {
+				got[i] = events[i].Type
+			}
+			t.Fatalf("events=%v want=%v", got, fixture.want)
+		}
+		for i, event := range events {
+			if event.Type != fixture.want[i] {
+				t.Fatalf("event[%d]=%s want=%s", i, event.Type, fixture.want[i])
+			}
+		}
+	}
+}
+
 func anthropicTranslator(direction string) StreamTranslator {
 	switch direction {
 	case "chat-to-anthropic":

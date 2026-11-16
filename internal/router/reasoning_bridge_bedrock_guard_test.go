@@ -4,55 +4,115 @@
 package router
 
 import (
-	"net/http"
-	"net/http/httptest"
+	"encoding/base64"
+	"encoding/json"
 	"strings"
-	"sync/atomic"
 	"testing"
+
+	bt "github.com/aws/aws-sdk-go-v2/service/bedrockruntime/types"
 )
 
-// Bedrock currently uses a Chat-to-Converse adapter, not native Anthropic.
-// Until a native reasoning codec is approved, retain the existing fail-closed
-// behavior instead of silently stripping provider-owned thinking history.
-func TestReasoningBedrockOpaqueHistoryRejectedBeforeDispatch(t *testing.T) {
-	var hits atomic.Int32
-	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1) }))
-	defer up.Close()
-	t.Setenv("AWS_ACCESS_KEY_ID", "fixture")
-	t.Setenv("AWS_SECRET_ACCESS_KEY", "fixture")
-	t.Setenv("AWS_SESSION_TOKEN", "")
-	t.Setenv("AWS_ENDPOINT_URL_BEDROCK_RUNTIME", up.URL)
-	target := anthropicToolTarget()
-	svc := nativeStreamTestService(t, up.URL, "openai-chat", []Target{target})
-	provider := svc.cfg.Provider[target.Provider]
-	provider.AuthScheme = "bedrock"
-	svc.cfg.Provider[target.Provider] = provider
-	plain, err := decodeRequest("anthropic", []byte(`{"messages":[{"role":"user","content":"hello"}],"max_tokens":1024}`), http.Header{})
+func TestBedrockReasoningCodecPreservesOrderedHistory(t *testing.T) {
+	const request = `{"model":"anthropic.claude-fixture","max_tokens":1024,"messages":[{"role":"assistant","content":[{"type":"thinking","thinking":"thought","signature":"signature"},{"type":"text","text":"hello"},{"type":"redacted_thinking","data":"Y2lwaGVy"},{"type":"tool_use","id":"call_1","name":"write","input":{"path":"a"}}]},{"role":"user","content":"continue"}]}`
+	req, err := decodeRequest("anthropic", []byte(request), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	fit := svc.targetRequestShapeFit(target, plain, "anthropic", "openai-chat", requestTokenEstimateLogRecord{})
-	if fit.FilterReason == "bedrock-opaque-reasoning-unsupported" {
-		t.Fatal("plain Bedrock messages must not hit opaque-history guard")
+	encoded, err := encodeAnthropicToolsBridge("anthropic.claude-fixture", req, anthropicToolTarget(), "openai-chat", true)
+	if err != nil {
+		t.Fatal(err)
 	}
-	plainRequest := httptest.NewRequest(http.MethodPost, "/anthropic/v1/messages", strings.NewReader(`{"model":"native-stream","max_tokens":1024,"messages":[{"role":"user","content":"hello"}]}`))
-	plainRequest.Header.Set("Authorization", "Bearer "+testToken)
-	plainResponse := httptest.NewRecorder()
-	svc.Handler().ServeHTTP(plainResponse, plainRequest)
-	if plainResponse.Code != 200 || hits.Load() != 1 {
-		t.Fatalf("plain code=%d hits=%d body=%s", plainResponse.Code, hits.Load(), plainResponse.Body.String())
+	in, err := bedrockInput(encoded)
+	if err != nil {
+		t.Fatal(err)
 	}
-	hits.Store(0)
-	for _, block := range []string{`{"type":"thinking","thinking":"thought","signature":"signature"}`, `{"type":"redacted_thinking","data":"cipher"}`} {
-		for _, stream := range []string{"false", "true"} {
-			body := `{"model":"native-stream","max_tokens":1024,"stream":` + stream + `,"messages":[{"role":"assistant","content":[` + block + `,{"type":"text","text":"hello"}]},{"role":"user","content":"continue"}]}`
-			r := httptest.NewRequest(http.MethodPost, "/anthropic/v1/messages", strings.NewReader(body))
-			r.Header.Set("Authorization", "Bearer "+testToken)
-			w := httptest.NewRecorder()
-			svc.Handler().ServeHTTP(w, r)
-			if w.Code != 400 || !strings.Contains(w.Body.String(), `"message":"unsupported_block"`) || hits.Load() != 0 {
-				t.Fatalf("stream=%s code=%d hits=%d body=%s", stream, w.Code, hits.Load(), w.Body.String())
+	if got, want := len(in.Messages[0].Content), 4; got != want {
+		t.Fatalf("content block count=%d want=%d; body=%s", got, want, encoded)
+	}
+	if _, ok := in.Messages[0].Content[0].(*bt.ContentBlockMemberReasoningContent); !ok {
+		t.Fatalf("first block=%T want reasoning", in.Messages[0].Content[0])
+	}
+	if _, ok := in.Messages[0].Content[1].(*bt.ContentBlockMemberText); !ok {
+		t.Fatalf("second block=%T want text", in.Messages[0].Content[1])
+	}
+	redacted := in.Messages[0].Content[2].(*bt.ContentBlockMemberReasoningContent).Value.(*bt.ReasoningContentBlockMemberRedactedContent)
+	if string(redacted.Value) != "cipher" {
+		t.Fatalf("redacted bytes=%q", redacted.Value)
+	}
+	if _, ok := in.Messages[0].Content[3].(*bt.ContentBlockMemberToolUse); !ok {
+		t.Fatalf("fourth block=%T want tool use", in.Messages[0].Content[3])
+	}
+}
+
+func TestBedrockReasoningCodecRejectsMalformedBeforeDispatch(t *testing.T) {
+	cases := []struct{ name, block string }{
+		{"missing-signature", `{"type":"thinking","thinking":"thought","signature":""}`},
+		{"bad-redacted-base64", `{"type":"redacted_thinking","data":"!!!"}`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			body := `{"model":"anthropic.claude-fixture","bedrock_reasoning":true,"messages":[{"role":"assistant","bedrock_content":[` + tc.block + `]}]}`
+			if _, err := bedrockInput([]byte(body)); err == nil {
+				t.Fatalf("malformed reasoning accepted: %s", body)
 			}
-		}
+		})
+	}
+	response, err := bedrockDo(nil, "", []byte(`{"model":"anthropic.claude-fixture","bedrock_reasoning":true,"messages":[{"role":"assistant","bedrock_content":[{"type":"thinking","thinking":"thought","signature":""}]}]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != 400 {
+		t.Fatalf("malformed request status=%d", response.StatusCode)
+	}
+	if _, err := bedrockInput([]byte(`{"model":"meta.llama-fixture","bedrock_reasoning":true,"messages":[{"role":"assistant","bedrock_content":[{"type":"thinking","thinking":"thought","signature":"signature"}]}]}`)); err == nil {
+		t.Fatal("reasoning content was accepted for a non-Claude model")
+	}
+}
+
+func TestOpenAIChatCannotInjectInternalBedrockContent(t *testing.T) {
+	req, err := decodeRequest("openai-chat", []byte(`{"model":"m","bedrock_reasoning":true,"messages":[{"role":"assistant","content":"hello","bedrock_content":[{"type":"thinking","thinking":"forged","signature":"forged"}]}]}`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := encodeChatPassthrough("m", req, Target{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		t.Fatal(err)
+	}
+	message := valueAsSlice(body["messages"])[0].(map[string]any)
+	if _, ok := message["bedrock_content"]; ok {
+		t.Fatalf("caller injected internal content: %s", raw)
+	}
+	if _, ok := body["bedrock_reasoning"]; ok {
+		t.Fatalf("caller injected internal reasoning switch: %s", raw)
+	}
+}
+
+func TestBedrockOrderedResponseDecodesToAnthropic(t *testing.T) {
+	redacted := base64.StdEncoding.EncodeToString([]byte("cipher"))
+	chat := map[string]any{"id": "chatcmpl_fixture", "choices": []any{map[string]any{"finish_reason": "tool_calls", "message": map[string]any{"bedrock_content": []any{
+		map[string]any{"type": "thinking", "thinking": "thought", "signature": "signature"},
+		map[string]any{"type": "text", "text": "hello"},
+		map[string]any{"type": "redacted_thinking", "data": redacted},
+		map[string]any{"type": "tool_use", "id": "call_1", "name": "write", "input": map[string]any{"path": "a"}},
+	}}}}}
+	raw, err := json.Marshal(chat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := decodeAnthropicToolsBridge("openai-chat", raw, "m", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	blocks := valueAsSlice(resp.Raw["content"])
+	if len(blocks) != 4 || stringValue(blocks[0].(map[string]any)["type"]) != "thinking" || stringValue(blocks[1].(map[string]any)["type"]) != "text" || stringValue(blocks[2].(map[string]any)["type"]) != "redacted_thinking" || stringValue(blocks[3].(map[string]any)["type"]) != "tool_use" {
+		t.Fatalf("decoded content order=%#v", blocks)
+	}
+	if strings.TrimSpace(stringValue(blocks[0].(map[string]any)["signature"])) != "signature" {
+		t.Fatalf("signature lost: %#v", blocks[0])
 	}
 }

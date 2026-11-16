@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- Preserve Anthropic Bedrock `thinking` and `redacted_thinking` history, signatures, ordering, and streamed reasoning blocks through Converse tool continuations. Malformed blocks fail before AWS dispatch.
+
 ### Fixed
 
 - `router-migrate --json` keeps stdout valid JSON by directing GORM diagnostics

@@ -3227,7 +3227,11 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		EndpointHost:     endpointHost(provider.BaseURL),
 		AttemptTimeoutMS: s.attemptTimeoutMS(groupName, target),
 	}
-	cleanReq, historyErr := foreignReasoningHistory(req, callerDialect, outDialect)
+	cleanReq := req
+	var historyErr error
+	if !(normalizeDialect(callerDialect) == "anthropic" && isBedrock(provider) && isBedrockClaudeModel(target.Model)) {
+		cleanReq, historyErr = foreignReasoningHistory(req, callerDialect, outDialect)
+	}
 	if historyErr != nil {
 		attempt.ErrorClass = "encode_error"
 		return nil, attempt, upstreamError{Class: "encode_error", Message: "unable to sanitize cross-provider history", Err: historyErr}
@@ -3302,7 +3306,7 @@ func (s *Service) callOne(ctx context.Context, w http.ResponseWriter, rc *reques
 		bridgeReq.Stream = bridgeStream
 		upReqBody, err = encodeChatToResponsesBridge(target.Model, &bridgeReq, target, chatResponsesSession.PreviousResponseID)
 	} else if callerDialect == "anthropic" && anthropicToolsBridgeEnabled(target, outDialect) {
-		upReqBody, err = encodeAnthropicToolsBridge(target.Model, req, target, outDialect)
+		upReqBody, err = encodeAnthropicToolsBridge(target.Model, req, target, outDialect, isBedrock(s.cfg.Provider[target.Provider]))
 	} else {
 		upReq := req
 		if translatedOpenAI && outDialect == "anthropic" {
