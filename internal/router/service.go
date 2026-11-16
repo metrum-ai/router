@@ -505,6 +505,20 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 	}
 	s.routes()
 	s.initAdminPlane()
+	// Admin v1 is mounted only after machine auth has been initialized. A
+	// listener with no configured authenticator remains health-only and fails
+	// closed instead of making otherwise valid non-admin service configs fail
+	// during construction.
+	if s.adminPlaneEnabled() && s.AdminAuthenticator() != nil {
+		var mountErr error
+		s.RegisterAdminRoutes(func(m *AdminMux) {
+			mountErr = s.MountAdminV1(m, s.AdminAuthenticator(), s.Authorize)
+		})
+		if mountErr != nil {
+			s.Close()
+			return nil, fmt.Errorf("mount admin v1: %w", mountErr)
+		}
+	}
 	// Admin audit retention runs once per database that holds admin audit tables, and stops
 	// with the service.
 	s.StartAdminAuditJanitors()
@@ -524,11 +538,6 @@ func (s *Service) Handler() http.Handler {
 	// Event streams get a progress deadline instead of the server's absolute
 	// write deadline; unary responses are untouched (#759).
 	var h http.Handler = s.withStreamProgressDeadline(s.mux)
-	if s.cfg != nil && s.cfg.Admin.legacyRoutesEnabled() {
-		// The legacy machine admin routes keep their v4.7 handlers and decisions
-		// and only gain Deprecation/Sunset headers (ACP-009).
-		h = s.withLegacyAdminDeprecation(h)
-	}
 	return h
 }
 
@@ -852,13 +861,6 @@ func (s *Service) routes() {
 	s.mux.HandleFunc("GET /admin/auth/check", s.handleAdminAuthCheck)
 	s.mux.HandleFunc("GET /admin/reports", s.handleAdminReports)
 	s.mux.HandleFunc("GET /admin/reports/", s.handleAdminReports)
-	// The legacy machine admin routes stay on the serving port behind
-	// admin.legacy_routes_on_serving_port (ACP-009). The browser reports UI and
-	// the /admin/auth/* session routes are registered above and are not part of
-	// the control plane, so the flag never removes them.
-	if s.cfg.Admin.legacyRoutesEnabled() {
-		s.registerLegacyMachineAdminRoutes()
-	}
 	s.mux.HandleFunc("DELETE /v1/content-captures/{request_id}", s.handleContentCaptureDelete)
 	s.mux.HandleFunc("POST /v1/content-captures/purge-expired", s.handleContentCapturePurgeExpired)
 	s.mux.HandleFunc("POST /anthropic/v1/messages/count_tokens", s.handleCountTokens)
@@ -909,7 +911,19 @@ func (s *Service) routes() {
 		}
 	}
 	s.mux.HandleFunc("GET /.well-known/security.txt", securityTextHandler)
-	s.mux.Handle("GET /", docsHandler())
+	docs := docsHandler()
+	s.mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/admin/") {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", http.MethodGet)
+			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+			return
+		}
+		docs.ServeHTTP(w, r)
+	}))
 }
 
 func healthPayload(ok bool, errorText string) map[string]any {

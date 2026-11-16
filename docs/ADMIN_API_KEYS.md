@@ -7,6 +7,10 @@ API keys (`rtr_metrum_*`, used on `/v1/*` model APIs) and from
 provider/upstream credentials (`api_key_env` references, which are never
 accepted on inbound requests).
 
+**v5.0.0 transport:** machine admin operations use `/admin/v1` on the admin listener,
+which defaults to `127.0.0.1:8081`. The legacy machine `/admin/*` routes were removed from the
+serving port; `/admin/auth/*` and the browser reports UI remain there.
+
 - Admin keys authenticate `/admin/*` routes only. They can never call the
   caller-facing model APIs, and caller or provider keys are never accepted on
   admin routes.

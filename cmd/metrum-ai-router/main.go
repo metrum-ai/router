@@ -45,7 +45,8 @@ func main() {
 	defer svc.Close()
 
 	// The admin control plane gets its own listener, deadlines and drain
-	// (#809). It is opt-in, so a v4.7 configuration starts exactly one server.
+	// (#809). It starts on loopback by default; set admin.enabled: false to keep
+	// only the serving listener.
 	adminPlane, err := startAdminPlane(cfg, svc, *adminListen)
 	if err != nil {
 		log.Fatalf("admin plane: %v", err)

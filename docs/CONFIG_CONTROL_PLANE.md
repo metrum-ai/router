@@ -119,6 +119,18 @@ job must first apply the online prefix, take the approved backup, then
 explicitly invoke `ApplyMaintenancePending` in a scheduled maintenance window
 and finish with `Verify`; it must never be run by router startup.
 
+## v5.0.0 stored-config cleanup
+
+The v5.0.0 router-config schema adds maintenance migration `2026111601` (schema
+13). It removes `admin.legacy_routes_on_serving_port` and `admin.legacy_sunset`
+from every stored canonical document and recalculates each document's content
+hash. For database-mode deployments, back up the router-config database, apply
+the online prefix with `router-migrate --scope router-config --action apply`,
+then run `router-migrate --scope router-config --action maintenance
+--backup-evidence-ref <backup-reference>` in a maintenance window and verify
+before starting v5.0.0. File-mode deployments remove the keys from their source
+configuration and do not need this database migration.
+
 ## Phase 6: DB-backed serving source of truth
 
 Phase 6 raises the `router_config` compatibility window to `MaxSchema: 6` and

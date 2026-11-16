@@ -17,6 +17,7 @@ from preflight import preflight
 import time
 import urllib.error
 import urllib.request
+import uuid
 import zipfile
 from datetime import datetime, timezone
 from jsonschema import Draft202012Validator
@@ -42,7 +43,8 @@ def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 def request(base, path, payload, key=None):
-    headers = {'Content-Type': 'application/json', 'User-Agent': 'acme-router-loop/1'}
+    headers = {'Content-Type': 'application/json', 'User-Agent': 'acme-router-loop/1',
+               'Idempotency-Key': 'acme-router-loop-' + uuid.uuid4().hex}
     if key:
         headers['Authorization'] = 'Bearer ' + key
     else:
@@ -187,7 +189,7 @@ def main():
                 time.sleep(.25)
                 for attempt in range(20):
                     try:
-                        request(args.base, '/admin/training/outcomes/' + result['request_ids'][-1], label)
+                        request('http://127.0.0.1:18412', '/admin/v1/training/outcomes/' + result['request_ids'][-1], label, os.environ['TRACE_ADMIN_KEY'])
                         captured = True
                         break
                     except urllib.error.HTTPError as error:
@@ -204,7 +206,7 @@ def main():
     filters = {'project': 'acme-support', 'group': 'support-agent', 'from': boundaries[0],
                'validation_from': boundaries[1], 'test_from': boundaries[2], 'to': boundaries[3],
                'success_only': True, 'min_quality': 1, 'teacher_terms_decision': DECISION, 'task_source': source}
-    _, _, raw = request(args.base, '/admin/training/export', filters)
+    _, _, raw = request('http://127.0.0.1:18412', '/admin/v1/training/export', filters, os.environ['TRACE_ADMIN_KEY'])
     (args.out / 'dataset.zip').write_bytes(raw)
     manifest = validate_archive(raw)
     with zipfile.ZipFile(io.BytesIO(raw)) as archive:

@@ -104,10 +104,10 @@ replay remain separately registered; completion is not semantic correctness.
 
 ## API and dataset contract
 
-- `POST /admin/training/outcomes/{request_id}` requires deployment-wide admin
+- `POST /admin/v1/training/outcomes/{request_id}` on the authenticated admin listener requires deployment-wide admin
   `content:training` action `label`. Only an existing complete encrypted,
   unexpired capture can receive an outcome. Caller keys cannot label themselves.
-- `POST /admin/training/export` requires deployment-wide admin `content:training`
+- `POST /admin/v1/training/export` on the authenticated admin listener requires deployment-wide admin `content:training`
   action `export`. An example explicit policy is
   `p, basic:trace-admin, *, content:training, export|label`.
   Ordinary report/export/delete permissions do not imply training permissions.
