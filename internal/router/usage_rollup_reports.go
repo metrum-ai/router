@@ -91,6 +91,12 @@ func rollupReportSelect(b adminSavingsBaselineDTO) string {
 		}
 		parts = append(parts, "SUM("+expr+") AS "+column)
 	}
+	// Recomputed-input columns were added after the original token breakdown
+	// migration, so keep them separate from tokenBreakdownFields (which is also
+	// used to create older rollup schemas).
+	for _, column := range []string{"recomputed_input_tokens", "recomputed_input_reported_request_count"} {
+		parts = append(parts, "SUM("+column+") AS "+column)
+	}
 	for _, pair := range [][2]string{
 		{"source_request_count", "calls"}, {"error_count", "errors"}, {"stream_count", "streams"}, {"cache_hit_count", "cache_hits"}, {"cache_miss_count", "cache_misses"}, {"cache_bypass_count", "cache_bypass"}, {"fallback_count", "fallbacks"}, {"attempt_count", "attempts"},
 		{"input_tokens", "input_tokens"}, {"output_tokens", "output_tokens"}, {"total_tokens", "total_tokens"}, {"input_image_count", "input_image_count"}, {"input_image_tokens", "input_image_tokens"},

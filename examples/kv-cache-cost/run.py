@@ -101,7 +101,7 @@ def main():
                       'output_price_per_million_usd':item['output'],'pricing_source':item['source'],'pricing_updated_at':s['price_date']}
                     provider={'base_url':item['base_url'],'dialect':'openai-chat','api_key':item['api_key'],'api_key_env':item['api_key_env'],
                       'models':{key:metadata[key]}}
-                    if item['provider']=='openrouter':provider['headers']={'X-Title':'Metrum Router KV Cache Example'}
+                    if item['provider']=='openrouter':provider['headers']={'X-Title':'Metrum AI Router KV Cache Example'}
                     providers[item['provider']]=provider
             else:
                 for key in ('a','b'):

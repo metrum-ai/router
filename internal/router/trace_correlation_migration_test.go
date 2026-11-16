@@ -23,29 +23,37 @@ func clearTraceCorrelationMigrationLedger(t *testing.T, db *gorm.DB) {
 
 func TestTraceCorrelationSchema18SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) {
 	cfg := uncachedSQLiteUsageDBConfigForTest(filepath.Join(t.TempDir(), "usage.sqlite"))
-	store, err := OpenUsageStore(cfg)
+	db, err := openUsageDB(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := store.db.Create(recordFromRow(rowFromRecord(logRecord{RequestID: "legacy-trace-row", TS: time.Now().UTC().Format(time.RFC3339)}))).Error; err != nil {
-		t.Fatal(err)
+	definitionsThrough17 := make([]MigrationDefinition, 0, len(usageMigrationDefinitions)-2)
+	for _, definition := range usageMigrationDefinitions {
+		if definition.SchemaVersion <= 17 {
+			definitionsThrough17 = append(definitionsThrough17, definition)
+		}
 	}
-	if err := revertTraceCorrelationMigration(store.db); err != nil {
-		t.Fatal(err)
-	}
-	clearTraceCorrelationMigrationLedger(t, store.db)
-	if err := verifySecurityPostureReportMigration(store.db); err != nil {
-		t.Fatalf("schema 17 postcondition: %v", err)
-	}
-	if err := store.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	runner, closeDB, err := UsageMigrationRunner(cfg)
+	runner, err := NewMigrationRunnerWithDataJobs(db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 17, MinData: 0, MaxData: 1}, definitionsThrough17, usageDataJobDefinitions)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer closeDB()
+	if err := runner.ApplyPending("trace-correlation-schema-test"); err != nil {
+		t.Fatal(err)
+	}
+	legacyRow := recordFromRow(rowFromRecord(logRecord{RequestID: "legacy-trace-row", TS: time.Now().UTC().Format(time.RFC3339)}))
+	if err := db.Omit("TraceID", "SpanID", "ParentSpanID", "RecomputedInputTokens").Create(legacyRow).Error; err != nil {
+		t.Fatal(err)
+	}
+	definitionsThrough18 := make([]MigrationDefinition, 0, len(usageMigrationDefinitions)-1)
+	for _, definition := range usageMigrationDefinitions {
+		if definition.SchemaVersion <= 18 {
+			definitionsThrough18 = append(definitionsThrough18, definition)
+		}
+	}
+	runner, err = NewMigrationRunnerWithDataJobs(runner.db, usageMigrationScope, MigrationCompatibility{MinSchema: 0, MaxSchema: 18, MinData: 0, MaxData: 1}, definitionsThrough18, usageDataJobDefinitions)
+	if err != nil {
+		t.Fatal(err)
+	}
 	before, err := runner.Status()
 	if err != nil || before.SchemaVersion != 17 {
 		t.Fatalf("before: %+v err=%v", before, err)
@@ -65,7 +73,7 @@ func TestTraceCorrelationSchema18SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) 
 		t.Fatalf("legacy row=%+v err=%v", legacy, err)
 	}
 	row := recordFromRow(rowFromRecord(logRecord{RequestID: "traced-row", TS: time.Now().UTC().Format(time.RFC3339), TraceID: "4bf92f3577b34da6a3ce929d0e0e4736", SpanID: "a1b2c3d4e5f60718", ParentSpanID: "00f067aa0ba902b7"}))
-	if err := runner.db.Create(row).Error; err != nil {
+	if err := runner.db.Omit("RecomputedInputTokens").Create(row).Error; err != nil {
 		t.Fatal(err)
 	}
 	var got usageRecord
@@ -73,9 +81,9 @@ func TestTraceCorrelationSchema18SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) 
 		t.Fatalf("trace row=%+v want=%+v err=%v", got, row, err)
 	}
 
-	previousDefinitions := make([]MigrationDefinition, 0, len(usageMigrationDefinitions)-1)
+	previousDefinitions := make([]MigrationDefinition, 0, len(usageMigrationDefinitions)-2)
 	for _, definition := range usageMigrationDefinitions {
-		if definition.ID != usageTraceCorrelationMigrationID {
+		if definition.SchemaVersion <= 17 {
 			previousDefinitions = append(previousDefinitions, definition)
 		}
 	}
@@ -98,5 +106,8 @@ func TestTraceCorrelationSchema18SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) 
 	oldStatus, err = old.Status()
 	if err != nil || !oldStatus.Compatible || oldStatus.SchemaVersion != 17 {
 		t.Fatalf("schema 17 binary should accept reversed database: %+v err=%v", oldStatus, err)
+	}
+	if sqlDB, err := db.DB(); err == nil {
+		_ = sqlDB.Close()
 	}
 }
