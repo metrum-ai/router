@@ -242,11 +242,11 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 					h.calls.addDelta("openai-chat", 0, "", stringValue(legacy["name"]), stringValue(legacy["arguments"]))
 					delete(delta, "function_call")
 				}
+				if hasUnknownToolCallDelta(delta) {
+					return h.failClosedUnsupportedTool("unknown_chat_tool_delta")
+				}
 				rawCalls, _ := delta["tool_calls"].([]any)
 				if len(rawCalls) == 0 {
-					if len(delta) != 0 && hasUnknownToolCallDelta(delta) {
-						return h.failClosedUnsupportedTool("unknown_chat_tool_delta")
-					}
 					if len(heldChoices) > 0 {
 						if len(delta) == 0 {
 							choice["delta"] = map[string]any{}
@@ -384,6 +384,9 @@ func (h *streamToolCallHold) failClosedUnsupportedTool(kind string) ([]stream.Ev
 
 func hasUnknownToolCallDelta(delta map[string]any) bool {
 	for key := range delta {
+		if key == "tool_calls" {
+			continue
+		}
 		if strings.Contains(key, "tool_call") || strings.Contains(key, "function_call") || strings.Contains(key, "tool") {
 			return true
 		}

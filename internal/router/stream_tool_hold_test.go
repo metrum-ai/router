@@ -118,6 +118,11 @@ func TestStreamToolCallHoldLegacyChatFunctionCallAndUnknownDelta(t *testing.T) {
 	if out, err = hold.apply(unknown); err == nil || len(out) != 0 {
 		t.Fatalf("unknown tool delta escaped: out=%v err=%v", out, err)
 	}
+	knownAndUnknown := newStreamToolCallHold(ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20}, nil, toolValidationOptions{})
+	combined := stream.Event{Data: []byte(`{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"c","function":{"name":"lookup","arguments":"{}"}}],"future_tool_delta":{"secret":"unsafe"}},"finish_reason":null}]}`)}
+	if out, err = knownAndUnknown.apply(combined); err == nil || len(out) != 0 {
+		t.Fatalf("unknown delta accompanying known calls escaped: out=%v err=%v", out, err)
+	}
 }
 
 func TestStreamToolCallHoldProcessBudgetExhaustionReleasesReservation(t *testing.T) {
