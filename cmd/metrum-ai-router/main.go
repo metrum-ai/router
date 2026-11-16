@@ -69,7 +69,10 @@ func main() {
 			log.Fatalf("tls: %v", err)
 		}
 		go manager.Run(tlsCtx)
-		srv.TLSConfig = manager.TLSConfig()
+		srv.TLSConfig, err = router.ServingTLSConfig(manager.TLSConfig(), cfg.Server.TLS)
+		if err != nil {
+			log.Fatalf("tls: %v", err)
+		}
 		go func() {
 			log.Printf("Metrum AI Router listening on %s (TLS)", cfg.Server.Listen)
 			errs <- srv.ListenAndServeTLS("", "")

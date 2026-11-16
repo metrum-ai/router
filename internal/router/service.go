@@ -31,7 +31,9 @@ import (
 	"time"
 
 	"github.com/metrum-ai/router/internal/buildinfo"
+	detect "github.com/metrum-ai/router/internal/security/detect"
 	"github.com/metrum-ai/router/internal/tlsacme"
+	"github.com/metrum-ai/router/pkg/detector"
 
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -101,22 +103,28 @@ type Service struct {
 	adminAuditSink       func(AdminAuditEvent)
 	// adminAuthorizeFn is the authorization seam the admin listener installs; the reports
 	// surface uses it so its per-domain decisions carry the request context.
-	adminAuthorizeFn   func(context.Context, Principal, string, string, string) error
-	adminIdempotency   atomic.Value
-	trafficShape       *trafficShapeManager
-	bridgeSessions     *bridgeSessionBackends
-	observations       *dynamicObservationStore
-	toolReliability    *toolReliabilityStore
-	affinity           *dynamicAffinityStore
-	responsesAffinity  *responsesAffinities
-	shaping            *upstreamShapeManager
-	providerSpend      *providerSpendBreaker
-	contentCaptureKeys contentCaptureKeyResolver
-	reportCursor       [32]byte
-	tlsManager         *tlsacme.Manager
-	configControlPlane *gorm.DB
-	configSnapshot     *ConfigSnapshot
-	configDBCloser     func() error
+	adminAuthorizeFn       func(context.Context, Principal, string, string, string) error
+	adminIdempotency       atomic.Value
+	trafficShape           *trafficShapeManager
+	bridgeSessions         *bridgeSessionBackends
+	observations           *dynamicObservationStore
+	toolReliability        *toolReliabilityStore
+	affinity               *dynamicAffinityStore
+	responsesAffinity      *responsesAffinities
+	detectorDispatcher     *detect.Dispatcher
+	detectors              []detectorRuntime
+	detectorMu             sync.RWMutex
+	detectorDropped        atomic.Uint64
+	detectorMetricsEnabled atomic.Bool
+	detectorResultConsumer func(detect.Result)
+	shaping                *upstreamShapeManager
+	providerSpend          *providerSpendBreaker
+	contentCaptureKeys     contentCaptureKeyResolver
+	reportCursor           [32]byte
+	tlsManager             *tlsacme.Manager
+	configControlPlane     *gorm.DB
+	configSnapshot         *ConfigSnapshot
+	configDBCloser         func() error
 	// adminAuditJanitorStop stops the retention purge jobs at shutdown, and
 	// adminAuditJanitorDone reports when each janitor goroutine has exited.
 	adminAuditJanitorStop chan struct{}
@@ -211,9 +219,11 @@ type requestContext struct {
 	bridgeSessionHeaders   map[string]string
 	via                    []string
 	securityRecorded       bool
+	securityReason         string
 	pacedUpstreamStream    bool
 	maxSSELineBytes        int
 	chatStreamIncludeUsage bool
+	detectorTinyRequest    bool
 	traceSeq               int
 	// wrapStreamFrame binds opaque reasoning values in streamed frames (#622).
 	wrapStreamFrame func([]byte) []byte
@@ -233,6 +243,7 @@ type requestContext struct {
 	// affinityTerminal records the final lifecycle state of a streamed stored
 	// response, once its id has been captured.
 	affinityTerminal func(state string)
+	detectorSegments []detector.Segment
 }
 
 type upstreamError struct {
@@ -292,7 +303,7 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
-	tlsManager, err := NewListenerTLSManager(cfg.Server.TLS, tlsacme.ListenerServing, "server.tls")
+	tlsManager, err := NewListenerTLSManager(cfg.Server.TLS.ListenerTLSConfig, tlsacme.ListenerServing, "server.tls")
 	if err != nil {
 		return nil, err
 	}
@@ -444,6 +455,10 @@ func newServiceWithUsageStore(cfg *Config, openUsageStore func(UsageDBConfig) (*
 		}
 	}
 	s.loadExternalPolicies()
+	if err := s.initDetectors(); err != nil {
+		s.Close()
+		return nil, err
+	}
 	s.callerAuth.rebuild(callerRuntimesInConfigOrder(cfg, quota.callers))
 	for _, user := range cfg.Server.AdminAuth.Basic.Users {
 		subject := strings.TrimSpace(user.Subject)
@@ -549,6 +564,14 @@ func (s *Service) Close() {
 	if s.policySyncStop != nil {
 		s.policySyncStop()
 		s.policySyncStop = nil
+	}
+	s.detectorMu.Lock()
+	detectorDispatcher := s.detectorDispatcher
+	s.detectorDispatcher = nil
+	s.detectors = nil
+	s.detectorMu.Unlock()
+	if detectorDispatcher != nil {
+		detectorDispatcher.Close()
 	}
 	_ = s.quota.Close()
 	_ = s.logger.Close()
@@ -738,6 +761,9 @@ func (s *Service) reloadActiveConfigFromDB() error {
 	}
 	s.recordLoadedConfigRevision()
 	s.loadShadowRunsFromDB()
+	if err := s.replaceDetectorConfig(newCfg.Server.Detectors); err != nil {
+		return fmt.Errorf("reload active config: rebuild detectors: %w", err)
+	}
 	if adminListenerSettingsDiffer(s.cfg.Admin, newCfg.Admin) {
 		// The admin listener binds once; a reload cannot rebind it. Say so
 		// instead of leaving a half-applied control plane.
@@ -1328,6 +1354,9 @@ func (s *Service) writeMetricsPayload(w http.ResponseWriter, r *http.Request, rc
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.WriteString(w, s.metrics.Prometheus(s.trafficShape, migration))
+	if enabled, detectorDrops := s.detectorDropMetrics(); enabled {
+		_, _ = fmt.Fprintf(w, "# HELP metrum_ai_router_detector_dropped_total Detector events dropped because the bounded queue was full.\n# TYPE metrum_ai_router_detector_dropped_total counter\nmetrum_ai_router_detector_dropped_total %d\n", detectorDrops)
+	}
 	if s.tlsManager != nil {
 		// Empty unless a listener terminates TLS itself, so a v4.7 configuration keeps
 		// byte-identical /metrics output.
@@ -1603,6 +1632,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		s.writeError(w, rc, http.StatusBadRequest, "invalid-body")
 		return
 	}
+	rc.detectorTinyRequest = len(body) <= 256
 	body, err = decodeIdentifierFields(body, s.identifiers)
 	if err != nil {
 		rc.trace("identifier_decode", err.Error(), Target{}, 0, http.StatusBadRequest, err.Error(), false, 0)
@@ -1680,6 +1710,7 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		if exists {
 			reason = "model-not-allowed"
 		}
+		s.dispatchSecurityDetectorEvent(detector.Event{SchemaVersion: detector.SchemaVersion, RequestID: rc.id, CallerID: rc.caller.cfg.ID, Kind: "model_denied", ObservedAt: time.Now().UTC().Format(time.RFC3339Nano), KeyID: opaqueDetectorKeyID(rc.rec.TokenID), DeniedGroup: req.Model, SourceIP: rc.clientIP.Address})
 		if dialect == "openai-chat" || dialect == "openai-responses" {
 			s.writeModelNotFound(w, rc, req.Model, reason)
 		} else if dialect == "anthropic" {
@@ -1887,6 +1918,9 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 		rc.rec.Warnings = appendWarning(rc.rec.Warnings, "pii-filter-applied")
 		rc.rec.Warnings = append(rc.rec.Warnings, piiResult.Warnings...)
 		rc.trace("pii_filter_applied", fmt.Sprintf("replacements=%d rules=%d", piiResult.Replacements, piiRuleCount(piiResult)), Target{}, 0, 0, "", false, 0)
+	}
+	if s.detectorSegmentsEnabled() {
+		rc.detectorSegments = extractDetectorSegments(req)
 	}
 	captureDecision := s.contentCaptureFor(rc.caller, req.Model, group)
 	s.captureRequestContent(rc, req, r.Header, captureDecision)
@@ -2405,7 +2439,20 @@ func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) 
 	}
 	caller, tokenID, err := s.authenticate(r.Header.Get("Authorization"), r.Header.Get("X-API-Key"))
 	ipInfo := resolveClientIP(r, s.cfg.Server.ClientIP)
+	securityReason := ""
+	if err == nil {
+		bindingIPConfig := s.cfg.Server.ClientIP
+		bindingIPConfig.StoreIP = nil
+		err = enforceCallerBinding(caller, r, resolveClientIP(r, bindingIPConfig), s.cfg.Server.ClientIP)
+	}
+	if err != nil {
+		var policyErr authPolicyError
+		if errors.As(err, &policyErr) {
+			securityReason = policyErr.securityReason
+		}
+	}
 	rc := s.newRequestContext(r, dialect, id, receiveAt, ipInfo)
+	rc.securityReason = securityReason
 	rc.caller = caller
 	// Mark count requests before authentication errors can be recorded.
 	switch r.URL.Path {
@@ -2433,6 +2480,13 @@ func (s *Service) begin(w http.ResponseWriter, r *http.Request, dialect string) 
 			code = policyErr.code
 		}
 		rc.trace("auth_rejected", err.Error(), Target{}, 0, status, code, false, 0)
+		if status == http.StatusUnauthorized {
+			keyID := ""
+			if tokenID != "missing-token" && tokenID != "invalid-token" {
+				keyID = opaqueDetectorKeyID(tokenID)
+			}
+			s.dispatchSecurityDetectorEvent(detector.Event{SchemaVersion: detector.SchemaVersion, RequestID: rc.id, CallerID: rc.rec.CallerID, Kind: "auth_failure", ObservedAt: time.Now().UTC().Format(time.RFC3339Nano), SourceIP: rc.clientIP.Address, KeyID: keyID})
+		}
 		s.writeError(w, rc, status, code)
 		return nil, false
 	}
@@ -2488,6 +2542,7 @@ func (s *Service) finish(rc *requestContext, status int, code *string) {
 	s.logger.Emit(rc.rec)
 	s.usage.Emit(rc.rec)
 	s.dispatchExternalPolicyFeedback(rc)
+	s.dispatchCompletedRequestDetectors(rc)
 	if !rc.securityRecorded {
 		codeText := ""
 		if rc.rec.Error != nil {
@@ -2499,6 +2554,9 @@ func (s *Service) finish(rc *requestContext, status int, code *string) {
 }
 
 func (s *Service) recordProviderSpendEvent(provider, action, window string, ceiling float64) {
+	if action == "trip" {
+		s.dispatchBuiltinDetectorEvent(detect.EventSpendBreakerTripped, "", "", provider)
+	}
 	if !s.securityReportsEnabled() {
 		return
 	}
@@ -2659,8 +2717,9 @@ func (s *Service) authenticate(header, apiKey string) (*callerRuntime, string, e
 }
 
 type authPolicyError struct {
-	status int
-	code   string
+	status         int
+	code           string
+	securityReason string
 }
 
 func (e authPolicyError) Error() string {

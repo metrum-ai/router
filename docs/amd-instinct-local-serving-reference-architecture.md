@@ -36,7 +36,7 @@ configs, private hostnames, or SSH details in tickets, PRs, or diagrams.
 | Instinct MI355X × 8, allocatable `amd.com/gpu=8` | Validated (PR #954) | Safe-scalar live note in the AMD E2E runbook |
 | AMD GPU Operator `v1.5.1`, device-plugin mode, host-owned driver | Validated (PR #954) | `driver.enable: false`; DRA disabled |
 | Metrics exporter / test runner / DCM / remediation | Proposed | Explicitly **disabled** in checked-in `gpu-operator-values.yaml` |
-| Three one-GPU vLLM/ROCm Services (`local-tiny` / `local-small-chat` / `local-small-coder`) | Validated (PR #954) | Image `vllm/vllm-openai-rocm:v0.25.0`, `--max-model-len 8192` |
+| Three one-GPU vLLM/ROCm Services (`local-tiny` / `local-small-chat` / `local-small-coder`) | Hardware-validated on previous image (PR #954) | The checked-in pin moved to `vllm/vllm-openai-rocm:v0.33.0` for security advisories; revalidation on v0.33.0 is pending. The hardware run used v0.25.0; `--max-model-len 8192`. |
 | Static model-group routing, Chat non-stream on three groups | Validated (PR #954) | Stream validated on `local-tiny` |
 | Auth negatives (`401` / `403`), `/readyz` 200 | Validated (PR #954) | |
 | NetworkPolicy manifests | Validated (PR #954) as manifests | Enforcement is **CNI-dependent** (proposed operational caveat) |
@@ -56,12 +56,14 @@ configs, private hostnames, or SSH details in tickets, PRs, or diagrams.
 
 | Scope | Pins / versions |
 |---|---|
-| **PR #954 reproducible baseline** | AMD GPU Operator `v1.5.1`; `vllm/vllm-openai-rocm:v0.25.0`; k3s live note `v1.36.3+k3s1`; three Qwen text models above |
+| **PR #954 hardware run** | AMD GPU Operator `v1.5.1`; previous image `vllm/vllm-openai-rocm:v0.25.0`; k3s live note `v1.36.3+k3s1`; three Qwen text models above |
+| **Current image pin** | `vllm/vllm-openai-rocm:v0.33.0`, moved for security advisories; hardware revalidation is pending |
 | **Public reference (retrieved 2026-09-02)** | Operator docs list MI350P/X/MI355X; ROCm ecosystem docs also document newer vLLM/ROCm combinations; Dell InfoHub snippets cite cluster stacks such as Ubuntu 24.04 and Automation Platform 2.0 |
 | **Proposed scale-out** | Upstream llm-d ROCm image tags and GAIE CRD versions chosen at install time; not pinned by #954 |
 
-Newer public versions are **reference inputs**, not silent replacements for the
-validated baseline.
+The checked-in AMD image pin is v0.33.0 for security advisories. The hardware
+results below describe the previous v0.25.0 image; revalidation on v0.33.0 is
+pending.
 
 ---
 
@@ -287,10 +289,13 @@ ServiceMonitor is documented separately; enabling it is **Proposed** relative to
 
 ## 6. Serving modes
 
-### 6.1 Mode A — Validated baseline (PR #954)
+### 6.1 Mode A — Hardware run on the previous image (PR #954)
 
-Three Deployments/Services, each requesting `amd.com/gpu: "1"`, image
-`vllm/vllm-openai-rocm:v0.25.0`, `/dev/shm` emptyDir, HTTP `/health` probes.
+The PR #954 hardware run used three Deployments/Services, each requesting
+`amd.com/gpu: "1"`, image `vllm/vllm-openai-rocm:v0.25.0`, `/dev/shm`
+emptyDir, and HTTP `/health` probes. Checked-in pins moved to
+`vllm/vllm-openai-rocm:v0.33.0` for security advisories; revalidation on v0.33.0
+is pending.
 
 | Router group | Service DNS | Weights | GPU |
 |---|---|---|---|
