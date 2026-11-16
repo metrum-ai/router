@@ -116,6 +116,7 @@ func dynamicAffinityKey(caller *callerRuntime, groupName, callerDialect string, 
 		CallerID string          `json:"caller_id"`
 		Group    string          `json:"group"`
 		Dialect  string          `json:"dialect"`
+		Session  string          `json:"session,omitempty"`
 		System   string          `json:"system,omitempty"`
 		Message  *IRMessage      `json:"message,omitempty"`
 		Input    string          `json:"input,omitempty"`
@@ -127,7 +128,10 @@ func dynamicAffinityKey(caller *callerRuntime, groupName, callerDialect string, 
 		Dialect:  normalizeDialect(callerDialect),
 		System:   req.System,
 	}
-	if len(req.Messages) > 0 {
+	if session := sanitizeConversationID(requestMetadataValue(req, "session_id", "sessionId")); session != "" {
+		value.Session = session
+		value.System = ""
+	} else if len(req.Messages) > 0 {
 		first := req.Messages[0]
 		value.Message = &first
 	} else {

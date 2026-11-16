@@ -24,9 +24,15 @@ class Smoke(unittest.TestCase):
                 env={k:v for k,v in os.environ.items() if k not in ('FIREWORKS_API_KEY','OPENAI_API_KEY','OPENROUTER_API_KEY')}
                 p=subprocess.run(cmd,capture_output=True,text=True,timeout=90,env=env)
                 self.assertEqual(p.returncode,0,p.stderr)
-                rows=json.loads(p.stdout)['requests']
+                result=json.loads(p.stdout)
+                rows=result['requests']
                 self.assertEqual([r['cached_input_tokens'] for r in rows],[0,8000,8000,8000,0,0,8000,8000])
+                self.assertEqual([r['recomputed_input_tokens'] for r in rows],[10000,2000,2000,2000,10000,10000,2000,2000])
                 self.assertTrue(all(r['usage_cost_usd']==0 for r in rows))
+                self.assertTrue(all(r['ttfb_ms'] is not None for r in rows))
+                pinned,spread=result['summary']
+                self.assertEqual((pinned['cache_hit_rate'],pinned['recomputed_input_tokens']),(0.75,16000))
+                self.assertEqual((spread['cache_hit_rate'],spread['recomputed_input_tokens']),(0.5,24000))
         finally:
             server.shutdown();server.server_close();thread.join()
 
