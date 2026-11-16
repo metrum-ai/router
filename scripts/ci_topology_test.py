@@ -301,7 +301,8 @@ def assert_arc_runners() -> None:
         for name, body in jobs(text).items():
             if ((path.name == "agent-tool-compat.yml" and name == "codex-workspace-sandbox") or
                     (path.name in ("agent-chain-nightly.yml", "hierarchy-matrix.yml") and
-                     name in ("codex-chain-sandbox", "codex-chain"))):
+                     name in ("codex-chain-sandbox", "codex-chain")) or
+                    (path.name == "release-dry-run.yml" and name == "hierarchy-codex-chain")):
                 # Codex needs unprivileged namespaces absent from ARC. These VM
                 # jobs are credential-free and execute only local mock fixtures.
                 require(re.search(r"(?m)^    runs-on: ubuntu-22\.04$", body) is not None,
@@ -332,6 +333,10 @@ def assert_arc_runners() -> None:
                 require("cache: false" in rebuild and "make package" in rebuild
                         and "compare_release_checksums.py" in rebuild,
                         "the clean release rebuild must disable Go cache reuse and compare checksums")
+            elif path.name == "release-dry-run.yml":
+                require("workflow_dispatch:" in text and "ref: main" in text
+                        and "uses: actions/cache/" not in text,
+                        "release dry run must check out main and avoid shared caches")
             else:
                 require(path.name == "ci.yml" and "actions/cache/restore@" in text
                         and "actions/cache/save@" in text,
