@@ -264,6 +264,14 @@ func walkYAMLForSecrets(node *yaml.Node, path string) error {
 			}
 		}
 	case yaml.ScalarNode:
+		// Salted caller verifiers are not bearer credentials. Their base64url
+		// fields can coincidentally contain a provider-key prefix such as "sk-".
+		// Accept the exemption only for a well-formed verifier in token_hash.
+		if path == "token_hash" || strings.HasSuffix(path, ".token_hash") {
+			if _, err := parseCallerTokenHash(node.Value); err == nil {
+				return nil
+			}
+		}
 		if configControlPlaneSecretPattern.MatchString(node.Value) {
 			return fmt.Errorf("canonical YAML contains a raw-looking secret at %q; use environment variable references (for example $VAR or api_key_env) instead", path)
 		}

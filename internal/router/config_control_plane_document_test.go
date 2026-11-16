@@ -63,6 +63,32 @@ func TestConfigControlPlanePhase6CreatesDocumentTables(t *testing.T) {
 	}
 }
 
+func TestRejectRawSecretsAllowsStructuredCallerVerifier(t *testing.T) {
+	// A structured verifier is not a usable credential, even if a random
+	// base64url salt or key happens to contain a provider-key prefix.
+	// These bytes encode with an "sk-" prefix, deliberately overlapping the
+	// provider-key detector while remaining only random verifier salt.
+	saltPrefix, err := callerTokenB64.DecodeString("sk-AAAAAAAAAAAAAAAA")
+	if err != nil {
+		t.Fatal(err)
+	}
+	salt := append(saltPrefix, make([]byte, callerTokenHashSaltBytes-len(saltPrefix))...)
+	verifier, err := HashCallerToken("rtr_metrum_test_project_prod_k1_secret", strings.NewReader(string(salt)), callerTokenHashMinIterations)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !configControlPlaneSecretPattern.MatchString(verifier) {
+		t.Fatalf("test verifier %q does not exercise the raw-secret false positive", verifier)
+	}
+	doc := "callers:\n  - token_hash: \"" + verifier + "\"\n"
+	if err := rejectRawSecretsInYAML([]byte(doc)); err != nil {
+		t.Fatalf("valid token_hash rejected as raw secret: %v", err)
+	}
+	if err := rejectRawSecretsInYAML([]byte("callers:\n  - token_hash: sk-abcdefghijklmnop1234567890\n")); err == nil {
+		t.Fatal("raw provider key in token_hash was accepted")
+	}
+}
+
 const testCanonicalYAML = `server:
   identifiers:
     mode: passthrough
