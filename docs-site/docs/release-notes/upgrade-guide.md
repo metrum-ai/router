@@ -33,6 +33,17 @@ configurations. Update copied examples from older releases before deploying them
 
 Use this guide for customer-managed package upgrades. The exact maintenance window, approval process, and rollback policy belong to the deployment operator.
 
+## Virtual models
+
+The optional `virtual_model` block adds capability thresholds to a model
+group. Existing groups are unchanged. Import matching eval-infrastructure
+reports with `metrum-ai-routerctl groups import-eval`; vectors and provenance
+are applied through the config Admin API's copy-on-write group update. The
+group list/show API now reports each target's measured vector, membership and
+exclusion reason. Missing or ambiguous report data fails without changing the
+active config. Reported context tokens are the maximum observed in the eval
+workload, not a model's theoretical context limit.
+
 ## Security dependency update
 
 The v5.0.0 build pins `golang.org/x/crypto` to the upstream fix for GO-2026-5932. The fix removes the unused OpenPGP packages from the module; router configuration and runtime behavior do not change. When the next tagged `x/crypto` release includes this fix, routine dependency maintenance should replace the temporary pseudo-version.

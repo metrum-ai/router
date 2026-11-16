@@ -4,6 +4,9 @@
 
 ### Added
 
+- Add virtual model groups whose eligible targets are selected from per-family
+  capability vectors imported from reproducible eval reports. The config Admin
+  API and `routerctl groups` show vectors, membership and exclusion reasons.
 - Added a release checklist and a bounded package upgrade-and-rollback check.
 
 ### Security
