@@ -291,6 +291,36 @@ func TestAdminClientDisableRevokesCredentialThroughListenerE2E(t *testing.T) {
 	}
 }
 
+func TestAdminClientDisableEnableReregisterThroughListenerE2E(t *testing.T) {
+	e2e := newAdminKeyE2E(t)
+	body := map[string]any{"id": "recover-client", "name": "Recover client"}
+	response, data := e2e.do(t, http.MethodPost, "/admin/v1/clients", e2e.token, body, nil)
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("create status=%d body=%s", response.StatusCode, data)
+	}
+	credential := map[string]any{"id": e2e.keyID, "kind": "adminkey", "identity": e2e.keyID, "subject": "adminkey:bootstrap-admin", "expires_at": e2e.now.Add(90 * 24 * time.Hour).Format(time.RFC3339)}
+	response, data = e2e.do(t, http.MethodPost, "/admin/v1/clients/recover-client/credentials", e2e.token, credential, nil)
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("register status=%d body=%s", response.StatusCode, data)
+	}
+	response, data = e2e.do(t, http.MethodPost, "/admin/v1/clients/recover-client/disable", e2e.backupToken, nil, nil)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("disable status=%d body=%s", response.StatusCode, data)
+	}
+	response, data = e2e.do(t, http.MethodPost, "/admin/v1/clients/recover-client/enable", e2e.backupToken, nil, nil)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("enable status=%d body=%s", response.StatusCode, data)
+	}
+	response, data = e2e.do(t, http.MethodPost, "/admin/v1/clients/recover-client/credentials", e2e.backupToken, credential, nil)
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("re-register status=%d body=%s", response.StatusCode, data)
+	}
+	response, data = e2e.do(t, http.MethodGet, "/admin/v1/clients/recover-client", e2e.token, nil, nil)
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("recovered credential status=%d body=%s", response.StatusCode, data)
+	}
+}
+
 func TestAdminClientLifecyclePreservesLastPolicyAdministrator(t *testing.T) {
 	for _, action := range []string{"disable", "delete", "revoke", "short-expiry-register"} {
 		t.Run(action, func(t *testing.T) {

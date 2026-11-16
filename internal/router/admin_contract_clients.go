@@ -85,6 +85,7 @@ func init() {
 		{"admin-client-conflict", http.StatusConflict, "Admin client conflict"},
 		{"admin-client-store-unavailable", http.StatusServiceUnavailable, "Admin client store unavailable"},
 		{"admin-client-guard-unavailable", http.StatusServiceUnavailable, "Admin client policy guard unavailable"},
+		{"admin-client-review-unavailable", http.StatusServiceUnavailable, "Admin client access review unavailable"},
 	} {
 		RegisterAdminProblemCode(spec.code, spec.status, spec.title)
 	}
@@ -322,7 +323,12 @@ func (s *Service) handleAdminClientReview(w http.ResponseWriter, r *http.Request
 		return
 	}
 	generation := s.machineGeneration.Load()
+	if generation == nil || generation.authorizer == nil || generation.authorizer.enforcer == nil {
+		adminKeyProblem(w, r, http.StatusServiceUnavailable, "admin-client-review-unavailable")
+		return
+	}
 	now := time.Now().UTC()
+	grantCache := make(map[string][][]string)
 	for i := range clients {
 		for j := range clients[i].Credentials {
 			cred := &clients[i].Credentials[j]
@@ -332,12 +338,17 @@ func (s *Service) handleAdminClientReview(w http.ResponseWriter, r *http.Request
 				cred.EffectiveGrants = [][]string{}
 				continue
 			}
-			if generation != nil && generation.authorizer != nil && generation.authorizer.enforcer != nil {
-				grants, e := adminImplicitPermissionsAcrossDomains(generation.authorizer.enforcer, cred.Subject)
-				if e == nil {
-					cred.EffectiveGrants = grants
+			grants, ok := grantCache[cred.Subject]
+			if !ok {
+				var e error
+				grants, e = adminImplicitPermissionsAcrossDomains(generation.authorizer.enforcer, cred.Subject)
+				if e != nil {
+					adminKeyProblem(w, r, http.StatusServiceUnavailable, "admin-client-review-unavailable")
+					return
 				}
+				grantCache[cred.Subject] = grants
 			}
+			cred.EffectiveGrants = grants
 		}
 	}
 	writeAdminJSON(w, http.StatusOK, map[string]any{"clients": clients, "generatedAt": time.Now().UTC()})

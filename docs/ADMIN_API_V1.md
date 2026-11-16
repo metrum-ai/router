@@ -231,8 +231,13 @@ delete, expiry, and credential revocation take effect across replicas without
 waiting for a cache. For OAuth and federated JWTs mapped from a `client_id`
 claim, the credential ID is `client_id:<claim-value>` (for example,
 `client_id:billing-worker`); register that exact ID and the mapped subject.
-Unregistered credentials of any kind that map to a managed client subject are
-refused after that client's binding is disabled, deleted, revoked, or expired.
+As soon as any credential is registered for a subject, that subject is managed:
+only registered credentials for that subject authenticate. Every unregistered
+credential of any kind that maps to the subject is refused immediately, including
+before a client or credential is disabled, deleted, revoked, or expired. Register
+enough working administrator credentials to preserve global administration;
+short-lived registrations that would leave no usable global administrator are
+rejected.
 
 `GET /admin/v1/clients/access-review` exports client credential metadata,
 last-use state, and effective policy grants. Disabled clients and revoked or
@@ -240,8 +245,9 @@ expired credentials have no effective grants. Unused credentials have no recorde
 successful use. Credentials within 30 days of expiry are exposed in the review;
 the background monitor emits one durable expiry-warning event per credential
 and exports `metrum_ai_router_admin_credentials_expiring_30d` on the admin listener's `/metrics` endpoint.
-It also emits one durable unused-warning event for active credentials that have
-never been used and exports the unused-credential gauge.
+It emits one durable unused-warning event for active credentials that have
+never been used after they have been registered for 24 hours, and exports the
+unused-credential gauge.
 
 ## Resource configuration
 
@@ -434,8 +440,8 @@ insert aborts the change, so a write is refused rather than committed unaudited.
 
 Credential lifecycle changes (issue, rotate, revoke) write their audit row **and** a
 redacted credential event in the same transaction. Authentication outcomes are recorded per
-credential kind with a keyed client-IP digest (HMAC-SHA256). The key comes from `ROUTER_ADMIN_CLIENT_IP_HASH_KEY`; without it a random per-process key is used, so digests and the per-source failure caps are then per-process only and do not correlate across replicas or restarts; identical outcomes within one second collapse
-into a counted row and one source can create at most ten failure rows per minute, so a
+credential kind with a keyed client-IP digest (HMAC-SHA256). The key comes from `ROUTER_ADMIN_CLIENT_IP_HASH_KEY`; without it a random per-process key is used, so digests and the per-source failure caps are then per-process only and do not correlate across replicas or restarts. Only authentication events with identical outcomes within one second collapse
+into a counted row; lifecycle events remain individually recorded. One source can create at most ten failure rows per minute, so a
 credential-guessing flood cannot grow the audit table. `admin.api.audit.retention_days`
 (default 90) governs how long admin audit rows are kept.
 
@@ -464,8 +470,8 @@ misleading zero.
 - The legacy (non-`/admin/v1`) content-capture purge, delete and training-label paths still
   use their existing best-effort audit emission; only the versioned admin plane is
   transactional today.
-- Credential events collapse per second per credential and are capped per source per minute;
-  the counter is the record of the collapsed volume.
+- Authentication events collapse per second per credential and are capped per source per minute;
+  the counter is the record of the collapsed volume. Lifecycle events remain individually recorded.
 
 ## Regenerating the contract
 

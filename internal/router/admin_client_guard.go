@@ -59,7 +59,10 @@ func (i adminClientPolicyInventory) enabledPolicyAdmins(cfg *Config) ([]Principa
 				survives = true
 			}
 		}
-		if i.candidate != nil && adminPrincipalMatchesClientBinding(principal, i.candidate.Kind, i.candidate.ID, i.candidate.Identity, i.candidate.Subject) {
+		// Registration makes the subject managed immediately. Because authentication
+		// fails closed for every unregistered credential on that subject, the guard
+		// must not count those credentials as surviving the candidate registration.
+		if i.candidate != nil && principal.Subject == i.candidate.Subject {
 			managed = true
 		}
 		if managed && !survives {

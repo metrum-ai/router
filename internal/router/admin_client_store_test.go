@@ -187,15 +187,19 @@ func TestAdminClientUnusedCredentialWarningAndGauge(t *testing.T) {
 	if err := store.create(context.Background(), adminClient{ID: "unused", Name: "Unused"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.registerCredential(context.Background(), "unused", adminClientCredential{ID: "never-used", Kind: "oauth", Identity: "client", Subject: "subject", ExpiresAt: now.Add(time.Hour)}); err != nil {
+	if err := store.registerCredential(context.Background(), "unused", adminClientCredential{ID: "never-used", Kind: "oauth", Identity: "client", Subject: "subject", ExpiresAt: now.Add(72 * time.Hour)}); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.emitUnusedWarnings(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if err := store.emitUnusedWarnings(context.Background()); err != nil {
-		t.Fatal(err)
+	if events != 0 {
+		t.Fatalf("unused warning fired at registration: %d", events)
 	}
+	now = now.Add(25 * time.Hour)
+	svc := &Service{adminClients: store}
+	svc.monitorAdminClientCredentials()
+	svc.monitorAdminClientCredentials()
 	if events != 1 {
 		t.Fatalf("unused warnings=%d want one", events)
 	}
@@ -203,10 +207,8 @@ func TestAdminClientUnusedCredentialWarningAndGauge(t *testing.T) {
 	if err != nil || count != 1 {
 		t.Fatalf("unused count=%d err=%v", count, err)
 	}
-	metrics := newAdminMetricsStore()
-	metrics.SetAdminClientCredentialsUnused(count)
-	if !strings.Contains(metrics.Prometheus(nil), "metrum_ai_router_admin_client_credentials_unused 1") {
-		t.Fatal("unused gauge missing")
+	if !strings.Contains(svc.adminMetrics().Prometheus(nil), "metrum_ai_router_admin_client_credentials_unused 1") {
+		t.Fatal("unused monitor did not export the gauge")
 	}
 }
 
@@ -466,5 +468,47 @@ func TestAdminClientPolicyInventoryExcludesUnregisteredCredentialForManagedSubje
 	}
 	if len(admins) != 0 {
 		t.Fatalf("managed subject with no working registration was counted as an administrator: %+v", admins)
+	}
+}
+
+func TestAdminClientCandidateShortExpiryManagesWholeSubject(t *testing.T) {
+	_, db := newAdminKeyStoreForTest(t)
+	if err := applyAdminClientSchema(db); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	store := &adminClientStore{db: db, now: func() time.Time { return now }}
+	if err := store.create(context.Background(), adminClient{ID: "expiry-guard", Name: "Expiry guard"}); err != nil {
+		t.Fatal(err)
+	}
+	generation := &adminMachineGeneration{keys: &adminConfiguredKeyCatalog{keys: map[string]*adminAPIKeyRuntime{
+		"existing":  {keyID: "existing", subject: "adminkey:only-admin"},
+		"candidate": {keyID: "candidate", subject: "adminkey:only-admin"},
+	}}}
+	candidate := &adminClientCredential{ID: "candidate", Kind: "adminkey", Identity: "candidate", Subject: "adminkey:only-admin", ExpiresAt: now.Add(time.Hour)}
+	admins, err := (adminClientPolicyInventory{base: generationInventory{generation: generation}, store: store, now: now, candidate: candidate, minimumExpiryTime: candidate.ExpiresAt}).enabledPolicyAdmins(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(admins) != 0 {
+		t.Fatalf("unregistered credential for candidate's managed subject remained usable after expiry: %+v", admins)
+	}
+}
+
+func TestAdminClientAccessReviewUnavailableWithoutAuthorizer(t *testing.T) {
+	_, db := newAdminKeyStoreForTest(t)
+	if err := applyAdminClientSchema(db); err != nil {
+		t.Fatal(err)
+	}
+	store := &adminClientStore{db: db, now: time.Now}
+	if err := store.create(context.Background(), adminClient{ID: "review-unavailable", Name: "Review unavailable"}); err != nil {
+		t.Fatal(err)
+	}
+	svc := &Service{adminClients: store}
+	req := httptest.NewRequest(http.MethodGet, "/admin/v1/clients/access-review", nil)
+	response := httptest.NewRecorder()
+	svc.handleAdminClientReview(response, req)
+	if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), "admin-client-review-unavailable") {
+		t.Fatalf("review without an authorizer status=%d body=%s", response.Code, response.Body.String())
 	}
 }

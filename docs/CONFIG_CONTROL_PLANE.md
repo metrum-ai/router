@@ -162,7 +162,11 @@ deployments apply it with the online prefix using
 `router-migrate --scope router-config --action apply`; no maintenance window or
 backup-evidence reference is needed for this migration. The migration stores
 credential descriptors only; verifier secrets remain in their existing
-credential stores.
+credential stores. Registering any credential makes its policy subject managed
+immediately. Only credentials registered to that subject authenticate; all
+unregistered credentials for it are refused from that point onward, including
+before disable, revoke, or expiry. Ensure registration leaves at least one usable
+global administrator.
 
 ## Phase 6: DB-backed serving source of truth
 

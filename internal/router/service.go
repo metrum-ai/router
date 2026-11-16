@@ -6189,18 +6189,7 @@ func (s *Service) runAdminClientCredentialMonitor(stop <-chan struct{}, done cha
 	defer close(done)
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
-	monitor := func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = s.adminClients.emitDueExpiryWarnings(ctx, 30*24*time.Hour)
-		_ = s.adminClients.emitUnusedWarnings(ctx)
-		if count, err := s.adminClients.expiringCount(ctx, 30*24*time.Hour); err == nil {
-			s.adminMetrics().SetAdminCredentialsExpiring(count)
-		}
-		if count, err := s.adminClients.unusedCount(ctx); err == nil {
-			s.adminMetrics().SetAdminClientCredentialsUnused(count)
-		}
-	}
+	monitor := func() { s.monitorAdminClientCredentials() }
 	monitor()
 	for {
 		select {
@@ -6209,6 +6198,22 @@ func (s *Service) runAdminClientCredentialMonitor(stop <-chan struct{}, done cha
 		case <-ticker.C:
 			monitor()
 		}
+	}
+}
+
+func (s *Service) monitorAdminClientCredentials() {
+	if s == nil || s.adminClients == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = s.adminClients.emitDueExpiryWarnings(ctx, 30*24*time.Hour)
+	_ = s.adminClients.emitUnusedWarnings(ctx)
+	if count, err := s.adminClients.expiringCount(ctx, 30*24*time.Hour); err == nil {
+		s.adminMetrics().SetAdminCredentialsExpiring(count)
+	}
+	if count, err := s.adminClients.unusedCount(ctx); err == nil {
+		s.adminMetrics().SetAdminClientCredentialsUnused(count)
 	}
 }
 

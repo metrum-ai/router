@@ -1016,6 +1016,11 @@ The prompt-injection detector is an optional external example. It is off unless 
 
 ## v5.0.0 admin client identities
 
+Registering any credential makes its policy subject managed immediately. Only
+credentials registered to that subject authenticate; all unregistered credentials
+for it are refused from that point onward, including before disable, revoke, or
+expiry. Ensure registration leaves at least one usable global administrator.
+
 The router-config control-plane schema 17 migration adds the admin client and credential-binding
 tables and extends credential lifecycle audit records with client ID and actor. Apply it with the
 packaged non-serving migration job before starting serving replicas; follow the backup, apply,

@@ -336,7 +336,7 @@ func (s *adminClientStore) emitUnusedWarnings(ctx context.Context) error {
 	now := s.now().UTC()
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var rows []struct{ ID, ClientID, Kind, Subject string }
-		if err := tx.Raw("SELECT x.id,x.client_id,x.kind,x.subject FROM "+adminClientCredentialTable+" x JOIN "+adminClientTable+" c ON c.id=x.client_id WHERE x.status='active' AND c.status='active' AND x.expires_at>? AND x.last_used_at IS NULL AND x.unused_warning_emitted_at IS NULL ORDER BY x.client_id,x.id LIMIT ?", now, adminClientMaxClients*adminClientMaxCredentials).Scan(&rows).Error; err != nil {
+		if err := tx.Raw("SELECT x.id,x.client_id,x.kind,x.subject FROM "+adminClientCredentialTable+" x JOIN "+adminClientTable+" c ON c.id=x.client_id WHERE x.status='active' AND c.status='active' AND x.expires_at>? AND x.created_at<? AND x.last_used_at IS NULL AND x.unused_warning_emitted_at IS NULL ORDER BY x.client_id,x.id LIMIT ?", now, now.Add(-24*time.Hour), adminClientMaxClients*adminClientMaxCredentials).Scan(&rows).Error; err != nil {
 			return err
 		}
 		for _, row := range rows {
@@ -387,7 +387,7 @@ func (s *adminClientStore) registerCredentialWithAudit(ctx context.Context, clie
 		if count >= adminClientMaxCredentials {
 			return errAdminClientConflict
 		}
-		if err := tx.Exec("INSERT INTO "+adminClientCredentialTable+" (id,client_id,kind,identity,subject,expires_at,status) VALUES (?,?,?,?,?,?,'active') ON CONFLICT(id,kind) DO UPDATE SET client_id=excluded.client_id,identity=excluded.identity,subject=excluded.subject,expires_at=excluded.expires_at,last_used_at=NULL,warning_emitted_at=NULL,status='active' WHERE client_id=excluded.client_id AND identity=excluded.identity", credential.ID, clientID, credential.Kind, credential.Identity, credential.Subject, credential.ExpiresAt.UTC()).Error; err != nil {
+		if err := tx.Exec("INSERT INTO "+adminClientCredentialTable+" (id,client_id,kind,identity,subject,expires_at,created_at,status) VALUES (?,?,?,?,?,?,?,'active') ON CONFLICT(id,kind) DO UPDATE SET client_id=excluded.client_id,identity=excluded.identity,subject=excluded.subject,expires_at=excluded.expires_at,created_at=excluded.created_at,last_used_at=NULL,warning_emitted_at=NULL,unused_warning_emitted_at=NULL,status='active' WHERE "+adminClientCredentialTable+".client_id=excluded.client_id AND "+adminClientCredentialTable+".identity=excluded.identity", credential.ID, clientID, credential.Kind, credential.Identity, credential.Subject, credential.ExpiresAt.UTC(), s.now().UTC()).Error; err != nil {
 			return errAdminClientConflict
 		}
 		var active int64
@@ -546,8 +546,9 @@ func applyAdminClientSchema(tx *gorm.DB) error {
 	}
 	for _, stmt := range []string{
 		"CREATE TABLE IF NOT EXISTS " + adminClientTable + " (id TEXT PRIMARY KEY,name TEXT NOT NULL,status TEXT NOT NULL,created_at TIMESTAMP NOT NULL,updated_at TIMESTAMP NOT NULL)",
-		"CREATE TABLE IF NOT EXISTS " + adminClientCredentialTable + " (id TEXT NOT NULL,client_id TEXT NOT NULL,kind TEXT NOT NULL,identity TEXT NOT NULL,subject TEXT NOT NULL,expires_at TIMESTAMP NOT NULL,last_used_at TIMESTAMP NULL,warning_emitted_at TIMESTAMP NULL,unused_warning_emitted_at TIMESTAMP NULL,status TEXT NOT NULL,PRIMARY KEY (id,kind),FOREIGN KEY (client_id) REFERENCES " + adminClientTable + "(id))",
+		"CREATE TABLE IF NOT EXISTS " + adminClientCredentialTable + " (id TEXT NOT NULL,client_id TEXT NOT NULL,kind TEXT NOT NULL,identity TEXT NOT NULL,subject TEXT NOT NULL,expires_at TIMESTAMP NOT NULL,created_at TIMESTAMP NOT NULL DEFAULT '1970-01-01 00:00:00',last_used_at TIMESTAMP NULL,warning_emitted_at TIMESTAMP NULL,unused_warning_emitted_at TIMESTAMP NULL,status TEXT NOT NULL,PRIMARY KEY (id,kind),FOREIGN KEY (client_id) REFERENCES " + adminClientTable + "(id))",
 		"CREATE INDEX IF NOT EXISTS router_admin_client_credential_client ON " + adminClientCredentialTable + " (client_id,id)",
+		"CREATE INDEX IF NOT EXISTS router_admin_client_credential_subject ON " + adminClientCredentialTable + " (subject)",
 	} {
 		if err := tx.Exec(stmt).Error; err != nil {
 			return err
@@ -555,6 +556,11 @@ func applyAdminClientSchema(tx *gorm.DB) error {
 	}
 	if !tx.Migrator().HasColumn(adminClientCredentialTable, "unused_warning_emitted_at") {
 		if err := tx.Exec("ALTER TABLE " + adminClientCredentialTable + " ADD COLUMN unused_warning_emitted_at TIMESTAMP NULL").Error; err != nil {
+			return err
+		}
+	}
+	if !tx.Migrator().HasColumn(adminClientCredentialTable, "created_at") {
+		if err := tx.Exec("ALTER TABLE " + adminClientCredentialTable + " ADD COLUMN created_at TIMESTAMP NOT NULL DEFAULT '1970-01-01 00:00:00'").Error; err != nil {
 			return err
 		}
 	}
