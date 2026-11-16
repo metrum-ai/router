@@ -32,3 +32,14 @@ func TestResolveClientIPWalksTrustedForwardedChain(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveClientIPIgnoresForwardedChainWithoutTrustedProxy(t *testing.T) {
+	r := httptest.NewRequest("GET", "/", nil)
+	r.RemoteAddr = "203.0.113.20:443"
+	r.Header.Set("X-Forwarded-For", "198.51.100.99")
+
+	got := resolveClientIP(r, ClientIPConfig{HeaderOrder: []string{"X-Forwarded-For"}})
+	if got.Address != "203.0.113.20" || got.TrustedProxyApplied {
+		t.Fatalf("resolved client IP = %+v, want untrusted socket peer", got)
+	}
+}
