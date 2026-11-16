@@ -4,6 +4,8 @@
 
 ### Added
 
+- Add an optional admin Unix socket with configurable owner/mode and `metrum-ai-routerctl --socket` transport; existing authentication and authorization stay in force.
+
 - Added a release checklist and a bounded package upgrade-and-rollback check.
 - Retain AI review findings by exact commit range and artifact digest, scope the review credential to the tag-only review environment, and attest the release manifests and review evidence.
 
@@ -61,7 +63,8 @@
 - Add opt-in latest posture summary reporting through the authenticated admin
   security reports surface. Usage migration 2026111602 adds a singleton summary table at usage schema version 17.
 - Record UTC issuance timestamps for generated and rotated caller keys; the
-  security self-test warns when age is unknown and fails keys older than 90 days.
+  security self-test warns when age is unknown and fails keys older than the configured
+  maximum age (90 days by default; set `security.key_hygiene.max_age_days`).
 
 All notable changes to Metrum AI Router are documented in this file.
 
@@ -77,7 +80,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Add delayed daily report-mode provider usage reconciliation for OpenAI, Anthropic, and Bedrock CloudWatch metrics, with bounded catch-up/retries, HTTPS-only allow-listed egress for provider APIs and Bedrock/STS, partial-data watermarks, auth-failure fast paths, and security-stream events.
-- Add an optional admin Unix socket with configurable owner/mode and `metrum-ai-routerctl --socket` transport; existing authentication and authorization stay in force.
 
 - Add an opt-in OCSF 1.4.0 JSON Lines security-event stream for stdout, append-only files, and allow-listed signed HTTPS webhooks. Security events use bounded sink and webhook queues, timestamp/nonce HMAC signatures, rotation-aware file output, and Prometheus drop/failure counters. Containment maps to Account Change Disable/Enable with target and actor identity; detector findings use configured IDs and evidence request UIDs capped at 256 characters.
 - Add caller key containment through `/admin/v1/containment`, `routerctl contain` and `routerctl release`, plus an optional HMAC-SHA256 SOAR/EDR webhook. Webhook writes use signed nonce replay protection without ETag headers; containment can resume only containment-originated suspensions.

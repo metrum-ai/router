@@ -7,7 +7,9 @@ import (
 	"net"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 func TestAdminAPIClientUnixSocket(t *testing.T) {
@@ -20,6 +22,9 @@ func TestAdminAPIClientUnixSocket(t *testing.T) {
 		if r.Header.Get("Authorization") != "Bearer socket-test-key" {
 			http.Error(w, "unauthorized", 401)
 			return
+		}
+		if r.URL.Path == "/slow" {
+			time.Sleep(50 * time.Millisecond)
 		}
 		w.WriteHeader(204)
 	})}
@@ -40,5 +45,9 @@ func TestAdminAPIClientUnixSocket(t *testing.T) {
 	}
 	if _, err := NewAdminAPIClientWithSocket("http://localhost", "", socket); err == nil {
 		t.Fatal("accepted both URL and socket")
+	}
+	client.HTTP.Timeout = time.Millisecond
+	if _, _, err := client.Do(http.MethodGet, "/slow", nil, nil); err == nil || !strings.Contains(err.Error(), "deadline exceeded") {
+		t.Fatalf("socket client timeout error=%v, want deadline exceeded", err)
 	}
 }

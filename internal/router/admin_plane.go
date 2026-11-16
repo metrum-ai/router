@@ -757,11 +757,11 @@ func (p *AdminPlane) Start() error {
 	var ln net.Listener
 	var srv *http.Server
 	if strings.TrimSpace(p.cfg.Listen) != "" {
-		var err error
-		ln, err = net.Listen("tcp", p.cfg.Listen)
-		if err != nil {
-			return fmt.Errorf("admin listener could not bind %q: %w (replicas sharing a host need unique admin.listen addresses; the default %s can bind only once)", p.cfg.Listen, err, defaultAdminListenAddr)
+		listener, listenErr := net.Listen("tcp", p.cfg.Listen)
+		if listenErr != nil {
+			return fmt.Errorf("admin listener could not bind %q: %w (replicas sharing a host need unique admin.listen addresses; the default %s can bind only once)", p.cfg.Listen, listenErr, defaultAdminListenAddr)
 		}
+		ln = listener
 		if p.tlsCfg != nil {
 			ln = tls.NewListener(ln, p.tlsCfg)
 		}

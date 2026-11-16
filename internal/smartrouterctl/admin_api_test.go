@@ -22,8 +22,8 @@ func TestAdminClientEndpointAndRedirectSafety(t *testing.T) {
 		}
 	}
 	client, err := NewAdminAPIClient("", "")
-	if err != nil || client.BaseURL != "http://127.0.0.1:8081" {
-		t.Fatalf("default endpoint = %v, err=%v", client, err)
+	if err == nil || !strings.Contains(err.Error(), "--router-url, ROUTER_URL, or --socket") {
+		t.Fatalf("missing endpoint error = %v", err)
 	}
 
 	hits := 0

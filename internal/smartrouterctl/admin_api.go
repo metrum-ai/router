@@ -112,7 +112,7 @@ func NewAdminAPIClientWithSocket(routerURL, keyFile, socketPath string) (*AdminA
 	}
 	if socketPath != "" {
 		client.BaseURL = "http://unix"
-		transport := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+		transport := &http.Transport{DisableKeepAlives: true, DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
 		}}
 		client.HTTP = &http.Client{Timeout: adminAPIRequestTimeout(), Transport: transport, CheckRedirect: refuseAdminRedirect}

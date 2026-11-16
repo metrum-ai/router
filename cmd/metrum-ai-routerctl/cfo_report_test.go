@@ -5,8 +5,11 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -52,12 +55,40 @@ func TestCFOReportCommand(t *testing.T) {
 	}
 }
 
-func TestCFOReportUsesDefaultAdminEndpointAndHints(t *testing.T) {
+func TestCFOReportRequiresExplicitEndpoint(t *testing.T) {
 	t.Setenv("ROUTER_URL", "")
 	t.Setenv("ROUTER_ADMIN_KEY", "rtr_admin_fake")
 	err := runCFOReport(nil, &bytes.Buffer{})
-	if err == nil || !strings.Contains(err.Error(), "127.0.0.1:8081") || !strings.Contains(err.Error(), "admin.listen") {
-		t.Fatalf("default endpoint failure lacks setup hints: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "--router-url, ROUTER_URL, or --socket") {
+		t.Fatalf("missing endpoint error=%v", err)
+	}
+}
+
+func TestCFOReportUnixSocketOption(t *testing.T) {
+	socket := filepath.Join(t.TempDir(), "admin.sock")
+	listener, err := net.Listen("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer rtr_admin_fake" {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		_, _ = w.Write([]byte(`{"summary":{}}`))
+	})}
+	go func() { _ = srv.Serve(listener) }()
+	t.Cleanup(func() { _ = srv.Close() })
+	t.Setenv("ROUTER_ADMIN_KEY", "rtr_admin_fake")
+	var out bytes.Buffer
+	if err := runCFOReport([]string{"--socket", socket}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.String() != `{"summary":{}}` {
+		t.Fatalf("socket report response=%q", out.String())
+	}
+	if err := srv.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
 	}
 }
 

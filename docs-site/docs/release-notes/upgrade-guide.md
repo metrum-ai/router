@@ -20,16 +20,18 @@ The console only displays signals returned by the selected time range and report
 `metrum-ai-routerctl doctor --security --config config.yaml` reads the existing
 configuration and makes no config changes. Use `--format json` and `--fail-on`
 to gate CI. Plain HTTP `--target` values must be loopback. The check reports caller
-key format, recorded entropy, and key age against a 90-day maximum. Caller entries now accept optional
+key format, recorded entropy, and key age against a configurable maximum (90 days by default). Set
+`security.key_hygiene.max_age_days` from 1 to 3650; `0` selects the default. Caller entries now accept optional
 `token_issued_at` UTC RFC3339 timestamps; token generation and admin issue or
 rotation write this field automatically. Add original issue times to manually
 managed caller keys. Existing configs remain valid; keys without a timestamp
-warn until updated or rotated, and keys older than 90 days fail.
+warn until updated or rotated, and keys older than the configured maximum fail.
 
 The `/metrics` endpoint remains on the serving port and requires an active
 caller configured with `metrics_admin: true`. The doctor checks this setting;
 it does not suggest moving metrics to the admin listener. DB-backed config mode
-reports that database-stored caller keys were not inspected. Engine image pins
+marks caller limit, format, environment, and age checks `not checked` because canonical callers
+and issuance metadata are stored in the database. Engine image pins
 are compared with the release's `engine-advisories.json` snapshot; use
 `--advisories <file>` to select one explicitly. Without a snapshot, the
 advisory result is informational `not checked` and makes no network request.
@@ -151,8 +153,9 @@ keys removed before restart.
 ## v5.0.0 routerctl Admin API changes
 
 The online `metrum-ai-routerctl` commands now use the versioned API on the dedicated admin
-listener. The default endpoint is `http://127.0.0.1:8081`; override it with `--router-url` or
-`ROUTER_URL`. Remote endpoints require HTTPS. Credentials remain in `ROUTER_ADMIN_KEY`,
+listener. Set either `--router-url`/`ROUTER_URL` for TCP or `--socket` for a Unix socket; do not
+combine them. Unix sockets can run alone or alongside TCP, and their filesystem mode controls which
+local users can connect. Remote TCP endpoints require HTTPS. Credentials remain in `ROUTER_ADMIN_KEY`,
 `ROUTER_ADMIN_KEY_FILE`, or a mode-0600 `--admin-key-file`. Endpoint values must be origins with
 no path (a single trailing slash is tolerated), query, fragment, or embedded credentials; use only
 the scheme, host, and optional port. Non-2xx responses are written to stderr as concise

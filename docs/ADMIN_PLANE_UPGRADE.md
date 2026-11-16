@@ -190,9 +190,10 @@ configuration database first and follow the v5.0.0 section of the `docs-site/doc
 `metrum-ai-routerctl` online commands use `/admin/v1` in v5.0.0. Config import, export, activate,
 and rollback use the Admin API by default; add `--offline` only when the router is stopped and the
 operator intentionally accesses the control-plane database. Other online operations use the Admin
-API directly. The default endpoint is `http://127.0.0.1:8081`; set `--router-url` or `ROUTER_URL`
-when the listener is elsewhere. Plain HTTP is accepted only on loopback; remote endpoints require
-HTTPS. Admin credentials come from `ROUTER_ADMIN_KEY`, `ROUTER_ADMIN_KEY_FILE`, or
+API directly. Set either `--router-url`/`ROUTER_URL` for TCP or `--socket` for a Unix socket;
+the options cannot be combined. A socket can be the only listener or run alongside TCP. Plain HTTP
+is accepted only on loopback; remote endpoints require HTTPS. Admin credentials come from
+`ROUTER_ADMIN_KEY`, `ROUTER_ADMIN_KEY_FILE`, or
 `--admin-key-file`.
 
 | Operation | Versioned API | Router CLI | Notes |

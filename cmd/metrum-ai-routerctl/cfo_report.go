@@ -32,6 +32,7 @@ func runCFOReport(args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("reports cfo", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	routerURL := fs.String("router-url", "", "router URL or ROUTER_URL")
+	socketPath := fs.String("socket", "", "admin Unix socket path")
 	keyFile := fs.String("admin-key-file", "", "admin credential file")
 	prefix := fs.String("reports-prefix", "/admin/v1/reports", "admin reports path prefix")
 	format := fs.String("format", "json", "json, csv or markdown")
@@ -69,7 +70,7 @@ func runCFOReport(args []string, out io.Writer) error {
 	if base == "" {
 		base = strings.TrimSpace(os.Getenv("ROUTER_URL"))
 	}
-	client, err := smartrouterctl.NewAdminAPIClient(base, *keyFile)
+	client, err := smartrouterctl.NewAdminAPIClientWithSocket(base, *keyFile, *socketPath)
 	if err != nil {
 		return err
 	}

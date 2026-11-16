@@ -3,6 +3,7 @@
 package smartrouterctl
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -12,7 +13,6 @@ import (
 	"net/url"
 	"os"
 	"strings"
-	"time"
 )
 
 // PolicyAPIClient reuses the shared admin transport without legacy endpoint or
@@ -30,21 +30,31 @@ type PolicyCallOptions struct {
 }
 
 func NewPolicyAPIClient(endpoint, keyFile string) (*PolicyAPIClient, error) {
+	return NewPolicyAPIClientWithSocket(endpoint, keyFile, "")
+}
+
+func NewPolicyAPIClientWithSocket(endpoint, keyFile, socketPath string) (*PolicyAPIClient, error) {
 	endpoint = strings.TrimSpace(endpoint)
-	if endpoint == "" {
+	socketPath = strings.TrimSpace(socketPath)
+	if endpoint == "" && socketPath == "" {
 		endpoint = strings.TrimSpace(os.Getenv("ROUTER_URL"))
 	}
-	if endpoint == "" {
-		endpoint = "http://127.0.0.1:8081"
+	if endpoint == "" && socketPath == "" {
+		return nil, fmt.Errorf("admin endpoint required: --router-url, ROUTER_URL, or --socket")
 	}
-	parsed, err := url.Parse(endpoint)
-	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") {
-		return nil, fmt.Errorf("invalid policy API endpoint")
+	if endpoint != "" && socketPath != "" {
+		return nil, fmt.Errorf("choose either --router-url or --socket")
 	}
-	if parsed.Scheme != "https" {
-		ip := net.ParseIP(parsed.Hostname())
-		if parsed.Scheme != "http" || (parsed.Hostname() != "localhost" && (ip == nil || !ip.IsLoopback())) {
-			return nil, fmt.Errorf("policy API endpoint requires HTTPS except on loopback")
+	if endpoint != "" {
+		parsed, err := url.Parse(endpoint)
+		if err != nil || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" || (parsed.Path != "" && parsed.Path != "/") {
+			return nil, fmt.Errorf("invalid policy API endpoint")
+		}
+		if parsed.Scheme != "https" {
+			ip := net.ParseIP(parsed.Hostname())
+			if parsed.Scheme != "http" || (parsed.Hostname() != "localhost" && (ip == nil || !ip.IsLoopback())) {
+				return nil, fmt.Errorf("policy API endpoint requires HTTPS except on loopback")
+			}
 		}
 	}
 	token, err := resolvePolicyCredential(keyFile)
@@ -74,7 +84,13 @@ func NewPolicyAPIClient(endpoint, keyFile string) (*PolicyAPIClient, error) {
 	// ALPN explicitly as well: Protocols alone does not clear inherited h2.
 	transport.TLSClientConfig.NextProtos = []string{"http/1.1"}
 	transport.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
-	client := &AdminAPIClient{BaseURL: strings.TrimRight(endpoint, "/"), Token: token, HTTP: &http.Client{Transport: transport, Timeout: 60 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}
+	if socketPath != "" {
+		transport.DialContext = func(ctx context.Context, _, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, "unix", socketPath)
+		}
+		endpoint = "http://unix"
+	}
+	client := &AdminAPIClient{BaseURL: strings.TrimRight(endpoint, "/"), Token: token, HTTP: &http.Client{Transport: transport, Timeout: adminAPIRequestTimeout(), CheckRedirect: refuseAdminRedirect}}
 	return &PolicyAPIClient{admin: client}, nil
 }
 func resolvePolicyCredential(file string) (string, error) {

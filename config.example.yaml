@@ -8,6 +8,7 @@ eligibility:
 security:
   key_hygiene:
     min_entropy_bits: 128
+    max_age_days: 90
     enforce: false
 
 # Admin control plane. Machine-to-machine only: no Basic, no cookies, no
