@@ -3754,18 +3754,26 @@ func (c *Config) resolveTarget(group string, target Target) (Target, error) {
 	if !ok {
 		return target, fmt.Errorf("model group %s references unknown provider %s", group, target.Provider)
 	}
-	if target.ModelRef == "" {
+	var catalog ProviderModel
+	directModel := target.ModelRef == ""
+	if directModel {
 		if target.Model == "" {
 			return target, fmt.Errorf("model group %s target for provider %s missing model or model_ref", group, target.Provider)
 		}
-		return target, nil
-	}
-	catalog, ok := provider.Models[target.ModelRef]
-	if !ok {
-		return target, fmt.Errorf("model group %s target references unknown model_ref %s for provider %s", group, target.ModelRef, target.Provider)
-	}
-	if target.Model == "" {
-		target.Model = catalog.Model
+		catalog, ok = providerModelByID(provider.Models, target.Model, target.Dialect, provider.Dialect)
+		if !ok {
+			// Preserve direct-model targets that are not represented in the provider catalog.
+			return target, nil
+		}
+		return mergeTargetCapabilities(target, catalog), nil
+	} else {
+		catalog, ok = provider.Models[target.ModelRef]
+		if !ok {
+			return target, fmt.Errorf("model group %s target references unknown model_ref %s for provider %s", group, target.ModelRef, target.Provider)
+		}
+		if target.Model == "" {
+			target.Model = catalog.Model
+		}
 	}
 	if target.Dialect == "" {
 		target.Dialect = catalog.Dialect
@@ -3855,6 +3863,73 @@ func (c *Config) resolveTarget(group string, target Target) (Target, error) {
 		return target, fmt.Errorf("model group %s target model_ref %s for provider %s resolved without model", group, target.ModelRef, target.Provider)
 	}
 	return target, nil
+}
+
+// providerModelByID finds the unique catalog entry for a direct model target.
+// When multiple entries describe the same provider-facing ID, only a matching
+// target/provider dialect disambiguates them; otherwise no metadata is inherited.
+func providerModelByID(models map[string]ProviderModel, modelID, targetDialect, providerDialect string) (ProviderModel, bool) {
+	var matches []ProviderModel
+	for key, catalog := range models {
+		if key == modelID || catalog.Model == modelID {
+			matches = append(matches, catalog)
+		}
+	}
+	if len(matches) == 0 {
+		return ProviderModel{}, false
+	}
+	wantDialect := normalizeDialect(targetDialect)
+	if wantDialect == "" {
+		wantDialect = normalizeDialect(providerDialect)
+	}
+	if wantDialect != "" {
+		var dialectMatches []ProviderModel
+		for _, catalog := range matches {
+			if normalizeDialect(catalog.Dialect) == wantDialect {
+				dialectMatches = append(dialectMatches, catalog)
+			}
+		}
+		if len(dialectMatches) == 1 {
+			return dialectMatches[0], true
+		}
+	}
+	if len(matches) == 1 {
+		return matches[0], true
+	}
+	return ProviderModel{}, false
+}
+
+// Direct model IDs have historically kept their explicitly configured routing,
+// dialect and pricing values. Only inherit capabilities needed for eligibility.
+func mergeTargetCapabilities(target Target, catalog ProviderModel) Target {
+	if toolSupportEmpty(target.ToolSupport) {
+		target.ToolSupport = catalog.ToolSupport
+	}
+	if reasoningSupportEmpty(target.Reasoning) {
+		target.Reasoning = catalog.Reasoning
+	}
+	if len(target.InputModalities) == 0 {
+		target.InputModalities = catalog.InputModalities
+	}
+	if len(target.OutputModalities) == 0 {
+		target.OutputModalities = catalog.OutputModalities
+	}
+	if target.EmbeddingSpace == "" {
+		target.EmbeddingSpace = catalog.EmbeddingSpace
+	}
+	if len(target.EmbeddingDimensions) == 0 {
+		target.EmbeddingDimensions = catalog.EmbeddingDimensions
+	}
+	if target.DefaultEmbeddingDimensions == 0 {
+		target.DefaultEmbeddingDimensions = catalog.DefaultEmbeddingDimensions
+	}
+	if target.HonorsMaxTokens == nil {
+		target.HonorsMaxTokens = catalog.HonorsMaxTokens
+	}
+	target.Bridges = mergeBridgeSupport(catalog.Bridges, target.Bridges)
+	target.RequestShapeSupport = mergeRequestShapeSupport(catalog.RequestShapeSupport, target.RequestShapeSupport)
+	target.ResponsesToChat = mergeResponsesToChatBridge(catalog.ResponsesToChat, target.ResponsesToChat)
+	return target
 }
 
 func mergeBridgeSupport(base, override BridgeSupport) BridgeSupport {

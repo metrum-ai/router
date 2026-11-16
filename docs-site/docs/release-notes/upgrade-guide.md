@@ -58,6 +58,8 @@ verifier remains refused.
 
 The v5.0.0 build pins `golang.org/x/crypto` to the upstream fix for GO-2026-5932. The fix removes the unused OpenPGP packages from the module; router configuration and runtime behavior do not change. When the next tagged `x/crypto` release includes this fix, routine dependency maintenance should replace the temporary pseudo-version.
 
+Direct `model` targets inherit provider-catalog capabilities, such as reasoning, tools, modalities and request-shape support, when their model ID matches a catalog entry. Their configured dialect, pricing and routing values remain unchanged. A weighted or failover group can therefore select an OpenAI reasoning model even when the target is written with `model:` instead of `model_ref:`. When mixed eligibility rejections leave the reasoning error parameter unset but removing requested reasoning makes a target eligible, `param` identifies the caller field (`reasoning_effort` for Chat Completions, `reasoning` for Responses, or `thinking` for Anthropic). Anthropic output reasoning requires `control: token_budget` or active default thinking.
+
 ## v5.0.0 provider spend breaker
 
 Provider `spend_breaker` is optional. Existing configurations keep their prior
