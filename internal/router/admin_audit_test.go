@@ -94,6 +94,7 @@ func (h *adminAuditHarness) mount(t *testing.T) {
 		LoadedRevision: func() (int64, string, time.Time) { return 7, "set-7", time.Now().UTC() },
 	}, principalOf, authorize)
 	extra := addReportPlaceholderHandlers(registry, map[string]http.HandlerFunc{
+		"tool.approvals.resolve":  func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
 		"training.export":         func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
 		"training.outcomes.label": func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
 		"metrics.scrape":          func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) },
@@ -517,6 +518,7 @@ func TestAdminAuthenticationEvents(t *testing.T) {
 		"config.group.targets.replace", "config.group.targets.add", "config.group.targets.remove",
 		"config.group.targets.validate", "config.group.rollback", "config.group.shadow.start",
 		"config.group.shadow.promote", "config.group.shadow.stop", "callers.issue", "callers.rotate", "callers.revoke",
+		"tool.approvals.resolve",
 		"training.export", "training.outcomes.label", "metrics.scrape", "content.captures.delete", "content.captures.purge"} {
 		handlers[key] = func(w http.ResponseWriter, r *http.Request) { writeJSON(w, http.StatusOK, map[string]any{"ok": true}) }
 	}
@@ -652,6 +654,11 @@ func TestAdminEveryMutationHasOneAuditRow(t *testing.T) {
 	mutations, usageMutations := 0, 0
 	for _, op := range registry.Operations() {
 		if op.Method == "GET" || op.ID == "exportTrainingData" {
+			continue
+		}
+		// Tool approval resolution only mutates process-local pending calls. Its
+		// durable audit record is a security-access event, not a config change.
+		if op.ID == "resolveToolApproval" {
 			continue
 		}
 		mutations++

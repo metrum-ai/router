@@ -232,6 +232,20 @@
         ],
         "type": "object"
       },
+      "adminOpenObject": {
+        "properties": {
+          "Members": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "Members"
+        ],
+        "type": "object"
+      },
       "callerAdminCallerView": {
         "properties": {
           "allow": {
@@ -5178,6 +5192,102 @@
         "x-admin-domain": "handler",
         "x-admin-idempotency": "",
         "x-admin-object": "admin:reports"
+      }
+    },
+    "/admin/v1/tool-approvals/{approval_id}": {
+      "post": {
+        "operationId": "resolveToolApproval",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "approval_id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Strong ETag of the resource's current state. Required: 428 when missing, 412 when stale.",
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "description": "Replay-safe request key, scoped to principal, domain and operation, retained 24 h.",
+            "in": "header",
+            "name": "Idempotency-Key",
+            "schema": {
+              "maxLength": 128,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/adminOpenObject"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "description": "Open object. Documented members: approval_id, decision.",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Success"
+          },
+          "400": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "401": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "403": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "404": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "409": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "412": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "428": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "429": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "500": {
+            "$ref": "#/components/responses/Problem"
+          },
+          "503": {
+            "$ref": "#/components/responses/Problem"
+          }
+        },
+        "summary": "Release or deny a pending tool call",
+        "tags": [
+          "admin"
+        ],
+        "x-admin-action": "resolve",
+        "x-admin-concurrency": "",
+        "x-admin-domain": "global",
+        "x-admin-idempotency": "",
+        "x-admin-object": "admin:tool_approvals"
       }
     },
     "/admin/v1/training/export": {

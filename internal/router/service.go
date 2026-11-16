@@ -2021,7 +2021,8 @@ func (s *Service) handleLLM(w http.ResponseWriter, r *http.Request, dialect stri
 	// PII normalization can collapse instruction boundaries that the selected
 	// provider receives distinctly. Until cache identity is target-bound,
 	// never read a response cached under a PII-enabled group.
-	toolFirewallEnabled := !strings.EqualFold(strings.TrimSpace(s.cfg.Server.ToolFirewall.Mode), toolFirewallOff)
+	toolFirewallMode := strings.ToLower(strings.TrimSpace(s.cfg.Server.ToolFirewall.Mode))
+	toolFirewallEnabled := toolFirewallMode != "" && toolFirewallMode != toolFirewallOff
 	if cacheable(req) && !group.PIIFilter.Enabled && !toolFirewallEnabled {
 		if cached, ok := s.cache.Get(key); ok {
 			ensureResponseID(cached)
