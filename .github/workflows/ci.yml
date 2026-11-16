@@ -170,6 +170,10 @@ jobs:
           lanes=(ci-python compat-mock)
           if [ "$CI_RUN_EXAMPLES" = 1 ]; then lanes+=(ci-examples); fi
           env -u AWS_BEARER_TOKEN_BEDROCK make -k -j3 "${lanes[@]}"
+      - name: Standalone external policy examples
+        run: |
+          python3 -m unittest discover -s examples/typescript-request-shape -p 'test_*.py' -v
+          python3 -m unittest discover -s examples/typescript-pii-policy -p 'test_*.py' -v
 
   # The source SBOM is required on merge groups and manual dispatch, not PRs
   # or main-push cache warming.

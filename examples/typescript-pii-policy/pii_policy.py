@@ -16,13 +16,14 @@ PII_PATTERNS = tuple(re.compile(pattern) for pattern in (
     r"\b(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?)\d{3}[-.\s]?\d{4}\b",
     r"\b\d{3}-\d{2}-\d{4}\b",
     r"\b(?:\d[ -]*?){13,19}\b",
-    r"\b\d{1,5}\s+[A-Z0-9][A-Z0-9.'-]*(?:\s+[A-Z0-9][A-Z0-9.'-]*)*\s+(?i:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Drive|Dr|Lane|Ln|Court|Ct|Way|Place|Pl)\b",
+    r"(?i:\b\d{1,5}\s+[A-Z0-9][A-Z0-9.'-]*(?:\s+[A-Z0-9][A-Z0-9.'-]*){0,5}\s+(?:Street|St|Avenue|Ave|Road|Rd|Boulevard|Blvd|Drive|Dr|Lane|Ln|Court|Ct|Way|Place|Pl)\b)",
     r"\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,3}\b",
-    r"(?i:\b(?:DOB|date of birth|birthdate)\s*[:=-]?\s*)(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|[A-Z][a-z]+\s+\d{1,2},\s+\d{4})\b",
+    r"(?i:\b(?:DOB|date of birth|birthdate)\s*[:=-]?\s*(?:\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|[A-Z][a-z]+\s+\d{1,2},\s+\d{4})\b)",
     r"(?i:\b(?:MRN|medical record|patient id)\s*[:#-]?\s*)[A-Z0-9-]{4,}\b",
     r"(?i:\b(?:account|acct|routing)\s*(?:number|no\.?|#)?\s*[:#-]?\s*)\d{6,17}\b",
     r"(?i:\b(?:passport|driver'?s license|license)\s*(?:number|no\.?|#)?\s*[:#-]?\s*)[A-Z0-9-]{5,}\b",
 ))
+MAX_TEXT_CHARS = 8192
 
 
 class NoSensitiveTarget(Exception):
@@ -30,14 +31,21 @@ class NoSensitiveTarget(Exception):
 
 
 def _is_sensitive(target: dict[str, Any]) -> bool:
+    tier = str(target.get("tier") or "").strip()
+    if tier.casefold() in {"sensitive", "private"}:
+        return True
     return any(re.search(r"\b(sensitive|private)\b", str(target.get(field) or ""), re.IGNORECASE)
-               for field in ("tier", "displayName", "model"))
+               for field in ("displayName", "model"))
 
 
 def route(payload: dict[str, Any]) -> dict[str, Any]:
     # This service requires external_policy.include_request: true. Deploy it only
     # where the policy is trusted to receive request text.
+    if not isinstance(payload, dict):
+        raise ValueError("request must be a JSON object")
     text = str(payload.get("text") or "")
+    if len(text) > MAX_TEXT_CHARS:
+        raise ValueError("request text too large")
     targets = payload.get("targets") or []
     eligible = [
         (index, target)
@@ -82,6 +90,9 @@ class PolicyHandler(BaseHTTPRequestHandler):
                 self._write_json(413, {"error": "request too large"})
                 return
             payload = json.loads(self.rfile.read(length) or b"{}")
+            if not isinstance(payload, dict):
+                self._write_json(400, {"error": "invalid request"})
+                return
             self._write_json(200, route(payload))
         except NoSensitiveTarget:
             self._write_json(422, {"error": "pii-detected:no-sensitive-target"})

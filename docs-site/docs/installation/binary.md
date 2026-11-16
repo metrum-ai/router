@@ -22,8 +22,6 @@ metrum-ai-router-<version>-linux-<arch>/
   config/
     config.example.yaml
     env.example.json
-    scripts/
-      router.ts
   caddy/
     Caddyfile
   docs/
@@ -157,7 +155,7 @@ The service process needs access to:
 - `config.yaml`;
 - the provider credential env file;
 - the usage database DSN;
-- optional routing script files and helper dependencies already packaged on disk.
+- optional external policy services deployed separately.
 
 Example service command:
 

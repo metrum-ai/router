@@ -58,7 +58,6 @@ compose/.env
 compose/.env.example
 config/config.example.yaml
 config/env.example.json
-config/scripts/router.ts
 docs/PACKAGE_README.md
 docs/BINARY_INSTALL.md
 docs/DOCKER_COMPOSE_INSTALL.md
@@ -221,12 +220,9 @@ docker load -i images/metrum-ai-router-<version>-linux-amd64.tar
 Prepare runtime directories and config:
 
 ```bash
-mkdir -p compose/config/scripts compose/state compose/logs
 cp config/config.example.yaml compose/config/config.yaml
 cp config/env.example.json compose/config/env.json
-cp config/scripts/router.ts compose/config/scripts/router.ts
 sudo chown -R 65532:65532 compose/config compose/state compose/logs
-chmod 0750 compose/config compose/config/scripts
 chmod 0400 compose/config/env.json
 ```
 
@@ -240,7 +236,7 @@ Before exposing a deployment model group to users:
 
 - Define the workload and owner.
 - Choose whether this belongs in one model group, multiple groups, or a separate router instance.
-- Choose the strategy: `static`, `failover`, `weighted`, `dynamic_score`, `script`, `external`, or a contract-backed combination.
+- Choose the strategy: `static`, `failover`, `weighted`, `dynamic_score`, `intelligent`, `external`, or a contract-backed combination.
 - Define eligible providers and models under `models.<group>.targets[]`; do not treat provider catalog entries as active routes.
 - Document required API shapes, tool modes, modalities, reasoning controls, structured-output support, and max-token cap behavior.
 - Define quality, cost, latency, throughput, error-rate, timeout, and fallback targets.

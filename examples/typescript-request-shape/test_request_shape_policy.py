@@ -4,6 +4,7 @@ import unittest
 from http.server import ThreadingHTTPServer
 from threading import Thread
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError
 
 from request_shape_policy import PolicyHandler, route
 
@@ -52,6 +53,17 @@ class RequestShapePolicyTest(unittest.TestCase):
         with urlopen(request, timeout=2) as response:
             self.assertEqual(response.status, 200)
             self.assertEqual(response.read(), b'{"targetIndex": 0, "fallbackIndexes": [], "classLabel": "request-shape:image"}')
+
+    def test_http_rejects_non_object_json(self):
+        server = ThreadingHTTPServer(("127.0.0.1", 0), PolicyHandler)
+        worker = Thread(target=server.serve_forever, daemon=True)
+        worker.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        request = Request(f"http://127.0.0.1:{server.server_port}/route", data=b"[]", method="POST")
+        with self.assertRaises(HTTPError) as raised:
+            urlopen(request, timeout=2)
+        self.assertEqual(raised.exception.code, 400)
 
 
 if __name__ == "__main__":

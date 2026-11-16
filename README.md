@@ -440,7 +440,7 @@ non-retryable 4xx is not replayed to another provider.
 
 ### Secrets and content never leak into policy
 
-Shipping provider keys or raw prompts into a routing script creates a second
+Shipping provider keys or raw prompts into a policy component creates a second
 secret surface. Illustrative: one leaked key forces rotation across every
 caller that shared it, often a multi-day outage window. Scripts and external
 policies receive safe identifiers only. Provider keys are injected server-side.
@@ -691,7 +691,6 @@ bin/metrum-ai-router-migrate
 bin/metrum-ai-routerctl
 config/config.example.yaml
 config/env.example.json
-config/scripts/router.ts
 docs/PACKAGE_README.md
 docs/BINARY_INSTALL.md
 docs/DOCKER_COMPOSE_INSTALL.md
@@ -738,7 +737,6 @@ compose/.env
 compose/.env.example
 config/config.example.yaml
 config/env.example.json
-config/scripts/router.ts
 docs/PACKAGE_README.md
 docs/BINARY_INSTALL.md
 docs/DOCKER_COMPOSE_INSTALL.md
@@ -747,7 +745,6 @@ docs/PACKAGE_VALIDATION.md
 docs/solution-brief.md
 ```
 
-The packaged config expects the routing script at `config/scripts/router.ts`, so the standard packaged run command is:
 
 ```bash
 bin/metrum-ai-router --config config/config.yaml
@@ -1010,7 +1007,7 @@ Use whichever deployment-defined model group the caller token allows. If a reque
 
 ### Model Group Contracts
 
-Model groups may declare an optional `contract` that makes the group’s workload, API surfaces, hard capability requirements, validation quality floor, and operational thresholds first-class config. Existing groups without a contract behave as before. Contract enforcement is strictly group-local: after authentication and caller allow-list checks, the router filters only the requested group’s already eligible targets, then runs `static`, `weighted`, `failover`, `dynamic_score`, `script`, or `external` on the remaining targets.
+Model groups may declare an optional `contract` that makes the group’s workload, API surfaces, hard capability requirements, validation quality floor, and operational thresholds first-class config. Existing groups without a contract behave as before. Contract enforcement is strictly group-local: after authentication and caller allow-list checks, the router filters only the requested group’s already eligible targets, then runs `static`, `weighted`, `failover`, `dynamic_score`, `intelligent`, or `external` on the remaining targets.
 
 ```yaml
 models:
@@ -1101,16 +1098,18 @@ providers:
 ## Custom Routing Policies
 
 The in-process TypeScript strategy (`strategy: script`) was removed in v5.0.0.
-Configurations using `script`, `script_max_concurrent`, or `script_http` fail
-at load with a migration message. Move custom routing logic into a standalone
+Configurations using `strategy: script` or non-empty legacy script settings
+fail at load with a migration message; empty v4 compatibility fields are
+ignored. Move custom routing logic into a standalone
 policy service using `strategy: external`. User code never runs inside the
 router process.
 
 The former request-shape and PII-aware TypeScript examples are now standalone
 external policy services in `examples/typescript-request-shape/` and
 `examples/typescript-pii-policy/`. The PII-aware example requires
-`external_policy.include_request: true`; use `pii_filter` when the router must
-redact request content before upstream calls.
+`external_policy.include_request: true`; without it the service receives no
+request text and treats each request as no-PII. Use `pii_filter` when the
+router must redact request content before upstream calls.
 
 ## External Routing Policy Service
 
@@ -1146,16 +1145,11 @@ deployment-designated strong default. The reference requires
 `external_policy.include_request: true` and therefore belongs only in trusted
 infrastructure, with redacted input when the model group uses `pii_filter`.
 
-External policy URLs use the same egress rules as `router.fetchJSON`: HTTPS by default, plaintext HTTP only for loopback hosts or with `external_policy.allow_http: true`, exact-host allowlisting, and redirect revalidation on every hop. A redirect to a host outside `allow_hosts`, including a loopback address that was not explicitly allowed, fails before the redirected service is reached.
+External policy URLs use bounded HTTP clients with these egress rules: HTTPS by default, plaintext HTTP only for loopback hosts or with `external_policy.allow_http: true`, exact-host allowlisting, and redirect revalidation on every hop. A redirect to a host outside `allow_hosts`, including a loopback address that was not explicitly allowed, fails before the redirected service is reached.
 
 Non-loopback private/link-local IPs and nondefault nonlocal ports are also denied.
 Private policy sidecars use loopback in the router's network namespace.
 
-The default `scripts/router.ts` does three things:
-
-- Removes targets whose provider key is not configured or whose target weight is zero.
-- Applies named regex rules against safe caller-key metadata and safe target-key metadata.
-- Falls back to weighted random routing across eligible targets, using group target weights as relative probabilities.
 
 For checked-in request-shape routing (prompt size, tools, images, structured
 outputs, and reasoning signals), use

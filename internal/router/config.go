@@ -1239,12 +1239,41 @@ func validateRemovedScriptConfig(raw []byte) error {
 				}
 				switch key {
 				case "script", "script_max_concurrent", "script_http":
-					return fmt.Errorf("config key models.<group>.%s was removed in v5.0.0; migrate to strategy: external and external_policy", key)
+					if yamlNodeHasNonZeroValue(value) {
+						return fmt.Errorf("config key models.<group>.%s was removed in v5.0.0; migrate to strategy: external and external_policy", key)
+					}
 				}
 			}
 		}
 	}
 	return nil
+}
+
+func yamlNodeHasNonZeroValue(node *yaml.Node) bool {
+	if node == nil {
+		return false
+	}
+	switch node.Kind {
+	case yaml.MappingNode:
+		for i := 1; i < len(node.Content); i += 2 {
+			if yamlNodeHasNonZeroValue(node.Content[i]) {
+				return true
+			}
+		}
+		return false
+	case yaml.SequenceNode:
+		for _, child := range node.Content {
+			if yamlNodeHasNonZeroValue(child) {
+				return true
+			}
+		}
+		return false
+	case yaml.ScalarNode:
+		value := strings.ToLower(strings.TrimSpace(node.Value))
+		return value != "" && value != "null" && value != "~" && value != "false" && value != "0" && value != "0.0"
+	default:
+		return false
+	}
 }
 
 // discardDeprecatedServerLicenseYAML reports a legacy server.license mapping.
@@ -1838,6 +1867,13 @@ func (c *Config) validate(requireAdminKeyEnv bool) error {
 	for name, m := range c.Models {
 		if m.Strategy == "" {
 			return fmt.Errorf("model group %s missing strategy", name)
+		}
+		switch strings.ToLower(strings.TrimSpace(m.Strategy)) {
+		case "static", "weighted", "failover", "dynamic_score", "intelligent", "external":
+		case "script":
+			return fmt.Errorf("strategy: script was removed in v5.0.0; migrate to strategy: external and configure external_policy")
+		default:
+			return fmt.Errorf("model group %s has unsupported strategy %q", name, m.Strategy)
 		}
 		if strings.EqualFold(m.Strategy, "external") {
 			if strings.TrimSpace(m.ExternalPolicy.URL) == "" {

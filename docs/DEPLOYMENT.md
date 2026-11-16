@@ -23,7 +23,6 @@ bin/metrum-ai-router-migrate
 bin/metrum-ai-routerctl
 config/config.example.yaml
 config/env.example.json
-config/scripts/router.ts
 docs/PACKAGE_README.md
 docs/BINARY_INSTALL.md
 docs/DOCKER_COMPOSE_INSTALL.md
@@ -59,7 +58,7 @@ All package tar commands run with `COPYFILE_DISABLE=1` so macOS does not inject 
 
 Release metadata is intentionally strict because package and Docker recipes use it in paths, tags, and linker flags. `VERSION`, `COMMIT`, `BUILD_DATE`, `GOOS`, `GOARCH`, `PKG_NAME`, `DIST_DIR`, `IMAGE_NAME`, and `IMAGE_TAG` must pass `scripts/validate_build_metadata.py` before package or image commands run. Versions may use ordinary `git describe` characters such as letters, digits, `.`, `_`, `+`, `/`, and `-`; shell metacharacters, empty values, absolute paths, and `..` path components are rejected.
 
-The config and routing script are packaged together so this command works after unpacking:
+The configuration is packaged with the router, so this command works after unpacking:
 
 ```bash
 bin/metrum-ai-router --config config/config.yaml
@@ -241,7 +240,6 @@ Recommended paths:
 /opt/smart-llmrouter/bin/metrum-ai-router-token-gen
 /opt/smart-llmrouter/config/config.yaml
 /opt/smart-llmrouter/config/env.json
-/opt/smart-llmrouter/config/scripts/router.ts
 /var/lib/smart-llmrouter/router-state.json
 /var/log/smart-llmrouter/requests.jsonl
 /etc/caddy/Caddyfile

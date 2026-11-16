@@ -498,6 +498,18 @@ func TestConfigAdminIneligibleAndMalformed(t *testing.T) {
 	}
 }
 
+func TestConfigAdminImportRejectsRemovedScriptStrategy(t *testing.T) {
+	db := configAdminTestDB(t)
+	mux := configAdminTestMux(t, db, nil)
+	legacy := strings.Replace(configAdminTestYAML, "strategy: static", "strategy: script", 1)
+	headers := adminHeaders("adminkey:ops", "config:activate")
+	headers["Idempotency-Key"] = "script-strategy-rejected"
+	rr := configAdminRequest(t, mux, http.MethodPost, "/admin/config/sets", map[string]any{"name": "legacy-script", "yaml": legacy}, headers)
+	if rr.Code < 400 || !strings.Contains(rr.Body.String(), "strategy: script was removed in v5.0.0") {
+		t.Fatalf("script strategy import status=%d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestConfigAdminValidationStatusPolicyAndForce(t *testing.T) {
 	db := configAdminTestDB(t)
 	mux := http.NewServeMux()

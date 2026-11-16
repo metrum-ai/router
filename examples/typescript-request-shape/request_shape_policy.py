@@ -65,6 +65,9 @@ class PolicyHandler(BaseHTTPRequestHandler):
                 self._write_json(413, {"error": "request too large"})
                 return
             payload = json.loads(self.rfile.read(length) or b"{}")
+            if not isinstance(payload, dict):
+                self._write_json(400, {"error": "invalid request"})
+                return
             self._write_json(200, route(payload))
         except (ValueError, TypeError, json.JSONDecodeError):
             self._write_json(400, {"error": "invalid request"})

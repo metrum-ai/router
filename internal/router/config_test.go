@@ -73,6 +73,47 @@ func TestRemovedScriptConfigFailsAtLoadWithMigration(t *testing.T) {
 	}
 }
 
+func TestV4StoredScriptFieldsWithZeroValuesLoad(t *testing.T) {
+	cfg := minimalConfig(t)
+	configBytes, err := yaml.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := regexp.MustCompile(`(?m)^([ \t]*)strategy: static$`).ReplaceAllString(string(configBytes), "${1}strategy: static\n${1}script: \"\"\n${1}script_max_concurrent: 0\n${1}script_http:\n${1}    enabled: false")
+	path := filepath.Join(t.TempDir(), "v4-config.yaml")
+	if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig rejected v4 empty legacy fields: %v", err)
+	}
+	if loaded.Models["default"].Strategy != "static" {
+		t.Fatalf("strategy = %q", loaded.Models["default"].Strategy)
+	}
+}
+
+func TestKubernetesExampleEmptyScriptFieldsRemainLoadCompatible(t *testing.T) {
+	raw, err := os.ReadFile("../../deploy/kubernetes/overlays/nvidia-local-serving/config.example.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateRemovedScriptConfig(raw); err != nil {
+		t.Fatalf("v4-shaped Kubernetes example rejected empty script compatibility fields: %v", err)
+	}
+}
+
+func TestRemovedScriptStrategyRejectedByValidation(t *testing.T) {
+	cfg := minimalConfig(t)
+	group := cfg.Models["default"]
+	group.Strategy = "script"
+	cfg.Models["default"] = group
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "strategy: script was removed in v5.0.0") {
+		t.Fatalf("Config.Validate() error = %v, want script migration message", err)
+	}
+}
+
 func TestResponsesModelIdentityValidation(t *testing.T) {
 	for _, tc := range []struct {
 		value   string

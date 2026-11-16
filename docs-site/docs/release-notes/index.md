@@ -7,7 +7,7 @@ doc_type: reference
 
 ## v5.0.0 planned breaking change
 
-The in-process TypeScript routing strategy is removed. Move custom logic to a standalone external policy service; see the [upgrade guide](./upgrade-guide). User code never runs inside the router process.
+The in-process TypeScript routing strategy is removed. Move custom logic to a standalone external policy service; see the [upgrade guide](/docs/release-notes/upgrade-guide). User code never runs inside the router process.
 
 
 Release notes help customer operators decide whether to deploy, how to validate the release, and how to roll back if needed. Each packaged router build also displays its router version and build timestamp on every docs page.
