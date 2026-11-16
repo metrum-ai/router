@@ -61,7 +61,8 @@
 - Add opt-in latest posture summary reporting through the authenticated admin
   security reports surface. Usage migration 2026111602 adds a singleton summary table at usage schema version 17.
 - Record UTC issuance timestamps for generated and rotated caller keys; the
-  security self-test warns when age is unknown and fails keys older than 90 days.
+  security self-test warns when age is unknown and fails keys older than the configured
+  maximum age (90 days by default; set `security.key_hygiene.max_age_days`).
 
 All notable changes to Metrum AI Router are documented in this file.
 
