@@ -21,8 +21,8 @@ conditions. A leaked token can revoke itself through
 configuration store and checked during authentication on every serving
 endpoint. Database-backed replicas receive the change through the configuration
 revision reload path. The revocation and its audit records commit together.
-Rotate the caller token to issue a new verifier and restore access; the old
-token remains refused. The route is enabled for database-backed caller
+Rotate the caller token to issue a new verifier and restore access; then update
+clients with the new bearer token. The old token remains refused. The route is enabled for database-backed caller
 configuration and is absent in YAML-only mode. The revocation is not stored in
 `state_path`.
 ## Security dependency update
