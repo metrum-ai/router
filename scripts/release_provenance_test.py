@@ -168,6 +168,18 @@ class ProvenanceWorkflowTest(unittest.TestCase):
         self.assertIn("hierarchy-codex-chain", dry_run["needs"])
         all_runs = "\n".join(step.get("run", "") for job in jobs.values() for step in job.get("steps", []))
         self.assertIn("make package", all_runs)
+        dry_run_steps = jobs["dry-run"]["steps"]
+        dry_run_names = [step.get("name") for step in dry_run_steps]
+        preserve = dry_run_names.index("Preserve first build output")
+        reset = dry_run_names.index("Reset generated package outputs before clean-cache rebuild")
+        rebuild = dry_run_names.index("Rebuild with clean Go caches")
+        self.assertLess(preserve, reset)
+        self.assertLess(reset, rebuild)
+        reset_run = dry_run_steps[reset]["run"]
+        self.assertIn("git restore --worktree -- .", reset_run)
+        self.assertIn("git clean -fd", reset_run)
+        self.assertIn("rm -rf dist", reset_run)
+        self.assertIn("validate_release_clean.py", reset_run)
         self.assertIn("compare_release_checksums.py", all_runs)
         self.assertIn("release_ai_review.py", all_runs)
         self.assertIn("release_upgrade_rollback.py", all_runs)
