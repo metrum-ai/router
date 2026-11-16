@@ -46,6 +46,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add the versioned external detector contract and bounded asynchronous detector queue. Operator detector code runs in separate services; see the detector security guide.
 - Reject userinfo in external-policy and detector URLs, including redirect targets.
 
+### Breaking
+
+- v5.0.0 removes legacy machine `/admin/*` routes from the serving port. Use `/admin/v1` on the
+  admin listener. Configs that still set `admin.legacy_routes_on_serving_port` or
+  `admin.legacy_sunset` fail at load with migration guidance. `admin.enabled` defaults to `true`;
+  the authenticated admin listener binds `127.0.0.1:8081`. Set it to `false` for a single-listener
+  deployment. Browser reports and `/admin/auth/*` routes remain on the serving port. Database-mode
+  operators must run the router-config maintenance migration before startup; it removes the v4-only
+  keys from stored canonical configurations and refreshes their content hashes.
+
+### Migrations
+
+| Migration id | Scope | Schema version | Change | Maintenance | Data job | Rollback class |
+| --- | --- | --- | --- | --- | --- | --- |
+| `2026111601` | `router-config` | 13 | remove v4 serving-port admin settings from stored configs | maintenance | none | `restore-required` |
+
 ### Fixed
 
 - Remove the in-process TypeScript routing strategy and its goja/esbuild dependencies. Configurations using `strategy: script`, `script`, `script_max_concurrent`, or `script_http` now fail at load with migration guidance to `strategy: external`. Port request-shape and PII-aware policy examples to standalone services.

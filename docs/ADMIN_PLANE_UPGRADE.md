@@ -16,19 +16,20 @@ with its current login and is unaffected by this guide.
 
 | Area | v4.7 | v4.8.0 |
 | --- | --- | --- |
-| Admin transport | `/admin/*` on the serving port | opt-in second listener (`admin.listen`, default `127.0.0.1:8081`), plus the legacy routes on the serving port behind a flag |
+| Admin transport | `/admin/*` on the serving port | second listener (`admin.listen`, default `127.0.0.1:8081`); v4.8 temporarily retains machine routes on the serving port behind a flag |
 | Admin credentials | Basic, OIDC sessions, admin API keys | machine credentials on the admin listener (admin API keys in v4.8.0, mTLS/OAuth/federation as the authentication work lands); the serving-port browser login is unchanged for the reports UI |
 | `/metrics` | serving port, caller token with `metrics` `read` | admin listener, authorized for an admin identity with `metrics` `read`; `admin.metrics.on_serving_port: true` keeps the v4.7 scrape |
 | Legacy `/admin/*` | undecorated | `Deprecation`, `Sunset` and a `Link` to `/admin/v1` on every machine admin response |
 | Exposure | whatever the serving port uses | loopback by default; a non-loopback bind needs TLS or an explicit plaintext override |
 
-A configuration without an `admin:` block behaves exactly like v4.7. Nothing in this guide is
-required to keep an existing deployment running; it is required to adopt the control plane.
+A configuration without an `admin:` block starts the loopback admin listener by default. Set
+`admin.enabled: false` explicitly to keep a single listener.
 
 ## 2. Exposure options
 
 **Loopback only (default).** `admin.enabled: true` with the default `127.0.0.1:8081`. Reach it from
-the host, a sidecar container or `kubectl port-forward`:
+the host, a sidecar container or `kubectl port-forward`. When several replicas share one host, give
+each replica a unique `admin.listen`; the default address can be bound only once on that host:
 
 ```bash
 kubectl -n <namespace> port-forward deploy/<router-deployment> 8081:8081
@@ -153,29 +154,25 @@ A caller token is rejected on the admin listener; an admin key without a `metric
 also rejected. Do not configure `on_serving_port: false` while the plane is disabled: validation
 rejects it because metrics would be served nowhere.
 
-## 5. Legacy routes and the deprecation window
+## 5. v5 serving-port route removal
 
-While `admin.legacy_routes_on_serving_port` is `true` (the v4.8.0 default) the machine admin routes
-stay on the serving port and answer with:
+v5.0.0 removes machine `/admin/*` routes from the serving listener. Move automation to the
+versioned `/admin/v1/*` API on the dedicated admin listener before upgrading. The removed
+`admin.legacy_routes_on_serving_port` and `admin.legacy_sunset` keys must not appear in file
+configuration; v5 config loading rejects either key with migration guidance. The reports UI and
+`/admin/auth/*` browser session routes remain on the serving port.
 
-- `Deprecation: true`
-- `Sunset: Tue, 01 Mar 2027 00:00:00 GMT` (configurable with `admin.legacy_sunset`, at least 90 days
-  after the v4.8.0 release)
-- `Link: </admin/v1/...>; rel="deprecation"`
-
-The flag covers machine routes only: `/admin/config/*`, `/admin/callers*` and `/admin/training/*`.
-The browser reports UI (`/admin/reports*`) and the `/admin/auth/*` session routes keep working on the
-serving port with their current login, even with the flag off. Set the flag to `false` once every
-automation client uses `/admin/v1`.
+For database-mode deployments, run the v5 router-config migration maintenance step before starting
+the router. It removes only those two obsolete keys from stored canonical configs. Back up the
+configuration database first and follow the v5.0.0 section of the `docs-site/docs/release-notes/upgrade-guide.md`.
 
 ## 6. API and CLI parity
 
-`metrum-ai-routerctl` talks to the legacy HTTP paths today; the online commands move to `/admin/v1`
-in v5.0. Use this table to pick the API path for new automation.
+`metrum-ai-routerctl` online commands use `/admin/v1` in v5.0.0. Use this table for the API paths used by automation.
 
 | Operation | Versioned API | Router CLI | Notes |
 | --- | --- | --- | --- |
-| List model groups | `GET /admin/v1/config/groups` | `groups list --router-url <url>` | CLI uses the legacy path until v5.0 |
+| List model groups | `GET /admin/v1/config/groups` | `groups list --router-url <url>` |
 | Show a group | `GET /admin/v1/config/groups/{group}` | `groups show <group>` | |
 | Replace group targets | `PUT /admin/v1/config/groups/{group}/targets` | `groups set-targets <group>` | |
 | Add / remove a target | `POST` / `DELETE …/targets` | `groups add-target`, `groups remove-target` | |
@@ -204,7 +201,7 @@ curl -fsS -H "Authorization: Bearer $(cat /secure/path/ops.key)" \
 Keep the export credentials distinct from inference caller tokens, and store exported files under
 the deployment's data-handling policy.
 
-## 8. Upgrade runbook: v4.7 → v4.8
+## 8. Upgrade runbook: v4.7 → v4.8 and v5.0.0
 
 1. **Record the current surface.** Capture the scrape configuration for `/metrics`, the routes in
    use under `/admin/*`, and the browser login settings.
@@ -218,11 +215,12 @@ the deployment's data-handling policy.
    port logs nothing but state at `/healthz`; the process fails fast if the plane cannot bind.
 6. **Issue a machine credential** (§3) and run one read-only operation through it, for example a
    config status read.
-7. **Move automation** to `/admin/v1`, then set `admin.legacy_routes_on_serving_port: false` and roll
-   out again. Watch for residual clients hitting the legacy paths.
-8. **Rollback** is the reverse: re-enable the legacy flag and either disable the plane or restore
-   `metrics.on_serving_port`. The serving port never depends on the admin listener, so stopping the
-   plane cannot affect inference.
+7. **Move automation** to `/admin/v1` on the admin listener and verify each client against the new
+   endpoint before upgrading to v5.0.0. v5 has no legacy-route toggle; requests to removed machine
+   paths on the serving port return `404`.
+8. **Rollback** to v4.8 requires restoring the prior binary and its compatible configuration from
+   the deployment backup. Do not add the removed keys to a v5 configuration. Inference remains on
+   the serving listener if the admin plane is stopped.
 
 ## 9. Kubernetes network verification
 
@@ -270,8 +268,20 @@ unselected-client selected-client serving-client`) when finished.
 
 - TLS certificate and key rotation needs a restart; the client CA bundle reloads live.
 - No Ingress, NodePort or LoadBalancer service is supported for the admin plane.
-- A Unix-socket admin listener is not available in v4.8.0.
-- `/admin/v1` operations beyond the ones listed in §6 land with the contract work; the parity table is
-  updated with them.
+- A Unix-socket admin listener is not available.
+- Use the current `/admin/v1` API reference for operations available in v5.0.0.
 - Plaintext in the Kubernetes overlay is acceptable only with the default-deny NetworkPolicy; use
   router-native TLS for anything less isolated.
+
+
+## v5.0.0 migration: serving-port admin routes
+
+v5.0.0 removes the legacy machine `/admin/*` routes from the serving port, without an override flag
+or sunset date. Move automation to `/admin/v1` on the admin listener before upgrading. The listener
+now defaults to enabled on loopback at `127.0.0.1:8081` and requires authentication; set
+`admin.enabled: false` to keep one listener. A configuration with no `admin:` block receives these
+defaults.
+
+Remove `admin.legacy_routes_on_serving_port` and `admin.legacy_sunset` from configuration. Either
+key causes config loading to fail with a migration message. `/admin/reports/*` and `/admin/auth/*`
+remain on the serving port.

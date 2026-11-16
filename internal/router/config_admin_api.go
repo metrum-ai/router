@@ -876,6 +876,9 @@ func importConfigSetForAPI(db *gorm.DB, runtimeScope, name string, yamlBytes []b
 	if err := yaml.Unmarshal(cleaned, &cfg); err != nil {
 		return "", configAdminError(400, "config-invalid-request", "the document is not a valid router configuration")
 	}
+	if err := applyV5AdminConfig(cleaned, &cfg); err != nil {
+		return "", configAdminError(400, "config-invalid-request", err.Error())
+	}
 	cfg.setDefaults()
 	if err := cfg.ValidateForImport(); err != nil {
 		return "", configAdminError(422, "config-invalid", "the document fails validation: "+truncateSafeDetail(err.Error()))
@@ -1144,6 +1147,9 @@ func (h *configAdminHandler) handleConfigDiff(w http.ResponseWriter, r *http.Req
 		}
 		var cfg Config
 		if err := yaml.Unmarshal(raw, &cfg); err != nil {
+			return nil, "", err
+		}
+		if err := applyV5AdminConfig(raw, &cfg); err != nil {
 			return nil, "", err
 		}
 		cfg.setDefaults()

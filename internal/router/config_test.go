@@ -158,6 +158,70 @@ func TestEveryDispatchedModelStrategyPassesValidation(t *testing.T) {
 	}
 }
 
+func TestV5AdminConfigMigration(t *testing.T) {
+	for _, key := range []string{"legacy_routes_on_serving_port", "legacy_sunset"} {
+		t.Run(key, func(t *testing.T) {
+			_, err := validateV5AdminConfig([]byte("admin:\n  " + key + ": true\n"))
+			if err == nil || !strings.Contains(err.Error(), "removed in v5.0.0") || !strings.Contains(err.Error(), "/admin/v1") {
+				t.Fatalf("legacy setting error = %v, want migration guidance", err)
+			}
+		})
+	}
+	base, err := os.ReadFile(filepath.Join("..", "..", "config.minimal.example.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, base, 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig without admin block: %v", err)
+	}
+	if !cfg.Admin.Enabled || cfg.Admin.Listen != defaultAdminListenAddr {
+		t.Fatalf("omitted admin block defaults = enabled:%t listen:%q", cfg.Admin.Enabled, cfg.Admin.Listen)
+	}
+	defaults := Config{}
+	defaults.setDefaults()
+	if !defaults.Admin.Enabled || defaults.Admin.Listen != defaultAdminListenAddr {
+		t.Fatalf("setDefaults admin defaults = enabled:%t listen:%q", defaults.Admin.Enabled, defaults.Admin.Listen)
+	}
+	explicitDisabled := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(explicitDisabled, append(append([]byte(nil), base...), []byte("\nadmin:\n  enabled: false\n")...), 0600); err != nil {
+		t.Fatal(err)
+	}
+	disabled, err := LoadConfig(explicitDisabled)
+	if err != nil {
+		t.Fatalf("LoadConfig with admin.enabled false: %v", err)
+	}
+	if disabled.Admin.Enabled {
+		t.Fatal("explicit admin.enabled false was overridden by defaults")
+	}
+	for _, key := range []string{"legacy_routes_on_serving_port", "legacy_sunset"} {
+		t.Run("load rejects "+key, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			raw := append(append([]byte(nil), base...), []byte("\nadmin:\n  "+key+": true\n")...)
+			if err := os.WriteFile(path, raw, 0600); err != nil {
+				t.Fatal(err)
+			}
+			_, err := LoadConfig(path)
+			if err == nil || !strings.Contains(err.Error(), "removed in v5.0.0") || !strings.Contains(err.Error(), "/admin/v1") || !strings.Contains(err.Error(), "metrum-ai-router-migrate --scope router-config --action apply") {
+				t.Fatalf("LoadConfig error = %v, want migration guidance", err)
+			}
+		})
+	}
+	for _, tc := range []struct {
+		yaml string
+		want bool
+	}{{"admin:\n  enabled: false\n", true}, {"admin:\n  listen: 127.0.0.1:8081\n", false}, {"server:\n  listen: :8080\n", false}} {
+		got, err := validateV5AdminConfig([]byte(tc.yaml))
+		if err != nil || got != tc.want {
+			t.Fatalf("validateV5AdminConfig(%q) = %t, %v; want %t", tc.yaml, got, err, tc.want)
+		}
+	}
+}
+
 func TestResponsesModelIdentityValidation(t *testing.T) {
 	for _, tc := range []struct {
 		value   string

@@ -9,6 +9,9 @@ Model prices and lineups change every few weeks. When OpenAI cut GPT-6.1 Terra t
 
 The Admin Config API makes that one authenticated HTTP call per step. Applications keep calling the same model group (`agent-default`); nothing restarts; no YAML is edited.
 
+In v5.0.0, machine operations use `/admin/v1` on the admin listener (default `127.0.0.1:8081`).
+Send these requests to the authenticated admin listener, not the inference serving listener.
+
 Prerequisites:
 
 - The router runs in database-backed mode (`server.config_source.mode: database`). See [Admin Config API](../reference/admin-config-api#file-mode).
@@ -40,7 +43,7 @@ The response is the diff (`added`, `removed`, `reordered`) and a per-target elig
 Equivalent raw call:
 
 ```http
-PUT /admin/config/groups/agent-default/targets
+PUT /admin/v1/config/groups/agent-default/targets
 If-Match: "12"
 Idempotency-Key: terra-swap-2026-10-27-001
 
@@ -90,7 +93,7 @@ metrum-ai-routerctl groups history agent-default       # who changed what, when,
 metrum-ai-routerctl config diff --api                  # group diff between the sets
 ```
 
-`GET /admin/config/status` on each replica shows its loaded revision converging.
+`GET /admin/v1/config/status` on each replica shows its loaded revision converging.
 
 ## 6. Roll back in one call if the new model misbehaves
 

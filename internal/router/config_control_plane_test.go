@@ -25,8 +25,16 @@ func applyConfigControlPlaneMigrationsForTest(t *testing.T, r *migrationRunner) 
 			t.Fatalf("explicit control-plane maintenance migration: %v", err)
 		}
 	}
-	if err := r.ApplyPending("test-online-phase6"); err != nil {
-		t.Fatalf("online control-plane phase-6 migration: %v", err)
+	if err := r.ApplyPending("test-online-phase6"); err != nil && !strings.Contains(err.Error(), "requires explicit maintenance runner") {
+		t.Fatalf("online control-plane migrations: %v", err)
+	}
+	if err := r.ApplyMaintenancePending("test-maintenance-v5-cleanup"); err != nil {
+		if !strings.Contains(err.Error(), "requires its declared runner mode") {
+			t.Fatalf("v5 stored-config cleanup migration: %v", err)
+		}
+	}
+	if err := r.ApplyPending("test-online-final"); err != nil {
+		t.Fatalf("final online control-plane migrations: %v", err)
 	}
 }
 

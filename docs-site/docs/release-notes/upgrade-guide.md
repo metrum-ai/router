@@ -69,6 +69,22 @@ admin OIDC rate limiting for proxied deployments. Review the trusted proxy
 CIDRs and verify that each proxy appends its connecting peer to
 `X-Forwarded-For`; do not trust client-controlled forwarding headers directly.
 
+## v5.0.0 admin listener and serving-port routes
+
+The authenticated admin listener starts by default at `127.0.0.1:8081`. Move machine automation
+from legacy `/admin/*` paths on the serving port to `/admin/v1/*` on the admin listener before
+upgrading. Set `admin.enabled: false` only when the deployment needs a single listener; remote binds
+require TLS or the explicit plaintext opt-in. Browser reports and `/admin/auth/*` remain on the
+serving port. Remove `admin.legacy_routes_on_serving_port` and `admin.legacy_sunset` from file
+configurations; either key fails config loading with migration guidance.
+
+For database-mode configurations, back up the router-config database and run the non-serving
+`router-migrate --scope router-config --action apply` followed by
+`router-migrate --scope router-config --action maintenance --backup-evidence-ref <backup-reference>`
+before starting v5.0.0. The maintenance migration removes those two v4-only keys from stored
+canonical documents and refreshes their content hashes. File-mode configurations need only have the
+keys removed before restart.
+
 ## Pre-Upgrade Checklist
 
 1. Read the release notes for operator impact, database changes, license changes, and caller-visible behavior.
