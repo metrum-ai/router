@@ -18,11 +18,11 @@ CALLER_DIGEST = _token_hash(CALLER, b"api-compat-caller")
 DENIED_CALLER_DIGEST = _token_hash(DENIED_CALLER, b"api-compat-denied")
 PROMPT_CANARY = "api-compat-prompt-canary"
 TOOL_CANARY = "api-compat-tool-canary"
+# token_id is a public correlation identifier intentionally included in usage logs;
+# keep the credential itself and its verifier forbidden.
 FORBIDDEN_ARTIFACT_VALUES = {
     CALLER,
-    CALLER_ID,
     DENIED_CALLER,
-    DENIED_CALLER_ID,
     CALLER_DIGEST,
     DENIED_CALLER_DIGEST,
     "Authorization:",
