@@ -678,7 +678,9 @@ func (d *secretStreamDLP) filterResponsesTextEvent(event stream.Event, payload m
 	}
 
 	var channels []string
-	if eventType == "response.output_text.done" || eventType == "response.content_part.done" {
+	if eventType == "response.output_item.added" || eventType == "response.content_part.added" {
+		// Added events can carry populated snapshots before any text deltas.
+	} else if eventType == "response.output_text.done" || eventType == "response.content_part.done" {
 		if channel, ok := responseTextChannelKey(payload); ok {
 			channels = append(channels, channel)
 		}
@@ -748,7 +750,7 @@ func (d *secretStreamDLP) filterResponsesTextEvent(event stream.Event, payload m
 		state.lastEvent = stream.Event{}
 		delete(d.responsesText, channel)
 	}
-	if eventType == "response.output_text.done" || eventType == "response.content_part.done" || eventType == "response.output_item.done" || eventType == "response.completed" || eventType == "response.failed" || eventType == "response.incomplete" {
+	if eventType == "response.output_item.added" || eventType == "response.content_part.added" || eventType == "response.output_text.done" || eventType == "response.content_part.done" || eventType == "response.output_item.done" || eventType == "response.completed" || eventType == "response.failed" || eventType == "response.incomplete" {
 		before := d.state.result.Replacements
 		if _, err := redactSecretStreamSnapshot(payload, d.state); err != nil {
 			return nil, true, err

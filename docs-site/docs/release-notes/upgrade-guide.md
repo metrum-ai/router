@@ -470,6 +470,9 @@ arguments and custom tool input are redacted in output snapshots.
 When firewall policy selects a hosted Responses tool for inspection, DLP
 redactions also rewrite its item snapshots and argument or code events before
 release.
+Populated text in Responses `output_item.added` and `content_part.added`
+snapshots is inspected before forwarding. `redact_only` masks matches;
+`fail_on_match` stops the stream with an upstream error.
 
 When tool routing enables `streaming.hold_until_validated`, streamed tool-call
 arguments are held until inspection completes. Secret matches are redacted in

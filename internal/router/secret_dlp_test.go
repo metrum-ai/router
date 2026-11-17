@@ -1239,6 +1239,50 @@ func TestSecretDLPResponsesInterleavedTextItemsThroughHandler(t *testing.T) {
 	}
 }
 
+func TestSecretDLPResponsesAddedTextSnapshotsThroughHandler(t *testing.T) {
+	secret := fakeGitHubToken()
+	for _, tc := range []struct {
+		name  string
+		frame string
+	}{
+		{name: "output item", frame: `event: response.output_item.added` + "\n" + `data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_secret","role":"assistant","content":[{"type":"output_text","text":"` + secret + `"}]}}`},
+		{name: "content part", frame: `event: response.content_part.added` + "\n" + `data: {"type":"response.content_part.added","output_index":0,"item_id":"msg_secret","content_index":0,"part":{"type":"output_text","text":"` + secret + `"}}`},
+	} {
+		for _, mode := range []string{"redact_only", "fail_on_match"} {
+			t.Run(tc.name+"/"+mode, func(t *testing.T) {
+				upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.Header().Set("Content-Type", "text/event-stream")
+					_, _ = io.WriteString(w, tc.frame+"\n\n")
+				}))
+				defer upstream.Close()
+				target := Target{Provider: "native", Model: "responses-model", ToolSupport: ToolSupport{OpenAIResponses: []string{"function", "tool_choice"}}}
+				svc := nativeStreamTestService(t, upstream.URL, "openai-responses", []Target{target}, func(cfg *Config) {
+					group := cfg.Models["native-stream"]
+					group.PIIFilter.Enabled = true
+					group.PIIFilter.SecretsEnabled = true
+					group.PIIFilter.Mode = mode
+					cfg.Models["native-stream"] = group
+				})
+				defer svc.Close()
+				req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"native-stream","stream":true,"input":"hello"}`))
+				req.Header.Set("Authorization", "Bearer "+testToken)
+				response := httptest.NewRecorder()
+				svc.Handler().ServeHTTP(response, req)
+				body := response.Body.String()
+				if strings.Contains(body, secret) {
+					t.Fatalf("added snapshot leaked secret: %s", body)
+				}
+				if mode == "redact_only" && (response.Code != http.StatusOK || !strings.Contains(body, "[SECRET_GITHUB_1]")) {
+					t.Fatalf("status=%d body=%s", response.Code, body)
+				}
+				if mode == "fail_on_match" && response.Code != http.StatusBadGateway {
+					t.Fatalf("status=%d body=%s", response.Code, body)
+				}
+			})
+		}
+	}
+}
+
 func TestSecretDLPResponsesFailedAndIncompleteSnapshotsThroughHandler(t *testing.T) {
 	secret := fakeGitHubToken()
 	for _, terminal := range []string{"failed", "incomplete"} {
