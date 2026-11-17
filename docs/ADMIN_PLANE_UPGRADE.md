@@ -46,10 +46,10 @@ separate `admin:audit` `delete` privilege. It can remove only the oldest retaine
 caller's domain, advancing the chain checkpoint; its deletion marker is written in the global domain.
 Grant export with `admin:audit` `read`.
 
-`POST /admin/v1/policy-sets/{set_id}/simulate` evaluates an object/action against a stored candidate
-policy in the authenticated caller's own domain. The API accepts no domain override and does not
-return policy rules. An allow explanation names the deciding rule's subject, domain, object and
-action; synthesized grants and denies use generic explanations. Example grants:
+`POST /admin/v1/policy-sets/{set_id}/simulate` evaluates the authenticated admin identity against an
+object/action in the global admin-policy domain. The API accepts no domain override and does not
+return policy rules or matched fields. Its explanation is generic for both allow and deny decisions.
+Simulation does not mutate policy state. Example grants:
 
 ```text
 p, audit_reader, example/prod, admin:audit, read

@@ -96,6 +96,8 @@ const sidebars = {
         "configuration/admin-authentication",
         "configuration/admin-listener",
         "configuration/admin-authorization",
+        "security-governance/admin-client-identities",
+        "security-governance/admin-audit-export",
         "security-governance/security-events",
         "configuration/tool-firewall",
         "configuration/tls",
@@ -160,6 +162,7 @@ const sidebars = {
       collapsed: false,
       items: [
         "operations/hierarchy-governance",
+        "operations/cpu-tier",
         "operations/deployment-patterns",
         "operations/production-promotion",
         "operations/observability",

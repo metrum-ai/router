@@ -71,5 +71,12 @@ arguments, tool results, and credentials are not stored. The audit table follows
 the security-access retention class. The router writes a start record before
 forwarding a tool call; an unavailable audit store prevents forwarding.
 
-Masking, approval holds, and audit export require their corresponding
-integrations and are not provided by this gateway slice.
+When the selected model group's PII filter is enabled, the gateway applies it
+to tool arguments and results. With `server.tool_firewall.mode: enforce`, a
+held call returns a pending-approval tool result; an authorized operator
+releases or denies it through the admin API, and the client retries the same
+call. Completed invocation outcomes are included in the hash-chained
+`/admin/v1/audit-events/export` with caller and tool identifiers, status, and a
+keyed argument digest. Raw arguments, results, and credentials remain excluded.
+See [tool-call firewall](./tool-firewall), [PII filtering](./pii-filtering),
+and [admin audit exports](../security-governance/admin-audit-export).
