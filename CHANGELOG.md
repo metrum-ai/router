@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Keep only `id`, `type`, `status`, and `error` on non-message and non-reasoning output items in failed and incomplete Responses snapshots, including unrecognized item kinds.
 - Keep pending provider usage windows inside the configured catch-up age bound.
 - Read audit export rows and chain anchors from repeatable snapshots so concurrent writes and retention do not produce invalid pages.
 - Bound authentication audit writes with durable per-replica five-minute counters, chain one count-delta row at window close, and fall back to direct chained writes when the counter table is full; deny authentication if either audit write fails.
