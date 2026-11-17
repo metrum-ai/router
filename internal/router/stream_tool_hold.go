@@ -267,7 +267,7 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 						field = "code"
 					}
 					h.calls.addDelta("openai-responses", idx, "", "", "")
-					if err := h.setResponsesSnapshotArguments(idx, stringValue(payload[field])); err != nil {
+					if err := h.setResponsesSnapshotArguments(idx, stringValue(payload[field]), true); err != nil {
 						h.reset()
 						return nil, err
 					}
@@ -488,11 +488,19 @@ func (h *streamToolCallHold) shouldInspectHostedCall(call IRToolCall) bool {
 	return false
 }
 
-func (h *streamToolCallHold) setResponsesSnapshotArguments(index int, arguments string) error {
+func (h *streamToolCallHold) setResponsesSnapshotArguments(index int, arguments string, compareHostedPayload ...bool) error {
 	if h == nil || h.calls == nil || h.calls.args[index] == nil {
 		return upstreamError{Class: "tool_call_snapshot_mismatch", Message: "Responses tool arguments have no matching streamed call", Committed: true, Fallbackable: false}
 	}
 	accumulated := h.calls.args[index].String()
+	if isHostedResponsesTool(IRToolCall{Dialect: "openai-responses", Kind: h.calls.kinds[index]}) && (len(compareHostedPayload) == 0 || !compareHostedPayload[0]) {
+		// Hosted snapshots carry lifecycle metadata in the item envelope. Their
+		// call payload is normalized separately from status and other metadata.
+		// Keep their argument stream authoritative and update from the payload-only
+		// snapshot without comparing the complete hosted item representation.
+		h.calls.setArguments(index, arguments)
+		return nil
+	}
 	if accumulated == "" {
 		h.calls.setArguments(index, arguments)
 		return nil
