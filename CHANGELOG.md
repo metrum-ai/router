@@ -170,6 +170,7 @@ from v4.8.0.
 - Preserve provider-reported cached and recomputed token accounting, request-shape fallback behavior, and sampled tool-call outcomes in usage records and reports.
 - Keep SQL usage reports aligned with in-memory recomputed-token coverage when input counts are negative.
 - Retry the earliest provider usage reconciliation window without a successful checkpoint, including partial and failed windows, before advancing catch-up.
+- Preserve mission-token grant identity and cumulative budget when an unchanged issuer is reloaded.
 
 ## [Unreleased]
 
