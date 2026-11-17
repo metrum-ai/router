@@ -308,9 +308,10 @@ multiple replicas, route each conversation and its approval request to the same
 router process. Configure `admin:tool_approvals:resolve` only for principals
 that may release held tool calls. Hold rules return an immediate pending
 result; after an administrator releases the hold, the agent retries the same
-request. Enforced streamed tool calls are held automatically until inspection completes,
-using 30-second and 1 MiB per-stream bounds when the model group does not set
-explicit bounds. Schema validation still runs only when the group opts in to
+request. Enforced streamed tool calls are held automatically until inspection
+completes, using 30-second and 1 MiB per-stream bounds when the model group does
+not set explicit bounds. Sequence rules evaluate calls in response order,
+including first and second steps returned together. Schema validation still runs only when the group opts in to
 `streaming.hold_until_validated`.
 
 ## v5.0.0 MCP tool governance integration
