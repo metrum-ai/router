@@ -27,6 +27,10 @@ split across stream events (for example an added snapshot and the following
 delta). `fail_on_match` blocks the response in those cases and is the mode to
 use when a guarantee is required.
 
+## Streamed PEM private-key filtering
+
+Secret filtering now holds a PEM private-key block until its END label matches the BEGIN label. A mismatched marker does not release buffered text, and an unresolved block at stream termination fails closed. No configuration migration is required.
+
 ## Chat refusal stream secret filtering
 
 When secret filtering is enabled, streamed Chat `delta.refusal` text now uses the same per-choice rolling inspection as content and reasoning. `redact_only` replaces credentials split across refusal deltas, and `fail_on_match` blocks a matching stream before the credential is forwarded. No configuration migration is required.

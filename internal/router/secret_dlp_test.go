@@ -26,7 +26,10 @@ import (
 	"github.com/metrum-ai/router/internal/stream"
 )
 
-func fakeGitHubToken() string  { return "ghp_" + strings.Repeat("1", 36) }
+func fakeGitHubToken() string {
+	// Detector-shaped but unmistakably synthetic; never use a provider-issued value.
+	return "ghp_" + strings.Repeat("fake", 9)
+}
 func fakeAWSAccessKey() string { return "AKIA" + strings.Repeat("1", 16) }
 func fakeJWTToken() string {
 	return "eyJhbGciOiJIUzI1NiJ9." + "eyJzdWIiOiIxMjM0NTY3ODkwIn0." + "signaturevalue123456"
@@ -2286,6 +2289,125 @@ func TestSecretDLPStreamKeywordPaddingIsHeld(t *testing.T) {
 			assertNoSecretFragment(t, output.String(), tc.secret, 12)
 		})
 	}
+}
+
+func TestSecretDLPPEMEndMarkersThroughChatHandler(t *testing.T) {
+	const safePrefix = "safe prelude "
+	const safeSuffix = " safe suffix"
+	privateBody := strings.Repeat("K", 700)
+	begin := testPEMMarker("BEGIN", "RSA PRIVATE KEY") + "\n"
+	mismatchedEnd := "\n" + testPEMMarker("END", "EC PRIVATE KEY") + "\n"
+	matchingEnd := "\n" + testPEMMarker("END", "RSA PRIVATE KEY")
+	padding := strings.Repeat("ordinary safe text ", 40)
+
+	for _, tc := range []struct {
+		name          string
+		mode          string
+		matchingEnd   bool
+		wantRedaction bool
+		wantFailure   bool
+	}{
+		{name: "redact after matching end", mode: "redact_only", matchingEnd: true, wantRedaction: true},
+		{name: "fail on matching end", mode: "fail_on_match", matchingEnd: true, wantFailure: true},
+		{name: "fail closed at terminal with mismatched end", mode: "redact_only", wantFailure: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var frames []string
+			first := safePrefix + begin + privateBody + mismatchedEnd + padding
+			if tc.matchingEnd {
+				first += matchingEnd[:strings.Index(matchingEnd, "-----END ")]
+			}
+			frames = append(frames, chatContentChunk(first, nil))
+			if tc.matchingEnd {
+				frames = append(frames, chatContentChunk(matchingEnd[strings.Index(matchingEnd, "-----END "):]+safeSuffix, nil))
+			}
+			frames = append(frames, chatContentChunk("", "stop"), "data: [DONE]")
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				for _, frame := range frames {
+					_, _ = io.WriteString(w, frame+"\n\n")
+					if flusher, ok := w.(http.Flusher); ok {
+						flusher.Flush()
+					}
+				}
+			}))
+			defer upstream.Close()
+			dir := t.TempDir()
+			cfg := testConfig(t, upstream.URL, "provider-key", dir)
+			group := cfg.Models["default"]
+			group.PIIFilter.Enabled = true
+			group.PIIFilter.SecretsEnabled = true
+			group.PIIFilter.Mode = tc.mode
+			cfg.Models["default"] = group
+			svc, err := New(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer svc.Close()
+
+			req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"default","stream":true,"messages":[{"role":"user","content":"hello"}]}`))
+			req.Header.Set("Authorization", "Bearer "+testToken)
+			response := httptest.NewRecorder()
+			svc.Handler().ServeHTTP(response, req)
+			var rebuilt strings.Builder
+			done := false
+			for _, line := range strings.Split(response.Body.String(), "\n") {
+				data, ok := strings.CutPrefix(strings.TrimSpace(line), "data: ")
+				if !ok {
+					continue
+				}
+				if data == "[DONE]" {
+					done = true
+					continue
+				}
+				var payload map[string]any
+				if json.Unmarshal([]byte(data), &payload) != nil {
+					continue
+				}
+				choices, _ := payload["choices"].([]any)
+				for _, raw := range choices {
+					choice, _ := raw.(map[string]any)
+					delta, _ := choice["delta"].(map[string]any)
+					content, _ := delta["content"].(string)
+					rebuilt.WriteString(content)
+				}
+			}
+			output := rebuilt.String()
+			if strings.Contains(output, privateBody[:24]) || strings.Contains(output, begin) {
+				t.Fatal("Chat stream released private-key material")
+			}
+			if tc.wantRedaction {
+				if response.Code != http.StatusOK || !strings.Contains(output, "[SECRET_PRIVATE_KEY_1]") || !strings.Contains(output, safeSuffix) || !done {
+					t.Fatalf("matching PEM END was not redacted and flushed: status=%d len=%d done=%v", response.Code, len(output), done)
+				}
+				return
+			}
+			if done || strings.Contains(output, "[SECRET_PRIVATE_KEY_1]") {
+				t.Fatalf("blocked PEM stream had a clean terminal or placeholder: status=%d len=%d", response.Code, len(output))
+			}
+			logData, err := os.ReadFile(cfg.Server.Logging.Path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var record map[string]any
+			if err := json.Unmarshal(bytes.TrimSpace(logData), &record); err != nil {
+				t.Fatalf("decode request log: %v", err)
+			}
+			if record["error_class"] != "secret_dlp_stream_filter_error" || record["status"] != float64(http.StatusBadGateway) {
+				t.Fatalf("unresolved PEM did not fail closed: class=%v status=%v", record["error_class"], record["status"])
+			}
+		})
+	}
+}
+
+func testPEMMarker(kind, label string) string {
+	return strings.Repeat("-", 5) + kind + " " + label + strings.Repeat("-", 5)
+}
+
+func chatContentChunk(content string, finish any) string {
+	payload := map[string]any{"id": "pem-stream", "object": "chat.completion.chunk", "created": 1, "model": "default", "choices": []any{map[string]any{"index": 0, "delta": map[string]any{"content": content}, "finish_reason": finish}}}
+	raw, _ := json.Marshal(payload)
+	return "data: " + string(raw)
 }
 
 func TestSecretDLPTruncatedPEMStreamsFailClosed(t *testing.T) {

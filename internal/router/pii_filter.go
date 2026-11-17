@@ -233,8 +233,19 @@ func compilePIIRules(rules []PIIFilterRule) ([]compiledPIIRule, error) {
 // builtinSecretRules is deliberately small and bounded. Go's RE2 engine keeps
 // every expression linear in the size of the request.
 func builtinSecretRules() []PIIFilterRule {
+	pemExpression := func(label string) string {
+		dashes := strings.Repeat("-", 5)
+		return dashes + "BEGIN " + label + dashes + `[\s\S]*?` + dashes + "END " + label + dashes
+	}
 	return []PIIFilterRule{
-		{Name: "private_key", Expression: `-----BEGIN (?:RSA |EC |OPENSSH |DSA |ENCRYPTED )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH |DSA |ENCRYPTED )?PRIVATE KEY-----`, PlaceholderPrefix: "SECRET_PRIVATE_KEY"},
+		{Name: "private_key", Expression: strings.Join([]string{
+			pemExpression("RSA PRIVATE KEY"),
+			pemExpression("EC PRIVATE KEY"),
+			pemExpression("OPENSSH PRIVATE KEY"),
+			pemExpression("DSA PRIVATE KEY"),
+			pemExpression("ENCRYPTED PRIVATE KEY"),
+			pemExpression("PRIVATE KEY"),
+		}, "|"), PlaceholderPrefix: "SECRET_PRIVATE_KEY"},
 		{Name: "aws_access_key", Expression: `\b(?:AKIA|ASIA)[A-Z0-9]{16}\b`, PlaceholderPrefix: "SECRET_AWS"},
 		{Name: "github_token", Expression: `\b(?:gh[pousr]_[A-Za-z0-9]{30,256}|github_pat_[A-Za-z0-9_]{40,256})\b`, PlaceholderPrefix: "SECRET_GITHUB"},
 		{Name: "slack_token", Expression: `\bxox[baprs]-[A-Za-z0-9-]{20,256}\b`, PlaceholderPrefix: "SECRET_SLACK"},
