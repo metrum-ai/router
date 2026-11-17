@@ -20,8 +20,9 @@ import (
 const (
 	// Ordinary bounded credential patterns fit in this rolling tail. Longer JWT
 	// and PEM candidates are held from their start by format-specific scanners.
-	secretStreamTailBytes = 512
-	secretStreamPEMMax    = 64 << 10
+	secretStreamTailBytes    = 512
+	secretStreamPEMMax       = 64 << 10
+	maxResponsesTextChannels = 128
 )
 
 var errSecretStreamWindowExceeded = errors.New("secret DLP stream inspection window exceeded")
@@ -556,20 +557,22 @@ func clearSecretStreamChatContent(payload map[string]any) {
 }
 
 func responseTextChannelKey(payload map[string]any) (string, bool) {
-	itemID := stringValue(payload["item_id"])
 	contentIndex, hasContentIndex := numberAsInt(payload["content_index"])
 	outputIndex, hasOutputIndex := numberAsInt(payload["output_index"])
-	if itemID == "" {
-		if !hasOutputIndex {
-			itemID = "response:default"
-		} else {
-			itemID = fmt.Sprintf("output:%d", outputIndex)
-		}
-	}
+	itemID := stringValue(payload["item_id"])
 	if hasContentIndex {
-		return fmt.Sprintf("%s/content:%d", itemID, contentIndex), true
+		if hasOutputIndex {
+			return fmt.Sprintf("output:%d/content:%d", outputIndex, contentIndex), true
+		}
+		return fmt.Sprintf("item:%s/content:%d", itemID, contentIndex), true
 	}
-	return itemID, true
+	if hasOutputIndex {
+		return fmt.Sprintf("output:%d", outputIndex), true
+	}
+	if itemID != "" {
+		return "item:" + itemID, true
+	}
+	return "response:default", true
 }
 
 func (d *secretStreamDLP) filterResponsesTextEvent(event stream.Event, payload map[string]any, eventType string) ([]stream.Event, bool, error) {
@@ -583,6 +586,9 @@ func (d *secretStreamDLP) filterResponsesTextEvent(event stream.Event, payload m
 		}
 		state := d.responsesText[channel]
 		if state == nil {
+			if len(d.responsesText) >= maxResponsesTextChannels {
+				return nil, true, errSecretStreamWindowExceeded
+			}
 			state = &secretResponsesTextState{}
 			d.responsesText[channel] = state
 		}
@@ -597,6 +603,7 @@ func (d *secretStreamDLP) filterResponsesTextEvent(event stream.Event, payload m
 		}
 		state.pending = pending
 		payload["delta"] = safe
+		addSecretStreamSequence(payload, d.sequenceAdd)
 		encoded, err := json.Marshal(payload)
 		if err != nil {
 			return nil, true, err
@@ -615,16 +622,21 @@ func (d *secretStreamDLP) filterResponsesTextEvent(event stream.Event, payload m
 			channels = append(channels, channel)
 		}
 	} else if eventType == "response.output_item.done" {
-		itemID := stringValue(payload["item_id"])
-		if item, ok := payload["item"].(map[string]any); ok && itemID == "" {
-			itemID = stringValue(item["id"])
-		}
 		outputIndex, hasOutputIndex := numberAsInt(payload["output_index"])
-		if itemID == "" && hasOutputIndex {
-			itemID = fmt.Sprintf("output:%d", outputIndex)
+		prefix := ""
+		if hasOutputIndex {
+			prefix = fmt.Sprintf("output:%d", outputIndex)
+		} else {
+			itemID := stringValue(payload["item_id"])
+			if item, ok := payload["item"].(map[string]any); ok && itemID == "" {
+				itemID = stringValue(item["id"])
+			}
+			if itemID != "" {
+				prefix = "item:" + itemID
+			}
 		}
 		for key := range d.responsesText {
-			if itemID != "" && (key == itemID || strings.HasPrefix(key, itemID+"/content:")) {
+			if prefix != "" && (key == prefix || strings.HasPrefix(key, prefix+"/content:")) {
 				channels = append(channels, key)
 			}
 		}

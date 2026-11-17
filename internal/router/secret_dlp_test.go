@@ -1188,11 +1188,11 @@ func TestSecretDLPResponsesInterleavedTextItemsThroughHandler(t *testing.T) {
 	frames := []string{
 		`event: response.output_item.added` + "\n" + `data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_a","role":"assistant","content":[]}}`,
 		`event: response.output_item.added` + "\n" + `data: {"type":"response.output_item.added","output_index":1,"item":{"type":"message","id":"msg_b","role":"assistant","content":[]}}`,
-		`event: response.output_text.delta` + "\n" + `data: {"type":"response.output_text.delta","item_id":"msg_a","content_index":0,"delta":"` + secret[:len(secret)/2] + `"}`,
-		`event: response.output_text.delta` + "\n" + `data: {"type":"response.output_text.delta","item_id":"msg_b","content_index":0,"delta":"unrelated safe output"}`,
-		`event: response.output_text.delta` + "\n" + `data: {"type":"response.output_text.delta","item_id":"msg_a","content_index":0,"delta":"` + secret[len(secret)/2:] + `"}`,
-		`event: response.output_text.done` + "\n" + `data: {"type":"response.output_text.done","item_id":"msg_a","content_index":0,"text":"` + secret + `"}`,
-		`event: response.output_text.done` + "\n" + `data: {"type":"response.output_text.done","item_id":"msg_b","content_index":0,"text":"unrelated safe output"}`,
+		`event: response.output_text.delta` + "\n" + `data: {"type":"response.output_text.delta","item_id":"msg_a","output_index":0,"content_index":0,"delta":"` + secret[:len(secret)/2] + `"}`,
+		`event: response.output_text.delta` + "\n" + `data: {"type":"response.output_text.delta","item_id":"msg_b","output_index":1,"content_index":0,"delta":"unrelated safe output"}`,
+		`event: response.output_text.delta` + "\n" + `data: {"type":"response.output_text.delta","item_id":"msg_a_changed","output_index":0,"content_index":0,"delta":"` + secret[len(secret)/2:] + `"}`,
+		`event: response.output_text.done` + "\n" + `data: {"type":"response.output_text.done","item_id":"msg_a","output_index":0,"content_index":0,"text":"` + secret + `"}`,
+		`event: response.output_text.done` + "\n" + `data: {"type":"response.output_text.done","item_id":"msg_b","output_index":1,"content_index":0,"text":"unrelated safe output"}`,
 		`event: response.completed` + "\n" + `data: {"type":"response.completed","response":{"status":"completed","output":[{"type":"message","id":"msg_a","content":[{"type":"output_text","text":"` + secret + `"}]},{"type":"message","id":"msg_b","content":[{"type":"output_text","text":"unrelated safe output"}]}]}}`,
 	}
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -1216,6 +1216,26 @@ func TestSecretDLPResponsesInterleavedTextItemsThroughHandler(t *testing.T) {
 	body := response.Body.String()
 	if response.Code != http.StatusOK || strings.Contains(body, secret) || !strings.Contains(body, "[SECRET_GITHUB_1]") {
 		t.Fatalf("status=%d leaked or missed interleaved Responses text redaction: %s", response.Code, body)
+	}
+	rebuilt := map[string]string{}
+	for _, line := range strings.Split(body, "\n") {
+		data, ok := strings.CutPrefix(strings.TrimSpace(line), "data: ")
+		if !ok || data == "[DONE]" {
+			continue
+		}
+		var payload map[string]any
+		if err := json.Unmarshal([]byte(data), &payload); err != nil {
+			continue
+		}
+		if stringValue(payload["type"]) != "response.output_text.delta" {
+			continue
+		}
+		outputIndex, _ := numberAsInt(payload["output_index"])
+		delta, _ := payload["delta"].(string)
+		rebuilt[fmt.Sprint(outputIndex)] += delta
+	}
+	if strings.Contains(rebuilt["0"], secret) || !strings.Contains(rebuilt["0"], "[SECRET_GITHUB_1]") || !strings.Contains(rebuilt["1"], "unrelated safe output") {
+		t.Fatalf("per-item delta reconstruction is incorrect: %#v", rebuilt)
 	}
 }
 
@@ -2061,15 +2081,15 @@ func TestSecretDLPResponsesTextChannelsStayIndependent(t *testing.T) {
 	dlp := &secretStreamDLP{state: &piiRedactionState{rules: rules, limit: 200, result: &piiFilterResult{RuleCounts: map[string]int{}}, placeholderFor: map[string]string{}}}
 	secret := fakeGitHubToken()
 	half := len(secret) / 2
-	makeEvent := func(item, delta string, sequence int) stream.Event {
-		data, _ := json.Marshal(map[string]any{"type": "response.output_text.delta", "item_id": item, "content_index": 0, "delta": delta, "sequence_number": sequence})
+	makeEvent := func(item, delta string, sequence, outputIndex int) stream.Event {
+		data, _ := json.Marshal(map[string]any{"type": "response.output_text.delta", "item_id": item, "output_index": outputIndex, "content_index": 0, "delta": delta, "sequence_number": sequence})
 		return stream.Event{Type: "response.output_text.delta", Data: data}
 	}
 	var output strings.Builder
 	for _, event := range []stream.Event{
-		makeEvent("msg_a", secret[:half], 0),
-		makeEvent("msg_b", "unrelated safe output", 1),
-		makeEvent("msg_a", secret[half:], 2),
+		makeEvent("msg_a", secret[:half], 0, 0),
+		makeEvent("msg_b", "unrelated safe output", 1, 1),
+		makeEvent("msg_a_changed", secret[half:], 2, 0),
 	} {
 		filtered, err := dlp.filterEvent(event)
 		if err != nil {
@@ -2079,8 +2099,11 @@ func TestSecretDLPResponsesTextChannelsStayIndependent(t *testing.T) {
 			output.Write(frame.Data)
 		}
 	}
-	for _, item := range []string{"msg_a", "msg_b"} {
-		data, _ := json.Marshal(map[string]any{"type": "response.output_text.done", "item_id": item, "content_index": 0, "text": "done", "sequence_number": 3})
+	for _, item := range []struct {
+		id    string
+		index int
+	}{{"msg_a", 0}, {"msg_b", 1}} {
+		data, _ := json.Marshal(map[string]any{"type": "response.output_text.done", "item_id": item.id, "output_index": item.index, "content_index": 0, "text": "done", "sequence_number": 3})
 		filtered, err := dlp.filterEvent(stream.Event{Type: "response.output_text.done", Data: data})
 		if err != nil {
 			t.Fatal(err)
@@ -2091,6 +2114,24 @@ func TestSecretDLPResponsesTextChannelsStayIndependent(t *testing.T) {
 	}
 	if strings.Contains(output.String(), secret) || !strings.Contains(output.String(), "[SECRET_GITHUB_1]") {
 		t.Fatalf("interleaved Responses channels leaked secret or missed redaction: %s", output.String())
+	}
+}
+
+func TestSecretDLPResponsesTextChannelLimitFailsClosed(t *testing.T) {
+	rules, err := compilePIIRules(builtinSecretRules())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dlp := &secretStreamDLP{state: &piiRedactionState{rules: rules, limit: 200, result: &piiFilterResult{RuleCounts: map[string]int{}}, placeholderFor: map[string]string{}}}
+	for index := 0; index < maxResponsesTextChannels; index++ {
+		data, _ := json.Marshal(map[string]any{"type": "response.output_text.delta", "output_index": index, "content_index": 0, "delta": "safe"})
+		if _, err := dlp.filterEvent(stream.Event{Type: "response.output_text.delta", Data: data}); err != nil {
+			t.Fatalf("channel %d failed before bound: %v", index, err)
+		}
+	}
+	data, _ := json.Marshal(map[string]any{"type": "response.output_text.delta", "output_index": maxResponsesTextChannels, "content_index": 0, "delta": "unsafe"})
+	if _, err := dlp.filterEvent(stream.Event{Type: "response.output_text.delta", Data: data}); !errors.Is(err, errSecretStreamWindowExceeded) {
+		t.Fatalf("channel limit error=%v, want %v", err, errSecretStreamWindowExceeded)
 	}
 }
 
