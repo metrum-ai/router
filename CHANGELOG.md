@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- Remove supported hosted-tool payload fields from failed and incomplete Responses snapshots before releasing terminal events.
+- Keep only `id`, `type`, `status`, and `error` on non-message and non-reasoning output items in failed and incomplete Responses snapshots, including unrecognized item kinds.
 - Bound authentication audit writes with durable per-replica five-minute counters, chain one count-delta row at window close, and fall back to direct chained writes when the counter table is full; deny authentication if either audit write fails.
 
 - Evaluate tool-firewall sequence rules in response order, including first and second steps returned in one response.

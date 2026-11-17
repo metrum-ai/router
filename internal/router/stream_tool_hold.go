@@ -200,10 +200,7 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 			passThrough = stream.Event{}
 		}
 	case "response.failed", "response.incomplete":
-		if err := stripResponsesTerminalToolArguments(payload); err != nil {
-			h.reset()
-			return nil, err
-		}
+		sanitizeResponsesTerminalToolItems(payload)
 		if len(h.held) > 0 {
 			h.reset()
 		}
@@ -630,32 +627,27 @@ func responsesHostedToolPayloadFields(kind string) []string {
 	}
 }
 
-func stripResponsesTerminalToolArguments(payload map[string]any) error {
+func sanitizeResponsesTerminalToolItems(payload map[string]any) {
 	response, _ := payload["response"].(map[string]any)
 	output, _ := response["output"].([]any)
-	for _, rawItem := range output {
+	for index, rawItem := range output {
 		item, _ := rawItem.(map[string]any)
-		if item == nil {
+		if item == nil || !shouldSanitizeResponsesOutputItem(stringValue(item["type"])) {
 			continue
 		}
-		_, tool, recognized := responsesToolItemCall(item, 0)
-		if tool && !recognized {
-			return upstreamError{Class: "tool_call_hold_unsupported_type", Message: fmt.Sprintf("streamed tool item type %q cannot be inspected safely", stringValue(item["type"])), Committed: true, Fallbackable: false}
-		}
-		if recognized {
-			delete(item, "arguments")
-			delete(item, "input")
-			delete(item, "action")
-			if isHostedResponsesTool(IRToolCall{Dialect: "openai-responses", Kind: stringValue(item["type"])}) {
-				for _, kind := range []string{"web_search_call", "file_search_call", "code_interpreter_call", "image_generation_call", "browser_search_call", "vector_store_search_call", "mcp_call"} {
-					for _, field := range responsesHostedToolPayloadFields(kind) {
-						delete(item, field)
-					}
-				}
+		safe := make(map[string]any, 4)
+		for _, field := range []string{"id", "type", "status", "error"} {
+			if value, ok := item[field]; ok {
+				safe[field] = value
 			}
 		}
+		output[index] = safe
 	}
-	return nil
+}
+
+func shouldSanitizeResponsesOutputItem(kind string) bool {
+	kind = strings.ToLower(strings.TrimSpace(kind))
+	return kind != "message" && kind != "reasoning"
 }
 
 func (h *streamToolCallHold) reset() {

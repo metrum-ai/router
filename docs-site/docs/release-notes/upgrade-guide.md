@@ -1406,7 +1406,7 @@ The prompt-injection detector is an optional external example. It is off unless 
 
 ## Failed Responses tool snapshots
 
-Failed or incomplete Responses terminal events no longer include hosted-tool payload fields such as code, prompts, queries, URLs, or arguments. Safe response metadata remains available. This applies to streams using tool inspection holds; no configuration change is required.
+Failed or incomplete Responses terminal events preserve `message` and `reasoning` output items. Other output items retain only `id`, `type`, `status`, and `error`, including unrecognized item types. No configuration change is required.
 
 ## v5.0.0 admin client identities
 

@@ -431,7 +431,9 @@ func TestStreamToolCallHoldStripsHostedPayloadsFromFailedResponsesThroughHandler
 				`{"type":"image_generation_call","id":"image_1","prompt":"` + secret + `","input":"` + secret + `","status":"failed"},` +
 				`{"type":"browser_search_call","id":"browser_1","action":"` + secret + `","query":"` + secret + `","url":"` + secret + `","status":"failed"},` +
 				`{"type":"vector_store_search_call","id":"vector_1","query":"` + secret + `","queries":["` + secret + `"],"status":"failed"},` +
-				`{"type":"mcp_call","id":"mcp_1","call_id":"mcp","name":"lookup","arguments":"` + secret + `","status":"failed"}]}}`
+				`{"type":"mcp_call","id":"mcp_1","call_id":"mcp","name":"lookup","arguments":"` + secret + `","status":"failed"},` +
+				`{"type":"message","id":"msg_1","role":"assistant","content":[{"type":"output_text","text":"safe partial output"}]},` +
+				`{"type":"future_hosted_kind","id":"future_1","status":"failed","error":{"code":"safe_unknown","message":"safe unknown metadata"},"secret_field":"` + secret + `"}]}}`
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "text/event-stream")
 				frames := []string{
@@ -460,8 +462,36 @@ func TestStreamToolCallHoldStripsHostedPayloadsFromFailedResponsesThroughHandler
 			response := httptest.NewRecorder()
 			svc.Handler().ServeHTTP(response, req)
 			body := response.Body.String()
-			if response.Code != http.StatusOK || strings.Contains(body, secret) || !strings.Contains(body, "safe failure metadata") || !strings.Contains(body, terminalType) {
+			if response.Code != http.StatusOK || strings.Contains(body, secret) || !strings.Contains(body, "safe failure metadata") || !strings.Contains(body, "safe partial output") || !strings.Contains(body, "future_1") || !strings.Contains(body, terminalType) {
 				t.Fatalf("status=%d hosted terminal payload leaked or safe metadata was lost: %s", response.Code, body)
+			}
+			var terminalPayload map[string]any
+			for _, frame := range strings.Split(body, "\n\n") {
+				if !strings.Contains(frame, "event: "+terminalType) {
+					continue
+				}
+				for _, line := range strings.Split(frame, "\n") {
+					if strings.HasPrefix(line, "data: ") {
+						if err := json.Unmarshal([]byte(strings.TrimPrefix(line, "data: ")), &terminalPayload); err != nil {
+							t.Fatalf("decode terminal event: %v", err)
+						}
+					}
+				}
+			}
+			responsePayload, _ := terminalPayload["response"].(map[string]any)
+			output, _ := responsePayload["output"].([]any)
+			allowed := map[string]bool{"id": true, "type": true, "status": true, "error": true}
+			for _, rawItem := range output {
+				item, _ := rawItem.(map[string]any)
+				kind := strings.ToLower(stringValue(item["type"]))
+				if kind == "message" || kind == "reasoning" {
+					continue
+				}
+				for field := range item {
+					if !allowed[field] {
+						t.Errorf("tool item %q retained non-metadata field %q: %#v", kind, field, item)
+					}
+				}
 			}
 		})
 	}
