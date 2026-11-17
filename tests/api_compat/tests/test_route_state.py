@@ -22,6 +22,7 @@ import pytest
 
 from conftest import (
     PROMPT_CANARY,
+    DENIED_CALLER_ID,
     assert_generated_artifacts_redacted,
     request,
     spawn_router,

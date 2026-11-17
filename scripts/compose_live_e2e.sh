@@ -161,7 +161,8 @@ cp deploy/docker-compose.yml "$WORKDIR/docker-compose.yml"
 cp deploy/Caddyfile.compose "$WORKDIR/Caddyfile.compose"
 cp scripts/router.ts "$WORKDIR/config/scripts/router.ts"
 
-ROUTER_CALLER_TOKEN="$TOKEN" python3 - "$WORKDIR" "$GROUP" "$MODEL" "$CODEX_TEXT_GROUP" "$CODEX_TEXT_MODEL" "$CODEX_TOOL_GROUP" "$CODEX_TOOL_MODEL" "$CLAUDE_TOOL_GROUP" "$CLAUDE_TOOL_MODEL" <<'PY'
+PYTHONPATH="$ROOT/scripts${PYTHONPATH:+:$PYTHONPATH}" ROUTER_CALLER_TOKEN="$TOKEN" \
+  python3 - "$WORKDIR" "$GROUP" "$MODEL" "$CODEX_TEXT_GROUP" "$CODEX_TEXT_MODEL" "$CODEX_TOOL_GROUP" "$CODEX_TOOL_MODEL" "$CLAUDE_TOOL_GROUP" "$CLAUDE_TOOL_MODEL" <<'PY'
 from caller_token import verifier
 import json
 import os

@@ -95,7 +95,11 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 				if isHostedResponsesTool(call) && !h.shouldInspectHostedCall(call) {
 					return []stream.Event{event}, nil
 				}
-				h.calls.addDelta("openai-responses", idx, call.ID, call.Name, call.Arguments)
+				initialArguments := call.Arguments
+				if isHostedResponsesTool(call) {
+					initialArguments = ""
+				}
+				h.calls.addDelta("openai-responses", idx, call.ID, call.Name, initialArguments)
 				h.calls.setKind(idx, call.Kind)
 				h.indexes[idx] = true
 				toolEvent = true
@@ -569,18 +573,18 @@ func responsesHostedToolPayload(item map[string]any) any {
 		"vector_store_search_call": {"query", "queries"},
 		"mcp_call":                 {"arguments"},
 	}
-	selected := map[string]any{}
+	payload := make(map[string]any)
 	for _, field := range fields[kind] {
 		if value, ok := item[field]; ok {
-			selected[field] = value
+			payload[field] = value
 		}
 	}
-	if len(selected) == 1 {
-		for _, value := range selected {
+	if len(payload) == 1 {
+		for _, value := range payload {
 			return value
 		}
 	}
-	return selected
+	return payload
 }
 
 func stripResponsesTerminalToolArguments(payload map[string]any) error {

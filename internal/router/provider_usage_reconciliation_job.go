@@ -8,6 +8,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -101,20 +102,22 @@ func (s *Service) runProviderUsageReconciliation(parent context.Context, source 
 	if catchUp == 0 {
 		catchUp = providerUsageDefaultCatchUpDays
 	}
-	oldest := dayEnd.Add(-24 * time.Hour)
 	catchUpFloor := dayEnd.Add(-time.Duration(catchUp) * 24 * time.Hour)
 	for _, entry := range providers {
-		start := oldest
+		start := dayEnd.Add(-24 * time.Hour)
 		var checkpoint securityAccessEventRecord
 		if err := s.usage.db.WithContext(ctx).Where("event_type = ? AND object = ?", "provider_usage_reconciled", entry.Provider).Order("operation_id DESC").First(&checkpoint).Error; err == nil {
 			if last, parseErr := time.Parse("2006-01-02", checkpoint.OperationID); parseErr == nil {
 				start = last.Add(24 * time.Hour)
 			}
 		}
-		if start.Before(catchUpFloor) {
+		if checkpoint.OperationID != "" && start.Before(catchUpFloor) {
 			start = catchUpFloor
 		}
-		for dayStart := start; dayStart.Before(dayEnd); dayStart = dayStart.Add(24 * time.Hour) {
+		if pending, ok := s.providerUsagePendingWindow(ctx, entry.Provider, checkpoint.OperationID); ok && pending.Before(start) {
+			start = pending
+		}
+		for dayStart, days := start, 0; dayStart.Before(dayEnd) && days < catchUp; dayStart, days = dayStart.Add(24*time.Hour), days+1 {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
@@ -159,6 +162,32 @@ func (s *Service) runProviderUsageReconciliation(parent context.Context, source 
 		}
 	}
 	return firstErr
+}
+
+func (s *Service) providerUsagePendingWindow(ctx context.Context, provider, checkpoint string) (time.Time, bool) {
+	var failures []securityAccessEventRecord
+	if err := s.usage.db.WithContext(ctx).
+		Where("object = ? AND event_type IN ?", provider, []string{"provider_usage_failure", "provider_usage_partial"}).
+		Order("operation_id ASC").Limit(1000).Find(&failures).Error; err != nil {
+		return time.Time{}, false
+	}
+	var earliest time.Time
+	lastCheckpoint, _ := time.Parse("2006-01-02", checkpoint)
+	for _, failure := range failures {
+		windowStart, _, ok := strings.Cut(failure.OperationID, "/")
+		if !ok {
+			continue
+		}
+		start, err := time.Parse("2006-01-02T15:04:05.000000000Z", windowStart)
+		if err != nil || !start.After(lastCheckpoint) {
+			continue
+		}
+		start = start.UTC().Truncate(24 * time.Hour)
+		if earliest.IsZero() || start.Before(earliest) {
+			earliest = start
+		}
+	}
+	return earliest, !earliest.IsZero()
 }
 
 func (s *Service) recordProviderUsageCheckpoint(provider string, day time.Time) error {

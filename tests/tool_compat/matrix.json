@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "updated": "2026-11-16",
+  "updated": "2026-11-17",
   "clients": [
     {
       "id": "pi",
@@ -79,7 +79,7 @@
     {
       "id": "openai-python-sdk",
       "name": "OpenAI Python SDK",
-      "version": "3.41.0",
+      "version": "3.46.0",
       "pin": "tests/api_compat/uv.lock",
       "surfaces": [
         "openai-chat",
@@ -89,7 +89,7 @@
     {
       "id": "anthropic-python-sdk",
       "name": "Anthropic Python SDK",
-      "version": "2.3.0",
+      "version": "2.6.0",
       "pin": "tests/api_compat/uv.lock",
       "surfaces": [
         "anthropic-messages"

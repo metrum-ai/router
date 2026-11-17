@@ -207,10 +207,11 @@ only canary groups; config validation rejects real model groups, so decoy keys
 cannot inherit production access. New canary groups must use a targetless
 `static` strategy and explicitly list selected callers. Authenticated use emits
 a metadata-only critical event before dispatch; it contains no token, prompt,
-or user message. Known allowed canary completions return a canned response,
-while unknown/disallowed models and unsupported features retain ordinary
-caller errors. The config-control-plane migration advances schema 17 → 18
-with ID `2026111611`, depending on admin-client migration `2026111610`, to
+or user message. Known allowed canary completions return a canned response.
+Unknown or disallowed model names also receive a successful local sinkhole
+response and do not reach an upstream. Unsupported features still return the
+usual feature validation error. The config-control-plane migration advances
+schema 17 → 18 with ID `2026111611`, depending on admin-client migration `2026111610`, to
 persist honeytoken label and planting time. Database-mode issuance and canary
 group grants use the active canonical config store. See
 [Honeytokens and canary groups](/docs/security-governance/honeytokens) for
@@ -250,7 +251,7 @@ Response-cache entries and vLLM prefix-cache salts remain isolated by caller and
 
 ### Workload token exchange
 
-The opt-in `security.token_exchange` feature adds the `POST /oauth/token` route and short-lived, scoped bearer tokens. Configure the issuer, audience and subject grants before enabling it, and provide `signing_key_env` through the deployment secret manager with at least 32 random bytes. Grant-wide cumulative limits reserve estimated tokens and spend atomically, allowing concurrent requests only when their combined reservations fit; re-exchanging a token does not reset the cap. Budgets persist per grant across token expiry and are pruned when a reload removes the grant. Exchange is limited to 30 requests per configured subject per minute. Budget and rate state is process-local, shared across tasks and token refreshes, persists until grant removal or process restart, and is not shared across replicas. Mission tokens are accepted only on the scoped chat, Responses, Messages, count-token, embeddings, and model list/detail routes; all other serving routes reject them with 401, including leaked-key revocation, content-capture operations, `/metrics`, `/v1/usage` and `/mcp`. Task attribution is optional: use issuer `task_claim` with a dotted JWT claim path or pin `task_id` on a subject grant; if neither is configured, exchange succeeds without task attribution. When `task_claim` is configured and no grant task is pinned, the claim must exist and be a string; a missing or invalid claim returns HTTP 401 from `/oauth/token`. This accepts stock Kubernetes service-account and SPIFFE JWT-SVID tokens without custom task claims. Subject tokens remain replayable until expiry. A mission token cannot revoke its parent caller key. Changing the HMAC signing key is a hard cutover that invalidates all outstanding mission tokens; all replicas must use the same new key. Successful exchanges produce Authentication audit events naming the caller and grant. Review [Workload token exchange](/docs/security-governance/token-exchange) for the request format, limits and rotation behavior. Static caller keys are rejected for projects with `forbid_long_lived_keys: true`.
+The opt-in `security.token_exchange` feature adds the `POST /oauth/token` route and short-lived, scoped bearer tokens. Configure the issuer, audience and subject grants before enabling it, and provide `signing_key_env` through the deployment secret manager with at least 32 random bytes. Grant-wide cumulative limits reserve estimated tokens and spend atomically, allowing concurrent requests only when their combined reservations fit; re-exchanging a token does not reset the cap. Budgets persist per grant across token expiry and unchanged issuer reloads, and are pruned when a reload removes the grant. Exchange is limited to 30 requests per configured subject per minute. Budget and rate state is process-local, shared across tasks and token refreshes, persists until grant removal or process restart, and is not shared across replicas. Mission tokens are accepted only on the scoped chat, Responses, Messages, count-token, embeddings, and model list/detail routes; all other serving routes reject them with 401, including leaked-key revocation, content-capture operations, `/metrics`, `/v1/usage` and `/mcp`. Task attribution is optional: use issuer `task_claim` with a dotted JWT claim path or pin `task_id` on a subject grant; if neither is configured, exchange succeeds without task attribution. When `task_claim` is configured and no grant task is pinned, the claim must exist and be a string; a missing or invalid claim returns HTTP 401 from `/oauth/token`. This accepts stock Kubernetes service-account and SPIFFE JWT-SVID tokens without custom task claims. Subject tokens remain replayable until expiry. A mission token cannot revoke its parent caller key. Changing the HMAC signing key is a hard cutover that invalidates all outstanding mission tokens; all replicas must use the same new key. Successful exchanges produce Authentication audit events naming the caller and grant. Review [Workload token exchange](/docs/security-governance/token-exchange) for the request format, limits and rotation behavior. Static caller keys are rejected for projects with `forbid_long_lived_keys: true`.
 
 Usage schema version 19 adds `task_id` and `human_owner` columns. With the default deployment-job migration policy, run the usage migration plan, apply and serving verification steps before starting v5.0.0. Keep the database backup and rollback procedure in the [data migration runbook](https://github.com/metrum-ai/router/blob/main/docs/DATA_MIGRATIONS.md) available for the upgrade window.
 
@@ -311,9 +312,10 @@ multiple replicas, route each conversation and its approval request to the same
 router process. Configure `admin:tool_approvals:resolve` only for principals
 that may release held tool calls. Hold rules return an immediate pending
 result; after an administrator releases the hold, the agent retries the same
-request. Enforced streamed tool calls are held automatically until inspection completes,
-using 30-second and 1 MiB per-stream bounds when the model group does not set
-explicit bounds. Schema validation still runs only when the group opts in to
+request. Enforced streamed tool calls are held automatically until inspection
+completes, using 30-second and 1 MiB per-stream bounds when the model group does
+not set explicit bounds. Sequence rules evaluate calls in response order,
+including first and second steps returned together. Schema validation still runs only when the group opts in to
 `streaming.hold_until_validated`.
 
 ## v5.0.0 MCP tool governance integration
@@ -450,6 +452,9 @@ Chat arguments and Anthropic `tool_use.input` objects receive the same key/value
 Malformed or truncated argument strings are scanned in best-effort `key=` and
 `key: ` forms so partial JSON cannot hide credentials. Responses function-call
 arguments and custom tool input are redacted in output snapshots.
+When firewall policy selects a hosted Responses tool for inspection, DLP
+redactions also rewrite its item snapshots and argument or code events before
+release.
 
 When tool routing enables `streaming.hold_until_validated`, streamed tool-call
 arguments are held until inspection completes. Secret matches are redacted in
@@ -1368,7 +1373,8 @@ account scope; its USD total is estimated from the router model catalog prices.
 The job runs at 06:00 UTC by default, supports bounded restart catch-up with
 `max_catch_up_days`, and waits for provider `data_refreshed_at` watermarks when
 available. Use one Bedrock entry per AWS account and region to avoid counting
-the same CloudWatch metrics more than once.
+the same CloudWatch metrics more than once. Failed or partial windows without a
+successful checkpoint are retried first, within the configured catch-up bound.
 See [Provider usage reconciliation](../security-governance/provider-usage-reconciliation.md)
 for configuration and operating details.
 

@@ -297,6 +297,24 @@ func TestV5AdminConfigMigration(t *testing.T) {
 	if disabled.Admin.Enabled {
 		t.Fatal("explicit admin.enabled false was overridden by defaults")
 	}
+	for name, adminYAML := range map[string]string{
+		"admin alias":     "admin_defaults: &admin_defaults\n  enabled: false\nadmin: *admin_defaults\n",
+		"admin merge key": "admin_defaults: &admin_defaults\n  enabled: false\nadmin:\n  <<: *admin_defaults\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			if err := os.WriteFile(path, append(append([]byte(nil), base...), []byte("\n"+adminYAML)...), 0600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := LoadConfig(path)
+			if err != nil {
+				t.Fatalf("LoadConfig with aliased admin.enabled false: %v", err)
+			}
+			if cfg.Admin.Enabled {
+				t.Fatal("explicit aliased admin.enabled false was overridden by defaults")
+			}
+		})
+	}
 	for _, key := range []string{"legacy_routes_on_serving_port", "legacy_sunset"} {
 		t.Run("load rejects "+key, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "config.yaml")
