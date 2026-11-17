@@ -11,12 +11,13 @@ import json
 from pathlib import Path
 import re
 import sys
+import subprocess
 
 from release_image_oci_layout import image_descriptor
-from release_ai_review import load_committed_artifact, verify_generated_file_checks
+from release_ai_review import evaluate, load_committed_artifact, verify_generated_file_checks
 
 
-def validate(dist: Path, layout: Path, version: str, commit: str, previous: str) -> list[str]:
+def validate(dist: Path, layout: Path, version: str, commit: str, previous: str, previous_commit: str) -> list[str]:
     errors: list[str] = []
     try:
         inventory = json.loads((dist / "release-artifacts.json").read_text(encoding="utf-8"))
@@ -45,16 +46,25 @@ def validate(dist: Path, layout: Path, version: str, commit: str, previous: str)
     artifact: dict[str, object] = {}
     try:
         artifact = json.loads((dist / "release-review-artifact.json").read_text(encoding="utf-8"))
-        expected_artifact, review_head = load_committed_artifact(Path("docs/release-reviews"), previous, commit)
+        expected_artifact, review_head = load_committed_artifact(
+            Path("docs/release-reviews"), previous, previous_commit, commit
+        )
         verify_generated_file_checks(expected_artifact, review_head)
         if artifact != expected_artifact:
             errors.append("AI review artifact differs from the committed range artifact")
+        responses = json.loads(Path("docs/release-review-responses.json").read_text(encoding="utf-8"))
+        acceptances = responses.get("acceptances", {}) if isinstance(responses, dict) else {}
+        evaluated, unanswered = evaluate(expected_artifact, acceptances, previous, review_head)
+        if evaluated["decision"] != "pass" or unanswered:
+            errors.append("AI review artifact has unanswered blocking findings")
         digest = artifact.pop("artifact_digest")
         expected = hashlib.sha256(json.dumps(artifact, ensure_ascii=True, separators=(",", ":"), sort_keys=True).encode("utf-8")).hexdigest()
-        if artifact.get("schema") != "metrum-ai-router-release-review-artifact/v2" or artifact.get("base") != previous or artifact.get("head") != review_head:
+        if artifact.get("schema") != "metrum-ai-router-release-review-artifact/v3" or artifact.get("base") != previous or artifact.get("base_commit") != previous_commit or artifact.get("head") != review_head:
             errors.append("AI review artifact does not match the requested production range")
-        if artifact.get("provider") != "codex" or not artifact.get("model") or any(item.get("severity") == "blocking" for item in artifact.get("findings", [])):
-            errors.append("AI review artifact is not a passing Codex review")
+        if artifact.get("provider") != "codex" or artifact.get("model") != "gpt-6.1-sol" or not artifact.get("codex_cli_version"):
+            errors.append("AI review artifact does not identify the selected Codex review tool")
+        if artifact.get("verdict") not in {"PASS", "BLOCK"}:
+            errors.append("AI review artifact verdict is invalid")
         if not re.fullmatch(r"[0-9a-f]{64}", digest) or digest != expected:
             errors.append("AI review artifact digest is invalid")
         review_artifact_digest = digest
@@ -65,12 +75,20 @@ def validate(dist: Path, layout: Path, version: str, commit: str, previous: str)
         report = (dist / "AI-release-review.md").read_text(encoding="utf-8")
         if "- Decision: **PASS**" not in report or f"- Reviewed range: `{previous}..{review_head}`" not in report:
             errors.append("AI review does not pass for the requested production range")
+        elif f"- Base tag commit: `{previous_commit}`" not in report:
+            errors.append("AI review report does not pin the previous release commit")
         elif review_artifact_digest and f"Review artifact SHA-256: `{review_artifact_digest}`" not in report:
             errors.append("AI review report does not match the stored artifact digest")
         elif f"- Model: `{artifact.get('model')}`" not in report:
             errors.append("AI review report does not identify the artifact model")
-    except OSError:
-        errors.append("AI release review report is missing")
+        elif f"- Codex CLI: `{artifact.get('codex_cli_version')}`" not in report:
+            errors.append("AI review report does not identify the Codex CLI version")
+    except ValueError as exc:
+        errors.append(f"AI review validation failed: {exc}")
+    except subprocess.CalledProcessError:
+        errors.append("AI review Git or generated-check validation command failed")
+    except (OSError, json.JSONDecodeError, ValueError, TypeError, AttributeError):
+        errors.append("AI release review artifact or report could not be validated")
 
     try:
         upgrade = json.loads((dist / "upgrade-rollback-results.json").read_text(encoding="utf-8"))
@@ -101,8 +119,9 @@ def main() -> int:
     parser.add_argument("--version", required=True)
     parser.add_argument("--commit", required=True)
     parser.add_argument("--previous", required=True)
+    parser.add_argument("--previous-commit", required=True)
     args = parser.parse_args()
-    errors = validate(args.dist_dir, args.oci_layout, args.version, args.commit, args.previous)
+    errors = validate(args.dist_dir, args.oci_layout, args.version, args.commit, args.previous, args.previous_commit)
     if errors:
         print("release dry-run verification failed: " + "; ".join(errors), file=sys.stderr)
         return 1

@@ -53,11 +53,14 @@ class ReleasePayloadTest(unittest.TestCase):
             "platforms": platforms,
         }), encoding="utf-8")
         review_artifact = {
-            "schema": "metrum-ai-router-release-review-artifact/v2",
+            "schema": "metrum-ai-router-release-review-artifact/v3",
             "base": "v4.8.0",
-            "head": "0123456789abcdef",
+            "base_commit": "b" * 40,
+            "head": "a" * 40,
             "provider": "codex",
             "model": "gpt-6.1-sol",
+            "codex_cli_version": "codex-cli 0.169.0",
+            "verdict": "PASS",
             "summary": "No findings.",
             "findings": [],
             "file_coverage": [],
@@ -67,7 +70,7 @@ class ReleasePayloadTest(unittest.TestCase):
         ).encode("utf-8")).hexdigest()
         (root / "release-review-artifact.json").write_text(json.dumps(review_artifact), encoding="utf-8")
         (root / "AI-release-review.md").write_text(
-            f"- Review artifact SHA-256: `{review_artifact['artifact_digest']}`\n- Decision: **PASS**\n- Model: `gpt-6.1-sol`\n", encoding="utf-8"
+            f"- Review artifact SHA-256: `{review_artifact['artifact_digest']}`\n- Decision: **PASS**\n- Model: `gpt-6.1-sol`\n- Codex CLI: `codex-cli 0.169.0`\n", encoding="utf-8"
         )
 
     def test_accepts_complete_release_payload(self) -> None:

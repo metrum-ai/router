@@ -42,6 +42,9 @@ def validate(workflow):
     assert not any("cache" in step.get("name", "").lower() for step in ai_review["steps"])
     resolve_run = next(step["run"] for step in jobs["resolve"]["steps"] if step.get("name") == "Resolve immutable build metadata")
     assert "select_previous_release.py" in resolve_run and "git describe" not in resolve_run
+    assert 'git merge-base --is-ancestor "${commit}" origin/main' in resolve_run
+    assert 'git rev-parse --verify "${previous_tag}^{commit}"' in resolve_run
+    assert 'printf \'previous_commit=%s\\n\' "${previous_commit}"' in resolve_run
     upgrade = jobs["upgrade-and-rollback"]
     upgrade_step = next(step for step in upgrade["steps"] if step.get("name") == "Run upgrade and rollback checks")
     assert upgrade_step["env"]["PREVIOUS_TAG"] == "${{ needs.resolve.outputs.previous_tag }}"
@@ -107,6 +110,10 @@ def validate(workflow):
     assert "release-review-artifact.json" in steps[names.index("Confirm payload and publish immutable release")]["run"]
     assert "-eq 26" in steps[names.index("Confirm payload and publish immutable release")]["run"]
     assert 'ref="${IMAGE}@${digest}"' in steps[sign].get("run", "")
+    release_command = steps[publish_release]["run"]
+    assert 'gh release create "${VERSION}" --verify-tag' in release_command
+    assert not any(token in all_runs for token in ("git tag -a", "git tag -m", "git tag --annotate"))
+    assert "git push origin refs/tags" not in all_runs
 
 
 class ProvenanceWorkflowTest(unittest.TestCase):

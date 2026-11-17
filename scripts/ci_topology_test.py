@@ -425,11 +425,9 @@ def assert_arc_runners() -> None:
             elif path.name == "release-dry-run.yml":
                 cache_actions = re.findall(r"(?m)^\s+uses: (actions/cache/(?:restore|save)@[^\s]+)(?:\s+#.*)?$", text)
                 require("workflow_dispatch:" in text and "ref: main" in text
-                        and cache_actions == [
-                            "actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
-                            "actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
-                        ],
-                        "release dry run must check out main and use cache only for the review artifact")
+                        and not cache_actions
+                        and "cache: false" in text,
+                        "release dry run must check out main without restoring or saving build caches")
             else:
                 require(path.name == "ci.yml" and "actions/cache/restore@" in text
                         and "actions/cache/save@" in text,

@@ -130,10 +130,12 @@ jobs:
           source_date_epoch="$(git show -s --format=%ct HEAD)"
           build_date="$(date -u -d "@${source_date_epoch}" +%Y-%m-%dT%H:%M:%SZ)"
           previous_tag="$(gh release list --repo "${GITHUB_REPOSITORY}" --limit 100 --json tagName,isPrerelease,isDraft | python3 scripts/select_previous_release.py --current "${VERSION}")"
+          previous_commit="$(git rev-parse --verify "${previous_tag}^{commit}")"
           printf 'COMMIT=%s\n' "${commit}" >> "${GITHUB_ENV}"
           printf 'SOURCE_DATE_EPOCH=%s\n' "${source_date_epoch}" >> "${GITHUB_ENV}"
           printf 'BUILD_DATE=%s\n' "${build_date}" >> "${GITHUB_ENV}"
           printf 'PREVIOUS_TAG=%s\n' "${previous_tag}" >> "${GITHUB_ENV}"
+          printf 'PREVIOUS_COMMIT=%s\n' "${previous_commit}" >> "${GITHUB_ENV}"
       - name: Verify Go patch floor
         run: python3 scripts/check_go_toolchain.py
       - name: Build release packages
@@ -197,6 +199,7 @@ jobs:
           set -euo pipefail
           mkdir -p dist
           python3 scripts/release_ai_review.py --base "${PREVIOUS_TAG}" --head "${COMMIT}" \
+            --base-commit "${PREVIOUS_COMMIT}" --responses docs/release-review-responses.json \
             --tag "${VERSION}" --committed-artifact-dir docs/release-reviews \
             --artifact-output dist/release-review-artifact.json \
             --output dist/AI-release-review.md
@@ -237,7 +240,9 @@ jobs:
       - name: Run local OCI version and health smoke
         run: python3 scripts/release_image_smoke.py --crane "${CRANE}" --oci-layout "${RELEASE_OCI_LAYOUT}" --image "${IMAGE}:${VERSION}" --version "${VERSION}"
       - name: Verify complete dry-run evidence
-        run: python3 scripts/check_release_dry_run.py --dist-dir dist --oci-layout "${RELEASE_OCI_LAYOUT}" --version "${VERSION}" --commit "${COMMIT}" --previous "${PREVIOUS_TAG}"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/check_release_dry_run.py --dist-dir dist --oci-layout "${RELEASE_OCI_LAYOUT}" --version "${VERSION}" --commit "${COMMIT}" --previous "${PREVIOUS_TAG}" --previous-commit "${PREVIOUS_COMMIT}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-dry-run-evidence
