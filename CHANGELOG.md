@@ -169,6 +169,7 @@ from v4.8.0.
 ### Release note
 
 - The v5.0.0-rc.1 tag was not published because of a release-tooling failure; v5.0.0-rc.2 is the next release candidate.
+- The v5.0.0-rc.2 tag was not published because release payload validation found an unexpected asset; v5.0.0-rc.3 is the next release candidate.
 
 ### Security
 

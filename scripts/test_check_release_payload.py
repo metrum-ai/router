@@ -9,7 +9,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from check_release_payload import ARCHIVES, validate
+from check_release_payload import ARCHIVES, validate, validate_unsigned
 from release_image_layer import BASE_IMAGE, BINARIES
 
 
@@ -120,6 +120,32 @@ class ReleasePayloadTest(unittest.TestCase):
             manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
             errors = validate(root, "v5.0.0")
             self.assertTrue(any("invalid binary checksum" in error for error in errors))
+
+    def make_unsigned_payload(self, root: Path, version: str = "v5.0.0-rc.3") -> None:
+        archives = {item.format(version=version) for item in ARCHIVES}
+        sums = []
+        for name in sorted(archives):
+            content = name.encode()
+            (root / name).write_bytes(content)
+            sums.append(hashlib.sha256(content).hexdigest() + "  " + name)
+        (root / "SHA256SUMS").write_text("\n".join(sums) + "\n", encoding="utf-8")
+        (root / "release-artifacts.json").write_text(json.dumps({
+            "artifact_set": "binary", "artifacts": [{"filename": name} for name in sorted(archives)],
+        }), encoding="utf-8")
+        (root / "upgrade-rollback-results.json").write_text(json.dumps({
+            "schema": "router.release-upgrade-rollback/v1",
+            "candidate_version": version,
+            "checks": [{"check": "candidate-serving-smoke", "passed": True}],
+        }), encoding="utf-8")
+
+    def test_unsigned_stage_accepts_exact_payload_and_rejects_extra_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.make_unsigned_payload(root)
+            self.assertEqual(validate_unsigned(root, "v5.0.0-rc.3"), [])
+            (root / "engine-advisories.json").write_text("{}\n", encoding="utf-8")
+            errors = validate_unsigned(root, "v5.0.0-rc.3")
+            self.assertTrue(any("unexpected unsigned release assets: engine-advisories.json" in error for error in errors), errors)
 
 
 if __name__ == "__main__":

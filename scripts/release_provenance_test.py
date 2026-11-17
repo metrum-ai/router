@@ -147,6 +147,59 @@ def validate_binary_inventory_snapshot(workflow):
     assert all("--advisories-snapshot" in call for call in calls), calls
 
 
+def validate_advisory_snapshot_staging(workflow):
+    jobs = workflow["jobs"]
+    for job in jobs.values():
+        for step in job.get("steps", []):
+            run = step.get("run", "")
+            if "engine_advisory_gate.py" in run and "--snapshot" in run:
+                assert "--snapshot dist/" not in run
+            snapshot_path = step.get("env", {}).get("ENGINE_ADVISORY_SNAPSHOT", "")
+            assert "dist" not in snapshot_path
+    if "package-binaries" in jobs:
+        package_steps = jobs["package-binaries"]["steps"]
+        binary_upload = next(step for step in package_steps if step.get("with", {}).get("name") == "release-binaries")
+        assert "engine-advisories.json" not in binary_upload["with"]["path"]
+        snapshot_upload = next(step for step in package_steps if step.get("with", {}).get("name") == "release-engine-advisories")
+        assert "runner.temp" in snapshot_upload["with"]["path"]
+        assert "dist" not in snapshot_upload["with"]["path"]
+        for job_name, step_name in (("reproducible-build", "Rebuild binary packages on a clean runner"), ("publish-release", "Validate binary inventory")):
+            job_steps = jobs[job_name]["steps"]
+            download = next(step for step in job_steps if step.get("with", {}).get("name") == "release-engine-advisories")
+            assert "runner.temp" in download["with"]["path"]
+            consumer = next(step for step in job_steps if step.get("name") == step_name)
+            assert "ENGINE_ADVISORY_SNAPSHOT" in consumer.get("env", {})
+            assert "dist" not in consumer["env"]["ENGINE_ADVISORY_SNAPSHOT"]
+    else:
+        dry_run = jobs["dry-run"]["steps"]
+        snapshot = next(step for step in dry_run if step.get("name") == "Generate engine advisory snapshot for release packages")
+        assert "dist" not in snapshot["run"]
+        for step in dry_run:
+            assert "dist/engine-advisories.json" not in str(step)
+
+
+def validate_unsigned_payload_gate(workflow, job_name):
+    steps = workflow["jobs"][job_name]["steps"]
+    names = [step.get("name") for step in steps]
+    gate_name = "Validate exact unsigned release payload"
+    assert gate_name in names
+    gate = steps[names.index(gate_name)]
+    assert "check_release_payload.py --stage unsigned" in gate.get("run", "")
+    if job_name == "publish-release":
+        gate_index = names.index(gate_name)
+        downloads = {
+            step.get("with", {}).get("name"): index
+            for index, step in enumerate(steps)
+            if step.get("uses", "").startswith("actions/download-artifact@")
+        }
+        assert downloads["release-binaries"] < gate_index
+        assert downloads["release-upgrade-rollback"] < gate_index
+        assert gate_index < names.index("Sign Windows release packages after reproducibility comparison")
+    else:
+        assert names.index("Run upgrade and rollback checks") < names.index(gate_name)
+        assert names.index(gate_name) < names.index("Review the previous production release through main")
+
+
 def validate_clean_rebuild_cache_env(workflow):
     expected = {
         "GOCACHE": "${{ runner.temp }}/repro-go-build",
@@ -246,6 +299,8 @@ class ProvenanceWorkflowTest(unittest.TestCase):
         validate_clean_rebuild_cache_env(self.workflow)
         validate_cosign_installation(self.workflow, "publish-release")
         validate_publish_tool_contract(self.workflow, "publish-release")
+        validate_advisory_snapshot_staging(self.workflow)
+        validate_unsigned_payload_gate(self.workflow, "publish-release")
 
     def test_release_job_requires_environment_protection(self):
         doc = copy.deepcopy(self.workflow)
@@ -278,6 +333,22 @@ class ProvenanceWorkflowTest(unittest.TestCase):
         with self.assertRaises(AssertionError):
             validate(doc)
 
+    def test_unsigned_payload_gate_required_in_both_workflows(self):
+        release = copy.deepcopy(self.workflow)
+        release["jobs"]["publish-release"]["steps"] = [
+            step for step in release["jobs"]["publish-release"]["steps"]
+            if step.get("name") != "Validate exact unsigned release payload"
+        ]
+        with self.assertRaises(AssertionError):
+            validate_unsigned_payload_gate(release, "publish-release")
+        dry_run = copy.deepcopy(self.dry_run_workflow)
+        dry_run["jobs"]["dry-run"]["steps"] = [
+            step for step in dry_run["jobs"]["dry-run"]["steps"]
+            if step.get("name") != "Validate exact unsigned release payload"
+        ]
+        with self.assertRaises(AssertionError):
+            validate_unsigned_payload_gate(dry_run, "dry-run")
+
     def test_release_publish_workflow_has_no_manual_dispatch(self):
         doc = copy.deepcopy(self.workflow)
         trigger_key = "on" if "on" in doc else True
@@ -291,6 +362,8 @@ class ProvenanceWorkflowTest(unittest.TestCase):
         validate_clean_rebuild_cache_env(workflow)
         validate_cosign_installation(workflow, "dry-run")
         validate_publish_tool_contract(workflow, "dry-run")
+        validate_advisory_snapshot_staging(workflow)
+        validate_unsigned_payload_gate(workflow, "dry-run")
         triggers = workflow.get("on", workflow.get(True))
         dispatch = triggers["workflow_dispatch"]["inputs"]["dry_run"]
         self.assertEqual(dispatch, {"description": "Run the full release validation without publishing", "type": "boolean", "required": True, "default": True})
