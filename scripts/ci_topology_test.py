@@ -165,6 +165,8 @@ def assert_retirement_topology() -> None:
     for lane, markers in coverage.items():
         for marker in markers:
             require(marker in parsed[lane], f"{lane} lost {marker}")
+    require("go test ./internal/router -run '^(TestAdminOpenAPIUpToDate|TestAdminOpenAPISchemaCoverage|TestAdminV1SpecIntegrity)$$' -count=1"
+            in read(ROOT / "Makefile"), "admin OpenAPI check must preserve its end anchor through make expansion")
     codeql = read(WORKFLOWS / "codeql.yml")
     require("merge_group:" in codeql and "schedule:" in codeql and "pull_request:" not in codeql,
             "advanced CodeQL must run on merge groups and schedule, not PRs")

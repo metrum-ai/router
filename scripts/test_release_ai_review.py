@@ -636,9 +636,15 @@ class ReleaseAIReviewTest(unittest.TestCase):
             observed["contents"] = [path.name for path in Path(kwargs["cwd"]).iterdir()]
             observed["cwd"] = kwargs["cwd"]
             observed["kwargs"] = kwargs
+            observed["home_exists_during_call"] = Path(kwargs["env"]["HOME"]).is_dir()
             observed["command"] = command
             return fake
-        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "must-not-pass", "OTHER_SECRET": "must-not-pass"}), \
+        repository_root = Path(review.__file__).resolve().parents[1]
+        login_dir = str(Path(tempfile.gettempdir()) / "codex-login-fixture")
+        with patch.dict(os.environ, {
+            "ANTHROPIC_API_KEY": "must-not-pass", "OTHER_SECRET": "must-not-pass",
+            "CODEX_HOME": login_dir, "HOME": str(repository_root),
+        }, clear=True), \
              patch.object(review.subprocess, "run", side_effect=fake_run) as run:
             result = review.call_codex("diff payload", model="gpt-6.1-sol")
         self.assertEqual(result, {"summary": "Clean.", "findings": []})
@@ -650,7 +656,15 @@ class ReleaseAIReviewTest(unittest.TestCase):
         self.assertIn("diff payload", observed["kwargs"]["input"])
         self.assertNotIn("ANTHROPIC_API_KEY", observed["kwargs"]["env"])
         self.assertNotIn("OTHER_SECRET", observed["kwargs"]["env"])
-        self.assertNotEqual(observed["cwd"], Path.cwd())
+        codex_cwd = Path(observed["cwd"]).resolve()
+        with self.assertRaises(ValueError):
+            codex_cwd.relative_to(repository_root)
+        self.assertEqual(codex_cwd.parent, Path(tempfile.gettempdir()).resolve())
+        self.assertEqual(observed["kwargs"]["env"]["CODEX_HOME"], login_dir)
+        self.assertNotEqual(observed["kwargs"]["env"]["HOME"], str(repository_root))
+        self.assertNotEqual(observed["kwargs"]["env"]["HOME"], login_dir)
+        self.assertTrue(observed["home_exists_during_call"])
+        self.assertEqual(observed["kwargs"]["env"]["TMPDIR"], str(Path(tempfile.gettempdir()).resolve()))
         self.assertEqual(observed["contents"], ["schema.json"])
 
     def test_codex_provider_rejects_nonzero_invalid_json_and_invalid_schema(self) -> None:
@@ -713,6 +727,17 @@ class ReleaseAIReviewTest(unittest.TestCase):
                 self.assertEqual(loaded, artifact)
                 self.assertEqual(loaded_head, reviewed_head)
 
+                unrelated_path = directory / "unrelated.json"
+                unrelated_path.write_text("{}\n", encoding="utf-8")
+                subprocess.run(["git", "-C", str(root), "add", "docs/release-reviews/unrelated.json"], check=True)
+                subprocess.run(["git", "-C", str(root), "commit", "-qm", "add unrelated artifact file"], check=True)
+                unrelated_head = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+                with self.assertRaisesRegex(ValueError, "exactly one valid committed review artifact"):
+                    review.load_committed_artifact(Path("docs/release-reviews"), base, base_commit, unrelated_head)
+
+                unrelated_path.unlink()
+                subprocess.run(["git", "-C", str(root), "add", "-A", "docs/release-reviews"], check=True)
+                subprocess.run(["git", "-C", str(root), "commit", "-qm", "remove unrelated artifact file"], check=True)
                 artifact_data = json.loads(artifact_path.read_text(encoding="utf-8"))
                 incomplete = dict(artifact_data)
                 incomplete["file_coverage"] = []

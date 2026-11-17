@@ -124,14 +124,14 @@ def main() -> int:
         "EKS_AWS_PROFILE must have an empty Make default (operator-supplied)",
     )
 
-    # Keep the exact bare-Make inspection path independent of the bootstrap
-    # toolchain. This would run `uv` before #728 because a recursive Make call
-    # shared its recipe line with Python provisioning.
-    default_dry_run = run_make("-n", environment={"PATH": no_uv_path})
-    require(default_dry_run.returncode == 0, f"bare make dry-run failed without uv:\n{default_dry_run.stderr}")
-    require("go test $(go list ./... | grep -v '/internal/router$') -timeout=15m" in default_dry_run.stdout
-            and "go test ./internal/router -timeout=30m" in default_dry_run.stdout,
-            "bare make must retain every Go package with router-only timeout headroom")
+    # Inspect the explicit test target, independent of Make's build default.
+    # This remains a dry-run check without provisioning the API compatibility
+    # bootstrap toolchain.
+    test_dry_run = run_make("-n", "test", environment={"PATH": no_uv_path})
+    require(test_dry_run.returncode == 0, f"test target dry-run failed without uv:\n{test_dry_run.stderr}")
+    require("go test $(go list ./... | grep -v '/internal/router$') -timeout=15m" in test_dry_run.stdout
+            and "go test ./internal/router -timeout=30m" in test_dry_run.stdout,
+            "test target must retain every Go package with router-only timeout headroom")
 
     # The offline child deliberately scrubs Make override transport, but it
     # must remain a visible recursive `$(MAKE)` call. GNU Make encodes short

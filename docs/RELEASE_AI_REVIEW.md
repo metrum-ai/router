@@ -9,8 +9,7 @@ The release review is generated locally from the exact code commit being reviewe
 BASE_TAG=v4.8.0
 BASE_COMMIT="$(git rev-parse --verify "${BASE_TAG}^{commit}")"
 REVIEW_HEAD="$(git rev-parse --verify HEAD)"
-mkdir -p /workspace/v5-release/tmp
-OUTPUT_DIR="$(mktemp -d /workspace/v5-release/tmp/release-review.XXXXXX)"
+OUTPUT_DIR="$(mktemp -d)"
 
 python3 scripts/release_ai_review.py \
   --provider codex \
@@ -32,6 +31,12 @@ cp "${OUTPUT_DIR}/review.json" "docs/release-reviews/${KEY}.json"
 Keep the generated `AI-release-review.md` beside the JSON output for maintainer review; it is not copied into the artifact commit.
 
 The JSON file records the base tag and its commit, the full reviewed commit ID, the provider, model and Codex CLI version, a verdict, the digest, findings and coverage for every changed file. The filename key binds the tag name, base commit and reviewed head. Binary entries contain before/after SHA-256 values. Generated entries identify an allowlisted CI job, which release validation confirms passed on the reviewed head.
+
+Before committing, scan both generated outputs and stop if the scan fails:
+
+```sh
+gitleaks dir --redact "${OUTPUT_DIR}"
+```
 
 If the review reports a blocking finding, the maintainer may record an acceptance reason in `docs/release-review-responses.json`, keyed by the artifact digest. Regenerate the report using that responses file; release validation requires every blocking finding to have a non-empty reason. The artifact's `verdict` records the model's findings, while the report's decision reflects the recorded maintainer response.
 
