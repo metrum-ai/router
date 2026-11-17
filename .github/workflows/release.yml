@@ -220,6 +220,7 @@ jobs:
     runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     timeout-minutes: 45
     permissions:
+      actions: read
       checks: read
       contents: read
     steps:

@@ -33,7 +33,7 @@ def validate(workflow):
     assert triggers["push"]["tags"] == ["v*"]
     ai_review = jobs["ai-release-review"]
     assert ai_review["timeout-minutes"] >= 20
-    assert ai_review["permissions"] == {"checks": "read", "contents": "read"}
+    assert ai_review["permissions"] == {"actions": "read", "checks": "read", "contents": "read"}
     assert ai_review.get("environment") is None
     ai_step = next(step for step in ai_review["steps"] if step.get("name") == "Validate the committed release review artifact")
     assert ai_step["env"]["REVIEW_BASE"] == "${{ needs.resolve.outputs.previous_tag }}"
@@ -197,7 +197,7 @@ class ProvenanceWorkflowTest(unittest.TestCase):
         self.assertNotIn("cosign", all_runs)
         self.assertNotIn("gh release create", all_runs)
         self.assertIsNone(dry_run.get("environment"))
-        self.assertEqual(dry_run["permissions"], {"checks": "read", "contents": "read"})
+        self.assertEqual(dry_run["permissions"], {"actions": "read", "checks": "read", "contents": "read"})
         review_step = next(step for step in dry_run_steps if step.get("id") == "review")
         self.assertEqual(review_step.get("env"), {"GH_TOKEN": "${{ github.token }}"})
         for step in dry_run_steps:
@@ -206,7 +206,7 @@ class ProvenanceWorkflowTest(unittest.TestCase):
         self.assertNotIn("ANTHROPIC_API_KEY", all_runs)
         for name, job in jobs.items():
             self.assertEqual(job.get("if"), "github.ref == 'refs/heads/main' && inputs.dry_run")
-            expected_permissions = {"checks": "read", "contents": "read"} if name == "dry-run" else {"contents": "read"}
+            expected_permissions = {"actions": "read", "checks": "read", "contents": "read"} if name == "dry-run" else {"contents": "read"}
             self.assertEqual(job.get("permissions"), expected_permissions)
             if name != "dry-run":
                 self.assertNotIn("environment", job)
