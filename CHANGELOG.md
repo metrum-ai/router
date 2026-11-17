@@ -18,6 +18,7 @@
 - Bound authentication audit writes with durable per-replica five-minute counters, chain one count-delta row at window close, and fall back to direct chained writes when the counter table is full; deny authentication if either audit write fails.
 
 - Evaluate tool-firewall sequence rules in response order, including first and second steps returned in one response.
+- Persist a denied same-response tool sequence so a retry cannot bypass its `then_tool` rule.
 - Remove the unsupported legacy admin route setting from both hardening guides and direct operators to the separate `/admin/v1` listener.
 - Align the release procedure with the committed AI review artifact gate and document the required artifact preparation path.
 - Correct the upgrade guide to describe successful local sinkhole responses for unknown or disallowed honeytoken model names.

@@ -1166,6 +1166,44 @@ func TestToolFirewallSequenceE2ESameResponse(t *testing.T) {
 	}
 }
 
+func TestToolFirewallSameResponseSequenceRetryRemainsBlocked(t *testing.T) {
+	upstream := sequenceUpstream(t,
+		`{"id":"chatcmpl-sequence","choices":[{"message":{"role":"assistant","tool_calls":[{"id":"read","type":"function","function":{"name":"read_customer","arguments":"{\"record\":\"account-7\"}"}},{"id":"send","type":"function","function":{"name":"http_request","arguments":"{\"body\":\"send\"}"}}]},"finish_reason":"tool_calls"}]}`,
+		chatToolCallBodyNamed(t, "http_request", `{"body":"retry"}`),
+		chatToolCallBodyNamed(t, "http_request", `{"body":"retry again"}`),
+	)
+	defer upstream.Close()
+	cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
+	group := cfg.Models["default"]
+	group.Targets[0].ToolSupport = ToolSupport{OpenAIChat: []string{"tools", "tool_choice"}}
+	cfg.Models["default"] = group
+	cfg.Server.ToolFirewall = ToolFirewallConfig{Mode: toolFirewallEnforce, Sequences: []ToolFirewallSequenceRule{{FirstTool: "read_customer", FirstArgsRegex: "account", ThenTool: "http_request", WithinTurns: 2, Action: "deny"}}}
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	makeRequest := func() *httptest.ResponseRecorder {
+		body := `{"model":"default","messages":[{"role":"user","content":"same-response retry seed"}],"tools":[{"type":"function","function":{"name":"read_customer","parameters":{"type":"object"}}},{"type":"function","function":{"name":"http_request","parameters":{"type":"object"}}}]}`
+		req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+testToken)
+		rec := httptest.NewRecorder()
+		svc.Handler().ServeHTTP(rec, req)
+		return rec
+	}
+	first := makeRequest()
+	if first.Code != http.StatusOK || strings.Contains(first.Body.String(), "tool_calls") || !strings.Contains(first.Body.String(), "Tool call blocked") {
+		t.Fatalf("same-response sequence was not denied: status=%d body=%s", first.Code, first.Body.String())
+	}
+	retries := int(cfg.Server.ToolFirewall.Sequences[0].WithinTurns) + 3
+	for i := 0; i < retries; i++ {
+		rec := makeRequest()
+		if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), "tool_calls") || !strings.Contains(rec.Body.String(), "Tool call blocked") {
+			t.Fatalf("then-only retry %d escaped: status=%d body=%s", i+1, rec.Code, rec.Body.String())
+		}
+	}
+}
+
 func TestToolFirewallSequenceE2ESameStreamedResponse(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
