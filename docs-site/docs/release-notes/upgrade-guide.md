@@ -317,6 +317,8 @@ completes, using 30-second and 1 MiB per-stream bounds when the model group does
 not set explicit bounds. Sequence rules evaluate calls in response order,
 including first and second steps returned together. Schema validation still runs only when the group opts in to
 `streaming.hold_until_validated`.
+Changing the effective firewall policy clears pending and already released approvals. Retries are evaluated under the
+current policy; resolve a new hold, if one is created, then retry the same call.
 
 ## v5.0.0 MCP tool governance integration
 

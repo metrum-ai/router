@@ -21,6 +21,7 @@
 
 ### Security
 
+- Invalidate pending and released tool-firewall approvals when the effective policy changes, so retries are evaluated and approved under the current rules.
 - Inspect Anthropic text and thinking carried by streamed block-start events before forwarding them when secret DLP is enabled.
 - Keep independent secret-scanning buffers for each Responses text item and content part so interleaved deltas cannot hide credentials.
 - Mark honeytoken and canary OCSF findings Critical and include the caller ID and source IP for SIEM correlation.
