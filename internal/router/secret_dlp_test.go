@@ -1337,6 +1337,39 @@ func TestSecretDLPResponsesAddedSnapshotTextIsNotReemitted(t *testing.T) {
 	}
 }
 
+func TestSecretDLPResponsesTerminalFlushDoesNotRepeatSeededSnapshot(t *testing.T) {
+	const addedText = "short-added-snapshot"
+	const continuation = "-short-tail"
+	frames := []string{
+		`event: response.content_part.added` + "\n" + `data: {"type":"response.content_part.added","output_index":0,"item_id":"msg_safe","content_index":0,"part":{"type":"output_text","text":"` + addedText + `"}}`,
+		`event: response.output_text.delta` + "\n" + `data: {"type":"response.output_text.delta","output_index":0,"item_id":"msg_safe","content_index":0,"delta":"` + continuation + `"}`,
+		`event: response.completed` + "\n" + `data: {"type":"response.completed","response":{"status":"completed"}}`,
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, frame := range frames {
+			_, _ = io.WriteString(w, frame+"\n\n")
+		}
+	}))
+	defer upstream.Close()
+	target := Target{Provider: "native", Model: "responses-model", ToolSupport: ToolSupport{OpenAIResponses: []string{"function", "tool_choice"}}}
+	svc := nativeStreamTestService(t, upstream.URL, "openai-responses", []Target{target}, func(cfg *Config) {
+		group := cfg.Models["native-stream"]
+		group.PIIFilter.Enabled = true
+		group.PIIFilter.SecretsEnabled = true
+		cfg.Models["native-stream"] = group
+	})
+	defer svc.Close()
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"native-stream","stream":true,"input":"hello"}`))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	response := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(response, req)
+	body := response.Body.String()
+	if response.Code != http.StatusOK || strings.Count(body, addedText) != 1 || strings.Count(body, continuation) != 1 {
+		t.Fatalf("status=%d added text count=%d continuation count=%d body=%s", response.Code, strings.Count(body, addedText), strings.Count(body, continuation), body)
+	}
+}
+
 func TestSecretDLPResponsesFailedAndIncompleteSnapshotsThroughHandler(t *testing.T) {
 	secret := fakeGitHubToken()
 	for _, terminal := range []string{"failed", "incomplete"} {

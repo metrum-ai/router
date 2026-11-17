@@ -824,6 +824,12 @@ func (d *secretStreamDLP) filterResponsesTextEvent(event stream.Event, payload m
 		if err := d.failIfMatched(before); err != nil {
 			return nil, true, err
 		}
+		tail = removeSecretStreamSeededPrefix(state.seeded, tail)
+		state.seeded = ""
+		if tail == "" {
+			delete(d.responsesText, channel)
+			continue
+		}
 		var previous map[string]any
 		if err := json.Unmarshal(state.lastEvent.Data, &previous); err != nil {
 			return nil, true, err
