@@ -148,8 +148,8 @@ class ReleaseAIReviewTest(unittest.TestCase):
                 "locations": [{"file": "docs-site/docs/release-notes/upgrade-guide.md", "line": 42}],
             }],
         }
-        artifact = review.build_artifact(candidate, "v4.8.0", "abc1234")
-        blocked, unanswered = review.evaluate(artifact, {}, "v4.8.0", "abc1234")
+        artifact = review.build_artifact(candidate, "v4.8.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        blocked, unanswered = review.evaluate(artifact, {}, "v4.8.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
         self.assertEqual(blocked["decision"], "block")
         self.assertEqual(unanswered, 1)
         finding_id = blocked["findings"][0]["id"]
@@ -157,13 +157,13 @@ class ReleaseAIReviewTest(unittest.TestCase):
         reworded = json.loads(json.dumps(candidate))
         reworded["findings"][0]["title"] = "Rollback instructions need evidence"
         reworded["findings"][0]["rationale"] = "A changed model explanation for the same source location."
-        rerun, unanswered = review.evaluate(reworded, {}, "v4.8.0", "abc1234")
+        rerun, unanswered = review.evaluate(reworded, {}, "v4.8.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
         self.assertEqual(rerun["findings"][0]["id"], finding_id)
         self.assertEqual(unanswered, 1)
-        passed, unanswered = review.evaluate(artifact, {artifact_digest: "Reviewed this exact release review artifact; rollback step was added and verified."}, "v4.8.0", "abc1234")
+        passed, unanswered = review.evaluate(artifact, {artifact_digest: "Reviewed this exact release review artifact; rollback step was added and verified."}, "v4.8.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
         self.assertEqual(passed["decision"], "pass")
         self.assertEqual(unanswered, 0)
-        self.assertIn("rollback step was added", review.render(passed, "v4.8.0", "abc1234", "v5.0.0"))
+        self.assertIn("rollback step was added", review.render(passed, "v4.8.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "v5.0.0"))
 
     def test_finding_identity_changes_when_location_category_or_range_changes(self) -> None:
         candidate = {
@@ -174,16 +174,16 @@ class ReleaseAIReviewTest(unittest.TestCase):
                 "locations": [{"file": "internal/releaseverify/verify.go", "line": 137}],
             }],
         }
-        baseline, _ = review.evaluate(candidate, {}, "v4.8.0", "abc1234")
+        baseline, _ = review.evaluate(candidate, {}, "v4.8.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
         finding = candidate["findings"][0]
         variants = [
             {**candidate, "findings": [{**finding, "category": "correctness"}]},
             {**candidate, "findings": [{**finding, "locations": [{"file": "internal/releaseverify/verify.go", "line": 138}]}]},
         ]
         for variant in variants:
-            changed, _ = review.evaluate(variant, {}, "v4.8.0", "abc1234")
+            changed, _ = review.evaluate(variant, {}, "v4.8.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
             self.assertNotEqual(baseline["findings"][0]["id"], changed["findings"][0]["id"])
-        new_range, _ = review.evaluate(candidate, {}, "v4.8.0", "def5678")
+        new_range, _ = review.evaluate(candidate, {}, "v4.8.0", "dddddddddddddddddddddddddddddddddddddddd")
         self.assertNotEqual(baseline["findings"][0]["id"], new_range["findings"][0]["id"])
 
     def test_batch_finding_must_reference_a_file_in_that_batch(self) -> None:
@@ -196,10 +196,10 @@ class ReleaseAIReviewTest(unittest.TestCase):
             }],
         }
         with self.assertRaisesRegex(ValueError, "outside its batch"):
-            review.build_artifact(candidate, "v4.8.0", "abc1234", allowed_files={"inside.go"})
+            review.build_artifact(candidate, "v4.8.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", allowed_files={"inside.go"})
 
     def test_clean_review_and_sensitive_output(self) -> None:
-        report, unanswered = review.evaluate({"summary": "No release blockers found.", "findings": []}, {}, "v4.8.0", "abc1234")
+        report, unanswered = review.evaluate({"summary": "No release blockers found.", "findings": []}, {}, "v4.8.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
         self.assertEqual(report["decision"], "pass")
         self.assertEqual(unanswered, 0)
         high_entropy_value = "".join(["Gh", "7k", "L2", "pQ", "9w", "R5", "tX", "3z", "Mv", "8c", "Hs", "4n"])
@@ -207,7 +207,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
             review.evaluate({"summary": "No release blockers found.", "findings": [{
                 "severity": "informational", "category": "security", "title": f"API key: {high_entropy_value}",
                 "rationale": "A finding", "locations": [{"file": "docs/a.md", "line": 1}],
-            }]}, {}, "v4.8.0", "abc1234")
+            }]}, {}, "v4.8.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 
     def test_ordinary_credential_field_wording_is_allowed_but_high_entropy_secret_is_rejected(self) -> None:
         ordinary = "This review uses api_key: to name a field and token= to describe an assignment."
@@ -220,6 +220,13 @@ class ReleaseAIReviewTest(unittest.TestCase):
         high_entropy_value = "".join(["Gh", "7k", "L2", "pQ", "9w", "R5", "tX", "3z", "Mv", "8c", "Hs", "4n"])
         with self.assertRaisesRegex(ValueError, "sensitive-looking"):
             review.safe_text(f"credential sk-ant-api03-{high_entropy_value}", "rationale")
+
+    def test_diff_secret_patterns_are_rejected_before_codex_invocation(self) -> None:
+        aws_key = "AKIA" + "A" * 16
+        self.assertTrue(review.contains_sensitive_credential(f"AWS_ACCESS_KEY_ID={aws_key}"))
+        entropy_value = "Gh7kL2pQ9wR5tX3zMv8cHs4nB6dK1fT"
+        self.assertTrue(review.contains_sensitive_credential("AWS_SECRET_ACCESS_KEY=" + entropy_value))
+        self.assertFalse(review.contains_sensitive_credential("api_key: token= ordinary review wording"))
 
     def test_model_timeout_fails_without_logging_request(self) -> None:
         with patch.object(review.urllib.request, "urlopen", side_effect=TimeoutError()):
@@ -245,7 +252,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
             output = Path(temporary) / "review.md"
             artifact_output = Path(temporary) / "review-artifact.json"
             with patch.dict(os.environ, {}, clear=True), patch("sys.argv", [
-                "release_ai_review.py", "--base", "v4.8.0", "--head", "abc1234", "--tag", "v5.0.0",
+                "release_ai_review.py", "--base", "v4.8.0", "--head", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "--tag", "v5.0.0",
                 "--artifact-output", str(artifact_output), "--output", str(output)
             ]):
                 self.assertEqual(review.main(), 2)
@@ -260,7 +267,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
                 "locations": [{"file": "docs/upgrade-guide.md", "line": 42}],
             }],
         }
-        artifact = review.build_artifact(candidate, "v4.8.0", "abc1234")
+        artifact = review.build_artifact(candidate, "v4.8.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
         self.assertTrue(artifact["artifact_digest"])
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -277,7 +284,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
                  patch.object(review, "git_diff_names", return_value=[]), \
                  patch.object(review, "git_binary_paths", return_value=[]), \
                  patch.object(review, "call_model") as call_model, patch("sys.argv", [
-                "release_ai_review.py", "--base", "v4.8.0", "--head", "abc1234", "--tag", "v5.0.0",
+                "release_ai_review.py", "--base", "v4.8.0", "--head", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "--tag", "v5.0.0",
                 "--responses", str(responses), "--artifact-cache", str(cache),
                 "--artifact-output", str(artifact_output), "--output", str(output),
             ]):
@@ -371,7 +378,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
                 "schema": "metrum-ai-router-release-review-responses/v1", "acceptances": {},
             }), encoding="utf-8")
             args = [
-                "release_ai_review.py", "--base", "v4.8.0", "--head", "abc1234", "--tag", "v5.0.0",
+                "release_ai_review.py", "--base", "v4.8.0", "--head", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "--tag", "v5.0.0",
                 "--responses", str(responses), "--artifact-cache", str(root / "cache.json"),
                 "--artifact-output", str(root / "artifact.json"), "--output", str(root / "review.md"),
             ]
@@ -385,7 +392,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
                 self.assertEqual(review.main(), 2)
             batches.assert_called_once_with(
                 "v4.8.0",
-                "abc1234",
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
                 max_bytes=review.INITIAL_DIFF_BYTES,
                 max_single_file_bytes=review.MAX_DIFF_BYTES,
             )
@@ -400,7 +407,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             args = [
-                "release_ai_review.py", "--base", "v4.8.0", "--head", "def5678", "--tag", "v5.0.0",
+                "release_ai_review.py", "--base", "v4.8.0", "--head", "dddddddddddddddddddddddddddddddddddddddd", "--tag", "v5.0.0",
                 "--responses", str(root / "responses.json"), "--artifact-cache", str(root / "cache" / "review.json"),
                 "--artifact-output", str(root / "review-output" / "review.json"),
                 "--output", str(root / "review-output" / "AI-release-review.md"),
@@ -417,6 +424,35 @@ class ReleaseAIReviewTest(unittest.TestCase):
                 self.assertEqual(review.main(), 0)
             call_model.assert_called_once_with("test-key", "changed range diff", batch_number=1, batch_count=1)
 
+    def test_codex_provider_generates_range_artifact_without_anthropic_credential(self) -> None:
+        candidate = {"summary": "No blocking findings.", "findings": []}
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            responses = root / "responses.json"
+            responses.write_text(json.dumps({"schema": "metrum-ai-router-release-review-responses/v1", "acceptances": {}}), encoding="utf-8")
+            args = [
+                "release_ai_review.py", "--base", "v4.8.0", "--head", "dddddddddddddddddddddddddddddddddddddddd", "--tag", "v5.0.0",
+                "--responses", str(responses), "--provider", "codex",
+                "--artifact-output", str(root / "review.json"), "--output", str(root / "review.md"),
+            ]
+            actual_base_commit = review.resolve_git_commit("v4.8.0")
+            with patch.dict(os.environ, {}, clear=True), \
+                 patch.object(review, "git_file_coverage", return_value=[{"file": "one.go", "status": "reviewed"}]), \
+                 patch.object(review, "resolve_git_commit", side_effect=lambda ref: actual_base_commit if ref == "v4.8.0" else ref), \
+                 patch.object(review, "git_diff_names", return_value=["one.go"]), \
+                 patch.object(review, "git_binary_paths", return_value=[]), \
+                 patch.object(review, "git_diff_batches", return_value=[("diff contents", ("one.go",))]), \
+                 patch.object(review, "codex_cli_version", return_value="codex-cli 0.169.0"), \
+                 patch.object(review, "call_codex", return_value=candidate) as call_codex, \
+                 patch.object(review, "call_model") as call_model, patch("sys.argv", args):
+                self.assertEqual(review.main(), 0)
+            call_codex.assert_called_once()
+            self.assertEqual(call_codex.call_args.kwargs["model"], "gpt-6.1-sol")
+            call_model.assert_not_called()
+            artifact = json.loads((root / "review.json").read_text(encoding="utf-8"))
+            self.assertEqual((artifact["provider"], artifact["model"]), ("codex", "gpt-6.1-sol"))
+            self.assertEqual(artifact["codex_cli_version"], "codex-cli 0.169.0")
+
     def test_uncached_range_reviews_every_bounded_batch(self) -> None:
         clean_batch = {"summary": "No blocking findings in this batch.", "findings": []}
         blocking_batch = {
@@ -430,7 +466,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             args = [
-                "release_ai_review.py", "--base", "v4.8.0", "--head", "def5678", "--tag", "v5.0.0",
+                "release_ai_review.py", "--base", "v4.8.0", "--head", "dddddddddddddddddddddddddddddddddddddddd", "--tag", "v5.0.0",
                 "--responses", str(root / "responses.json"), "--artifact-cache", str(root / "cache" / "review.json"),
                 "--artifact-output", str(root / "review-output" / "review.json"),
                 "--output", str(root / "review-output" / "AI-release-review.md"),
@@ -464,23 +500,23 @@ class ReleaseAIReviewTest(unittest.TestCase):
     def test_artifact_requires_explicit_verification_for_generated_coverage(self) -> None:
         candidate = {"summary": "No blockers found.", "findings": []}
         with self.assertRaisesRegex(ValueError, "verification allowlist"):
-            review.build_artifact(candidate, "v4.8.0", "abc1234", file_coverage=[{
+            review.build_artifact(candidate, "v4.8.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", file_coverage=[{
                 "file": "docs/generated.json", "status": "generated-and-verified", "verification": "",
             }])
         with patch.dict(review.GENERATED_FILE_VERIFICATION_ALLOWLIST, {
             "docs/generated.json": "admin-openapi-check",
         }):
             with self.assertRaisesRegex(ValueError, "verification allowlist"):
-                review.build_artifact(candidate, "v4.8.0", "abc1234", file_coverage=[{
+                review.build_artifact(candidate, "v4.8.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", file_coverage=[{
                     "file": "docs/unlisted.json", "status": "generated-and-verified",
                     "verification": "admin-openapi-check",
                 }])
             with self.assertRaisesRegex(ValueError, "verification allowlist"):
-                review.build_artifact(candidate, "v4.8.0", "abc1234", file_coverage=[{
+                review.build_artifact(candidate, "v4.8.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", file_coverage=[{
                     "file": "docs/generated.json", "status": "generated-and-verified",
                     "verification": "some other check",
                 }])
-            artifact = review.build_artifact(candidate, "v4.8.0", "abc1234", file_coverage=[{
+            artifact = review.build_artifact(candidate, "v4.8.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", file_coverage=[{
                 "file": "docs/generated.json", "status": "generated-and-verified",
                 "verification": "admin-openapi-check",
             }])
@@ -489,41 +525,89 @@ class ReleaseAIReviewTest(unittest.TestCase):
             "verification": "admin-openapi-check",
         }])
 
+    def test_generated_static_directory_requires_named_check_coverage(self) -> None:
+        path = "internal/router/admindist/static/admin-abc.js"
+        self.assertEqual(review.generated_check(path), "supplemental-checks / generated-release-files")
+        artifact = review.build_artifact({"summary": "Generated output was checked.", "findings": []}, "v4.8.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", file_coverage=[{
+            "file": path, "status": "generated-and-verified",
+            "verification": "supplemental-checks / generated-release-files",
+        }])
+        with self.assertRaisesRegex(ValueError, "coverage status does not match"):
+            forged = review.build_artifact({"summary": "No blockers found.", "findings": []}, "v4.8.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", file_coverage=[{
+                "file": path, "status": "reviewed",
+            }])
+            review.validate_artifact(forged, "v4.8.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", {path})
+
+    def test_generated_named_check_must_pass_on_reviewed_commit(self) -> None:
+        artifact = review.build_artifact({"summary": "Generated spec was checked.", "findings": []}, "v4.8.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", file_coverage=[{
+            "file": "docs/specs/admin-v1.openapi.json", "status": "generated-and-verified",
+            "verification": "supplemental-checks / generated-release-files",
+        }])
+        check_run = {
+            "name": "generated-release-files", "app": {"slug": "github-actions"},
+            "details_url": "https://github.com/metrum-ai/router/actions/runs/123/job/456",
+            "head_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "status": "completed",
+            "conclusion": "success", "started_at": "2026-01-01T00:00:00Z",
+        }
+        checks = subprocess.CompletedProcess(args=[], returncode=0, stdout=json.dumps({"check_runs": [check_run]}), stderr="")
+        runs = subprocess.CompletedProcess(args=[], returncode=0, stdout=json.dumps({"workflow_runs": [{
+            "id": 123, "path": ".github/workflows/supplemental-checks.yml",
+        }]}), stderr="")
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "metrum-ai/router"}), patch.object(review.subprocess, "run", side_effect=[checks, runs]):
+            review.verify_generated_file_checks(artifact, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        failed_check = {**check_run, "conclusion": "failure"}
+        failed = subprocess.CompletedProcess(args=[], returncode=0, stdout=json.dumps({"check_runs": [failed_check]}), stderr="")
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "metrum-ai/router"}), patch.object(review.subprocess, "run", side_effect=[failed, runs]):
+            with self.assertRaisesRegex(ValueError, "generated-file checks have not passed"):
+                review.verify_generated_file_checks(artifact, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+
     def test_artifact_coverage_must_exactly_match_changed_files(self) -> None:
         candidate = {"summary": "No blockers found.", "findings": []}
-        artifact = review.build_artifact(candidate, "v4.8.0", "abc1234", file_coverage=[{
+        artifact = review.build_artifact(candidate, "v4.8.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", file_coverage=[{
             "file": "one.go", "status": "reviewed",
         }])
         with self.assertRaisesRegex(ValueError, "coverage does not match the diff"):
-            review.validate_artifact(artifact, "v4.8.0", "abc1234", {"one.go", "two.go"})
+            review.validate_artifact(artifact, "v4.8.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", {"one.go", "two.go"})
         with self.assertRaisesRegex(ValueError, "coverage does not match the diff"):
-            review.validate_artifact(artifact, "v4.8.0", "abc1234", set())
+            review.validate_artifact(artifact, "v4.8.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", set())
+        with self.assertRaisesRegex(ValueError, "does not match the requested range"):
+            review.validate_artifact(artifact, "v4.8.0", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", {"one.go"})
+        with self.assertRaisesRegex(ValueError, "requested base commit does not match"):
+            review.validate_artifact(
+                artifact, "v4.8.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", {"one.go"},
+                base_commit="b" * 40,
+            )
 
     def test_binary_changes_are_covered_by_before_and_after_sha256(self) -> None:
         before = "a" * 64
         after = "b" * 64
         candidate = {"summary": "Binary assets have recorded content hashes.", "findings": []}
-        artifact = review.build_artifact(candidate, "v4.8.0", "abc1234", file_coverage=[{
+        artifact = review.build_artifact(candidate, "v4.8.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", file_coverage=[{
             "file": "assets/logo.png", "status": "binary", "sha256_before": before, "sha256_after": after,
         }])
         self.assertEqual(artifact["file_coverage"], [{
             "file": "assets/logo.png", "status": "binary", "sha256_before": before, "sha256_after": after,
         }])
-        review.validate_artifact(artifact, "v4.8.0", "abc1234", {"assets/logo.png"}, {
+        review.validate_artifact(artifact, "v4.8.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", {"assets/logo.png"}, {
             "assets/logo.png": {"before": before, "after": after},
         })
         with self.assertRaisesRegex(ValueError, "binary hashes do not match"):
-            review.validate_artifact(artifact, "v4.8.0", "abc1234", {"assets/logo.png"}, {
+            review.validate_artifact(artifact, "v4.8.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", {"assets/logo.png"}, {
                 "assets/logo.png": {"before": before, "after": "c" * 64},
             })
 
     def test_binary_detection_and_hashing_use_numstat_and_git_objects(self) -> None:
-        numstat = type("Result", (), {"stdout": b"-\t-\tassets/logo.png\0"})()
-        with patch.object(review.subprocess, "run", side_effect=[numstat]) as run:
+        changed = type("Result", (), {"stdout": b"assets/logo.png\0"})()
+        before_oid = type("Result", (), {"stdout": "before-oid\n"})()
+        before_blob = type("Result", (), {"stdout": b"old\0binary"})()
+        with patch.object(review.subprocess, "run", side_effect=[changed, before_oid, before_blob]) as run:
             self.assertEqual(review.git_binary_paths("base", "head"), ["assets/logo.png"])
-        self.assertIn("--numstat", run.call_args.args[0])
+        self.assertIn("git", run.call_args.args[0])
+        self.assertIn("--name-only", run.call_args_list[0].args[0])
         with patch.object(review.subprocess, "run", side_effect=[
+            type("Result", (), {"stdout": "before-oid\n"})(),
             type("Result", (), {"stdout": b"old binary"})(),
+            type("Result", (), {"stdout": "after-oid\n"})(),
             type("Result", (), {"stdout": b"new binary"})(),
         ]):
             hashes = review.git_binary_hashes("base", "head", {"assets/logo.png"})
@@ -545,6 +629,210 @@ class ReleaseAIReviewTest(unittest.TestCase):
         self.assertEqual(review.GENERATED_FILE_VERIFICATION_ALLOWLIST["docs/specs/admin-v1.openapi.json"],
                          "supplemental-checks / generated-release-files")
 
+    def test_codex_provider_uses_read_only_cli_schema_and_strips_secret_environment(self) -> None:
+        fake = subprocess.CompletedProcess(args=[], returncode=0, stdout='{"summary":"Clean.","findings":[]}', stderr="")
+        observed = {}
+        def fake_run(command, **kwargs):
+            observed["contents"] = [path.name for path in Path(kwargs["cwd"]).iterdir()]
+            observed["cwd"] = kwargs["cwd"]
+            observed["kwargs"] = kwargs
+            observed["home_exists_during_call"] = Path(kwargs["env"]["HOME"]).is_dir()
+            observed["command"] = command
+            return fake
+        repository_root = Path(review.__file__).resolve().parents[1]
+        login_dir = str(Path(tempfile.gettempdir()) / "codex-login-fixture")
+        with patch.dict(os.environ, {
+            "ANTHROPIC_API_KEY": "must-not-pass", "OTHER_SECRET": "must-not-pass",
+            "CODEX_HOME": login_dir, "HOME": str(repository_root),
+        }, clear=True), \
+             patch.object(review.subprocess, "run", side_effect=fake_run) as run:
+            result = review.call_codex("diff payload", model="gpt-6.1-sol")
+        self.assertEqual(result, {"summary": "Clean.", "findings": []})
+        command = observed["command"]
+        self.assertEqual(command[:7], ["codex", "exec", "-m", "gpt-6.1-sol", "--sandbox", "read-only", "--ephemeral"])
+        self.assertIn("--skip-git-repo-check", command)
+        self.assertIn("--output-schema", command)
+        self.assertEqual(command[-1], "-")
+        self.assertIn("diff payload", observed["kwargs"]["input"])
+        self.assertNotIn("ANTHROPIC_API_KEY", observed["kwargs"]["env"])
+        self.assertNotIn("OTHER_SECRET", observed["kwargs"]["env"])
+        codex_cwd = Path(observed["cwd"]).resolve()
+        with self.assertRaises(ValueError):
+            codex_cwd.relative_to(repository_root)
+        self.assertEqual(codex_cwd.parent, Path(tempfile.gettempdir()).resolve())
+        self.assertEqual(observed["kwargs"]["env"]["CODEX_HOME"], login_dir)
+        self.assertNotEqual(observed["kwargs"]["env"]["HOME"], str(repository_root))
+        self.assertNotEqual(observed["kwargs"]["env"]["HOME"], login_dir)
+        self.assertTrue(observed["home_exists_during_call"])
+        self.assertEqual(observed["kwargs"]["env"]["TMPDIR"], str(Path(tempfile.gettempdir()).resolve()))
+        self.assertEqual(observed["contents"], ["schema.json"])
+
+    def test_codex_provider_rejects_nonzero_invalid_json_and_invalid_schema(self) -> None:
+        cases = [
+            (subprocess.CompletedProcess(args=[], returncode=1, stdout="", stderr="secret output"), "exited with status 1"),
+            (subprocess.CompletedProcess(args=[], returncode=0, stdout="not json", stderr=""), "not valid JSON"),
+            (subprocess.CompletedProcess(args=[], returncode=0, stdout='{"summary":"missing findings"}', stderr=""), "required schema"),
+        ]
+        for result, message in cases:
+            with self.subTest(message=message), patch.object(review.subprocess, "run", return_value=result):
+                with self.assertRaisesRegex(RuntimeError, message):
+                    review.call_codex("diff payload")
+
+    def test_codex_model_is_bound_into_artifact_digest_and_report(self) -> None:
+        artifact = review.build_artifact(
+            {"summary": "No blocking findings.", "findings": []}, "v4.8.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            provider="codex", model="gpt-6.1-sol", codex_cli_version="codex-cli 0.169.0",
+            file_coverage=[{"file": "one.go", "status": "reviewed"}],
+        )
+        validated = review.validate_artifact(artifact, "v4.8.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", {"one.go"})
+        report, _ = review.evaluate(validated, {}, "v4.8.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+        self.assertEqual(validated["model"], "gpt-6.1-sol")
+        self.assertIn("- Model: `gpt-6.1-sol`", review.render(report, "v4.8.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "v5.0.0"))
+        self.assertEqual(validated["verdict"], "PASS")
+        self.assertEqual(validated["codex_cli_version"], "codex-cli 0.169.0")
+
+    def test_committed_artifact_may_follow_reviewed_commit_only_by_artifact_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            subprocess.run(["git", "-C", str(root), "config", "user.name", "Release Review Test"], check=True)
+            subprocess.run(["git", "-C", str(root), "config", "user.email", "release-review-test@example.invalid"], check=True)
+            (root / "base.txt").write_text("base\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(root), "add", "base.txt"], check=True)
+            subprocess.run(["git", "-C", str(root), "commit", "-qm", "base"], check=True)
+            base = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+            (root / "src.go").write_text("change\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(root), "add", "src.go"], check=True)
+            subprocess.run(["git", "-C", str(root), "commit", "-qm", "reviewed source"], check=True)
+            reviewed_head = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+            original_cwd = Path.cwd()
+            try:
+                os.chdir(root)
+                coverage = review.git_file_coverage(base, reviewed_head)
+                base_commit = review.resolve_git_commit(base)
+                artifact = review.build_artifact(
+                    {"summary": "No blocking findings.", "findings": []}, base, reviewed_head,
+                    provider="codex", model="gpt-6.1-sol", codex_cli_version="codex-cli 0.169.0",
+                    file_coverage=coverage, base_commit=base_commit,
+                )
+                key = __import__("hashlib").sha256(f"{base}@{base_commit}..{reviewed_head}".encode()).hexdigest()[:24]
+                directory = root / "docs" / "release-reviews"
+                directory.mkdir(parents=True)
+                artifact_path = directory / f"{key}.json"
+                artifact_path.write_text(json.dumps(artifact), encoding="utf-8")
+                subprocess.run(["git", "-C", str(root), "add", "docs/release-reviews"], check=True)
+                subprocess.run(["git", "-C", str(root), "commit", "-qm", "commit review artifact"], check=True)
+                release_head = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+                loaded, loaded_head = review.load_committed_artifact(Path("docs/release-reviews"), base, base_commit, release_head)
+                self.assertEqual(loaded, artifact)
+                self.assertEqual(loaded_head, reviewed_head)
+
+                unrelated_path = directory / "unrelated.json"
+                unrelated_path.write_text("{}\n", encoding="utf-8")
+                subprocess.run(["git", "-C", str(root), "add", "docs/release-reviews/unrelated.json"], check=True)
+                subprocess.run(["git", "-C", str(root), "commit", "-qm", "add unrelated artifact file"], check=True)
+                unrelated_head = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+                with self.assertRaisesRegex(ValueError, "exactly one valid committed review artifact"):
+                    review.load_committed_artifact(Path("docs/release-reviews"), base, base_commit, unrelated_head)
+
+                unrelated_path.unlink()
+                subprocess.run(["git", "-C", str(root), "add", "-A", "docs/release-reviews"], check=True)
+                subprocess.run(["git", "-C", str(root), "commit", "-qm", "remove unrelated artifact file"], check=True)
+                artifact_data = json.loads(artifact_path.read_text(encoding="utf-8"))
+                incomplete = dict(artifact_data)
+                incomplete["file_coverage"] = []
+                unsigned = dict(incomplete)
+                unsigned.pop("artifact_digest")
+                incomplete["artifact_digest"] = __import__("hashlib").sha256(json.dumps(
+                    unsigned, ensure_ascii=True, separators=(",", ":"), sort_keys=True,
+                ).encode("utf-8")).hexdigest()
+                artifact_path.write_text(json.dumps(incomplete), encoding="utf-8")
+                subprocess.run(["git", "-C", str(root), "add", "docs/release-reviews"], check=True)
+                subprocess.run(["git", "-C", str(root), "commit", "-qm", "incomplete review artifact"], check=True)
+                incomplete_head = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+                with self.assertRaisesRegex(ValueError, "coverage does not match"):
+                    review.load_committed_artifact(Path("docs/release-reviews"), base, base_commit, incomplete_head)
+
+                artifact_path.write_text(json.dumps(artifact_data), encoding="utf-8")
+                subprocess.run(["git", "-C", str(root), "add", "docs/release-reviews"], check=True)
+                subprocess.run(["git", "-C", str(root), "commit", "-qm", "restore complete artifact"], check=True)
+                duplicate_path = directory / "duplicate.json"
+                duplicate_path.write_text(json.dumps(artifact_data), encoding="utf-8")
+                subprocess.run(["git", "-C", str(root), "add", "docs/release-reviews"], check=True)
+                subprocess.run(["git", "-C", str(root), "commit", "-qm", "duplicate artifact"], check=True)
+                duplicate_head = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+                with self.assertRaisesRegex(ValueError, "multiple matching"):
+                    review.load_committed_artifact(Path("docs/release-reviews"), base, base_commit, duplicate_head)
+
+                duplicate_path.unlink()
+                subprocess.run(["git", "-C", str(root), "add", "-A", "docs/release-reviews"], check=True)
+                subprocess.run(["git", "-C", str(root), "commit", "-qm", "remove duplicate artifact"], check=True)
+                wrong_name_path = directory / "wrong-key.json"
+                artifact_path.rename(wrong_name_path)
+                subprocess.run(["git", "-C", str(root), "add", "-A", "docs/release-reviews"], check=True)
+                subprocess.run(["git", "-C", str(root), "commit", "-qm", "wrong artifact filename"], check=True)
+                wrong_name_head = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+                with self.assertRaisesRegex(ValueError, "filename does not match"):
+                    review.load_committed_artifact(Path("docs/release-reviews"), base, base_commit, wrong_name_head)
+
+                symlink_path = directory / "symlink.json"
+                symlink_path.symlink_to(wrong_name_path.name)
+                subprocess.run(["git", "-C", str(root), "add", "docs/release-reviews/symlink.json"], check=True)
+                subprocess.run(["git", "-C", str(root), "commit", "-qm", "symlink artifact"], check=True)
+                symlink_head = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+                with self.assertRaisesRegex(ValueError, "non-regular"):
+                    review.load_committed_artifact(Path("docs/release-reviews"), base, base_commit, symlink_head)
+
+                symlink_path.unlink()
+                wrong_name_path.rename(artifact_path)
+                subprocess.run(["git", "-C", str(root), "add", "-A", "docs/release-reviews"], check=True)
+                subprocess.run(["git", "-C", str(root), "commit", "-qm", "restore artifact path"], check=True)
+                (root / "src.go").write_text("unreviewed change\n", encoding="utf-8")
+                subprocess.run(["git", "-C", str(root), "add", "src.go"], check=True)
+                subprocess.run(["git", "-C", str(root), "commit", "-qm", "code after artifact"], check=True)
+                later_release_head = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+                with self.assertRaisesRegex(ValueError, "exactly one valid committed review artifact"):
+                    review.load_committed_artifact(Path("docs/release-reviews"), base, base_commit, later_release_head)
+            finally:
+                os.chdir(original_cwd)
+
+    def test_committed_artifact_mode_renders_with_responses_file_without_model_call(self) -> None:
+        artifact = review.build_artifact(
+            {"summary": "A blocking issue needs maintainer acceptance.", "findings": [{
+                "severity": "blocking", "category": "compatibility", "title": "Upgrade evidence required",
+                "rationale": "The changed migration behavior needs an explicit acceptance.",
+                "locations": [{"file": "one.go", "line": 1}],
+            }]}, "v4.8.0", "cccccccccccccccccccccccccccccccccccccccc",
+            provider="codex", model="gpt-6.1-sol", codex_cli_version="codex-cli 0.169.0",
+            file_coverage=[{"file": "one.go", "status": "reviewed"}],
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            args = [
+                "release_ai_review.py", "--base", "v4.8.0", "--head", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "--tag", "v5.0.0",
+                "--responses", str(root / "responses.json"),
+                "--committed-artifact-dir", str(root / "artifacts"),
+                "--artifact-output", str(root / "review.json"), "--output", str(root / "review.md"),
+            ]
+            (root / "responses.json").write_text(json.dumps({
+                "schema": "metrum-ai-router-release-review-responses/v1",
+                "acceptances": {artifact["artifact_digest"]: "Accepted after reviewing the migration note and rollback evidence."},
+            }), encoding="utf-8")
+            actual_base_commit = review.resolve_git_commit("v4.8.0")
+            with patch.dict(os.environ, {}, clear=True), \
+                 patch.object(review, "resolve_git_commit", side_effect=lambda ref: actual_base_commit if ref == "v4.8.0" else ref), \
+                 patch.object(review, "load_committed_artifact", return_value=(artifact, "cccccccccccccccccccccccccccccccccccccccc")), \
+                 patch.object(review, "verify_generated_file_checks"), \
+                 patch.object(review, "call_codex") as call_codex, \
+                 patch.object(review, "call_model") as call_model, patch("sys.argv", args):
+                self.assertEqual(review.main(), 0)
+            call_codex.assert_not_called()
+            call_model.assert_not_called()
+            self.assertIn("Decision: **PASS**", (root / "review.md").read_text(encoding="utf-8"))
+            self.assertIn("Model: `gpt-6.1-sol`", (root / "review.md").read_text(encoding="utf-8"))
+            self.assertEqual(artifact["verdict"], "BLOCK")
+            self.assertIn("Accepted after reviewing", (root / "review.md").read_text(encoding="utf-8"))
+
     def test_fresh_batches_must_match_git_diff_name_only_paths(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -553,7 +841,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
                 "schema": "metrum-ai-router-release-review-responses/v1", "acceptances": {},
             }), encoding="utf-8")
             args = [
-                "release_ai_review.py", "--base", "v4.8.0", "--head", "abc1234", "--tag", "v5.0.0",
+                "release_ai_review.py", "--base", "v4.8.0", "--head", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "--tag", "v5.0.0",
                 "--responses", str(responses), "--artifact-cache", str(root / "absent-cache.json"),
                 "--artifact-output", str(root / "artifact.json"), "--output", str(root / "review.md"),
             ]
@@ -568,7 +856,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
 
     def test_cached_artifact_with_incomplete_file_coverage_fails_closed(self) -> None:
         candidate = {"summary": "No blockers found.", "findings": []}
-        artifact = review.build_artifact(candidate, "v4.8.0", "abc1234", file_coverage=[{
+        artifact = review.build_artifact(candidate, "v4.8.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", file_coverage=[{
             "file": "one.go", "status": "reviewed",
         }])
         with tempfile.TemporaryDirectory() as temporary:
@@ -580,7 +868,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
                 "schema": "metrum-ai-router-release-review-responses/v1", "acceptances": {},
             }), encoding="utf-8")
             args = [
-                "release_ai_review.py", "--base", "v4.8.0", "--head", "abc1234", "--tag", "v5.0.0",
+                "release_ai_review.py", "--base", "v4.8.0", "--head", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "--tag", "v5.0.0",
                 "--responses", str(responses), "--artifact-cache", str(cache),
                 "--artifact-output", str(root / "artifact.json"), "--output", str(root / "review.md"),
             ]
@@ -596,7 +884,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             args = [
-                "release_ai_review.py", "--base", "v4.8.0", "--head", "def5678", "--tag", "v5.0.0",
+                "release_ai_review.py", "--base", "v4.8.0", "--head", "dddddddddddddddddddddddddddddddddddddddd", "--tag", "v5.0.0",
                 "--responses", str(root / "responses.json"), "--artifact-cache", str(root / "cache" / "review.json"),
                 "--artifact-output", str(root / "review-output" / "review.json"),
                 "--output", str(root / "review-output" / "AI-release-review.md"),
@@ -625,7 +913,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             args = [
-                "release_ai_review.py", "--base", "v4.8.0", "--head", "def5678", "--tag", "v5.0.0",
+                "release_ai_review.py", "--base", "v4.8.0", "--head", "dddddddddddddddddddddddddddddddddddddddd", "--tag", "v5.0.0",
                 "--responses", str(root / "responses.json"), "--artifact-cache", str(root / "cache" / "review.json"),
                 "--artifact-output", str(root / "review-output" / "review.json"),
                 "--output", str(root / "review-output" / "AI-release-review.md"),
@@ -672,7 +960,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
                 "schema": "metrum-ai-router-release-review-responses/v1", "acceptances": {},
             }), encoding="utf-8")
             args = [
-                "release_ai_review.py", "--base", "v4.8.0", "--head", "def5678", "--tag", "v5.0.0",
+                "release_ai_review.py", "--base", "v4.8.0", "--head", "dddddddddddddddddddddddddddddddddddddddd", "--tag", "v5.0.0",
                 "--responses", str(responses), "--artifact-cache", str(root / "cache" / "review.json"),
                 "--artifact-output", str(root / "review-output" / "review.json"),
                 "--output", str(root / "review-output" / "AI-release-review.md"),
@@ -716,7 +1004,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
                 "schema": "metrum-ai-router-release-review-responses/v1", "acceptances": {},
             }), encoding="utf-8")
             args = [
-                "release_ai_review.py", "--base", "v4.8.0", "--head", "abc1234", "--tag", "v5.0.0",
+                "release_ai_review.py", "--base", "v4.8.0", "--head", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "--tag", "v5.0.0",
                 "--responses", str(responses), "--artifact-cache", str(root / "cache.json"),
                 "--artifact-output", str(root / "artifact.json"), "--output", str(root / "review.md"),
             ]

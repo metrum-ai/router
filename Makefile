@@ -786,7 +786,7 @@ admin-openapi:
 	go test ./internal/router -run '^TestAdminOpenAPIUpToDate$' -count=1 -update-admin-openapi
 
 admin-openapi-check:
-	go test ./internal/router -run '^(TestAdminOpenAPIUpToDate|TestAdminOpenAPISchemaCoverage|TestAdminV1SpecIntegrity)$' -count=1
+	go test ./internal/router -run '^(TestAdminOpenAPIUpToDate|TestAdminOpenAPISchemaCoverage|TestAdminV1SpecIntegrity)$$' -count=1
 
 .PHONY: docs-brand-policy-test
 docs-brand-policy-test:

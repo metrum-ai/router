@@ -98,8 +98,9 @@ jobs:
     needs: [hierarchy-agent-chain, hierarchy-codex-chain]
     runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     timeout-minutes: 180
-    environment: release-review
     permissions:
+      actions: read
+      checks: read
       contents: read
     env:
       VERSION: v5.0.0-dry-run
@@ -130,10 +131,12 @@ jobs:
           source_date_epoch="$(git show -s --format=%ct HEAD)"
           build_date="$(date -u -d "@${source_date_epoch}" +%Y-%m-%dT%H:%M:%SZ)"
           previous_tag="$(gh release list --repo "${GITHUB_REPOSITORY}" --limit 100 --json tagName,isPrerelease,isDraft | python3 scripts/select_previous_release.py --current "${VERSION}")"
+          previous_commit="$(git rev-parse --verify "${previous_tag}^{commit}")"
           printf 'COMMIT=%s\n' "${commit}" >> "${GITHUB_ENV}"
           printf 'SOURCE_DATE_EPOCH=%s\n' "${source_date_epoch}" >> "${GITHUB_ENV}"
           printf 'BUILD_DATE=%s\n' "${build_date}" >> "${GITHUB_ENV}"
           printf 'PREVIOUS_TAG=%s\n' "${previous_tag}" >> "${GITHUB_ENV}"
+          printf 'PREVIOUS_COMMIT=%s\n' "${previous_commit}" >> "${GITHUB_ENV}"
       - name: Verify Go patch floor
         run: python3 scripts/check_go_toolchain.py
       - name: Build release packages
@@ -189,38 +192,19 @@ jobs:
             --candidate-commit "${COMMIT}" --service-user "${service_user}" \
             --report "${RUNNER_TEMP}/upgrade-rollback-results.json"
           cp "${RUNNER_TEMP}/upgrade-rollback-results.json" dist/upgrade-rollback-results.json
-      - name: Load current maintainer responses
-        run: git show origin/main:docs/release-review-responses.json > "${RUNNER_TEMP}/release-review-responses.json"
-      - name: Derive immutable review artifact name
-        id: review-range
-        run: |
-          set -euo pipefail
-          key="$(python3 scripts/release_review_artifact_key.py --base "${PREVIOUS_TAG}" --head "${COMMIT}")"
-          printf 'artifact_name=release-review-%s\n' "${key}" >> "${GITHUB_OUTPUT}"
-      - name: Restore review artifact for this commit range
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          key: ${{ steps.review-range.outputs.artifact_name }}
-          path: ${{ runner.temp }}/review-cache/review.json
       - name: Review the previous production release through main
         id: review
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           mkdir -p dist
           python3 scripts/release_ai_review.py --base "${PREVIOUS_TAG}" --head "${COMMIT}" \
-            --tag "${VERSION}" --responses "${RUNNER_TEMP}/release-review-responses.json" \
-            --artifact-cache "${RUNNER_TEMP}/review-cache/review.json" \
+            --base-commit "${PREVIOUS_COMMIT}" --responses docs/release-review-responses.json \
+            --tag "${VERSION}" --committed-artifact-dir docs/release-reviews \
             --artifact-output dist/release-review-artifact.json \
             --output dist/AI-release-review.md
           rg -q '^- Decision: \*\*PASS\*\*$' dist/AI-release-review.md
-      - name: Store review artifact for reruns of this commit range
-        if: always() && steps.review.outputs.cache_hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          key: ${{ steps.review-range.outputs.artifact_name }}
-          path: dist/release-review-artifact.json
       - name: Install pinned Crane
         run: bash scripts/install_crane.sh "${CRANE}"
       - name: Assemble images in a local multi-architecture OCI layout
@@ -257,7 +241,9 @@ jobs:
       - name: Run local OCI version and health smoke
         run: python3 scripts/release_image_smoke.py --crane "${CRANE}" --oci-layout "${RELEASE_OCI_LAYOUT}" --image "${IMAGE}:${VERSION}" --version "${VERSION}"
       - name: Verify complete dry-run evidence
-        run: python3 scripts/check_release_dry_run.py --dist-dir dist --oci-layout "${RELEASE_OCI_LAYOUT}" --version "${VERSION}" --commit "${COMMIT}" --previous "${PREVIOUS_TAG}"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/check_release_dry_run.py --dist-dir dist --oci-layout "${RELEASE_OCI_LAYOUT}" --version "${VERSION}" --commit "${COMMIT}" --previous "${PREVIOUS_TAG}" --previous-commit "${PREVIOUS_COMMIT}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-dry-run-evidence

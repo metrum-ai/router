@@ -116,13 +116,19 @@ def validate(dist: Path, version: str) -> list[str]:
         expected_digest = hashlib.sha256(
             json.dumps(review_artifact, ensure_ascii=True, separators=(",", ":"), sort_keys=True).encode("utf-8")
         ).hexdigest()
-        if review_artifact.get("schema") != "metrum-ai-router-release-review-artifact/v1":
+        if review_artifact.get("schema") != "metrum-ai-router-release-review-artifact/v3":
             errors.append("AI release review artifact has an unknown schema")
         if not re.fullmatch(r"[0-9a-f]{64}", digest) or digest != expected_digest:
             errors.append("AI release review artifact digest is invalid")
         review_artifact_digest = digest
         if not review_artifact.get("base") or not review_artifact.get("head") or not isinstance(review_artifact.get("findings"), list):
             errors.append("AI release review artifact does not identify a commit range and findings")
+        if review_artifact.get("provider") != "codex" or review_artifact.get("model") != "gpt-6.1-sol" or not review_artifact.get("codex_cli_version"):
+            errors.append("AI release review artifact does not identify the selected Codex provider and CLI")
+        if review_artifact.get("verdict") not in {"PASS", "BLOCK"}:
+            errors.append("AI release review artifact has an invalid verdict")
+        if not re.fullmatch(r"[0-9a-f]{40}", review_artifact.get("base_commit", "")) or not re.fullmatch(r"[0-9a-f]{40}", review_artifact.get("head", "")):
+            errors.append("AI release review artifact does not pin full Git commits")
     except (OSError, json.JSONDecodeError, KeyError, TypeError, AttributeError):
         errors.append("AI release review artifact is missing or malformed")
     try:
@@ -131,6 +137,10 @@ def validate(dist: Path, version: str) -> list[str]:
             errors.append("AI release review is missing a passing decision")
         elif review_artifact_digest and f"Review artifact SHA-256: `{review_artifact_digest}`" not in report:
             errors.append("AI release review report does not match the recorded artifact digest")
+        elif f"- Model: `{review_artifact.get('model')}`" not in report:
+            errors.append("AI release review report does not identify the artifact model")
+        elif f"- Codex CLI: `{review_artifact.get('codex_cli_version')}`" not in report:
+            errors.append("AI release review report does not identify the Codex CLI version")
     except OSError:
         errors.append("AI release review is missing")
     return errors

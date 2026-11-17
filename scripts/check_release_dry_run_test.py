@@ -10,10 +10,12 @@ from pathlib import Path
 import tarfile
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from check_release_dry_run import validate
 from release_image_layer import BINARIES
 from release_image_oci_layout import append_image
+from release_ai_review import resolve_git_commit
 
 
 def archive(path: Path, architecture: str, version: str, commit: str) -> None:
@@ -66,11 +68,17 @@ class CheckReleaseDryRunTest(unittest.TestCase):
                 checksums.append(f"{hashlib.sha256((dist / name).read_bytes()).hexdigest()}  {name}")
             (dist / "SHA256SUMS").write_text("\n".join(checksums) + "\n", encoding="utf-8")
             review_artifact = {
-                "schema": "metrum-ai-router-release-review-artifact/v1",
+                "schema": "metrum-ai-router-release-review-artifact/v3",
                 "base": previous,
+                "base_commit": resolve_git_commit(previous),
                 "head": commit,
+                "provider": "codex",
+                "model": "gpt-6.1-sol",
+                "codex_cli_version": "codex-cli 0.169.0",
+                "verdict": "PASS",
                 "summary": "No findings.",
                 "findings": [],
+                "file_coverage": [],
             }
             review_artifact["artifact_digest"] = hashlib.sha256(json.dumps(
                 review_artifact, ensure_ascii=True, separators=(",", ":"), sort_keys=True
@@ -78,7 +86,9 @@ class CheckReleaseDryRunTest(unittest.TestCase):
             (dist / "release-review-artifact.json").write_text(json.dumps(review_artifact), encoding="utf-8")
             (dist / "AI-release-review.md").write_text(
                 f"- Decision: **PASS**\n- Reviewed range: `{previous}..{commit}`\n"
-                f"- Review artifact SHA-256: `{review_artifact['artifact_digest']}`\n", encoding="utf-8")
+                f"- Base tag commit: `{review_artifact['base_commit']}`\n"
+                f"- Review artifact SHA-256: `{review_artifact['artifact_digest']}`\n- Model: `gpt-6.1-sol`\n"
+                f"- Codex CLI: `codex-cli 0.169.0`\n", encoding="utf-8")
             (dist / "upgrade-rollback-results.json").write_text(json.dumps({
                 "schema": "router.release-upgrade-rollback/v1", "previous_version": previous,
                 "candidate_version": version, "candidate_commit": commit,
@@ -88,9 +98,13 @@ class CheckReleaseDryRunTest(unittest.TestCase):
                 archive(image, arch, version, commit)
                 append_image(image, layout, f"ghcr.io/metrum-ai/router:{version}", f"linux/{arch}")
 
-            self.assertEqual(validate(dist, layout, version, commit, previous), [])
+            with patch("check_release_dry_run.load_committed_artifact", return_value=(review_artifact, commit)), \
+                 patch("check_release_dry_run.verify_generated_file_checks"):
+                self.assertEqual(validate(dist, layout, version, commit, previous, review_artifact['base_commit']), [])
             (dist / names[0]).write_bytes(b"tampered")
-            self.assertTrue(any("checksum mismatch" in error for error in validate(dist, layout, version, commit, previous)))
+            with patch("check_release_dry_run.load_committed_artifact", return_value=(review_artifact, commit)), \
+                 patch("check_release_dry_run.verify_generated_file_checks"):
+                self.assertTrue(any("checksum mismatch" in error for error in validate(dist, layout, version, commit, previous, review_artifact['base_commit'])))
 
 
 if __name__ == "__main__":

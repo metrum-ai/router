@@ -165,6 +165,8 @@ def assert_retirement_topology() -> None:
     for lane, markers in coverage.items():
         for marker in markers:
             require(marker in parsed[lane], f"{lane} lost {marker}")
+    require("go test ./internal/router -run '^(TestAdminOpenAPIUpToDate|TestAdminOpenAPISchemaCoverage|TestAdminV1SpecIntegrity)$$' -count=1"
+            in read(ROOT / "Makefile"), "admin OpenAPI check must preserve its end anchor through make expansion")
     codeql = read(WORKFLOWS / "codeql.yml")
     require("merge_group:" in codeql and "schedule:" in codeql and "pull_request:" not in codeql,
             "advanced CodeQL must run on merge groups and schedule, not PRs")
@@ -425,11 +427,9 @@ def assert_arc_runners() -> None:
             elif path.name == "release-dry-run.yml":
                 cache_actions = re.findall(r"(?m)^\s+uses: (actions/cache/(?:restore|save)@[^\s]+)(?:\s+#.*)?$", text)
                 require("workflow_dispatch:" in text and "ref: main" in text
-                        and cache_actions == [
-                            "actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
-                            "actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9",
-                        ],
-                        "release dry run must check out main and use cache only for the review artifact")
+                        and not cache_actions
+                        and "cache: false" in text,
+                        "release dry run must check out main without restoring or saving build caches")
             else:
                 require(path.name == "ci.yml" and "actions/cache/restore@" in text
                         and "actions/cache/save@" in text,

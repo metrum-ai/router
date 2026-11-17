@@ -28,6 +28,7 @@ jobs:
       build_date: ${{ steps.metadata.outputs.build_date }}
       source_date_epoch: ${{ steps.metadata.outputs.source_date_epoch }}
       previous_tag: ${{ steps.metadata.outputs.previous_tag }}
+      previous_commit: ${{ steps.metadata.outputs.previous_commit }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -41,14 +42,21 @@ jobs:
           set -euo pipefail
           tag="$(python3 scripts/validate_release_tag.py "${RELEASE_REF_NAME}")"
           commit="$(git rev-parse HEAD)"
+          git fetch origin main
+          if ! git merge-base --is-ancestor "${commit}" origin/main; then
+            echo "release tag commit is not an ancestor of origin/main" >&2
+            exit 1
+          fi
           source_date_epoch="$(git show -s --format=%ct HEAD)"
           build_date="$(date -u -d "@${source_date_epoch}" +%Y-%m-%dT%H:%M:%SZ)"
           previous_tag="$(gh release list --repo "${GITHUB_REPOSITORY}" --limit 100 --json tagName,isPrerelease,isDraft | python3 scripts/select_previous_release.py --current "${tag}")"
+          previous_commit="$(git rev-parse --verify "${previous_tag}^{commit}")"
           printf 'tag=%s\n' "${tag}" >> "${GITHUB_OUTPUT}"
           printf 'commit=%s\n' "${commit}" >> "${GITHUB_OUTPUT}"
           printf 'build_date=%s\n' "${build_date}" >> "${GITHUB_OUTPUT}"
           printf 'source_date_epoch=%s\n' "${source_date_epoch}" >> "${GITHUB_OUTPUT}"
           printf 'previous_tag=%s\n' "${previous_tag}" >> "${GITHUB_OUTPUT}"
+          printf 'previous_commit=%s\n' "${previous_commit}" >> "${GITHUB_OUTPUT}"
 
   package-binaries:
     needs: resolve
@@ -211,57 +219,34 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}
     timeout-minutes: 45
-    environment: release-review
     permissions:
+      actions: read
+      checks: read
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve.outputs.commit }}
           fetch-depth: 0
-      - name: Load current maintainer responses
-        run: |
-          set -euo pipefail
-          git fetch origin main
-          git show origin/main:docs/release-review-responses.json > "${RUNNER_TEMP}/release-review-responses.json"
-      - name: Derive immutable review artifact name
-        id: review-range
+      - name: Validate the committed release review artifact
         env:
+          GH_TOKEN: ${{ github.token }}
           REVIEW_BASE: ${{ needs.resolve.outputs.previous_tag }}
-          REVIEW_HEAD: ${{ needs.resolve.outputs.commit }}
-        run: |
-          set -euo pipefail
-          key="$(python3 scripts/release_review_artifact_key.py --base "${REVIEW_BASE}" --head "${REVIEW_HEAD}")"
-          printf 'artifact_name=release-review-%s\n' "${key}" >> "${GITHUB_OUTPUT}"
-      - name: Restore review artifact for this commit range
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          key: ${{ steps.review-range.outputs.artifact_name }}
-          path: ${{ runner.temp }}/review-cache/review.json
-      - name: Review release diff and documentation
-        id: review
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          REVIEW_BASE: ${{ needs.resolve.outputs.previous_tag }}
+          REVIEW_BASE_COMMIT: ${{ needs.resolve.outputs.previous_commit }}
           REVIEW_HEAD: ${{ needs.resolve.outputs.commit }}
           RELEASE_TAG: ${{ needs.resolve.outputs.tag }}
         run: |
           set -euo pipefail
-          mkdir -p dist
+          mkdir -p "${RUNNER_TEMP}/review-output"
           python3 scripts/release_ai_review.py \
             --base "${REVIEW_BASE}" \
+            --base-commit "${REVIEW_BASE_COMMIT}" \
             --head "${REVIEW_HEAD}" \
             --tag "${RELEASE_TAG}" \
-            --responses "${RUNNER_TEMP}/release-review-responses.json" \
-            --artifact-cache "${RUNNER_TEMP}/review-cache/review.json" \
+            --responses docs/release-review-responses.json \
+            --committed-artifact-dir docs/release-reviews \
             --artifact-output "${RUNNER_TEMP}/review-output/review.json" \
             --output "${RUNNER_TEMP}/review-output/AI-release-review.md"
-      - name: Store review artifact for reruns of this commit range
-        if: always() && steps.review.outputs.cache_hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          key: ${{ steps.review-range.outputs.artifact_name }}
-          path: ${{ runner.temp }}/review-output/review.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
