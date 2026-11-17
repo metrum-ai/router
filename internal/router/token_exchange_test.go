@@ -910,6 +910,44 @@ func TestTokenExchangeIssuerReloadReusesUnchangedAuthenticator(t *testing.T) {
 	}
 }
 
+func TestTokenExchangeIssuerReloadPreservesGrantIdentityAndBudget(t *testing.T) {
+	svc, key, issuerURL := configuredTokenExchangeHTTPFixture(t)
+	claims := map[string]any{"iss": issuerURL, "aud": "router-exchange", "sub": "automation", "iat": time.Now().Unix() - 1, "exp": time.Now().Unix() + 60, "task_id": "task-99"}
+	subject := machineSignedJWTType(t, key, "configured-kid", jose.ES256, "JWT", claims)
+	form := url.Values{"grant_type": {tokenExchangeGrantType}, "subject_token": {subject}, "subject_token_type": {jwtSubjectTokenType}, "scope": {"small"}}
+	req := httptest.NewRequest(http.MethodPost, "/oauth/token", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(response, req)
+	if response.Code != http.StatusOK {
+		t.Fatalf("token exchange status=%d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		AccessToken string `json:"access_token"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil || payload.AccessToken == "" {
+		t.Fatalf("decode access token: err=%v payload=%+v", err, payload)
+	}
+	rt := svc.tokenExchange
+	rt.quota = &quotaStore{callers: rt.callers, state: persistentState{Callers: map[string]*callerState{}}}
+	grantID := missionGrantIdentity(issuerURL, "sub:automation")
+	rt.budgets[grantID] = &missionBudget{usedTokens: 7, usedSpend: .02}
+	rt.installIssuerConfig(svc.cfg.Security.TokenExchange)
+	if _, _, verified, err := rt.verifyAccessToken(payload.AccessToken); err != nil || verified.GrantID != grantID {
+		t.Fatalf("mission token after unchanged reload: grant=%q err=%v", verifiedGrantID(verified), err)
+	}
+	if rt.budgets[grantID] == nil || rt.budgets[grantID].usedTokens != 7 || rt.budgets[grantID].usedSpend != .02 {
+		t.Fatalf("unchanged issuer reload lost cumulative budget: %+v", rt.budgets[grantID])
+	}
+}
+
+func verifiedGrantID(claims *missionTokenClaims) string {
+	if claims == nil {
+		return ""
+	}
+	return claims.GrantID
+}
+
 func TestTokenExchangeWritesSecurityEvents(t *testing.T) {
 	svc, key, issuer := configuredTokenExchangeHTTPFixture(t)
 	path := filepath.Join(t.TempDir(), "security-events.jsonl")

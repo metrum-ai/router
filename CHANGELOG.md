@@ -168,6 +168,7 @@ from v4.8.0.
 - Bound caches, detector queues, approval holds, stream inspection, and audit retention; fail closed on unavailable authorization, invalid policy, or exhausted inspection bounds.
 - Preserve provider-reported cached and recomputed token accounting, request-shape fallback behavior, and sampled tool-call outcomes in usage records and reports.
 - Keep SQL usage reports aligned with in-memory recomputed-token coverage when input counts are negative.
+- Preserve mission-token grant identity and cumulative budget when an unchanged issuer is reloaded.
 
 ## [Unreleased]
 
