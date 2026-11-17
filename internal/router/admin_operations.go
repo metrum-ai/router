@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -86,12 +87,28 @@ func createControlPlaneBackup(ctx context.Context, configDB, usageDB *gorm.DB, n
 		return controlPlaneBackupBundle{}, errors.New("both control-plane stores are required")
 	}
 	bundle := controlPlaneBackupBundle{Schema: "metrum.ai/router-control-plane-backup/v1", CreatedAt: now.UTC().Format(time.RFC3339Nano)}
+	configSnapshot := beginControlPlaneBackupSnapshot(ctx, configDB)
+	if configSnapshot.Error != nil {
+		return controlPlaneBackupBundle{}, fmt.Errorf("begin control-plane backup snapshot: %w", configSnapshot.Error)
+	}
+	defer configSnapshot.Rollback()
+	usageSnapshot := beginControlPlaneBackupSnapshot(ctx, usageDB)
+	if usageSnapshot.Error != nil {
+		return controlPlaneBackupBundle{}, fmt.Errorf("begin usage backup snapshot: %w", usageSnapshot.Error)
+	}
+	defer usageSnapshot.Rollback()
 	var err error
-	if bundle.Config, err = snapshotControlPlaneDatabase(ctx, configDB, controlPlaneConfigBackupTables); err != nil {
+	if bundle.Config, err = snapshotControlPlaneDatabaseTx(ctx, configSnapshot, controlPlaneConfigBackupTables); err != nil {
 		return controlPlaneBackupBundle{}, err
 	}
-	if bundle.Usage, err = snapshotControlPlaneDatabase(ctx, usageDB, controlPlaneUsageBackupTables); err != nil {
+	if bundle.Usage, err = snapshotControlPlaneDatabaseTx(ctx, usageSnapshot, controlPlaneUsageBackupTables); err != nil {
 		return controlPlaneBackupBundle{}, err
+	}
+	if err := configSnapshot.Commit().Error; err != nil {
+		return controlPlaneBackupBundle{}, fmt.Errorf("finish control-plane backup snapshot: %w", err)
+	}
+	if err := usageSnapshot.Commit().Error; err != nil {
+		return controlPlaneBackupBundle{}, fmt.Errorf("finish usage backup snapshot: %w", err)
 	}
 	digest, err := controlPlaneBackupDigest(bundle)
 	if err != nil {
@@ -101,7 +118,24 @@ func createControlPlaneBackup(ctx context.Context, configDB, usageDB *gorm.DB, n
 	return bundle, nil
 }
 
+func beginControlPlaneBackupSnapshot(ctx context.Context, db *gorm.DB) *gorm.DB {
+	options := &sql.TxOptions{ReadOnly: true}
+	if db.Dialector.Name() == "postgres" {
+		options.Isolation = sql.LevelRepeatableRead
+	}
+	return db.WithContext(ctx).Begin(options)
+}
+
 func snapshotControlPlaneDatabase(ctx context.Context, db *gorm.DB, names []string) (controlPlaneBackupDatabase, error) {
+	tx := beginControlPlaneBackupSnapshot(ctx, db)
+	if tx.Error != nil {
+		return controlPlaneBackupDatabase{}, tx.Error
+	}
+	defer tx.Rollback()
+	return snapshotControlPlaneDatabaseTx(ctx, tx, names)
+}
+
+func snapshotControlPlaneDatabaseTx(ctx context.Context, db *gorm.DB, names []string) (controlPlaneBackupDatabase, error) {
 	out := controlPlaneBackupDatabase{Tables: make([]controlPlaneBackupTable, 0, len(names))}
 	var encodedBytes int
 	for _, name := range names {
