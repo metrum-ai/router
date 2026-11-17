@@ -662,7 +662,8 @@ func responseTextPartChannel(payload map[string]any, part map[string]any, reason
 	if !ok {
 		return "", false
 	}
-	if stringValue(part["type"]) == "refusal" || stringValue(payload["type"]) == "response.refusal.delta" {
+	payloadType := stringValue(payload["type"])
+	if stringValue(part["type"]) == "refusal" || payloadType == "response.refusal.delta" || payloadType == "response.refusal.done" {
 		channel = "refusal/" + channel
 	} else if reasoning {
 		channel = "reasoning/" + channel
@@ -807,6 +808,28 @@ func (d *secretStreamDLP) seedResponsesTextSnapshot(payload map[string]any, even
 	return nil
 }
 
+// redactResponsesAddedSnapshot redacts other snapshot fields while leaving
+// added text raw for the rolling Responses text inspector.
+func redactResponsesAddedSnapshot(payload map[string]any, state *piiRedactionState, eventType string) (bool, error) {
+	type savedText struct {
+		part  map[string]any
+		key   string
+		value any
+	}
+	var saved []savedText
+	for _, part := range responseTextSnapshotParts(payload, eventType) {
+		if value, ok := part.part[part.textKey]; ok {
+			saved = append(saved, savedText{part: part.part, key: part.textKey, value: value})
+			delete(part.part, part.textKey)
+		}
+	}
+	changed, err := redactSecretStreamSnapshot(payload, state)
+	for _, text := range saved {
+		text.part[text.key] = text.value
+	}
+	return changed, err
+}
+
 func (d *secretStreamDLP) filterResponsesTextEvent(event stream.Event, payload map[string]any, eventType string) ([]stream.Event, bool, error) {
 	if d.responsesText == nil {
 		d.responsesText = make(map[string]*secretResponsesTextState)
@@ -882,7 +905,8 @@ func (d *secretStreamDLP) filterResponsesTextEvent(event stream.Event, payload m
 			}
 		}
 		for key := range d.responsesText {
-			if prefix != "" && (key == prefix || strings.HasPrefix(key, prefix+"/")) {
+			channelKey := strings.TrimPrefix(strings.TrimPrefix(key, "refusal/"), "reasoning/")
+			if prefix != "" && (channelKey == prefix || strings.HasPrefix(channelKey, prefix+"/")) {
 				channels = append(channels, key)
 			}
 		}
@@ -908,7 +932,11 @@ func (d *secretStreamDLP) filterResponsesTextEvent(event stream.Event, payload m
 	if inspectSnapshot {
 		before := d.state.result.Replacements
 		var err error
-		_, err = redactSecretStreamSnapshot(payload, d.state)
+		if addedSnapshot {
+			_, err = redactResponsesAddedSnapshot(payload, d.state, eventType)
+		} else {
+			_, err = redactSecretStreamSnapshot(payload, d.state)
+		}
 		if err != nil {
 			return nil, true, err
 		}

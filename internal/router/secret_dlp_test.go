@@ -1297,12 +1297,14 @@ func TestSecretDLPResponsesAddedTextSnapshotsThroughHandler(t *testing.T) {
 					t.Fatalf("status=%d body=%s", response.Code, body)
 				}
 				if mode == "fail_on_match" {
-					wantStatus := http.StatusBadGateway
-					if strings.HasPrefix(tc.name, "split across") {
-						wantStatus = http.StatusOK // Headers were committed before the cross-event match completed.
-					}
+					// Added events commit stream headers before rolling inspection can
+					// establish whether their held suffix contains a match.
+					wantStatus := http.StatusOK
 					if response.Code != wantStatus {
 						t.Fatalf("status=%d want=%d body=%s", response.Code, wantStatus, body)
+					}
+					if strings.Contains(body, `"type":"response.completed"`) {
+						t.Fatalf("fail_on_match completed a stream after finding a secret: %s", body)
 					}
 					if strings.HasPrefix(tc.name, "split across") && (strings.Contains(body, `"type":"response.output_text.delta"`) || strings.Contains(body, `"type":"response.reasoning_summary_text.delta"`)) {
 						t.Fatalf("fail_on_match released a split credential delta: %s", body)
@@ -1341,6 +1343,40 @@ func TestSecretDLPResponsesAddedSnapshotTextIsNotReemitted(t *testing.T) {
 	svc.Handler().ServeHTTP(response, req)
 	if response.Code != http.StatusOK || strings.Count(response.Body.String(), addedText) != 1 {
 		t.Fatalf("status=%d added text count=%d body=%s", response.Code, strings.Count(response.Body.String(), addedText), response.Body.String())
+	}
+}
+
+func TestSecretDLPResponsesAddedLongCredentialInspectedAcrossDeltas(t *testing.T) {
+	secret := "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	split := len("ghp_") + 30
+	frames := []string{
+		`event: response.content_part.added` + "\n" + `data: {"type":"response.content_part.added","output_index":0,"item_id":"msg_long_split","content_index":0,"part":{"type":"output_text","text":"` + secret[:split] + `"}}`,
+		`event: response.output_text.delta` + "\n" + `data: {"type":"response.output_text.delta","output_index":0,"item_id":"msg_long_split","content_index":0,"delta":"` + secret[split:] + ". " + strings.Repeat("x", 600) + `"}`,
+		`event: response.completed` + "\n" + `data: {"type":"response.completed","response":{"status":"completed"}}`,
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, frame := range frames {
+			_, _ = io.WriteString(w, frame+"\n\n")
+		}
+	}))
+	defer upstream.Close()
+	target := Target{Provider: "native", Model: "responses-model", ToolSupport: ToolSupport{OpenAIResponses: []string{"function", "tool_choice"}}}
+	svc := nativeStreamTestService(t, upstream.URL, "openai-responses", []Target{target}, func(cfg *Config) {
+		group := cfg.Models["native-stream"]
+		group.PIIFilter.Enabled = true
+		group.PIIFilter.SecretsEnabled = true
+		group.PIIFilter.Mode = "redact_only"
+		cfg.Models["native-stream"] = group
+	})
+	defer svc.Close()
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"native-stream","stream":true,"input":"hello"}`))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	response := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(response, req)
+	body := response.Body.String()
+	if response.Code != http.StatusOK || strings.Contains(body, secret) || strings.Contains(body, secret[split:]) || !strings.Contains(body, "[SECRET_GITHUB_1]") {
+		t.Fatalf("long split credential leaked from added snapshot into deltas: status=%d body=%s", response.Code, body)
 	}
 }
 
@@ -1542,6 +1578,73 @@ func TestSecretDLPResponsesRefusalDeltaAndSnapshotThroughHandler(t *testing.T) {
 	if response.Code != http.StatusOK || strings.Contains(body, secret) || !strings.Contains(body, "[SECRET_GITHUB_1]") {
 		t.Fatalf("status=%d refusal delta or snapshot leaked/missed redaction: %s", response.Code, body)
 	}
+}
+
+func TestSecretDLPResponsesRefusalDoneAndOutputItemDoneFlushChannels(t *testing.T) {
+	secret := fakeGitHubToken()
+	t.Run("refusal done snapshot", func(t *testing.T) {
+		frames := []string{
+			`event: response.refusal.delta` + "\n" + `data: {"type":"response.refusal.delta","item_id":"refusal_done","output_index":0,"delta":"` + secret[:len(secret)/2] + `"}`,
+			`event: response.refusal.done` + "\n" + `data: {"type":"response.refusal.done","item_id":"refusal_done","output_index":0,"refusal":"` + secret + `"}`,
+			`event: response.completed` + "\n" + `data: {"type":"response.completed","response":{"status":"completed","output":[]}}`,
+		}
+		upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			for _, frame := range frames {
+				_, _ = io.WriteString(w, frame+"\n\n")
+			}
+		}))
+		defer upstream.Close()
+		target := Target{Provider: "native", Model: "responses-model", ToolSupport: ToolSupport{OpenAIResponses: []string{"function", "tool_choice"}}}
+		svc := nativeStreamTestService(t, upstream.URL, "openai-responses", []Target{target}, func(cfg *Config) {
+			group := cfg.Models["native-stream"]
+			group.PIIFilter.Enabled = true
+			group.PIIFilter.SecretsEnabled = true
+			cfg.Models["native-stream"] = group
+		})
+		defer svc.Close()
+		req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"native-stream","stream":true,"input":"hello"}`))
+		req.Header.Set("Authorization", "Bearer "+testToken)
+		response := httptest.NewRecorder()
+		svc.Handler().ServeHTTP(response, req)
+		body := response.Body.String()
+		if response.Code != http.StatusOK || strings.Contains(body, secret) || strings.Contains(body, secret[:len(secret)/2]) || !strings.Contains(body, "[SECRET_GITHUB_1]") {
+			t.Fatalf("refusal.done did not flush its namespaced held text safely: status=%d body=%s", response.Code, body)
+		}
+	})
+	t.Run("output item done flushes refusal and reasoning", func(t *testing.T) {
+		frames := []string{
+			`event: response.refusal.delta` + "\n" + `data: {"type":"response.refusal.delta","item_id":"item_done","output_index":0,"delta":"` + secret + `"}`,
+			`event: response.reasoning_summary_text.delta` + "\n" + `data: {"type":"response.reasoning_summary_text.delta","item_id":"item_done","output_index":0,"summary_index":0,"delta":"` + secret + `"}`,
+			`event: response.output_item.done` + "\n" + `data: {"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","id":"item_done","summary":[]}}`,
+		}
+		upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", "text/event-stream")
+			for _, frame := range frames {
+				_, _ = io.WriteString(w, frame+"\n\n")
+			}
+		}))
+		defer upstream.Close()
+		target := Target{Provider: "native", Model: "responses-model", ToolSupport: ToolSupport{OpenAIResponses: []string{"function", "tool_choice"}}}
+		svc := nativeStreamTestService(t, upstream.URL, "openai-responses", []Target{target}, func(cfg *Config) {
+			group := cfg.Models["native-stream"]
+			group.PIIFilter.Enabled = true
+			group.PIIFilter.SecretsEnabled = true
+			cfg.Models["native-stream"] = group
+		})
+		defer svc.Close()
+		req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"native-stream","stream":true,"input":"hello"}`))
+		req.Header.Set("Authorization", "Bearer "+testToken)
+		response := httptest.NewRecorder()
+		svc.Handler().ServeHTTP(response, req)
+		body := response.Body.String()
+		if response.Code != http.StatusOK || strings.Contains(body, secret) || strings.Count(body, "[SECRET_GITHUB_") < 2 {
+			t.Fatalf("output_item.done did not flush both namespaced channels safely: status=%d body=%s", response.Code, body)
+		}
+		if !strings.Contains(body, `"type":"response.refusal.delta"`) || !strings.Contains(body, `"type":"response.reasoning_summary_text.delta"`) {
+			t.Fatalf("output_item.done omitted a synthetic refusal or reasoning delta: %s", body)
+		}
+	})
 }
 
 func TestSecretDLPRedactsEscapedSecretSplitAcrossToolArgumentDeltas(t *testing.T) {

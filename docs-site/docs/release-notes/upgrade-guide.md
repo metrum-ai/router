@@ -18,6 +18,10 @@ When streaming Chat completions with tool-call inspection enabled, tool calls re
 When secret filtering is enabled, v5.0.0 now inspects and redacts output snapshots in failed and incomplete Responses terminal events. `fail_on_match` rejects those events when a configured secret is found. No configuration migration is required.
 
 Populated text in Responses added events is inspected as a rolling stream. The router holds unresolved suffixes until later text or terminal snapshot inspection completes, and suppresses repeated snapshots for the same part. This prevents split credentials from leaking prefixes and avoids repeating output. No configuration migration is required.
+For streamed responses, `redact_only` redaction is best-effort when a secret is
+split across stream events (for example an added snapshot and the following
+delta). `fail_on_match` blocks the response in those cases and is the mode to
+use when a guarantee is required.
 
 ## v4.8 to v5.0.0 breaking-change map
 
