@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Fail closed when OpenAI Responses tool argument snapshots differ from the deltas already inspected, so a cleaned final snapshot cannot release earlier unsafe arguments.
 - Align the standalone cache isolation guide with v5 caller-scoped response-cache and vLLM prefix-salt behavior; document that SGLang prefix isolation is unsupported.
 
 ### Security

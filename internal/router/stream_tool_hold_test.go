@@ -270,6 +270,34 @@ func TestStreamToolCallHoldRedactsResponsesTerminalSnapshot(t *testing.T) {
 	hold.releaseEmitted()
 }
 
+func TestStreamToolCallHoldRejectsResponsesSnapshotThatChangesInspectedArguments(t *testing.T) {
+	hold := newStreamToolCallHold(ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20}, nil, toolValidationOptions{})
+	hold.inspectors = append(hold.inspectors, streamToolCallInspectorFunc(func(calls []IRToolCall) (toolCallInspectionResult, error) {
+		return toolCallInspectionResult{Action: toolCallInspectionAllow, Calls: calls}, nil
+	}))
+	for _, event := range []stream.Event{
+		{Type: "response.output_item.added", Data: []byte(`{"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","call_id":"call_1","name":"lookup","arguments":""}}`)},
+		{Type: "response.function_call_arguments.delta", Data: []byte(`{"type":"response.function_call_arguments.delta","output_index":0,"delta":"{\"token\":\"ghp_unsafe\"}"}`)},
+		{Type: "response.function_call_arguments.done", Data: []byte(`{"type":"response.function_call_arguments.done","output_index":0,"arguments":"{}"}`)},
+	} {
+		if got, err := hold.apply(event); err == nil && len(got) != 0 {
+			t.Fatalf("Responses tool frame escaped before validation: %s", got[0].Data)
+		} else if err != nil {
+			return
+		}
+	}
+	terminal := stream.Event{Type: "response.completed", Data: []byte(`{"type":"response.completed","response":{"output":[{"type":"function_call","call_id":"call_1","name":"lookup","arguments":"{}"}]}}`)}
+	got, err := hold.apply(terminal)
+	joined := ""
+	for _, event := range got {
+		joined += string(event.Data)
+	}
+	if err != nil || strings.Contains(joined, "ghp_unsafe") || strings.Contains(joined, `"arguments":"{}"`) {
+		t.Fatalf("mismatched final snapshot released earlier arguments: events=%s err=%v", joined, err)
+	}
+	hold.releaseEmitted()
+}
+
 func TestStreamToolCallHoldStripsFailedResponsesTerminalArguments(t *testing.T) {
 	for _, terminalType := range []string{"response.failed", "response.incomplete"} {
 		t.Run(terminalType, func(t *testing.T) {

@@ -111,7 +111,10 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 	case "response.function_call_arguments.done":
 		idx := streamToolIndex(payload["output_index"])
 		h.calls.addDelta("openai-responses", idx, "", "", "")
-		h.calls.setArguments(idx, stringValue(payload["arguments"]))
+		if err := h.setResponsesSnapshotArguments(idx, stringValue(payload["arguments"])); err != nil {
+			h.reset()
+			return nil, err
+		}
 		h.indexes[idx] = true
 		toolEvent = true
 		passThrough = stream.Event{}
@@ -144,7 +147,10 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 				}
 				h.calls.addDelta("openai-responses", idx, call.ID, call.Name, "")
 				h.calls.setKind(idx, call.Kind)
-				h.calls.setArguments(idx, call.Arguments)
+				if err := h.setResponsesSnapshotArguments(idx, call.Arguments); err != nil {
+					h.reset()
+					return nil, err
+				}
 				h.indexes[idx] = true
 				toolEvent = true
 				passThrough = stream.Event{}
@@ -169,7 +175,10 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 				}
 				h.calls.addDelta("openai-responses", idx, call.ID, call.Name, "")
 				h.calls.setKind(idx, call.Kind)
-				h.calls.setArguments(idx, call.Arguments)
+				if err := h.setResponsesSnapshotArguments(idx, call.Arguments); err != nil {
+					h.reset()
+					return nil, err
+				}
 				h.indexes[idx] = true
 				toolEvent = true
 			}
@@ -459,6 +468,21 @@ func (h *streamToolCallHold) shouldInspectHostedCall(call IRToolCall) bool {
 		}
 	}
 	return false
+}
+
+func (h *streamToolCallHold) setResponsesSnapshotArguments(index int, arguments string) error {
+	if h == nil || h.calls == nil || h.calls.args[index] == nil {
+		return upstreamError{Class: "tool_call_snapshot_mismatch", Message: "Responses tool arguments have no matching streamed call", Committed: true, Fallbackable: false}
+	}
+	accumulated := h.calls.args[index].String()
+	if accumulated == "" {
+		h.calls.setArguments(index, arguments)
+		return nil
+	}
+	if accumulated != arguments {
+		return upstreamError{Class: "tool_call_snapshot_mismatch", Message: "Responses tool argument snapshot does not match streamed arguments", Committed: true, Fallbackable: false}
+	}
+	return nil
 }
 
 func hostedResponsesCallEventType(eventType string) string {
