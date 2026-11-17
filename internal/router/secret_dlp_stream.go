@@ -20,8 +20,9 @@ import (
 const (
 	// Ordinary bounded credential patterns fit in this rolling tail. Longer JWT
 	// and PEM candidates are held from their start by format-specific scanners.
-	secretStreamTailBytes = 512
-	secretStreamPEMMax    = 64 << 10
+	secretStreamTailBytes    = 512
+	secretStreamPEMMax       = 64 << 10
+	maxResponsesTextChannels = 128
 )
 
 var errSecretStreamWindowExceeded = errors.New("secret DLP stream inspection window exceeded")
@@ -60,6 +61,12 @@ type secretStreamDLP struct {
 	sequenceAdd       int
 	chatChoices       map[int]*secretChatChoiceState
 	anthropicThinking map[int]*secretAnthropicThinkingState
+	responsesText     map[string]*secretResponsesTextState
+}
+
+type secretResponsesTextState struct {
+	pending   string
+	lastEvent stream.Event
 }
 
 type secretChatChoiceState struct {
@@ -131,6 +138,11 @@ func (d *secretStreamDLP) filterEvent(event stream.Event) ([]stream.Event, error
 	if eventType == "" || eventType == "chat.completion.chunk" {
 		if _, ok := payload["choices"].([]any); ok {
 			return d.filterChatEvent(event, payload)
+		}
+	}
+	if strings.HasPrefix(eventType, "response.") {
+		if out, handled, err := d.filterResponsesTextEvent(event, payload, eventType); handled || err != nil {
+			return out, err
 		}
 	}
 	thinkingPrefix, flushThinking, thinkingErr := d.flushAnthropicThinkingForTerminal(event, payload, eventType)
@@ -542,6 +554,166 @@ func clearSecretStreamChatContent(payload map[string]any) {
 			delete(delta, "content")
 		}
 	}
+}
+
+func responseTextChannelKey(payload map[string]any) (string, bool) {
+	contentIndex, hasContentIndex := numberAsInt(payload["content_index"])
+	outputIndex, hasOutputIndex := numberAsInt(payload["output_index"])
+	itemID := stringValue(payload["item_id"])
+	if hasContentIndex {
+		if hasOutputIndex {
+			return fmt.Sprintf("output:%d/content:%d", outputIndex, contentIndex), true
+		}
+		return fmt.Sprintf("item:%s/content:%d", itemID, contentIndex), true
+	}
+	if hasOutputIndex {
+		return fmt.Sprintf("output:%d", outputIndex), true
+	}
+	if itemID != "" {
+		return "item:" + itemID, true
+	}
+	return "response:default", true
+}
+
+func (d *secretStreamDLP) filterResponsesTextEvent(event stream.Event, payload map[string]any, eventType string) ([]stream.Event, bool, error) {
+	if d.responsesText == nil {
+		d.responsesText = make(map[string]*secretResponsesTextState)
+	}
+	if eventType == "response.output_text.delta" {
+		channel, ok := responseTextChannelKey(payload)
+		if !ok {
+			return []stream.Event{event}, true, nil
+		}
+		state := d.responsesText[channel]
+		if state == nil {
+			if len(d.responsesText) >= maxResponsesTextChannels {
+				return nil, true, errSecretStreamWindowExceeded
+			}
+			state = &secretResponsesTextState{}
+			d.responsesText[channel] = state
+		}
+		delta, _ := payload["delta"].(string)
+		before := d.state.result.Replacements
+		safe, pending, err := redactSecretStreamChunk(d.state, state.pending, delta, false)
+		if err != nil {
+			return nil, true, err
+		}
+		if err := d.failIfMatched(before); err != nil {
+			return nil, true, err
+		}
+		state.pending = pending
+		payload["delta"] = safe
+		addSecretStreamSequence(payload, d.sequenceAdd)
+		encoded, err := json.Marshal(payload)
+		if err != nil {
+			return nil, true, err
+		}
+		event.Data = encoded
+		state.lastEvent = event
+		if safe == "" {
+			return nil, true, nil
+		}
+		return []stream.Event{event}, true, nil
+	}
+
+	var channels []string
+	if eventType == "response.output_text.done" || eventType == "response.content_part.done" {
+		if channel, ok := responseTextChannelKey(payload); ok {
+			channels = append(channels, channel)
+		}
+	} else if eventType == "response.output_item.done" {
+		outputIndex, hasOutputIndex := numberAsInt(payload["output_index"])
+		prefix := ""
+		if hasOutputIndex {
+			prefix = fmt.Sprintf("output:%d", outputIndex)
+		} else {
+			itemID := stringValue(payload["item_id"])
+			if item, ok := payload["item"].(map[string]any); ok && itemID == "" {
+				itemID = stringValue(item["id"])
+			}
+			if itemID != "" {
+				prefix = "item:" + itemID
+			}
+		}
+		for key := range d.responsesText {
+			if prefix != "" && (key == prefix || strings.HasPrefix(key, prefix+"/content:")) {
+				channels = append(channels, key)
+			}
+		}
+	} else if eventType == "response.completed" || eventType == "response.failed" || eventType == "response.incomplete" {
+		for key := range d.responsesText {
+			channels = append(channels, key)
+		}
+	} else {
+		return nil, false, nil
+	}
+	sort.Strings(channels)
+
+	var out []stream.Event
+	for _, channel := range channels {
+		state := d.responsesText[channel]
+		if state == nil {
+			continue
+		}
+		if state.pending == "" || state.lastEvent.Data == nil {
+			delete(d.responsesText, channel)
+			continue
+		}
+		before := d.state.result.Replacements
+		tail, _, err := redactSecretStreamChunk(d.state, state.pending, "", true)
+		if err != nil {
+			return nil, true, err
+		}
+		if err := d.failIfMatched(before); err != nil {
+			return nil, true, err
+		}
+		var previous map[string]any
+		if err := json.Unmarshal(state.lastEvent.Data, &previous); err != nil {
+			return nil, true, err
+		}
+		previous["delta"] = tail
+		if sequence, ok := numberAsInt(payload["sequence_number"]); ok {
+			previous["sequence_number"] = sequence + d.sequenceAdd
+			d.sequenceAdd++
+		}
+		encoded, err := json.Marshal(previous)
+		if err != nil {
+			return nil, true, err
+		}
+		flushed := state.lastEvent
+		flushed.Data = encoded
+		out = append(out, flushed)
+		state.pending = ""
+		state.lastEvent = stream.Event{}
+		delete(d.responsesText, channel)
+	}
+	if eventType == "response.output_text.done" || eventType == "response.content_part.done" || eventType == "response.output_item.done" || eventType == "response.completed" {
+		before := d.state.result.Replacements
+		if _, err := redactSecretStreamSnapshot(payload, d.state); err != nil {
+			return nil, true, err
+		}
+		if err := d.failIfMatched(before); err != nil {
+			return nil, true, err
+		}
+	}
+	if len(out) == 0 {
+		addSecretStreamSequence(payload, d.sequenceAdd)
+		encoded, err := json.Marshal(payload)
+		if err != nil {
+			return nil, true, err
+		}
+		event.Data = encoded
+		out = append(out, event)
+	} else if event.Data != nil {
+		addSecretStreamSequence(payload, d.sequenceAdd)
+		encoded, err := json.Marshal(payload)
+		if err != nil {
+			return nil, true, err
+		}
+		event.Data = encoded
+		out = append(out, event)
+	}
+	return out, true, nil
 }
 
 func (d *secretStreamDLP) filterEvents(events []stream.Event) ([]stream.Event, error) {
