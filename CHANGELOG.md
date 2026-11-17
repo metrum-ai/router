@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Align OpenAI and Anthropic compatibility matrix versions with the pinned Python SDK lockfile and regenerate the published matrix page.
+
 ### Security
 
 - Mark honeytoken and canary OCSF findings Critical and include the caller ID and source IP for SIEM correlation.
