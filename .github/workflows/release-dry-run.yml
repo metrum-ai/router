@@ -222,6 +222,23 @@ jobs:
           rg -q '^- Decision: \*\*PASS\*\*$' dist/AI-release-review.md
       - name: Install pinned Crane
         run: bash scripts/install_crane.sh "${CRANE}"
+      - name: Provide envsubst for Cosign installer
+        run: |
+          set -euo pipefail
+          if command -v envsubst >/dev/null 2>&1; then
+            exit 0
+          fi
+          shim_dir="${RUNNER_TEMP}/cosign-envsubst-bin"
+          mkdir -p "${shim_dir}"
+          cp scripts/envsubst_compat.py "${shim_dir}/envsubst"
+          chmod 0755 "${shim_dir}/envsubst"
+          printf '%s\n' "${shim_dir}" >> "${GITHUB_PATH}"
+      - name: Install pinned Cosign
+        uses: sigstore/cosign-installer@ba7bc0a3fef59531c69a25acd34668d6d3fe6f22 # v4.1.0
+        with:
+          cosign-release: v3.1.4
+      - name: Verify Cosign installation
+        run: cosign version
       - name: Assemble images in a local multi-architecture OCI layout
         run: |
           set -euo pipefail
