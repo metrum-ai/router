@@ -324,7 +324,9 @@ atomic target batches. The generic `routerctl admin-resource` remains
 available for other versioned routes.
 
 Backups are versioned, SHA-256 checked bundles of control-plane configuration
-sets/revisions, policy sets, admin key verifiers, and audit records. Restore
+sets/revisions, policy sets, admin key verifiers, managed admin-client
+registrations, credential bindings and emergency activation state, and audit
+records. Restore
 accepts only a clean, already-migrated replica. Operation rows expire after
 seven days and the store retains at most 500 records.
 

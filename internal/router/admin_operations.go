@@ -69,6 +69,8 @@ var controlPlaneConfigBackupTables = []string{
 	"router_config_model_groups", "router_config_model_group_targets", "router_config_callers",
 	"router_config_caller_allowed_groups", "router_config_runtime", "router_config_change_events",
 	"router_config_change_event_targets", "router_config_shadow_runs", "router_revoked_caller_tokens",
+	adminClientTable, adminClientCredentialTable,
+	adminEmergencyActivationTable,
 	adminKeyMetadataTable, adminKeyGenerationTable, adminKeyOperationTable, adminCredentialEventsTable,
 	adminAuditChainAnchorsTable,
 }

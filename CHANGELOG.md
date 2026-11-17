@@ -12,6 +12,8 @@
 
 - Align the standalone cache isolation guide with v5 caller-scoped response-cache and vLLM prefix-salt behavior; document that SGLang prefix isolation is unsupported.
 - Keep disabled callers with intentionally empty verifiers visible in the admin caller list while rejecting active callers without verifiers.
+- Include managed admin-client statuses and credential bindings in control-plane backups so restore preserves disabled-client restrictions and credential revocations.
+- Include managed admin-client statuses, credential bindings, and emergency activation state in control-plane backups so restore preserves disablement and revocation state.
 
 ### Security
 

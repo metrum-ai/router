@@ -173,12 +173,27 @@ func runControlPlaneBackupRestoreThroughAdminAPI(t *testing.T) {
 	adminPolicyYAML := strings.Replace(configAdminTestYAML, "  listen: ':8080'\n", "  listen: ':8080'\n  admin_auth:\n    authorization:\n      enabled: true\n      source: static\n      policy:\n        - p, adminkey:operations-test, *, admin:backup, read|write\n        - p, adminkey:operations-test, *, admin:restore, write\n        - p, adminkey:operations-test, *, admin:operations, read\n        - p, adminkey:operations-test, *, admin:config, read\n", 1)
 	sourceConfig := configAdminTestDBWithYAML(t, adminPolicyYAML)
 	targetConfig := emptyConfigAdminTestDB(t)
+	if err := applyAdminEmergencyActivationSchema(sourceConfig); err != nil {
+		t.Fatal(err)
+	}
+	if err := applyAdminEmergencyActivationSchema(targetConfig); err != nil {
+		t.Fatal(err)
+	}
 	sourceService := adminOperationsTestService(t, sourceConfig, "source")
 	targetService := adminOperationsTestService(t, targetConfig, "target")
 	sourceUsage := sourceService.usage.db
 	targetUsage := targetService.usage.db
 	seedBackupPolicyData(t, sourceUsage)
 	seedBackupKeyData(t, sourceConfig)
+	seedBackupAdminClientState(t, sourceConfig)
+	if err := sourceConfig.Create(&adminEmergencyActivationRow{
+		ActivationID: "backup-activation", CredentialID: "emergency-operator",
+		BindingDigest: strings.Repeat("a", 64), Subject: "adminkey:emergency-operator",
+		Issuer: "test-authority", Reason: "backup recovery test", ActivatedAtMS: 1794801600000,
+		UntilMS: 1794805200000, CredentialExpiresMS: 1794816000000,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
 
 	sourceMux := adminOperationsServiceMux(t, sourceService)
 	if err := sourceService.reloadActiveConfigFromDB(); err != nil {
@@ -245,6 +260,19 @@ func runControlPlaneBackupRestoreThroughAdminAPI(t *testing.T) {
 	assertBackupTableEqual(t, sourceConfig, targetConfig, "router_config_change_events", "event_id")
 	assertBackupTableEqual(t, sourceConfig, targetConfig, adminAuditChainAnchorsTable, "source, domain")
 	assertBackupTableEqual(t, sourceConfig, targetConfig, "router_config_change_event_targets", "event_id, phase, sequence")
+	assertBackupTableEqual(t, sourceConfig, targetConfig, adminClientTable, "id")
+	assertBackupTableEqual(t, sourceConfig, targetConfig, adminClientCredentialTable, "client_id, id, kind")
+	assertBackupTableEqual(t, sourceConfig, targetConfig, adminEmergencyActivationTable, "activation_id")
+	targetClients := &adminClientStore{db: targetConfig, now: time.Now}
+	for _, principal := range []Principal{
+		{Subject: "adminkey:disabled-subject", Kind: "adminkey", CredentialID: "disabled-key"},
+		{Subject: "adminkey:revoked-subject", Kind: "adminkey", CredentialID: "revoked-key"},
+	} {
+		bindingAuth := &adminClientBindingAuthenticator{inner: adminClientTestAuthenticator{principal}, store: func() *adminClientStore { return targetClients }}
+		if _, err := bindingAuth.Authenticate(context.Background(), httptest.NewRequest(http.MethodGet, "/", nil)); err != ErrInvalidCredential {
+			t.Fatalf("restored restricted principal %q authenticated: %v", principal.Subject, err)
+		}
+	}
 	var restoredVerifier string
 	if err := targetConfig.Raw("SELECT verifier FROM admin_api_key_generations WHERE key_id = ? AND generation = 1", "backup-ops").Scan(&restoredVerifier).Error; err != nil {
 		t.Fatal(err)
@@ -373,6 +401,30 @@ func seedBackupKeyData(t *testing.T, db *gorm.DB) {
 		t.Fatal(err)
 	}
 	if err := db.Exec("INSERT INTO admin_api_key_generations (key_id, generation, verifier, created_at, overlap_until) VALUES (?, 1, ?, ?, NULL)", "backup-ops", "pbkdf2-sha256$backup-verifier-only", "2026-11-16T00:00:00Z").Error; err != nil {
+		t.Fatal(err)
+	}
+}
+
+func seedBackupAdminClientState(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	now := time.Now().UTC()
+	clients := &adminClientStore{db: db, now: func() time.Time { return now }}
+	if err := clients.create(context.Background(), adminClient{ID: "disabled-client", Name: "Disabled client"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := clients.registerCredential(context.Background(), "disabled-client", adminClientCredential{ID: "disabled-key", Kind: "adminkey", Identity: "disabled-identity", Subject: "adminkey:disabled-subject", ExpiresAt: now.Add(24 * time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := clients.setStatus(context.Background(), "disabled-client", "disabled"); err != nil {
+		t.Fatal(err)
+	}
+	if err := clients.create(context.Background(), adminClient{ID: "revoked-client", Name: "Revoked credential client"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := clients.registerCredential(context.Background(), "revoked-client", adminClientCredential{ID: "revoked-key", Kind: "adminkey", Identity: "revoked-identity", Subject: "adminkey:revoked-subject", ExpiresAt: now.Add(24 * time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := clients.revokeCredential(context.Background(), "revoked-client", "revoked-key"); err != nil {
 		t.Fatal(err)
 	}
 }
