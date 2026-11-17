@@ -213,6 +213,7 @@ func (h *configAdminHandler) handlePutProject(w http.ResponseWriter, r *http.Req
 				if body.Budget == nil {
 					project.Budget = cfg.Projects[i].Budget
 				}
+				project.ForbidLongLivedKeys = cfg.Projects[i].ForbidLongLivedKeys
 				cfg.Projects[i] = project
 				return nil
 			}
