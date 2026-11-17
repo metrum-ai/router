@@ -7,13 +7,15 @@
 - Remove the unsupported legacy admin route setting from both hardening guides and direct operators to the separate `/admin/v1` listener.
 - Align the release procedure with the committed AI review artifact gate and document the required artifact preparation path.
 - Correct the upgrade guide to describe successful local sinkhole responses for unknown or disallowed honeytoken model names.
+- Align OpenAI and Anthropic compatibility matrix versions with the pinned Python SDK lockfile and regenerate the published matrix page.
+
 - Align the standalone cache isolation guide with v5 caller-scoped response-cache and vLLM prefix-salt behavior; document that SGLang prefix isolation is unsupported.
-- Rewrite inspected hosted Responses tool items and argument/code events when secret DLP redacts their payloads.
 
 ### Security
 
 - Mark honeytoken and canary OCSF findings Critical and include the caller ID and source IP for SIEM correlation.
 - Include firewall decisions and honeytoken/canary use in the opt-in OCSF 1.4.0 security event stream.
+- Rewrite inspected hosted Responses tool items and argument/code events when secret DLP redacts their payloads.
 - Run Harbor task containers as UID/GID 10001 with a passwd entry, owned workspace, and writable verifier directory. Require digest-pinned image references in Kubernetes examples; add an opt-in Kyverno trusted-registry policy example and exact-file KSV-0125 suppressions for public deployment placeholders.
 
 ### Added
