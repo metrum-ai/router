@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Align the standalone cache isolation guide with v5 caller-scoped response-cache and vLLM prefix-salt behavior; document that SGLang prefix isolation is unsupported.
+
 ### Security
 
 - Mark honeytoken and canary OCSF findings Critical and include the caller ID and source IP for SIEM correlation.
