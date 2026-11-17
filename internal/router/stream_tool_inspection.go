@@ -199,8 +199,14 @@ func rewriteHeldToolCalls(events []stream.Event, calls []IRToolCall) ([]stream.E
 			idx := streamToolIndex(payload["output_index"])
 			item, _ := payload["item"].(map[string]any)
 			if item != nil {
-				if replacement, ok := arguments[idx]; ok && (eventType != "response.output_item.added" || responsesItemHasArguments(item)) {
-					if err := setResponsesItemArguments(item, replacement); err != nil {
+				if replacement, ok := arguments[idx]; ok && (eventType != "response.output_item.added" || responsesItemHasArguments(item) || isHostedResponsesTool(IRToolCall{Dialect: "openai-responses", Kind: stringValue(item["type"])})) {
+					if isHostedResponsesTool(IRToolCall{Dialect: "openai-responses", Kind: stringValue(item["type"])}) {
+						redactedItem, err := decodeResponsesHostedItem(replacement)
+						if err != nil {
+							return nil, err
+						}
+						payload["item"] = redactedItem
+					} else if err := setResponsesItemArguments(item, replacement); err != nil {
 						return nil, err
 					}
 					if eventType == "response.output_item.added" {
@@ -208,6 +214,31 @@ func rewriteHeldToolCalls(events []stream.Event, calls []IRToolCall) ([]stream.E
 					}
 					changed = true
 				}
+			}
+		case strings.HasPrefix(eventType, "response.mcp_call_arguments.") || strings.HasPrefix(eventType, "response.code_interpreter_call_code."):
+			idx := streamToolIndex(payload["output_index"])
+			if replacement, ok := arguments[idx]; ok {
+				kind := hostedResponsesCallEventType(eventType)
+				field, err := responsesHostedArgumentField(replacement, kind)
+				if err != nil {
+					return nil, err
+				}
+				if strings.HasSuffix(eventType, ".delta") {
+					if first[idx] {
+						payload["delta"] = ""
+					} else {
+						payload["delta"] = field
+						first[idx] = true
+					}
+				} else if strings.HasSuffix(eventType, ".done") {
+					if kind == "code_interpreter_call" {
+						payload["code"] = field
+					} else {
+						payload["arguments"] = field
+					}
+					delete(payload, "delta")
+				}
+				changed = true
 			}
 		case eventType == "response.function_call_arguments.delta" || eventType == "response.function_call_arguments.done" || eventType == "response.custom_tool_call_input.delta" || eventType == "response.custom_tool_call_input.done":
 			idx := streamToolIndex(payload["output_index"])
@@ -236,7 +267,13 @@ func rewriteHeldToolCalls(events []stream.Event, calls []IRToolCall) ([]stream.E
 					continue
 				}
 				if replacement, ok := arguments[outputIndex]; ok {
-					if err := setResponsesItemArguments(item, replacement); err != nil {
+					if isHostedResponsesTool(IRToolCall{Dialect: "openai-responses", Kind: stringValue(item["type"])}) {
+						redactedItem, err := decodeResponsesHostedItem(replacement)
+						if err != nil {
+							return nil, err
+						}
+						output[outputIndex] = redactedItem
+					} else if err := setResponsesItemArguments(item, replacement); err != nil {
 						return nil, err
 					}
 					changed = true
@@ -321,6 +358,41 @@ func rewriteHeldToolCalls(events []stream.Event, calls []IRToolCall) ([]stream.E
 		}
 	}
 	return out, nil
+}
+
+func decodeResponsesHostedItem(arguments string) (map[string]any, error) {
+	var item map[string]any
+	if err := json.Unmarshal([]byte(arguments), &item); err != nil || item == nil {
+		return nil, fmt.Errorf("decode redacted hosted Responses item")
+	}
+	return item, nil
+}
+
+func responsesHostedArgumentField(arguments, kind string) (string, error) {
+	item, err := decodeResponsesHostedItem(arguments)
+	if err != nil {
+		return "", err
+	}
+	var value any
+	switch kind {
+	case "mcp_call":
+		value = item["arguments"]
+	case "code_interpreter_call":
+		value = item["code"]
+	default:
+		return "", fmt.Errorf("unsupported hosted Responses argument event")
+	}
+	if value == nil {
+		return "", fmt.Errorf("redacted hosted Responses item lacks arguments")
+	}
+	if text, ok := value.(string); ok {
+		return text, nil
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return "", fmt.Errorf("encode redacted hosted Responses arguments: %w", err)
+	}
+	return string(encoded), nil
 }
 
 func responsesItemHasArguments(item map[string]any) bool {

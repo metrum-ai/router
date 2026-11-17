@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Rewrite inspected hosted Responses tool items and argument/code events when secret DLP redacts their payloads.
 - Align the standalone cache isolation guide with v5 caller-scoped response-cache and vLLM prefix-salt behavior; document that SGLang prefix isolation is unsupported.
 
 ### Security
