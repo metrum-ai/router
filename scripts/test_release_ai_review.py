@@ -381,6 +381,25 @@ class ReleaseAIReviewTest(unittest.TestCase):
                 unchanged, changed, reusable = review.incremental_review_plan(
                     loaded["file_coverage"], current_coverage, loaded["findings"],
                 )
+                responses = root / "responses.json"
+                responses.write_text(json.dumps({"schema": "metrum-ai-router-release-review-responses/v1", "acceptances": {}}))
+                output = root / "review.md"
+                artifact_output = root / "review.json"
+                with patch.object(review, "codex_cli_version", return_value="codex-cli test"), \
+                     patch.object(review, "call_codex", return_value={"summary": "Changed file reviewed.", "findings": []}) as call_codex, \
+                     patch("sys.argv", [
+                         "release_ai_review.py", "--provider", "codex", "--model", "gpt-6.1-sol",
+                         "--base", "v4.8.0", "--base-commit", base, "--head", target_head,
+                         "--tag", "v5.0.0", "--responses", str(responses), "--prior-artifact", str(prior_path),
+                         "--artifact-output", str(artifact_output), "--output", str(output),
+                     ]):
+                    self.assertEqual(review.main(), 0)
+                call_codex.assert_called_once()
+                self.assertIn("one.go", call_codex.call_args.args[0])
+                self.assertNotIn("two.go", call_codex.call_args.args[0])
+                incremental = json.loads(artifact_output.read_text(encoding="utf-8"))
+                self.assertEqual({item["file"] for item in incremental["file_coverage"]}, {"one.go", "two.go"})
+                self.assertEqual(incremental["findings"][0]["title"], "Prior finding")
             finally:
                 os.chdir(original_cwd)
             self.assertEqual(unchanged, {"two.go"})
