@@ -171,6 +171,7 @@ jobs:
           GOMODCACHE: ${{ runner.temp }}/repro-go-mod
         run: |
           set -euo pipefail
+          rm -rf "${GOCACHE}" "${GOMODCACHE}"
           make package
       - name: Record rebuilt inventory and compare packages
         run: |

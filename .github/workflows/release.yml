@@ -148,7 +148,10 @@ jobs:
           GOCACHE: ${{ runner.temp }}/repro-go-build
           GOMODCACHE: ${{ runner.temp }}/repro-go-mod
           ENGINE_ADVISORY_SNAPSHOT: ${{ runner.temp }}/primary-dist/engine-advisories.json
-        run: make package
+        run: |
+          set -euo pipefail
+          rm -rf "${GOCACHE}" "${GOMODCACHE}"
+          make package
       - name: Recreate rebuilt inventory
         run: python3 scripts/release_artifact_inventory.py --dist-dir dist --version "${VERSION}" --commit "${COMMIT}" --build-date "${BUILD_DATE}" --set binary --advisories-snapshot
       - name: Compare package checksums

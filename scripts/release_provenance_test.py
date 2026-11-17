@@ -142,7 +142,9 @@ def validate_clean_rebuild_cache_env(workflow):
         job = workflow["jobs"][job_name]
         step = next(step for step in job["steps"] if step.get("name") == step_name)
         assert {key: step.get("env", {}).get(key) for key in expected} == expected
-        assert "make package" in step.get("run", "")
+        run = step.get("run", "")
+        assert 'rm -rf "${GOCACHE}" "${GOMODCACHE}"' in run
+        assert run.index('rm -rf "${GOCACHE}" "${GOMODCACHE}"') < run.index("make package")
         assert "GITHUB_ENV" not in step.get("run", "")
         assert not any(
             "GITHUB_ENV" in candidate.get("run", "")
