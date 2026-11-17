@@ -9,8 +9,9 @@ permitted; provider credentials remain in host tmpfs for the router.
 import json, os, re, shlex
 from harbor.agents.installed.pi import Pi
 from harbor.agents.installed.base import with_prompt_template
+from harbor_config import ROUTER_TOKEN_CONTAINER_PATH
 
-TOKEN_PATH='/run/harbor-e2e/router-token'
+TOKEN_PATH=ROUTER_TOKEN_CONTAINER_PATH
 PI_VERSION='1.4.0'
 
 class TmpfsPi(Pi):

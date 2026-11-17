@@ -21,7 +21,7 @@ reported as such and the matrix stops rather than reporting a pass.
 import json,os,pathlib,sqlite3,stat,subprocess,sys,threading,time
 import generate_tasks,guarded_relay,harbor_config,mock_messages
 from credential_permissions import valid_credential_permissions
-from harbor_config import make_config
+from harbor_config import make_config, router_token_bind_mount
 ROOT=pathlib.Path(os.environ.get('HARBOR_E2E_ROOT','/root/harbor-e2e'))
 TMP=pathlib.Path(os.environ.get('HARBOR_E2E_CREDS','/run/harbor-e2e'))
 TASKS=pathlib.Path(os.environ.get('HARBOR_CATALOG_TASKS',str(ROOT/'catalog-tasks')))
@@ -36,7 +36,7 @@ for p in (TMP/'provider-secrets.json',TMP/'router-token'):
  if not p.is_file():raise SystemExit('credential file absent or not private')
  metadata=p.stat()
  if not valid_credential_permissions(p.name,stat.S_IMODE(metadata.st_mode),metadata.st_gid):raise SystemExit('credential file absent or not private')
-mounts=json.dumps([{'type':'bind','source':str(TMP/'router-token'),'target':str(TMP/'router-token'),'read_only':True}])
+mounts=json.dumps([router_token_bind_mount(TMP/'router-token')])
 baseenv={k:os.environ[k] for k in ('PATH','HOME','LANG','LD_LIBRARY_PATH') if k in os.environ};baseenv['PYTHONPATH']=str(ROOT)
 base=[os.environ.get('HARBOR_BIN') or '/root/harbor-venv/bin/harbor','run','-a','metrum_pi_tmpfs:TmpfsPi','--skip-credential-checks','--mounts',mounts,'-n','1','--max-retries','0','--jobs-dir',str(ROOT/'jobs')]
 def run(name,style,mode,group,port,path):
