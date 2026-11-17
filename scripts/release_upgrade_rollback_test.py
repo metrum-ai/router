@@ -40,6 +40,54 @@ class StrictJSONTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "root or as the service user"):
                     MODULE.service_owned_directory(evidence, service)
 
+    def _run_job_with_migration_stub(self, stub: str) -> subprocess.CompletedProcess[str]:
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            executable = root / "metrum-ai-router-migrate"
+            executable.write_text(stub, encoding="utf-8")
+            executable.chmod(0o755)
+            script = MODULE.migration_job_example_script().replace(
+                "/app/bin/metrum-ai-router-migrate", str(executable),
+            )
+            env = dict(os.environ,
+                       MIGRATION_ACTION="apply",
+                       BACKUP_EVIDENCE_REF="release-check-approved-snapshot",
+                       ROUTER_USAGE_DB_DSN="unused-usage-dsn",
+                       ROUTER_CONFIG_DB_DSN="unused-config-dsn",
+                       FAKE_MIGRATION_STATE=str(root / "calls"))
+            return subprocess.run(["/bin/sh", "-ec", script], env=env,
+                                  capture_output=True, text=True, check=False, timeout=10)
+
+    def test_kubernetes_job_propagates_unrecognized_online_failure(self):
+        completed = self._run_job_with_migration_stub(
+            "#!/bin/sh\necho 'unexpected online failure'\nexit 7\n",
+        )
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("unexpected online failure", completed.stderr)
+
+    def test_kubernetes_job_propagates_unrecognized_maintenance_failure(self):
+        stub = """#!/bin/sh
+case "$*" in
+  *--action=apply*)
+    calls=0
+    [ ! -f "$FAKE_MIGRATION_STATE" ] || calls=$(cat "$FAKE_MIGRATION_STATE")
+    calls=$((calls + 1))
+    printf '%s' "$calls" > "$FAKE_MIGRATION_STATE"
+    if [ "$calls" -eq 1 ]; then
+      echo 'migration apply: migration sample requires explicit maintenance runner'
+      exit 1
+    fi
+    echo '{"Compatible":true}'
+    exit 0
+    ;;
+  *--action=maintenance*) echo 'unexpected maintenance failure'; exit 9 ;;
+  *) echo '{"Compatible":true}' ;;
+esac
+"""
+        completed = self._run_job_with_migration_stub(stub)
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertIn("unexpected maintenance failure", completed.stderr)
+
     def test_expected_router_config_schema_includes_offline_markers(self):
         self.assertEqual(MODULE.ROUTER_CONFIG_SCHEMA_VERSION, 20)
 

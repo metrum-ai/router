@@ -35,8 +35,9 @@ spec:
                 if output=$("$@" 2>&1); then
                   printf '%s\n' "$output"
                   return 0
+                else
+                  status=$?
                 fi
-                status=$?
                 case "$output" in
                   "migration apply: migration "*" requires explicit maintenance runner") return 10 ;;
                   *) printf '%s\n' "$output" >&2; return "$status" ;;
@@ -46,8 +47,9 @@ spec:
                 if output=$("$@" 2>&1); then
                   printf '%s\n' "$output"
                   return 0
+                else
+                  status=$?
                 fi
-                status=$?
                 case "$output" in
                   "migration maintenance: migration "*" requires its declared runner mode") return 10 ;;
                   *) printf '%s\n' "$output" >&2; return "$status" ;;
