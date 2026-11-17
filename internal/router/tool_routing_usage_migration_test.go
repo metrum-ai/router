@@ -77,7 +77,7 @@ func TestToolRoutingUsageSchema21UpgradeDownAndRoundTrip(t *testing.T) {
 	// (including the append-only audit-chain migration) are tested separately.
 	definitions := make([]MigrationDefinition, 0, len(usageMigrationDefinitions)-3)
 	for _, definition := range usageMigrationDefinitions {
-		if definition.ID != offlineOperationMarkerMigrationID && definition.ID != adminAuditChainUsageMigrationID && definition.ID != usageHierarchyAuditMigrationID {
+		if definition.ID != offlineOperationMarkerMigrationID && definition.ID != adminAuditChainUsageMigrationID && definition.ID != usageHierarchyAuditMigrationID && definition.ID != adminCredentialAuditCounterMigrationID {
 			definitions = append(definitions, definition)
 		}
 	}

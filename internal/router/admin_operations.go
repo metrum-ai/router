@@ -327,10 +327,10 @@ func restoreControlPlaneBackupWithAudit(ctx context.Context, configDB, usageDB *
 
 func checkBackupTargetClean(db *gorm.DB, backup controlPlaneBackupDatabase) error {
 	for _, table := range backup.Tables {
-		// The authenticated restore request records its login before the worker
-		// starts. That row is operational evidence, not restored control-plane
-		// state, and must not make an otherwise fresh replica dirty.
-		if table.Name == adminCredentialEventsTable {
+		// The authenticated restore request records its login and pending
+		// aggregate before the worker starts. They are operational evidence, not
+		// restored control-plane state, and remain on the target after restore.
+		if table.Name == adminCredentialEventsTable || table.Name == adminCredentialAuditCounterTable {
 			continue
 		}
 		if table.Name == adminAuditChainAnchorsTable {
