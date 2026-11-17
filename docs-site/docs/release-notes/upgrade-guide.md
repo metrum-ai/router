@@ -269,6 +269,9 @@ budget is per router process, so configure each replica to cover its expected co
 The timeout is an absolute deadline from the first held tool event; upstream byte activity does not
 extend it. Responses argument delta/done events remain private through inspection, and Anthropic
 tool-use frames are released before the terminal `message_delta`.
+Responses argument snapshots must match the inspected deltas; a mismatch fails the
+stream closed before any held tool arguments are released. Correct the upstream
+stream and retry the request.
 
 ## Virtual models
 

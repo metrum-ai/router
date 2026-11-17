@@ -133,6 +133,7 @@
 
 - Label direct-provider nightly spend as a list-rate estimate, retain measured Router usage as its own basis, and report gate violations from runs older than 30 days as historical.
 - Align Harbor's provider-free Docker preflight with the live OpenAI Responses adapter and retain its sanitized summary on failure.
+- Reject Responses tool snapshots that do not match the accumulated arguments inspected from streamed deltas.
 
 All notable changes to Metrum AI Router are documented in this file.
 

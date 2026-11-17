@@ -13,19 +13,20 @@ import (
 )
 
 type streamToolCallHold struct {
-	timeout    time.Duration
-	maxBytes   int
-	started    time.Time
-	usedBytes  int
-	budget     stream.LineBufferBudget
-	reserved   int64
-	emitting   int64
-	held       []stream.Event
-	calls      *toolCallAccumulator
-	inspectors []toolCallInspector
-	indexes    map[int]bool
-	idle       *streamIdleReader
-	baseIdle   time.Duration
+	timeout      time.Duration
+	maxBytes     int
+	started      time.Time
+	usedBytes    int
+	budget       stream.LineBufferBudget
+	reserved     int64
+	emitting     int64
+	held         []stream.Event
+	calls        *toolCallAccumulator
+	inspectors   []toolCallInspector
+	indexes      map[int]bool
+	hostedDeltas map[int]string
+	idle         *streamIdleReader
+	baseIdle     time.Duration
 }
 
 // clearStreamToolCallHold starts a clean per-target attempt and releases any
@@ -78,6 +79,10 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 	if eventType == "" {
 		eventType = stringValue(payload["type"])
 	}
+	if err := h.recordHostedArgumentEvent(eventType, payload); err != nil {
+		h.reset()
+		return nil, err
+	}
 	toolEvent := false
 	terminal := false
 	terminalReason := ""
@@ -95,7 +100,11 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 				if isHostedResponsesTool(call) && !h.shouldInspectHostedCall(call) {
 					return []stream.Event{event}, nil
 				}
-				h.calls.addDelta("openai-responses", idx, call.ID, call.Name, call.Arguments)
+				initialArguments := call.Arguments
+				if isHostedResponsesTool(call) {
+					initialArguments = ""
+				}
+				h.calls.addDelta("openai-responses", idx, call.ID, call.Name, initialArguments)
 				h.calls.setKind(idx, call.Kind)
 				h.indexes[idx] = true
 				toolEvent = true
@@ -111,7 +120,10 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 	case "response.function_call_arguments.done":
 		idx := streamToolIndex(payload["output_index"])
 		h.calls.addDelta("openai-responses", idx, "", "", "")
-		h.calls.setArguments(idx, stringValue(payload["arguments"]))
+		if err := h.setResponsesSnapshotArguments(idx, stringValue(payload["arguments"])); err != nil {
+			h.reset()
+			return nil, err
+		}
 		h.indexes[idx] = true
 		toolEvent = true
 		passThrough = stream.Event{}
@@ -126,7 +138,10 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 		idx := streamToolIndex(payload["output_index"])
 		h.calls.addDelta("openai-responses", idx, "", "", "")
 		h.calls.setKind(idx, "custom_tool_call")
-		h.calls.setArguments(idx, stringValue(payload["input"]))
+		if err := h.setResponsesSnapshotArguments(idx, stringValue(payload["input"])); err != nil {
+			h.reset()
+			return nil, err
+		}
 		h.indexes[idx] = true
 		toolEvent = true
 		passThrough = stream.Event{}
@@ -144,7 +159,10 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 				}
 				h.calls.addDelta("openai-responses", idx, call.ID, call.Name, "")
 				h.calls.setKind(idx, call.Kind)
-				h.calls.setArguments(idx, call.Arguments)
+				if err := h.setResponsesSnapshotArguments(idx, call.Arguments, true); err != nil {
+					h.reset()
+					return nil, err
+				}
 				h.indexes[idx] = true
 				toolEvent = true
 				passThrough = stream.Event{}
@@ -169,7 +187,10 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 				}
 				h.calls.addDelta("openai-responses", idx, call.ID, call.Name, "")
 				h.calls.setKind(idx, call.Kind)
-				h.calls.setArguments(idx, call.Arguments)
+				if err := h.setResponsesSnapshotArguments(idx, call.Arguments, true); err != nil {
+					h.reset()
+					return nil, err
+				}
 				h.indexes[idx] = true
 				toolEvent = true
 			}
@@ -434,6 +455,39 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 	return out, nil
 }
 
+func (h *streamToolCallHold) recordHostedArgumentEvent(eventType string, payload map[string]any) error {
+	kind := hostedResponsesCallEventType(eventType)
+	if kind != "mcp_call" && kind != "code_interpreter_call" {
+		return nil
+	}
+	idx := streamToolIndex(payload["output_index"])
+	if !h.indexes[idx] {
+		return nil
+	}
+	if strings.HasSuffix(eventType, ".delta") {
+		if h.hostedDeltas == nil {
+			h.hostedDeltas = make(map[int]string)
+		}
+		h.hostedDeltas[idx] += stringValue(payload["delta"])
+		return nil
+	}
+	if !strings.HasSuffix(eventType, ".done") {
+		return nil
+	}
+	delta, ok := h.hostedDeltas[idx]
+	if !ok {
+		return nil
+	}
+	field := "arguments"
+	if kind == "code_interpreter_call" {
+		field = "code"
+	}
+	if delta != stringValue(payload[field]) {
+		return upstreamError{Class: "tool_call_snapshot_mismatch", Message: "Responses tool argument snapshot does not match streamed arguments", Committed: true, Fallbackable: false}
+	}
+	return nil
+}
+
 func (h *streamToolCallHold) failClosedUnsupportedTool(kind string) ([]stream.Event, error) {
 	h.reset()
 	return nil, upstreamError{Class: "tool_call_hold_unsupported_type", Message: fmt.Sprintf("streamed tool item type %q cannot be inspected safely", kind), Committed: true, Fallbackable: false}
@@ -468,6 +522,29 @@ func (h *streamToolCallHold) shouldInspectHostedCall(call IRToolCall) bool {
 		}
 	}
 	return false
+}
+
+func (h *streamToolCallHold) setResponsesSnapshotArguments(index int, arguments string, compareHostedPayload ...bool) error {
+	if h == nil || h.calls == nil || h.calls.args[index] == nil {
+		return upstreamError{Class: "tool_call_snapshot_mismatch", Message: "Responses tool arguments have no matching streamed call", Committed: true, Fallbackable: false}
+	}
+	accumulated := h.calls.args[index].String()
+	if isHostedResponsesTool(IRToolCall{Dialect: "openai-responses", Kind: h.calls.kinds[index]}) && (len(compareHostedPayload) == 0 || !compareHostedPayload[0]) {
+		// Hosted snapshots carry lifecycle metadata in the item envelope. Their
+		// call payload is normalized separately from status and other metadata.
+		// Keep their argument stream authoritative and update from the payload-only
+		// snapshot without comparing the complete hosted item representation.
+		h.calls.setArguments(index, arguments)
+		return nil
+	}
+	if accumulated == "" {
+		h.calls.setArguments(index, arguments)
+		return nil
+	}
+	if accumulated != arguments {
+		return upstreamError{Class: "tool_call_snapshot_mismatch", Message: "Responses tool argument snapshot does not match streamed arguments", Committed: true, Fallbackable: false}
+	}
+	return nil
 }
 
 func hostedResponsesCallEventType(eventType string) string {
@@ -605,6 +682,7 @@ func (h *streamToolCallHold) clear() {
 	h.held = nil
 	h.calls = newToolCallAccumulator()
 	h.indexes = map[int]bool{}
+	h.hostedDeltas = nil
 }
 
 func chatStreamCallIndex(choiceIndex, callIndex int) int {
