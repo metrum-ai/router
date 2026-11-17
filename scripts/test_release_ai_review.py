@@ -228,6 +228,19 @@ class ReleaseAIReviewTest(unittest.TestCase):
         self.assertTrue(review.contains_sensitive_credential("AWS_SECRET_ACCESS_KEY=" + entropy_value))
         self.assertFalse(review.contains_sensitive_credential("api_key: token= ordinary review wording"))
 
+    def test_shell_environment_references_are_not_credential_values(self) -> None:
+        self.assertFalse(review.contains_sensitive_credential('TOKEN="${ROUTER_LIVE_E2E_CREDENTIAL:?Set the value}"'))
+        self.assertFalse(review.contains_sensitive_credential('TOKEN="${ROUTER_LIVE_E2E_CREDENTIAL}"'))
+        self.assertTrue(review.contains_sensitive_credential('TOKEN="${ROUTER_TOKEN:-Gh7kL2pQ9wR5tX3zMv8cHs4nB6dK1fT}"'))
+
+    def test_sensitive_values_are_redacted_from_added_and_removed_diff_lines(self) -> None:
+        value = "Gh7kL2pQ9wR5tX3zMv8cHs4nB6dK1fT"
+        diff = f"+TOKEN=\"{value}\"\n-TOKEN=\"{value}\"\n"
+        redacted = review.redact_sensitive_credentials(diff)
+        self.assertNotIn(value, redacted)
+        self.assertEqual(redacted.count("[REDACTED CREDENTIAL]"), 2)
+        self.assertFalse(review.contains_sensitive_credential(redacted))
+
     def test_model_timeout_fails_without_logging_request(self) -> None:
         with patch.object(review.urllib.request, "urlopen", side_effect=TimeoutError()):
             with self.assertRaisesRegex(review.RequestTimeoutError, "timed out after"):

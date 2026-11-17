@@ -77,7 +77,10 @@ REVIEW_OUTPUT_SCHEMA = {
 SENSITIVE_PREFIX = re.compile(r"(?i)\b(?:sk-ant-api\d{2}-|gh[pousr]_|github_pat_)([A-Za-z0-9_-]{24,})")
 SENSITIVE_FIXED_PREFIX = re.compile(r"\b(?:AKIA[0-9A-Z]{16}|AIza[A-Za-z0-9_-]{35}|xox[baprs]-[A-Za-z0-9-]{20,})")
 SENSITIVE_ASSIGNMENT = re.compile(
-    r"(?i)(?<![A-Za-z0-9])(?:api[_ -]?key|secret(?:[_ -]?access[_ -]?key)?|token|password)\s*[:=]\s*([A-Za-z0-9_+/=-]{24,})|(?<![A-Za-z0-9])bearer\s+([A-Za-z0-9_+/=-]{24,})"
+    r"(?i)(?<![A-Za-z0-9])(?:api[_ -]?key|secret(?:[_ -]?access[_ -]?key)?|token|password)\s*[:=]\s*[\"']?([A-Za-z0-9_+/=-]{24,})|(?<![A-Za-z0-9])bearer\s+[\"']?([A-Za-z0-9_+/=-]{24,})"
+)
+SHELL_PARAMETER_REFERENCE = re.compile(
+    r"\$\{[A-Za-z_][A-Za-z0-9_]*:[?+=-]([^}]*)\}|\$\{[A-Za-z_][A-Za-z0-9_]*[?+=-]([^}]*)\}|\$\{[A-Za-z_][A-Za-z0-9_]*\}|\$[A-Za-z_][A-Za-z0-9_]*"
 )
 REVIEW_SYSTEM = """You are the independent release reviewer for Metrum AI Router. Review the supplied source diff since the previous production release. Every batch repeats the full changed diffs for CHANGELOG.md and the v5.0.0 upgrade guide, when those files changed in the range. Review only findings supported by files included in this batch; each finding location must refer to a file in this batch. Do not assume omitted source hunks are unchanged. Return only JSON with keys summary and findings. Each finding has severity (blocking or informational), category (exactly one of security, correctness, compatibility, release-integrity), title, rationale, and locations (a non-empty list of objects containing repository-relative file and positive integer line). Block only a concrete security, correctness, compatibility, or release-integrity issue that must be fixed before publish. Do not quote source, prompt text, credentials, tokens, or secret values. Mention only file paths and concise reasoning. A clean review has an empty findings array."""
 
@@ -109,6 +112,7 @@ def resolve_git_commit(ref: str) -> str:
 
 
 def contains_sensitive_credential(value: str) -> bool:
+    value = SHELL_PARAMETER_REFERENCE.sub(lambda match: match.group(1) or match.group(2) or "", value)
     if SENSITIVE_FIXED_PREFIX.search(value):
         return True
     if any(_high_entropy_credential(match.group(1)) for match in SENSITIVE_PREFIX.finditer(value)):
@@ -119,6 +123,31 @@ def contains_sensitive_credential(value: str) -> bool:
         for secret in match.groups()
         if secret
     )
+
+
+def redact_sensitive_credentials(diff: str) -> str:
+    """Remove credential-shaped values from source diffs before model input."""
+    redacted_lines: list[str] = []
+    for line in diff.splitlines(keepends=True):
+        content = line.rstrip("\r\n")
+        newline = line[len(content):]
+        normalized = SHELL_PARAMETER_REFERENCE.sub(
+            lambda match: match.group(1) or match.group(2) or "", content
+        )
+        spans: list[tuple[int, int]] = [match.span() for match in SENSITIVE_FIXED_PREFIX.finditer(normalized)]
+        spans.extend((match.start(1), match.end(1)) for match in SENSITIVE_PREFIX.finditer(normalized))
+        for match in SENSITIVE_ASSIGNMENT.finditer(normalized):
+            for group in (1, 2):
+                if match.group(group) and _high_entropy_credential(match.group(group)):
+                    spans.append(match.span(group))
+        if spans and normalized != content:
+            content = "[credential-bearing diff line redacted]"
+            redacted_lines.append(content + newline)
+            continue
+        for start, end in sorted(set(spans), reverse=True):
+            content = content[:start] + "[REDACTED CREDENTIAL]" + content[end:]
+        redacted_lines.append(content + newline)
+    return "".join(redacted_lines)
 
 
 def pack_diff_files(
@@ -961,8 +990,7 @@ def main() -> int:
                 batch_label = f"{batch_index + 1}/{len(batches)}"
                 print(f"AI release review batch {batch_label} started", file=sys.stderr)
                 try:
-                    if contains_sensitive_credential(diff):
-                        raise ValueError("release diff contains sensitive-looking credential material")
+                    diff = redact_sensitive_credentials(diff)
                     if provider == "codex":
                         grouped_prompt = (
                             f"Review only the following files in this release group: {', '.join(paths)}. "
