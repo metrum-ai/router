@@ -139,10 +139,23 @@ jobs:
           printf 'PREVIOUS_COMMIT=%s\n' "${previous_commit}" >> "${GITHUB_ENV}"
       - name: Verify Go patch floor
         run: python3 scripts/check_go_toolchain.py
+      - name: Generate engine advisory snapshot for release packages
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cat > "${RUNNER_TEMP}/engine-gate-requirements.txt" <<'EOF'
+          PyYAML==6.0.3 \
+            --hash=sha256:ba1cc08a7ccde2d2ec775841541641e4548226580ab850948cbfda66a1befcdc \
+            --hash=sha256:9149cad251584d5fb4981be1ecde53a1ca46c891a79788c0df828d2f166bda28
+          EOF
+          python3 -m pip install --user --require-hashes --only-binary=:all: -r "${RUNNER_TEMP}/engine-gate-requirements.txt"
+          python3 scripts/engine_advisory_gate.py --check --snapshot "${RUNNER_TEMP}/engine-advisories.json"
+          printf 'ENGINE_ADVISORY_SNAPSHOT=%s\n' "${RUNNER_TEMP}/engine-advisories.json" >> "${GITHUB_ENV}"
       - name: Build release packages
         run: make package
       - name: Record the first build inventory
-        run: python3 scripts/release_artifact_inventory.py --dist-dir dist --version "${VERSION}" --commit "${COMMIT}" --build-date "${BUILD_DATE}" --set binary
+        run: python3 scripts/release_artifact_inventory.py --dist-dir dist --version "${VERSION}" --commit "${COMMIT}" --build-date "${BUILD_DATE}" --set binary --advisories-snapshot
       - name: Preserve first build output
         run: cp -a dist "${RUNNER_TEMP}/primary-dist"
       - name: Reset generated package outputs before clean-cache rebuild
@@ -161,7 +174,7 @@ jobs:
       - name: Record rebuilt inventory and compare packages
         run: |
           set -euo pipefail
-          python3 scripts/release_artifact_inventory.py --dist-dir dist --version "${VERSION}" --commit "${COMMIT}" --build-date "${BUILD_DATE}" --set binary
+          python3 scripts/release_artifact_inventory.py --dist-dir dist --version "${VERSION}" --commit "${COMMIT}" --build-date "${BUILD_DATE}" --set binary --advisories-snapshot
           python3 scripts/compare_release_checksums.py \
             "${RUNNER_TEMP}/primary-dist/SHA256SUMS" dist/SHA256SUMS \
             --primary-dist "${RUNNER_TEMP}/primary-dist" --rebuild-dist dist

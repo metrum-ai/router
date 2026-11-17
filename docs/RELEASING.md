@@ -115,6 +115,11 @@ digest-bound findings artifact and `release-images.json` digest manifest are
 attached to the release and attested.
 The upgrade check and AI review select the preceding stable tag by numeric
 semantic version order; release publication time does not affect the baseline.
+Each binary archive also includes `bin/engine-advisories.json`, the bounded
+snapshot used by `routerctl doctor --security` when no explicit snapshot path
+is supplied. The package-content validator requires and validates this file
+for release packages; the release dry run generates the same snapshot and
+applies the same required-file validation before it can pass.
 
 Publishing, registry writes, signing, attestations, SBOM attachment and GitHub
 release creation run only through the protected `release` environment. That

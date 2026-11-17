@@ -116,6 +116,18 @@ def validate(workflow):
     assert "git push origin refs/tags" not in all_runs
 
 
+def validate_binary_inventory_snapshot(workflow):
+    calls = [
+        line.strip()
+        for job in workflow["jobs"].values()
+        for step in job.get("steps", [])
+        for line in step.get("run", "").splitlines()
+        if "scripts/release_artifact_inventory.py" in line and "--set binary" in line
+    ]
+    assert calls, "workflow must validate binary release inventories"
+    assert all("--advisories-snapshot" in call for call in calls), calls
+
+
 class ProvenanceWorkflowTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -124,6 +136,7 @@ class ProvenanceWorkflowTest(unittest.TestCase):
 
     def test_release_contract(self):
         validate(self.workflow)
+        validate_binary_inventory_snapshot(self.workflow)
 
     def test_release_job_requires_environment_protection(self):
         doc = copy.deepcopy(self.workflow)
@@ -165,6 +178,7 @@ class ProvenanceWorkflowTest(unittest.TestCase):
 
     def test_full_dry_run_is_main_only_read_only_and_nonpublishing(self):
         workflow = self.dry_run_workflow
+        validate_binary_inventory_snapshot(workflow)
         triggers = workflow.get("on", workflow.get(True))
         dispatch = triggers["workflow_dispatch"]["inputs"]["dry_run"]
         self.assertEqual(dispatch, {"description": "Run the full release validation without publishing", "type": "boolean", "required": True, "default": True})
@@ -176,6 +190,16 @@ class ProvenanceWorkflowTest(unittest.TestCase):
         self.assertIn("make package", all_runs)
         dry_run_steps = jobs["dry-run"]["steps"]
         dry_run_names = [step.get("name") for step in dry_run_steps]
+        advisory_step = next(step for step in dry_run_steps if step.get("name") == "Generate engine advisory snapshot for release packages")
+        self.assertEqual(advisory_step["env"], {"GITHUB_TOKEN": "${{ github.token }}"})
+        self.assertIn("engine_advisory_gate.py --check --snapshot", advisory_step["run"])
+        self.assertIn("ENGINE_ADVISORY_SNAPSHOT=%s", advisory_step["run"])
+        package_build = next(step for step in dry_run_steps if step.get("name") == "Build release packages")
+        self.assertEqual(package_build["run"], "make package")
+        first_inventory = next(step for step in dry_run_steps if step.get("name") == "Record the first build inventory")
+        self.assertIn("--advisories-snapshot", first_inventory["run"])
+        rebuild_inventory = next(step for step in dry_run_steps if step.get("name") == "Record rebuilt inventory and compare packages")
+        self.assertIn("--advisories-snapshot", rebuild_inventory["run"])
         review_step = next(step for step in dry_run_steps if step.get("id") == "review")
         self.assertIn("--committed-artifact-dir docs/release-reviews", review_step["run"])
         preserve = dry_run_names.index("Preserve first build output")
@@ -213,6 +237,20 @@ class ProvenanceWorkflowTest(unittest.TestCase):
             for step in job.get("steps", []):
                 if step.get("uses", "").startswith("actions/checkout@"):
                     self.assertEqual(step.get("with", {}).get("ref"), "main")
+
+    def test_binary_inventory_validation_requires_advisory_snapshot_everywhere(self):
+        for source in (self.workflow, self.dry_run_workflow):
+            doc = copy.deepcopy(source)
+            target = next(
+                step
+                for job in doc["jobs"].values()
+                for step in job.get("steps", [])
+                if "scripts/release_artifact_inventory.py" in step.get("run", "")
+                and "--set binary" in step.get("run", "")
+            )
+            target["run"] = target["run"].replace(" --advisories-snapshot", "")
+            with self.assertRaises(AssertionError):
+                validate_binary_inventory_snapshot(doc)
 
     def test_dry_run_checkout_does_not_follow_workflow_dispatch_ref(self):
         doc = copy.deepcopy(self.dry_run_workflow)
