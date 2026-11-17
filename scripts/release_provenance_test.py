@@ -128,6 +128,31 @@ def validate_binary_inventory_snapshot(workflow):
     assert all("--advisories-snapshot" in call for call in calls), calls
 
 
+def validate_clean_rebuild_cache_env(workflow):
+    expected = {
+        "GOCACHE": "${{ runner.temp }}/repro-go-build",
+        "GOMODCACHE": "${{ runner.temp }}/repro-go-mod",
+    }
+    rebuilds = (
+        [("reproducible-build", "Rebuild binary packages on a clean runner")]
+        if "reproducible-build" in workflow["jobs"]
+        else [("dry-run", "Rebuild with clean Go caches")]
+    )
+    for job_name, step_name in rebuilds:
+        job = workflow["jobs"][job_name]
+        step = next(step for step in job["steps"] if step.get("name") == step_name)
+        assert {key: step.get("env", {}).get(key) for key in expected} == expected
+        run = step.get("run", "")
+        assert 'rm -rf "${GOCACHE}" "${GOMODCACHE}"' in run
+        assert run.index('rm -rf "${GOCACHE}" "${GOMODCACHE}"') < run.index("make package")
+        assert "GITHUB_ENV" not in step.get("run", "")
+        assert not any(
+            "GITHUB_ENV" in candidate.get("run", "")
+            and ("GOCACHE" in candidate.get("run", "") or "GOMODCACHE" in candidate.get("run", ""))
+            for candidate in job["steps"]
+        )
+
+
 class ProvenanceWorkflowTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -137,6 +162,7 @@ class ProvenanceWorkflowTest(unittest.TestCase):
     def test_release_contract(self):
         validate(self.workflow)
         validate_binary_inventory_snapshot(self.workflow)
+        validate_clean_rebuild_cache_env(self.workflow)
 
     def test_release_job_requires_environment_protection(self):
         doc = copy.deepcopy(self.workflow)
@@ -179,6 +205,7 @@ class ProvenanceWorkflowTest(unittest.TestCase):
     def test_full_dry_run_is_main_only_read_only_and_nonpublishing(self):
         workflow = self.dry_run_workflow
         validate_binary_inventory_snapshot(workflow)
+        validate_clean_rebuild_cache_env(workflow)
         triggers = workflow.get("on", workflow.get(True))
         dispatch = triggers["workflow_dispatch"]["inputs"]["dry_run"]
         self.assertEqual(dispatch, {"description": "Run the full release validation without publishing", "type": "boolean", "required": True, "default": True})
@@ -251,6 +278,16 @@ class ProvenanceWorkflowTest(unittest.TestCase):
             target["run"] = target["run"].replace(" --advisories-snapshot", "")
             with self.assertRaises(AssertionError):
                 validate_binary_inventory_snapshot(doc)
+
+    def test_clean_rebuild_requires_step_scoped_fresh_go_caches(self):
+        for source in (self.workflow, self.dry_run_workflow):
+            doc = copy.deepcopy(source)
+            job_name = "reproducible-build" if source is self.workflow else "dry-run"
+            step_name = "Rebuild binary packages on a clean runner" if job_name == "reproducible-build" else "Rebuild with clean Go caches"
+            step = next(step for step in doc["jobs"][job_name]["steps"] if step.get("name") == step_name)
+            step["env"].pop("GOCACHE")
+            with self.assertRaises(AssertionError):
+                validate_clean_rebuild_cache_env(doc)
 
     def test_dry_run_checkout_does_not_follow_workflow_dispatch_ref(self):
         doc = copy.deepcopy(self.dry_run_workflow)

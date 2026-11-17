@@ -166,10 +166,12 @@ jobs:
           rm -rf dist
           python3 scripts/validate_release_clean.py
       - name: Rebuild with clean Go caches
+        env:
+          GOCACHE: ${{ runner.temp }}/repro-go-build
+          GOMODCACHE: ${{ runner.temp }}/repro-go-mod
         run: |
           set -euo pipefail
-          echo "GOCACHE=${RUNNER_TEMP}/repro-go-build" >> "${GITHUB_ENV}"
-          echo "GOMODCACHE=${RUNNER_TEMP}/repro-go-mod" >> "${GITHUB_ENV}"
+          rm -rf "${GOCACHE}" "${GOMODCACHE}"
           make package
       - name: Record rebuilt inventory and compare packages
         run: |

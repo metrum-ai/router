@@ -139,18 +139,19 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
-      - name: Isolate clean rebuild caches
-        run: |
-          echo "GOCACHE=${RUNNER_TEMP}/repro-go-build" >> "${GITHUB_ENV}"
-          echo "GOMODCACHE=${RUNNER_TEMP}/repro-go-mod" >> "${GITHUB_ENV}"
       - uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
         with:
           name: release-binaries
           path: ${{ runner.temp }}/primary-dist
       - name: Rebuild binary packages on a clean runner
         env:
+          GOCACHE: ${{ runner.temp }}/repro-go-build
+          GOMODCACHE: ${{ runner.temp }}/repro-go-mod
           ENGINE_ADVISORY_SNAPSHOT: ${{ runner.temp }}/primary-dist/engine-advisories.json
-        run: make package
+        run: |
+          set -euo pipefail
+          rm -rf "${GOCACHE}" "${GOMODCACHE}"
+          make package
       - name: Recreate rebuilt inventory
         run: python3 scripts/release_artifact_inventory.py --dist-dir dist --version "${VERSION}" --commit "${COMMIT}" --build-date "${BUILD_DATE}" --set binary --advisories-snapshot
       - name: Compare package checksums
