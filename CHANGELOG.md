@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Require each retry to consume a released tool-firewall approval before forwarding a held call; concurrent retries cannot reuse one release.
 - Include boolean values when matching tool-firewall argument deny rules.
 - Keep streamed tool calls from multiple Chat choices held until every choice with a tool call has finished.
 - Inspect and redact output snapshots in failed and incomplete Responses stream events, honoring `fail_on_match` before forwarding them.

@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -383,6 +384,46 @@ func TestToolApprovalPendingCapacityFailsClosed(t *testing.T) {
 	}
 	if gotID, decision := store.consume("one"); gotID != "approval_0123456789abcdef0123456789abcdef" || decision != "release" {
 		t.Fatalf("consumed=(%q,%q)", gotID, decision)
+	}
+}
+
+func TestToolFirewallConcurrentRetriesConsumeApprovalOnce(t *testing.T) {
+	for attempt := 0; attempt < 32; attempt++ {
+		fingerprint := fmt.Sprintf("fingerprint-%d", attempt)
+		approvals := newToolApprovalRuntime(2)
+		id := fmt.Sprintf("approval_%032x", attempt+1)
+		if _, state, created := approvals.request(id, fingerprint, time.Minute); state != "pending" || !created {
+			t.Fatalf("attempt %d initial request=(%q,%v)", attempt, state, created)
+		}
+		if !approvals.resolve(id, "release") {
+			t.Fatalf("attempt %d approval release failed", attempt)
+		}
+		service := &Service{toolApprovals: approvals}
+		policy := ToolFirewallConfig{Mode: toolFirewallEnforce, ApprovalTimeoutMS: 1000}
+		outcome := toolFirewallOutcome{Mode: toolFirewallEnforce, Action: "hold", RuleCode: "sequence_rule"}
+		start := make(chan struct{})
+		results := make(chan toolFirewallDisposition, 2)
+		var retries sync.WaitGroup
+		for retry := 0; retry < 2; retry++ {
+			retries.Add(1)
+			go func() {
+				defer retries.Done()
+				<-start
+				results <- service.resolveToolFirewallDecision(nil, "caller", fingerprint, "", "", outcome, policy)
+			}()
+		}
+		close(start)
+		retries.Wait()
+		close(results)
+		proceeded := 0
+		for disposition := range results {
+			if !disposition.blocked && !disposition.pending {
+				proceeded++
+			}
+		}
+		if proceeded != 1 {
+			t.Fatalf("attempt %d: %d concurrent retries proceeded, want exactly one", attempt, proceeded)
+		}
 	}
 }
 

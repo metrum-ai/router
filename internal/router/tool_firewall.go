@@ -844,7 +844,12 @@ func (s *Service) resolveToolFirewallDecision(rc *requestContext, callerID, fing
 					s.recordToolFirewallDecisionEvent(rc, disposition.approvalID, "pending", outcome.RuleCode)
 				}
 			case "release":
-				_, _ = s.toolApprovals.consume(fingerprint)
+				_, consumedDecision := s.toolApprovals.consume(fingerprint)
+				if consumedDecision != "release" {
+					disposition.blocked = true
+					disposition.ruleCode = "approval_retry_invalid"
+					break
+				}
 				rc.trace("tool_firewall_approval_resolved", "", Target{}, 0, http.StatusOK, "approval_released", false, 0)
 				s.recordToolFirewallDecisionEvent(rc, disposition.approvalID, "released", outcome.RuleCode)
 			case "deny", "timeout":
