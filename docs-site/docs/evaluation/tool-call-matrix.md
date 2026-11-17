@@ -10,7 +10,7 @@ doc_type: explanation
 
 # Tool-call compatibility matrix
 
-Every cell states what is proven, for which client version, on which caller-to-upstream path, with the evidence that proves it. A combination that is not proven is listed as not covered with its reason, never omitted. Last matrix update: 2026-11-16.
+Every cell states what is proven, for which client version, on which caller-to-upstream path, with the evidence that proves it. A combination that is not proven is listed as not covered with its reason, never omitted. Last matrix update: 2026-11-17.
 
 A `mock` cell is a deterministic scripted upstream; a `unit` cell is a local conversion check with no endpoint call; a `live` cell ran against a real provider and carries its date, commit, cost and cost source. Mock and live evidence are never merged into one result. The underlying per-suite evidence lives in [bounded tool-call proof](tool-call-proof) and [live API compatibility](api-compatibility-live).
 
@@ -26,8 +26,8 @@ A `mock` cell is a deterministic scripted upstream; a `unit` cell is a local con
 | OpenAI SDK compatibility tester | 5935805 | `scripts/compat_mock.py` | openai-chat, openai-responses |
 | Anthropic SDK compatibility tester | 799b0bc | `scripts/compat_mock.py` | anthropic-messages |
 | Parallel tool-call gate (HTTP probe) | scripts/parallel_tool_live.py | `scripts/parallel_tool_live.py` | openai-chat, anthropic-messages |
-| OpenAI Python SDK | 3.41.0 | `tests/api_compat/uv.lock` | openai-chat, openai-responses |
-| Anthropic Python SDK | 2.3.0 | `tests/api_compat/uv.lock` | anthropic-messages |
+| OpenAI Python SDK | 3.46.0 | `tests/api_compat/uv.lock` | openai-chat, openai-responses |
+| Anthropic Python SDK | 2.6.0 | `tests/api_compat/uv.lock` | anthropic-messages |
 
 Clients with no cell yet, and why:
 
@@ -48,8 +48,8 @@ Clients with no cell yet, and why:
 | OpenAI SDK compatibility tester 5935805 | pass (mock) | not covered | not covered | not covered | — |
 | Anthropic SDK compatibility tester 799b0bc | pass (mock) | — | — | — | not covered |
 | Parallel tool-call gate (HTTP probe) scripts/parallel_tool_live.py | pass (live) | not covered | pass (live) | — | pass (live) |
-| OpenAI Python SDK 3.41.0 | not covered | not covered | not covered | not covered | — |
-| Anthropic Python SDK 2.3.0 | not covered | — | — | — | not covered |
+| OpenAI Python SDK 3.46.0 | not covered | not covered | not covered | not covered | — |
+| Anthropic Python SDK 2.6.0 | not covered | — | — | — | not covered |
 
 `—` means the client is not declared on that caller path. A cell label is a result, not a count: several feature cells can share a client and path.
 
@@ -57,9 +57,9 @@ Clients with no cell yet, and why:
 
 | Cell | Client | Caller → upstream | Features | Depths | Result | Evidence |
 | --- | --- | --- | --- | --- | --- | --- |
-| `openai-sdk-chat-tool-loop` | OpenAI Python SDK 3.41.0 | openai-chat → openai-chat | tool_call | — | not covered | [issue 769](https://github.com/metrum-ai/router/issues/769) |
-| `openai-sdk-responses-tool-loop` | OpenAI Python SDK 3.41.0 | openai-responses → openai-responses | tool_call | — | not covered | [issue 769](https://github.com/metrum-ai/router/issues/769) |
-| `anthropic-sdk-messages-tool-loop` | Anthropic Python SDK 2.3.0 | anthropic-messages → anthropic-messages | tool_call | — | not covered | [issue 769](https://github.com/metrum-ai/router/issues/769) |
+| `openai-sdk-chat-tool-loop` | OpenAI Python SDK 3.46.0 | openai-chat → openai-chat | tool_call | — | not covered | [issue 769](https://github.com/metrum-ai/router/issues/769) |
+| `openai-sdk-responses-tool-loop` | OpenAI Python SDK 3.46.0 | openai-responses → openai-responses | tool_call | — | not covered | [issue 769](https://github.com/metrum-ai/router/issues/769) |
+| `anthropic-sdk-messages-tool-loop` | Anthropic Python SDK 2.6.0 | anthropic-messages → anthropic-messages | tool_call | — | not covered | [issue 769](https://github.com/metrum-ai/router/issues/769) |
 | `pi-chat-same-dialect-stream` | pi 1.4.0 | openai-chat → openai-chat | streaming, tool_call | 0, 1, 2, 3, 5 | pass (mock) | [current coverage and limits](https://github.com/metrum-ai/router/blob/main/tests/agent_compat/README.md#current-coverage-and-limits) |
 | `pi-chat-same-dialect-parallel` | pi 1.4.0 | openai-chat → openai-chat | streaming, parallel_calls | 1 | pass (mock) | [current coverage and limits](https://github.com/metrum-ai/router/blob/main/tests/agent_compat/README.md#current-coverage-and-limits) |
 | `pi-chat-to-responses-stream` | pi 1.4.0 | openai-chat → openai-responses | streaming, tool_call | 0 | pass (mock) | [current coverage and limits](https://github.com/metrum-ai/router/blob/main/tests/agent_compat/README.md#current-coverage-and-limits) |
@@ -99,10 +99,10 @@ Clients with no cell yet, and why:
 | `parallel-gate-messages-direct` | Parallel tool-call gate (HTTP probe) scripts/parallel_tool_live.py | anthropic-messages → anthropic-messages | streaming, parallel_calls, tool_call | — | pass (live) | [run 41924232175](https://github.com/metrum-ai/router/actions/runs/41924232175) |
 | `parallel-gate-messages-through-router` | Parallel tool-call gate (HTTP probe) scripts/parallel_tool_live.py | anthropic-messages → anthropic-messages | streaming, parallel_calls, tool_call | — | pass (live) | [run 41924232175](https://github.com/metrum-ai/router/actions/runs/41924232175) |
 | `parallel-gate-messages-to-chat` | Parallel tool-call gate (HTTP probe) scripts/parallel_tool_live.py | anthropic-messages → openai-chat | streaming, parallel_calls, tool_call | — | pass (live) | [run 41924232175](https://github.com/metrum-ai/router/actions/runs/41924232175) |
-| `openai-python-sdk-chat-responses-not-covered` | OpenAI Python SDK 3.41.0 | openai-chat → openai-responses | tool_call | — | not covered | [issue 769](https://github.com/metrum-ai/router/issues/769) |
-| `openai-python-sdk-chat-messages-not-covered` | OpenAI Python SDK 3.41.0 | openai-chat → anthropic-messages | tool_call | — | not covered | [issue 769](https://github.com/metrum-ai/router/issues/769) |
-| `openai-python-sdk-responses-chat-not-covered` | OpenAI Python SDK 3.41.0 | openai-responses → openai-chat | tool_call | — | not covered | [issue 769](https://github.com/metrum-ai/router/issues/769) |
-| `anthropic-python-sdk-messages-chat-not-covered` | Anthropic Python SDK 2.3.0 | anthropic-messages → openai-chat | tool_call | — | not covered | [issue 769](https://github.com/metrum-ai/router/issues/769) |
+| `openai-python-sdk-chat-responses-not-covered` | OpenAI Python SDK 3.46.0 | openai-chat → openai-responses | tool_call | — | not covered | [issue 769](https://github.com/metrum-ai/router/issues/769) |
+| `openai-python-sdk-chat-messages-not-covered` | OpenAI Python SDK 3.46.0 | openai-chat → anthropic-messages | tool_call | — | not covered | [issue 769](https://github.com/metrum-ai/router/issues/769) |
+| `openai-python-sdk-responses-chat-not-covered` | OpenAI Python SDK 3.46.0 | openai-responses → openai-chat | tool_call | — | not covered | [issue 769](https://github.com/metrum-ai/router/issues/769) |
+| `anthropic-python-sdk-messages-chat-not-covered` | Anthropic Python SDK 2.6.0 | anthropic-messages → openai-chat | tool_call | — | not covered | [issue 769](https://github.com/metrum-ai/router/issues/769) |
 
 ## Router-level cells
 
