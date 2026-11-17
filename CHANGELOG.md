@@ -7,6 +7,7 @@
 - Remove the unsupported legacy admin route setting from both hardening guides and direct operators to the separate `/admin/v1` listener.
 - Align the release procedure with the committed AI review artifact gate and document the required artifact preparation path.
 - Correct the upgrade guide to describe successful local sinkhole responses for unknown or disallowed honeytoken model names.
+- Align OpenAI and Anthropic compatibility matrix versions with the pinned Python SDK lockfile and regenerate the published matrix page.
 
 - Align the standalone cache isolation guide with v5 caller-scoped response-cache and vLLM prefix-salt behavior; document that SGLang prefix isolation is unsupported.
 
