@@ -383,7 +383,7 @@ func TestMCPGatewayAuthenticatedToolsListAndCall(t *testing.T) {
 }
 
 func TestMCPGatewayMasksToolArgumentsResultsAndExportsAudit(t *testing.T) {
-	const apiKey = "sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789"
+	const apiKey = "sk-ant-api03-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	var upstreamText string
 	var upstreamCalls int
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

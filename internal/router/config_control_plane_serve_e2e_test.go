@@ -263,7 +263,7 @@ func TestServeE2EImportActivateServeAuth(t *testing.T) {
 
 func TestServeE2EMCPGatewayLoadedFromCanonicalConfig(t *testing.T) {
 	t.Setenv("MOCK_API_KEY", "test-only-serve-e2e-provider-key")
-	t.Setenv("ROUTER_MCP_SERVER_AUTH", "test-only-mcp-upstream-key")
+	t.Setenv("ROUTER_MCP_SERVER_AUTH", "fixture")
 	var upstreamErrors []string
 	upstreamRequests := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -272,7 +272,7 @@ func TestServeE2EMCPGatewayLoadedFromCanonicalConfig(t *testing.T) {
 			return
 		}
 		upstreamRequests++
-		if r.Header.Get("Authorization") != "Bearer test-only-mcp-upstream-key" {
+		if r.Header.Get("Authorization") != "Bearer fixture" {
 			upstreamErrors = append(upstreamErrors, "static credential missing")
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return

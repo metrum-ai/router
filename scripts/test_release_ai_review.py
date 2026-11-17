@@ -228,6 +228,61 @@ class ReleaseAIReviewTest(unittest.TestCase):
         self.assertTrue(review.contains_sensitive_credential("AWS_SECRET_ACCESS_KEY=" + entropy_value))
         self.assertFalse(review.contains_sensitive_credential("api_key: token= ordinary review wording"))
 
+    def test_shell_environment_references_are_not_credential_values(self) -> None:
+        self.assertFalse(review.contains_sensitive_credential('TOKEN="${ROUTER_LIVE_E2E_CREDENTIAL:?Set the value}"'))
+        self.assertFalse(review.contains_sensitive_credential('TOKEN="${ROUTER_LIVE_E2E_CREDENTIAL}"'))
+        self.assertTrue(review.contains_sensitive_credential('TOKEN="${ROUTER_TOKEN:-Gh7kL2pQ9wR5tX3zMv8cHs4nB6dK1fT}"'))
+
+    def test_sensitive_values_are_redacted_from_added_and_removed_diff_lines(self) -> None:
+        value = "Gh7kL2pQ9wR5tX3zMv8cHs4nB6dK1fT"
+        diff = f"+TOKEN=\"{value}\"\n-TOKEN=\"{value}\"\n"
+        redacted = review.redact_sensitive_credentials(diff)
+        self.assertNotIn(value, redacted)
+        self.assertEqual(redacted.count("[REDACTED CREDENTIAL]"), 2)
+        self.assertFalse(review.contains_sensitive_credential(redacted))
+
+    def test_redaction_counts_are_attributed_to_their_file(self) -> None:
+        value = "Gh7kL2pQ9wR5tX3zMv8cHs4nB6dK1fT"
+        diff = (
+            "diff --git a/one.go b/one.go\n+TOKEN=\"" + value + "\"\n"
+            "diff --git a/two.go b/two.go\n+TOKEN=\"" + value + "\"\n"
+        )
+        counts: dict[str, int] = {}
+        redacted = review.redact_sensitive_credentials(
+            diff, paths=("one.go", "two.go"), redaction_counts=counts,
+        )
+        self.assertEqual(counts, {"one.go": 1, "two.go": 1})
+        self.assertEqual(redacted.count("[REDACTED CREDENTIAL]"), 2)
+        self.assertNotIn(value, redacted)
+
+    def test_redaction_counts_are_per_file_bound_into_artifact_and_report(self) -> None:
+        candidate = {"summary": "No blockers found.", "findings": []}
+        coverage = [
+            {"file": "one.go", "status": "reviewed", "redaction_count": 2},
+            {"file": "two.go", "status": "reviewed", "redaction_count": 0},
+        ]
+        artifact = review.build_artifact(
+            candidate, "v4.8.0", "a" * 40, file_coverage=coverage,
+        )
+        validated = review.validate_artifact(
+            artifact, "v4.8.0", "a" * 40, {"one.go", "two.go"},
+            expected_redactions={"one.go": 2, "two.go": 0},
+        )
+        report, _ = review.evaluate(validated, {}, "v4.8.0", "a" * 40)
+        rendered = review.render(report, "v4.8.0", "a" * 40, "v5.0.0")
+        self.assertEqual(
+            {item["file"]: item["redaction_count"] for item in artifact["file_coverage"]},
+            {"one.go": 2, "two.go": 0},
+        )
+        self.assertIn("| `one.go` | 2 |", rendered)
+        self.assertIn("| `two.go` | 0 |", rendered)
+        self.assertIn("[REDACTED CREDENTIAL]", review.REVIEW_SYSTEM)
+        with self.assertRaisesRegex(ValueError, "redaction counts do not match"):
+            review.validate_artifact(
+                artifact, "v4.8.0", "a" * 40, {"one.go", "two.go"},
+                expected_redactions={"one.go": 1, "two.go": 0},
+            )
+
     def test_model_timeout_fails_without_logging_request(self) -> None:
         with patch.object(review.urllib.request, "urlopen", side_effect=TimeoutError()):
             with self.assertRaisesRegex(review.RequestTimeoutError, "timed out after"):
@@ -490,8 +545,8 @@ class ReleaseAIReviewTest(unittest.TestCase):
             self.assertEqual(artifact["summary"],
                              "Reviewed 2 text files across 2 bounded batches; recorded 0 binary file hashes and 0 generated-file checks within a 2-file release range.")
             self.assertEqual(artifact["file_coverage"], [
-                {"file": "docs/release.md", "status": "reviewed"},
-                {"file": "router.go", "status": "reviewed"},
+                {"file": "docs/release.md", "status": "reviewed", "redaction_count": 0},
+                {"file": "router.go", "status": "reviewed", "redaction_count": 0},
             ])
             self.assertEqual(len(artifact["findings"]), 1)
             self.assertEqual(artifact["findings"][0]["severity"], "blocking")
@@ -522,7 +577,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
             }])
         self.assertEqual(artifact["file_coverage"], [{
             "file": "docs/generated.json", "status": "generated-and-verified",
-            "verification": "admin-openapi-check",
+            "verification": "admin-openapi-check", "redaction_count": 0,
         }])
 
     def test_generated_static_directory_requires_named_check_coverage(self) -> None:
@@ -587,6 +642,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
         }])
         self.assertEqual(artifact["file_coverage"], [{
             "file": "assets/logo.png", "status": "binary", "sha256_before": before, "sha256_after": after,
+            "redaction_count": 0,
         }])
         review.validate_artifact(artifact, "v4.8.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", {"assets/logo.png"}, {
             "assets/logo.png": {"before": before, "after": after},

@@ -77,9 +77,12 @@ REVIEW_OUTPUT_SCHEMA = {
 SENSITIVE_PREFIX = re.compile(r"(?i)\b(?:sk-ant-api\d{2}-|gh[pousr]_|github_pat_)([A-Za-z0-9_-]{24,})")
 SENSITIVE_FIXED_PREFIX = re.compile(r"\b(?:AKIA[0-9A-Z]{16}|AIza[A-Za-z0-9_-]{35}|xox[baprs]-[A-Za-z0-9-]{20,})")
 SENSITIVE_ASSIGNMENT = re.compile(
-    r"(?i)(?<![A-Za-z0-9])(?:api[_ -]?key|secret(?:[_ -]?access[_ -]?key)?|token|password)\s*[:=]\s*([A-Za-z0-9_+/=-]{24,})|(?<![A-Za-z0-9])bearer\s+([A-Za-z0-9_+/=-]{24,})"
+    r"(?i)(?<![A-Za-z0-9])(?:api[_ -]?key|secret(?:[_ -]?access[_ -]?key)?|token|password)\s*[:=]\s*[\"']?([A-Za-z0-9_+/=-]{24,})|(?<![A-Za-z0-9])bearer\s+[\"']?([A-Za-z0-9_+/=-]{24,})"
 )
-REVIEW_SYSTEM = """You are the independent release reviewer for Metrum AI Router. Review the supplied source diff since the previous production release. Every batch repeats the full changed diffs for CHANGELOG.md and the v5.0.0 upgrade guide, when those files changed in the range. Review only findings supported by files included in this batch; each finding location must refer to a file in this batch. Do not assume omitted source hunks are unchanged. Return only JSON with keys summary and findings. Each finding has severity (blocking or informational), category (exactly one of security, correctness, compatibility, release-integrity), title, rationale, and locations (a non-empty list of objects containing repository-relative file and positive integer line). Block only a concrete security, correctness, compatibility, or release-integrity issue that must be fixed before publish. Do not quote source, prompt text, credentials, tokens, or secret values. Mention only file paths and concise reasoning. A clean review has an empty findings array."""
+SHELL_PARAMETER_REFERENCE = re.compile(
+    r"\$\{[A-Za-z_][A-Za-z0-9_]*:[?+=-]([^}]*)\}|\$\{[A-Za-z_][A-Za-z0-9_]*[?+=-]([^}]*)\}|\$\{[A-Za-z_][A-Za-z0-9_]*\}|\$[A-Za-z_][A-Za-z0-9_]*"
+)
+REVIEW_SYSTEM = """You are the independent release reviewer for Metrum AI Router. Review the supplied source diff since the previous production release. Every batch repeats the full changed diffs for CHANGELOG.md and the v5.0.0 upgrade guide, when those files changed in the range. Review only findings supported by files included in this batch; each finding location must refer to a file in this batch. Do not assume omitted source hunks are unchanged. The marker [REDACTED CREDENTIAL] means a credential-shaped value was present and removed before model input. Judge from the surrounding code and context whether it looks like a real secret; if it does, report a blocking security finding. Do not assume every marker is a real secret, and do not try to reconstruct any removed value. Return only JSON with keys summary and findings. Each finding has severity (blocking or informational), category (exactly one of security, correctness, compatibility, release-integrity), title, rationale, and locations (a non-empty list of objects containing repository-relative file and positive integer line). Block only a concrete security, correctness, compatibility, or release-integrity issue that must be fixed before publish. Do not quote source, prompt text, credentials, tokens, or secret values. Mention only file paths and concise reasoning. A clean review has an empty findings array."""
 
 
 class MaxTokensStopError(RuntimeError):
@@ -109,6 +112,7 @@ def resolve_git_commit(ref: str) -> str:
 
 
 def contains_sensitive_credential(value: str) -> bool:
+    value = SHELL_PARAMETER_REFERENCE.sub(lambda match: match.group(1) or match.group(2) or "", value)
     if SENSITIVE_FIXED_PREFIX.search(value):
         return True
     if any(_high_entropy_credential(match.group(1)) for match in SENSITIVE_PREFIX.finditer(value)):
@@ -119,6 +123,58 @@ def contains_sensitive_credential(value: str) -> bool:
         for secret in match.groups()
         if secret
     )
+
+
+def _plain_credential_spans(value: str) -> list[tuple[int, int]]:
+    spans: list[tuple[int, int]] = [match.span() for match in SENSITIVE_FIXED_PREFIX.finditer(value)]
+    spans.extend((match.start(1), match.end(1)) for match in SENSITIVE_PREFIX.finditer(value))
+    for match in SENSITIVE_ASSIGNMENT.finditer(value):
+        for group in (1, 2):
+            if match.group(group) and _high_entropy_credential(match.group(group)):
+                spans.append(match.span(group))
+    return spans
+
+
+def _credential_redaction_spans(value: str) -> list[tuple[int, int]]:
+    spans = _plain_credential_spans(value)
+    for match in SHELL_PARAMETER_REFERENCE.finditer(value):
+        fallback = match.group(1) or match.group(2)
+        if fallback and _plain_credential_spans(fallback):
+            spans.append(match.span())
+    merged: list[tuple[int, int]] = []
+    for start, end in sorted(set(spans)):
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], end))
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def redact_sensitive_credentials(
+    diff: str,
+    *,
+    paths: tuple[str, ...] | None = None,
+    redaction_counts: dict[str, int] | None = None,
+) -> str:
+    """Remove credential-shaped values from source diffs before model input."""
+    redacted_lines: list[str] = []
+    path_index = -1
+    current_path: str | None = None
+    for line in diff.splitlines(keepends=True):
+        if line.startswith("diff --git ") and paths is not None:
+            path_index += 1
+            current_path = paths[path_index] if path_index < len(paths) else None
+        content = line.rstrip("\r\n")
+        newline = line[len(content):]
+        spans = _credential_redaction_spans(content)
+        if spans and redaction_counts is not None:
+            if current_path is None:
+                raise ValueError("credential redaction could not be attributed to a changed file")
+            redaction_counts[current_path] = redaction_counts.get(current_path, 0) + len(spans)
+        for start, end in reversed(spans):
+            content = content[:start] + "[REDACTED CREDENTIAL]" + content[end:]
+        redacted_lines.append(content + newline)
+    return "".join(redacted_lines)
 
 
 def pack_diff_files(
@@ -191,16 +247,10 @@ def git_diff_batches(
     paths = [path for path in paths if path not in binary_paths and not generated_check(path)]
     file_diffs: list[tuple[str, str]] = []
     for path in paths:
-        result = subprocess.run(
-            ["git", "--literal-pathspecs", "diff", "--no-renames", "--no-ext-diff", "--unified=2", f"{base}..{head}", "--", path],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
-        )
-        if not result.stdout:
+        file_diff = git_diff_file(base, head, path)
+        if not file_diff:
             raise ValueError(f"listed release diff file {path} produced an empty diff")
-        file_diffs.append((path, result.stdout))
+        file_diffs.append((path, file_diff))
     if not file_diffs:
         return []
     return pack_diff_files(
@@ -208,6 +258,16 @@ def git_diff_batches(
         max_bytes=max_bytes,
         max_single_file_bytes=max_single_file_bytes,
     )
+
+
+def git_diff_file(base: str, head: str, path: str) -> str:
+    return subprocess.run(
+        ["git", "--literal-pathspecs", "diff", "--no-renames", "--no-ext-diff", "--unified=2", f"{base}..{head}", "--", path],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    ).stdout
 
 
 def git_binary_paths(base: str, head: str) -> list[str]:
@@ -253,12 +313,21 @@ def git_file_coverage(base: str, head: str) -> list[dict[str, Any]]:
     for path in sorted(changed):
         if path in binary:
             hashes = binary_hashes[path]
-            coverage.append({"file": path, "status": "binary", "sha256_before": hashes["before"], "sha256_after": hashes["after"]})
+            coverage.append({"file": path, "status": "binary", "sha256_before": hashes["before"], "sha256_after": hashes["after"], "redaction_count": 0})
         elif (check := generated_check(path)):
-            coverage.append({"file": path, "status": "generated-and-verified", "verification": check})
+            coverage.append({"file": path, "status": "generated-and-verified", "verification": check, "redaction_count": 0})
         else:
-            coverage.append({"file": path, "status": "reviewed"})
+            coverage.append({"file": path, "status": "reviewed", "redaction_count": 0})
     return coverage
+
+
+def git_redaction_counts(base: str, head: str) -> dict[str, int]:
+    """Recompute per-file counts from model-eligible text diffs without invoking a model."""
+    counts: dict[str, int] = {}
+    batches = git_diff_batches(base, head, max_bytes=MAX_DIFF_BYTES, max_single_file_bytes=MAX_DIFF_BYTES)
+    for diff, paths in batches:
+        redact_sensitive_credentials(diff, paths=paths, redaction_counts=counts)
+    return counts
 
 
 def git_binary_hashes(base: str, head: str, paths: set[str]) -> dict[str, dict[str, str | None]]:
@@ -541,7 +610,7 @@ def build_artifact(
     head: str,
     *,
     allowed_files: set[str] | frozenset[str] | None = None,
-    file_coverage: list[dict[str, str]] | None = None,
+    file_coverage: list[dict[str, Any]] | None = None,
     provider: str = "anthropic",
     model: str = MODEL,
     base_commit: str | None = None,
@@ -625,6 +694,7 @@ def build_artifact(
         verification = item.get("verification", "")
         sha256_before = item.get("sha256_before")
         sha256_after = item.get("sha256_after")
+        redaction_count = item.get("redaction_count", 0)
         if (
             not isinstance(file_path, str)
             or not file_path
@@ -633,8 +703,10 @@ def build_artifact(
             or file_path in seen_coverage
         ):
             raise ValueError("AI release review file coverage contains an invalid or duplicate path")
+        if not isinstance(redaction_count, int) or isinstance(redaction_count, bool) or redaction_count < 0:
+            raise ValueError("AI release review file coverage has an invalid redaction count")
         if status == "reviewed" and not verification:
-            normalized_coverage.append({"file": file_path, "status": status})
+            normalized_coverage.append({"file": file_path, "status": status, "redaction_count": redaction_count})
         elif status == "generated-and-verified":
             required_check = generated_check(file_path)
             if not required_check or verification != required_check:
@@ -643,6 +715,7 @@ def build_artifact(
                 "file": file_path,
                 "status": status,
                 "verification": required_check,
+                "redaction_count": redaction_count,
             })
         elif status == "binary":
             valid_hash = lambda value: value is None or (isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value))
@@ -653,6 +726,7 @@ def build_artifact(
                 "status": status,
                 "sha256_before": sha256_before,
                 "sha256_after": sha256_after,
+                "redaction_count": redaction_count,
             })
         else:
             raise ValueError("AI release review file coverage has an invalid status")
@@ -683,6 +757,7 @@ def validate_artifact(
     expected_files: set[str],
     expected_binary: dict[str, dict[str, str | None]] | None = None,
     base_commit: str | None = None,
+    expected_redactions: dict[str, int] | None = None,
 ) -> dict[str, Any]:
     if artifact.get("schema") != "metrum-ai-router-release-review-artifact/v3" or artifact.get("base") != base or artifact.get("head") != head:
         raise ValueError("stored AI release review artifact does not match the requested range")
@@ -713,6 +788,10 @@ def validate_artifact(
     }
     if binary_entries != (expected_binary or {}):
         raise ValueError("stored AI release review binary hashes do not match the release range")
+    if expected_redactions is not None and {
+        item["file"]: item["redaction_count"] for item in artifact["file_coverage"]
+    } != expected_redactions:
+        raise ValueError("stored AI release review redaction counts do not match the release range")
     for item in artifact["file_coverage"]:
         path, status = item["file"], item["status"]
         required_status = "binary" if path in (expected_binary or {}) else ("generated-and-verified" if generated_check(path) else "reviewed")
@@ -774,7 +853,12 @@ def load_committed_artifact(
         entry["file"]: {"before": entry.get("sha256_before"), "after": entry.get("sha256_after")}
         for entry in expected_coverage if entry["status"] == "binary"
     }
-    candidate = validate_artifact(candidate, base, review_head, expected_files, expected_binary, base_commit)
+    expected_redactions = {entry["file"]: entry.get("redaction_count", 0) for entry in expected_coverage}
+    expected_redactions.update(git_redaction_counts(base, review_head))
+    candidate = validate_artifact(
+        candidate, base, review_head, expected_files, expected_binary, base_commit,
+        expected_redactions=expected_redactions,
+    )
     if candidate.get("provider") != "codex" or candidate.get("model") != CODEX_MODEL:
         raise ValueError("committed review artifact uses an unexpected provider or model")
     return candidate, review_head
@@ -842,6 +926,7 @@ def evaluate(review: dict[str, Any], acceptances: dict[str, Any], base: str, hea
         "provider": artifact.get("provider", "anthropic"),
         "codex_cli_version": artifact.get("codex_cli_version"),
         "base_commit": artifact.get("base_commit"),
+        "file_coverage": artifact["file_coverage"],
         "decision": "pass" if unanswered == 0 else "block",
     }, unanswered
 
@@ -857,6 +942,15 @@ def render(report: dict[str, Any], base: str, head: str, tag: str) -> str:
         *([f"- Codex CLI: `{report['codex_cli_version']}`"] if report["provider"] == "codex" else []),
         f"- Review artifact SHA-256: `{report['artifact_digest']}`",
         f"- Decision: **{report['decision'].upper()}**",
+        "",
+        "## Per-file credential-shaped value redactions",
+        "",
+        "| File | Redaction count |",
+        "|---|---:|",
+        *(
+            f"| `{item['file']}` | {item['redaction_count']} |"
+            for item in report["file_coverage"]
+        ),
         "",
         report["summary"],
         "",
@@ -909,9 +1003,11 @@ def main() -> int:
         review_head = args.head
         expected_files: set[str] = set()
         binary_hashes: dict[str, dict[str, str | None]] = {}
+        expected_redactions: dict[str, int] = {}
         if not args.committed_artifact_dir:
             expected_coverage = git_file_coverage(args.base, args.head)
             expected_files = {entry["file"] for entry in expected_coverage}
+            expected_redactions = {entry["file"]: entry.get("redaction_count", 0) for entry in expected_coverage}
             binary_hashes = {
                 entry["file"]: {"before": entry.get("sha256_before"), "after": entry.get("sha256_after")}
                 for entry in expected_coverage if entry["status"] == "binary"
@@ -922,15 +1018,22 @@ def main() -> int:
             cache_hit = True
         elif args.committed_artifact:
             artifact = json.loads(args.committed_artifact.read_text(encoding="utf-8"))
-            artifact = validate_artifact(artifact, args.base, args.head, expected_files, binary_hashes, base_commit)
+            expected_redactions.update(git_redaction_counts(args.base, args.head))
+            artifact = validate_artifact(
+                artifact, args.base, args.head, expected_files, binary_hashes, base_commit,
+                expected_redactions=expected_redactions,
+            )
             cache_hit = True
         elif args.artifact_cache and args.artifact_cache.exists():
             try:
                 artifact = json.loads(args.artifact_cache.read_text(encoding="utf-8"))
             except json.JSONDecodeError as exc:
                 raise ValueError("stored AI release review artifact is malformed") from exc
-            expected_files = set(git_diff_names(args.base, args.head))
-            artifact = validate_artifact(artifact, args.base, args.head, expected_files, binary_hashes, base_commit)
+            expected_redactions.update(git_redaction_counts(args.base, args.head))
+            artifact = validate_artifact(
+                artifact, args.base, args.head, expected_files, binary_hashes, base_commit,
+                expected_redactions=expected_redactions,
+            )
             cache_hit = True
         else:
             provider = args.provider
@@ -952,6 +1055,7 @@ def main() -> int:
             generated_paths = {path for path in expected_files if generated_check(path)}
             if batched_files != expected_files - binary_paths - generated_paths:
                 raise ValueError("release review batches do not match git diff --name-only")
+            measured_redactions = {path: 0 for path in expected_files}
             findings_by_id: dict[str, dict[str, Any]] = {}
             batch_index = 0
             while batch_index < len(batches):
@@ -961,8 +1065,10 @@ def main() -> int:
                 batch_label = f"{batch_index + 1}/{len(batches)}"
                 print(f"AI release review batch {batch_label} started", file=sys.stderr)
                 try:
-                    if contains_sensitive_credential(diff):
-                        raise ValueError("release diff contains sensitive-looking credential material")
+                    batch_redactions: dict[str, int] = {}
+                    diff = redact_sensitive_credentials(diff, paths=paths, redaction_counts=batch_redactions)
+                    for path, count in batch_redactions.items():
+                        measured_redactions[path] = max(measured_redactions.get(path, 0), count)
                     if provider == "codex":
                         grouped_prompt = (
                             f"Review only the following files in this release group: {', '.join(paths)}. "
@@ -1015,26 +1121,25 @@ def main() -> int:
                 print(f"AI release review batch {batch_label} completed", file=sys.stderr)
                 batch_index += 1
             changed_files = len(expected_files)
-            reviewed_paths = sorted({path for _diff, paths in batches for path in paths})
             generated_paths = {path for path in expected_files if generated_check(path)}
+            expected_redactions = measured_redactions
+            expected_coverage = [
+                {**entry, "redaction_count": expected_redactions.get(entry["file"], 0)}
+                for entry in expected_coverage
+            ]
             artifact = build_artifact({
                 "summary": (
-                    f"Reviewed {len(reviewed_paths)} text files across {len(batches)} bounded batches; "
+                    f"Reviewed {len(batched_files)} text files across {len(batches)} bounded batches; "
                     f"recorded {len(binary_paths)} binary file hashes and {len(generated_paths - binary_paths)} generated-file checks "
                     f"within a {changed_files}-file release range."
                 ),
                 "findings": list(findings_by_id.values()),
-            }, args.base, args.head, file_coverage=[
-                *({"file": path, "status": "reviewed"} for path in reviewed_paths),
-                *({
-                    "file": path, "status": "binary",
-                    "sha256_before": binary_hashes[path]["before"],
-                    "sha256_after": binary_hashes[path]["after"],
-                } for path in sorted(binary_paths)),
-                *({"file": path, "status": "generated-and-verified", "verification": generated_check(path)}
-                  for path in sorted(generated_paths - binary_paths)),
-                ], provider=provider, model=model, base_commit=base_commit, codex_cli_version=cli_version)
-            artifact = validate_artifact(artifact, args.base, args.head, expected_files, binary_hashes, base_commit)
+            }, args.base, args.head, file_coverage=expected_coverage,
+                provider=provider, model=model, base_commit=base_commit, codex_cli_version=cli_version)
+            artifact = validate_artifact(
+                artifact, args.base, args.head, expected_files, binary_hashes, base_commit,
+                expected_redactions=expected_redactions,
+            )
         report, unanswered = evaluate(artifact, acceptances, args.base, review_head)
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(render(report, args.base, review_head, args.tag), encoding="utf-8")
