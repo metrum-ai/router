@@ -103,11 +103,10 @@ type Service struct {
 	lineBufferBudget         *lineBufferBudget
 	// Admin-plane state: its own metrics registry, the audit/observation sinks, the
 	// Idempotency-Key store and the freshness source. They are separate from the serving path.
-	adminMetricsStore              *adminMetricsStore
-	adminMetricsOnce               sync.Once
-	adminFreshnessSource           AdminFreshnessSource
-	adminAuditSink                 func(AdminAuditEvent)
-	adminCredentialAuditAggregator *adminCredentialAuditAggregator
+	adminMetricsStore    *adminMetricsStore
+	adminMetricsOnce     sync.Once
+	adminFreshnessSource AdminFreshnessSource
+	adminAuditSink       func(AdminAuditEvent)
 	// adminAuthorizeFn is the authorization seam the admin listener installs; the reports
 	// surface uses it so its per-domain decisions carry the request context.
 	adminAuthorizeFn       func(context.Context, Principal, string, string, string) error
@@ -145,20 +144,25 @@ type Service struct {
 	configPostgresUnlock   func() error
 	// adminAuditJanitorStop stops the retention purge jobs at shutdown, and
 	// adminAuditJanitorDone reports when each janitor goroutine has exited.
-	adminAuditJanitorStop  chan struct{}
-	adminAuditJanitorDone  []<-chan struct{}
-	adminClientMonitorStop chan struct{}
-	adminClientMonitorDone chan struct{}
-	configReloadStop       func()
-	configNotifyStop       func()
-	autoContainmentStop    func()
-	autoContainmentMu      sync.Mutex
-	policySyncStop         func()
-	policyNotifyStop       func()
-	providerUsageStop      func()
-	configInstanceID       string
-	configLoaded           atomic.Value // configLoadedState
-	shadows                *shadowRuntime
+	adminAuditJanitorStop           chan struct{}
+	adminAuditJanitorDone           []<-chan struct{}
+	adminCredentialAuditFlushMu     sync.Mutex
+	adminCredentialAuditFlushStop   chan struct{}
+	adminCredentialAuditFlushDone   chan struct{}
+	adminCredentialAuditReplicaIDMu sync.Mutex
+	adminCredentialAuditReplicaID   string
+	adminClientMonitorStop          chan struct{}
+	adminClientMonitorDone          chan struct{}
+	configReloadStop                func()
+	configNotifyStop                func()
+	autoContainmentStop             func()
+	autoContainmentMu               sync.Mutex
+	policySyncStop                  func()
+	policyNotifyStop                func()
+	providerUsageStop               func()
+	configInstanceID                string
+	configLoaded                    atomic.Value // configLoadedState
+	shadows                         *shadowRuntime
 	// provenance binds opaque provider reasoning history to its origin (#622).
 	// It is off unless configured, and off changes no behaviour.
 	provenance reasoningProvenanceBinding
@@ -657,10 +661,7 @@ func (s *Service) TLSManager() *tlsacme.Manager {
 }
 
 func (s *Service) Close() {
-	if s.adminCredentialAuditAggregator != nil {
-		s.adminCredentialAuditAggregator.close()
-		s.adminCredentialAuditAggregator = nil
-	}
+	s.closeAdminCredentialAuditCounters()
 	if s.adminClientMonitorStop != nil {
 		close(s.adminClientMonitorStop)
 		s.adminClientMonitorStop = nil

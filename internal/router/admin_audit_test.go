@@ -1335,13 +1335,16 @@ func TestAdminAuditFieldRedactsBeforeTruncating(t *testing.T) {
 	}
 }
 
-// TestAdminSuccessfulAuthRowsAggregate proves successes in one five-minute
-// window become one immutable count-delta row rather than one global-lock append
-// per request.
-func TestAdminSuccessfulAuthRowsAggregate(t *testing.T) {
+// TestAdminSuccessfulAuthRowsAreDurableBeforeReturn proves successful outcomes
+// are durably counted before return and chained once when their window closes.
+func TestAdminSuccessfulAuthRowsAreDurableBeforeReturn(t *testing.T) {
 	db := configAdminTestDB(t)
-	now := time.Now().UTC().Truncate(adminCredentialAuditWindow)
+	if err := applyAdminCredentialAuditCounters(db); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(adminCredentialAuditWindow).Add(time.Minute)
 	service := &Service{configControlPlane: db}
+	defer service.closeAdminCredentialAuditCounters()
 	sink := service.adminCredentialEventSink()
 	event := AdminCredentialEvent{
 		Kind: "adminkey", CredentialID: "adminkey:scraper", Subject: "adminkey:scraper",
@@ -1349,11 +1352,18 @@ func TestAdminSuccessfulAuthRowsAggregate(t *testing.T) {
 		Lifecycle: "auth",
 	}
 	for i := 0; i < 20; i++ {
-		event.At = now.Add(time.Duration(i) * 10 * time.Second)
+		event.At = now.Add(time.Duration(i) * time.Second)
 		event.RequestID = fmt.Sprintf("req-scrape-%02d", i)
 		if err := sink.RecordCredentialEvent(context.Background(), event); err != nil {
 			t.Fatal(err)
 		}
+	}
+	var pending []adminCredentialAuditCounter
+	if err := db.Table(adminCredentialAuditCounterTable).Find(&pending).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(pending) != 1 || pending[0].Count != 20 {
+		t.Fatalf("pending counters=%+v, want one counter with count 20", pending)
 	}
 	var rows []struct {
 		Count     int64  `gorm:"column:count"`
@@ -1363,19 +1373,218 @@ func TestAdminSuccessfulAuthRowsAggregate(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(rows) != 0 {
-		t.Fatalf("successful auth requests appended before their window closed: rows=%d", len(rows))
+		t.Fatalf("successful auths were chained before window close: %d rows", len(rows))
 	}
-	service.adminCredentialAuditAggregator.flushThrough(now.Add(adminCredentialAuditWindow))
-	if err := db.Table(adminCredentialEventsTable).Find(&rows).Error; err != nil {
+	if err := service.flushAdminCredentialAuditCounters(context.Background(), false, now.Add(adminCredentialAuditWindow)); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Table(adminCredentialEventsTable).Where("credential_id = ?", "adminkey:scraper").Find(&rows).Error; err != nil {
 		t.Fatal(err)
 	}
 	if len(rows) != 1 || rows[0].Count != 20 || rows[0].Lifecycle != "auth" {
-		t.Fatalf("20 successful auths produced %+v; want one immutable count delta of 20", rows)
+		t.Fatalf("20 successful auths produced %+v, want one count-delta row", rows)
+	}
+	shutdown := event
+	shutdown.CredentialID = "adminkey:shutdown"
+	shutdown.At = now.Add(2 * time.Minute)
+	if err := sink.RecordCredentialEvent(context.Background(), shutdown); err != nil {
+		t.Fatal(err)
+	}
+	service.closeAdminCredentialAuditCounters()
+	var shutdownRows int64
+	if err := db.Table(adminCredentialEventsTable).Where("credential_id = ?", shutdown.CredentialID).Count(&shutdownRows).Error; err != nil || shutdownRows != 1 {
+		t.Fatalf("shutdown flush rows=%d err=%v, want one chained count-delta row", shutdownRows, err)
+	}
+	if err := verifyAdminAuditChainControl(db); err != nil {
+		t.Fatalf("credential chain: %v", err)
+	}
+	if err := db.Exec(`CREATE TRIGGER reject_blocked_auth BEFORE INSERT ON router_admin_credential_audit_counters WHEN NEW.credential_id = 'adminkey:blocked' BEGIN SELECT RAISE(ABORT, 'audit unavailable'); END`).Error; err != nil {
+		t.Fatal(err)
+	}
+	blocked := event
+	blocked.CredentialID = "adminkey:blocked"
+	if err := sink.RecordCredentialEvent(context.Background(), blocked); err == nil {
+		t.Fatal("successful authentication audit returned nil when durable counter upsert failed")
 	}
 	if err := verifyAdminAuditChainControl(db); err != nil {
 		t.Fatalf("aggregated credential chain: %v", err)
 	}
-	service.adminCredentialAuditAggregator.close()
+	registry, err := AdminV1DefaultRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	handlerCalled := false
+	handlers := make(map[string]http.HandlerFunc, len(registry.Operations()))
+	for _, operation := range registry.Operations() {
+		handlers[operation.HandlerKey] = func(w http.ResponseWriter, r *http.Request) {
+			handlerCalled = true
+			writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+		}
+	}
+	mux := http.NewServeMux()
+	if err := RegisterAdminV1(mux, AdminV1Deps{
+		Registry: registry,
+		Authenticate: &switchableAuthenticator{principal: Principal{
+			Subject: "adminkey:blocked", Kind: "adminkey", CredentialID: blocked.CredentialID,
+		}},
+		Authorize: func(context.Context, Principal, string, string, string) error { return nil },
+		Handlers:  handlers, CredentialEvents: sink, Denials: &recordingDenialSink{},
+		Audit: func(AdminAuditEvent) {},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	denied := httptest.NewRecorder()
+	mux.ServeHTTP(denied, httptest.NewRequest(http.MethodGet, "/admin/v1/config/status", nil))
+	if denied.Code < http.StatusInternalServerError || handlerCalled {
+		t.Fatalf("authentication with failed counter upsert status=%d handlerCalled=%t body=%s, want denied before handler", denied.Code, handlerCalled, denied.Body.String())
+	}
+}
+
+func TestAdminSuccessfulAuthFallsBackWhenCounterCapacityIsFull(t *testing.T) {
+	db := configAdminTestDB(t)
+	if err := applyAdminCredentialAuditCounters(db); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(adminCredentialAuditWindow)
+	counters := make([]adminCredentialAuditCounter, adminCredentialAuditMaxPending)
+	for i := range counters {
+		counters[i] = adminCredentialAuditCounter{
+			BucketID: fmt.Sprintf("occupied-%04d", i), ReplicaID: "other-replica",
+			WindowStart: now, Kind: "adminkey", CredentialID: fmt.Sprintf("occupied-%04d", i),
+			Outcome: "success", Count: 1,
+		}
+	}
+	if err := db.CreateInBatches(&counters, 100).Error; err != nil {
+		t.Fatal(err)
+	}
+	service := &Service{configControlPlane: db, adminCredentialAuditReplicaID: "full-table-replica"}
+	event := AdminCredentialEvent{
+		At: now, Kind: "adminkey", CredentialID: "adminkey:capacity-fallback", Subject: "alice",
+		Outcome: "success", RequestID: "req-capacity-fallback", Lifecycle: "auth",
+		ClientIPHash: adminClientIPHash("198.51.100.12"),
+	}
+	if err := service.adminCredentialEventSink().RecordCredentialEvent(context.Background(), event); err != nil {
+		t.Fatalf("full counter table denied authentication instead of direct chained write: %v", err)
+	}
+	var counterRows int64
+	if err := db.Table(adminCredentialAuditCounterTable).Count(&counterRows).Error; err != nil || counterRows != adminCredentialAuditMaxPending {
+		t.Fatalf("counter rows=%d err=%v, want capacity unchanged at %d", counterRows, err, adminCredentialAuditMaxPending)
+	}
+	var eventRows int64
+	if err := db.Table(adminCredentialEventsTable).Where("credential_id = ?", event.CredentialID).Count(&eventRows).Error; err != nil || eventRows != 1 {
+		t.Fatalf("direct chained rows=%d err=%v, want one row", eventRows, err)
+	}
+	if err := verifyAdminAuditChainControl(db); err != nil {
+		t.Fatalf("direct chain after capacity fallback: %v", err)
+	}
+}
+
+func TestAdminCredentialAuditShutdownFlushesOnlyReplicaBuckets(t *testing.T) {
+	db := configAdminTestDB(t)
+	if err := applyAdminCredentialAuditCounters(db); err != nil {
+		t.Fatal(err)
+	}
+	first := &Service{configControlPlane: db, adminCredentialAuditReplicaID: "replica-first"}
+	second := &Service{configControlPlane: db, adminCredentialAuditReplicaID: "replica-second"}
+	now := time.Now().UTC().Truncate(adminCredentialAuditWindow)
+	for _, tc := range []struct {
+		service *Service
+		id      string
+	}{{first, "adminkey:first-replica"}, {second, "adminkey:second-replica"}} {
+		event := AdminCredentialEvent{
+			At: now, Kind: "adminkey", CredentialID: tc.id, Subject: tc.id,
+			Outcome: "success", Lifecycle: "auth", ClientIPHash: adminClientIPHash("198.51.100.13"),
+		}
+		if err := tc.service.adminCredentialEventSink().RecordCredentialEvent(context.Background(), event); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first.closeAdminCredentialAuditCounters()
+	var firstRows, secondRows int64
+	if err := db.Table(adminCredentialEventsTable).Where("credential_id = ?", "adminkey:first-replica").Count(&firstRows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Table(adminCredentialEventsTable).Where("credential_id = ?", "adminkey:second-replica").Count(&secondRows).Error; err != nil {
+		t.Fatal(err)
+	}
+	var secondPending int64
+	if err := db.Table(adminCredentialAuditCounterTable).Where("replica_id = ?", "replica-second").Count(&secondPending).Error; err != nil {
+		t.Fatal(err)
+	}
+	if firstRows != 1 || secondRows != 0 || secondPending != 1 {
+		t.Fatalf("after first replica shutdown: first rows=%d, second rows=%d, second pending=%d; want 1, 0, 1", firstRows, secondRows, secondPending)
+	}
+	second.closeAdminCredentialAuditCounters()
+	if err := verifyAdminAuditChainControl(db); err != nil {
+		t.Fatalf("credential chain after replica-scoped shutdown flushes: %v", err)
+	}
+}
+
+func TestAdminCredentialAuditPendingCountersFlushAfterRestart(t *testing.T) {
+	db := configAdminTestDB(t)
+	if err := applyAdminCredentialAuditCounters(db); err != nil {
+		t.Fatal(err)
+	}
+	original := &Service{configControlPlane: db, adminCredentialAuditReplicaID: "replica-before-restart"}
+	event := AdminCredentialEvent{
+		At:   time.Now().UTC().Truncate(adminCredentialAuditWindow).Add(-2 * adminCredentialAuditWindow),
+		Kind: "adminkey", CredentialID: "adminkey:restart", Subject: "alice",
+		Outcome: "success", Lifecycle: "auth", ClientIPHash: adminClientIPHash("198.51.100.14"),
+	}
+	if err := original.adminCredentialEventSink().RecordCredentialEvent(context.Background(), event); err != nil {
+		t.Fatal(err)
+	}
+	var pending int64
+	if err := db.Table(adminCredentialAuditCounterTable).Where("replica_id = ?", original.adminCredentialAuditReplicaID).Count(&pending).Error; err != nil || pending != 1 {
+		t.Fatalf("pre-restart pending rows=%d err=%v, want 1", pending, err)
+	}
+
+	restarted := &Service{configControlPlane: db, adminCredentialAuditReplicaID: "replica-after-restart"}
+	if err := restarted.flushAdminCredentialAuditCounters(context.Background(), false, time.Now().UTC()); err != nil {
+		t.Fatalf("flush recovered counters: %v", err)
+	}
+	var chained int64
+	if err := db.Table(adminCredentialEventsTable).Where("credential_id = ?", event.CredentialID).Count(&chained).Error; err != nil || chained != 1 {
+		t.Fatalf("post-restart chained rows=%d err=%v, want 1", chained, err)
+	}
+	if err := verifyAdminAuditChainControl(db); err != nil {
+		t.Fatalf("credential chain after restart recovery: %v", err)
+	}
+}
+
+func TestAdminSuccessfulAuthAggregationUsesUsageStoreFallback(t *testing.T) {
+	store := adminUsageAuditTestStore(t)
+	service := &Service{usage: store}
+	sink := service.adminCredentialEventSink()
+	now := time.Now().UTC().Truncate(adminCredentialAuditWindow).Add(time.Minute)
+	event := AdminCredentialEvent{At: now, Kind: "apikey", CredentialID: "file-mode-key", Subject: "alice", Outcome: "success", ClientIPHash: adminClientIPHash("198.51.100.8"), Lifecycle: "auth"}
+	for i := 0; i < 20; i++ {
+		event.At = now.Add(time.Duration(i) * time.Second)
+		if err := sink.RecordCredentialEvent(context.Background(), event); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var counters []adminCredentialAuditCounter
+	if err := store.db.Table(adminCredentialAuditCounterTable).Find(&counters).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(counters) != 1 || counters[0].Count != 20 {
+		t.Fatalf("usage fallback counters=%+v, want one counter with count 20", counters)
+	}
+	var rows int64
+	if err := store.db.Table(usageAdminAuditTable).Where("credential_id = ?", event.CredentialID).Count(&rows).Error; err != nil || rows != 0 {
+		t.Fatalf("usage chain rows before window close=%d err=%v, want 0", rows, err)
+	}
+	if err := service.flushAdminCredentialAuditCounters(context.Background(), false, now.Add(adminCredentialAuditWindow)); err != nil {
+		t.Fatal(err)
+	}
+	var deltaCount int64
+	if err := store.db.Table(usageAdminAuditTable).Where("credential_id = ? AND detail = ?", event.CredentialID, "authentication_count=20").Count(&deltaCount).Error; err != nil || deltaCount != 1 {
+		t.Fatalf("usage count-delta rows=%d err=%v, want 1", deltaCount, err)
+	}
+	if err := verifyAdminAuditChainUsage(store.db); err != nil {
+		t.Fatalf("usage credential chain: %v", err)
+	}
 }
 
 // TestAdminAuditJanitorPurgesBothDatabases proves the retention janitor works against each

@@ -72,12 +72,14 @@ var controlPlaneConfigBackupTables = []string{
 	adminClientTable, adminClientCredentialTable,
 	adminEmergencyActivationTable,
 	adminKeyMetadataTable, adminKeyGenerationTable, adminKeyOperationTable, adminCredentialEventsTable,
+	adminCredentialAuditCounterTable,
 	adminAuditChainAnchorsTable,
 }
 
 var controlPlaneUsageBackupTables = []string{
 	"authz_policy_sets", "authz_policy_rules", "authz_role_links", "authz_policy_runtime", "authz_policy_audit_events",
 	usageAdminAuditTable,
+	adminCredentialAuditCounterTable,
 	adminAuditChainAnchorsTable,
 }
 
