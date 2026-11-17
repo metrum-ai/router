@@ -505,6 +505,36 @@ class ProvenanceWorkflowTest(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 validate_cosign_installation(doc, job_name)
 
+    def test_release_tool_paths_are_outside_the_checkout_in_both_workflows(self):
+        for source, job_name in ((self.workflow, "publish-release"), (self.dry_run_workflow, "dry-run")):
+            with self.subTest(workflow=source.get("name")):
+                job = source["jobs"][job_name]
+                self.assertEqual(job["env"]["CRANE"], "${{ runner.temp }}/crane-bin/crane")
+                steps = job["steps"]
+                cosign = next(step for step in steps if step.get("name") == "Install pinned Cosign")
+                self.assertEqual(cosign["with"]["install-dir"], "${{ runner.temp }}/cosign-bin")
+                envsubst = next(step for step in steps if step.get("name") == "Provide envsubst for Cosign installer")
+                self.assertIn('shim_dir="${RUNNER_TEMP}/cosign-envsubst-bin"', envsubst["run"])
+                fetch_jsign = next(step for step in steps if step.get("name") == "Fetch pinned jsign (checksum-verified)")
+                self.assertIn('"${RUNNER_TEMP}/signing/jsign.jar"', fetch_jsign["run"])
+                contract = next(step for step in steps if step.get("name") == "Publish tool contract")
+                self.assertEqual(contract["env"]["JSIGN_JAR"], "${{ runner.temp }}/signing/jsign.jar")
+                self.assertEqual(contract["env"]["SYFT_COMMAND"], "${{ steps.syft.outputs.cmd }}")
+                syft = next(step for step in steps if step.get("name") == "Install pinned Syft")
+                self.assertEqual(syft["uses"], "anchore/sbom-action/download-syft@d8a2c0130026bf585de5c176ab8f7ce62d75bf04")
+
+                tool_paths = [
+                    job["env"]["CRANE"], cosign["with"]["install-dir"],
+                    envsubst["run"], fetch_jsign["run"], contract["env"]["JSIGN_JAR"],
+                    contract["env"]["SYFT_COMMAND"], contract["run"],
+                ]
+                for candidate in source["jobs"].values():
+                    for step in candidate.get("steps", []):
+                        if step.get("name") == "Install pinned GitHub CLI":
+                            tool_paths.append(step["run"])
+                            self.assertIn('${RUNNER_TEMP}/gh-cli/bin', step["run"])
+                self.assertNotIn("${{ github.workspace }}", "\n".join(tool_paths))
+
     def test_dry_run_checkout_does_not_follow_workflow_dispatch_ref(self):
         doc = copy.deepcopy(self.dry_run_workflow)
         checkout = next(step for job in doc["jobs"].values() for step in job.get("steps", []) if step.get("uses", "").startswith("actions/checkout@"))
