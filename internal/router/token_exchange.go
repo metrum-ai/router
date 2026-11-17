@@ -243,8 +243,8 @@ func (rt *tokenExchangeRuntime) installIssuerConfig(cfg TokenExchangeConfig) {
 		for _, configured := range cfg.Issuers {
 			if previous := previousIssuers[configured.IssuerURL]; previous != nil && reflect.DeepEqual(previous.config, configured) {
 				issuers[configured.IssuerURL] = previous
-				for id, grant := range previous.grants {
-					grants[id] = grant
+				for _, grant := range previous.grants {
+					grants[grant.id] = grant
 				}
 				continue
 			}
