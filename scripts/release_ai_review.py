@@ -356,8 +356,9 @@ def incremental_review_plan(
     current_coverage: list[dict[str, Any]],
     prior_findings: list[dict[str, Any]],
 ) -> tuple[set[str], set[str], list[dict[str, Any]]]:
-    """Return unchanged paths, changed text paths and findings safe to reuse by file hash."""
+    """Return unchanged paths, files needing model review, and safe or retained findings."""
     prior_by_path = {item["file"]: item for item in prior_coverage}
+    current_by_path = {item["file"]: item for item in current_coverage}
     unchanged: set[str] = set()
     changed: set[str] = set()
     for item in current_coverage:
@@ -373,10 +374,22 @@ def incremental_review_plan(
             unchanged.add(item["file"])
         else:
             changed.add(item["file"])
-    reusable = [
-        finding for finding in prior_findings
-        if finding.get("files") and set(finding["files"]) <= unchanged
-    ]
+    reusable = []
+    reviewable = {path for path, item in current_by_path.items() if item.get("status") == "reviewed"}
+    for finding in prior_findings:
+        files = set(finding.get("files") or [])
+        if not files:
+            continue
+        if files <= unchanged:
+            reusable.append(finding)
+            continue
+        # Re-review every text file implicated by a changed cross-file finding,
+        # including files whose own diff hash did not change. If any implicated
+        # file cannot be sent as text, retain the prior finding until explicitly
+        # resolved rather than silently dropping it.
+        changed.update(files & reviewable)
+        if not files <= reviewable:
+            reusable.append(finding)
     return unchanged, changed, reusable
 
 
@@ -1293,9 +1306,12 @@ def main() -> int:
                 for path in unchanged_paths:
                     measured_redactions[path] = prior_by_path[path].get("redaction_count", 0)
                 if reusable_findings:
+                    reused_paths = unchanged_paths | {
+                        path for finding in reusable_findings for path in finding.get("files", [])
+                    }
                     reused = build_artifact(
-                        {"summary": "Reused findings from unchanged per-file diffs.", "findings": reusable_findings},
-                        args.base, args.head, allowed_files=unchanged_paths,
+                        {"summary": "Reused unchanged findings and retained findings with non-text evidence.", "findings": reusable_findings},
+                        args.base, args.head, allowed_files=reused_paths,
                         provider=provider, model=model, base_commit=base_commit,
                         codex_cli_version=cli_version,
                     )

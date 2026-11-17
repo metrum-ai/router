@@ -302,8 +302,23 @@ class ReleaseAIReviewTest(unittest.TestCase):
         ]
         unchanged, changed, reusable = review.incremental_review_plan(prior, current, findings)
         self.assertEqual(unchanged, {"same.go", "pair.go"})
-        self.assertEqual(changed, {"changed.go", "new.go"})
+        self.assertEqual(changed, {"changed.go", "new.go", "pair.go"})
         self.assertEqual([finding["id"] for finding in reusable], ["unchanged"])
+
+    def test_incremental_retains_findings_with_non_text_evidence(self) -> None:
+        prior = [
+            {"file": "source.go", "status": "reviewed", "diff_sha256": "a" * 64},
+            {"file": "model.bin", "status": "binary"},
+        ]
+        current = [
+            {"file": "source.go", "status": "reviewed", "diff_sha256": "b" * 64},
+            {"file": "model.bin", "status": "binary"},
+        ]
+        finding = {"id": "retained", "files": ["source.go", "model.bin"]}
+        unchanged, changed, retained = review.incremental_review_plan(prior, current, [finding])
+        self.assertEqual(unchanged, set())
+        self.assertEqual(changed, {"source.go"})
+        self.assertEqual(retained, [finding])
 
     def test_reviewed_file_diff_hash_is_bound_into_artifact_and_verified(self) -> None:
         diff_hash = "a" * 64
@@ -334,7 +349,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
             "two.go": __import__("hashlib").sha256(second.encode()).hexdigest(),
         })
 
-    def test_prior_review_enriches_legacy_coverage_and_selects_only_changed_file(self) -> None:
+    def test_prior_review_rereviews_cross_file_findings_and_reuses_single_file_findings(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             subprocess.run(["git", "init", "-q", str(root)], check=True)
@@ -355,12 +370,20 @@ class ReleaseAIReviewTest(unittest.TestCase):
             try:
                 os.chdir(root)
                 prior_coverage = review.git_file_coverage("v4.8.0", prior_head)
-                finding = {
-                    "severity": "informational", "category": "correctness", "title": "Prior finding",
-                    "rationale": "A test finding.", "locations": [{"file": "two.go", "line": 1}],
-                }
+                findings = [
+                    {
+                        "severity": "blocking", "category": "correctness", "title": "Cross-file blocker",
+                        "rationale": "A test finding spanning both files.",
+                        "locations": [{"file": "one.go", "line": 1}, {"file": "two.go", "line": 1}],
+                    },
+                    {
+                        "severity": "informational", "category": "correctness", "title": "Prior single-file finding",
+                        "rationale": "A test finding limited to the unchanged file.",
+                        "locations": [{"file": "two.go", "line": 1}],
+                    },
+                ]
                 prior = review.build_artifact(
-                    {"summary": "Full review completed.", "findings": [finding]},
+                    {"summary": "Full review completed.", "findings": findings},
                     "v4.8.0", prior_head, file_coverage=prior_coverage,
                     provider="codex", model="gpt-6.1-sol", codex_cli_version="codex-cli test",
                     base_commit=base,
@@ -396,15 +419,15 @@ class ReleaseAIReviewTest(unittest.TestCase):
                     self.assertEqual(review.main(), 0)
                 call_codex.assert_called_once()
                 self.assertIn("one.go", call_codex.call_args.args[0])
-                self.assertNotIn("two.go", call_codex.call_args.args[0])
+                self.assertIn("two.go", call_codex.call_args.args[0])
                 incremental = json.loads(artifact_output.read_text(encoding="utf-8"))
                 self.assertEqual({item["file"] for item in incremental["file_coverage"]}, {"one.go", "two.go"})
-                self.assertEqual(incremental["findings"][0]["title"], "Prior finding")
+                self.assertEqual([item["title"] for item in incremental["findings"]], ["Prior single-file finding"])
             finally:
                 os.chdir(original_cwd)
             self.assertEqual(unchanged, {"two.go"})
-            self.assertEqual(changed, {"one.go"})
-            self.assertEqual([item["title"] for item in reusable], ["Prior finding"])
+            self.assertEqual(changed, {"one.go", "two.go"})
+            self.assertEqual([item["title"] for item in reusable], ["Prior single-file finding"])
 
     def test_model_timeout_fails_without_logging_request(self) -> None:
         with patch.object(review.urllib.request, "urlopen", side_effect=TimeoutError()):
