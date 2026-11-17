@@ -2240,3 +2240,119 @@ func TestSecretDLPCaptureAndConfigValidation(t *testing.T) {
 		t.Fatalf("built-in-only filter rejected: %v", err)
 	}
 }
+
+func TestSecretDLPAnthropicInitialTextThroughHandler(t *testing.T) {
+	secret := fakeGitHubToken()
+	frames := []string{
+		`event: message_start` + "\n" + `data: {"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"anthropic-model","content":[],"usage":{"input_tokens":1,"output_tokens":0}}}`,
+		`event: content_block_start` + "\n" + `data: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":"` + secret[:len(secret)/2] + `"}}`,
+		`event: content_block_delta` + "\n" + `data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"` + secret[len(secret)/2:] + `"}}`,
+		`event: content_block_stop` + "\n" + `data: {"type":"content_block_stop","index":0}`,
+		`event: message_stop` + "\n" + `data: {"type":"message_stop"}`,
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, frame := range frames {
+			_, _ = io.WriteString(w, frame+"\n\n")
+		}
+	}))
+	defer upstream.Close()
+	target := Target{Provider: "native", Model: "anthropic-model", ToolSupport: ToolSupport{AnthropicMessages: []string{"client_tools"}}}
+	svc := nativeStreamTestService(t, upstream.URL, "anthropic", []Target{target}, func(cfg *Config) {
+		group := cfg.Models["native-stream"]
+		group.PIIFilter.Enabled = true
+		group.PIIFilter.SecretsEnabled = true
+		cfg.Models["native-stream"] = group
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"native-stream","stream":true,"max_tokens":32,"messages":[{"role":"user","content":"hello"}]}`))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	response := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(response, req)
+	body := response.Body.String()
+	if response.Code != http.StatusOK || strings.Contains(body, secret) || !strings.Contains(body, "[SECRET_GITHUB_1]") {
+		t.Fatalf("status=%d leaked or missed redaction in streamed body: %s", response.Code, body)
+	}
+	if !strings.Contains(body, "event: content_block_start") {
+		t.Fatalf("text block start was dropped while holding a partial secret: %s", body)
+	}
+}
+
+func TestSecretDLPAnthropicInitialThinkingThroughHandler(t *testing.T) {
+	secret := fakeGitHubToken()
+	frames := []string{
+		`event: message_start` + "\n" + `data: {"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"anthropic-model","content":[],"usage":{"input_tokens":1,"output_tokens":0}}}`,
+		`event: content_block_start` + "\n" + `data: {"type":"content_block_start","index":0,"content_block":{"type":"thinking","thinking":"` + secret[:len(secret)/2] + `"}}`,
+		`event: content_block_delta` + "\n" + `data: {"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"` + secret[len(secret)/2:] + `"}}`,
+		`event: content_block_stop` + "\n" + `data: {"type":"content_block_stop","index":0}`,
+		`event: message_stop` + "\n" + `data: {"type":"message_stop"}`,
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, frame := range frames {
+			_, _ = io.WriteString(w, frame+"\n\n")
+		}
+	}))
+	defer upstream.Close()
+	target := Target{Provider: "native", Model: "anthropic-model", ToolSupport: ToolSupport{AnthropicMessages: []string{"client_tools"}}}
+	svc := nativeStreamTestService(t, upstream.URL, "anthropic", []Target{target}, func(cfg *Config) {
+		group := cfg.Models["native-stream"]
+		group.PIIFilter.Enabled = true
+		group.PIIFilter.SecretsEnabled = true
+		cfg.Models["native-stream"] = group
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"native-stream","stream":true,"max_tokens":32,"messages":[{"role":"user","content":"hello"}]}`))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	response := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(response, req)
+	body := response.Body.String()
+	if response.Code != http.StatusOK || strings.Contains(body, secret) || !strings.Contains(body, "[SECRET_GITHUB_1]") {
+		t.Fatalf("status=%d leaked or missed redaction in streamed body: %s", response.Code, body)
+	}
+	if !strings.Contains(body, "event: content_block_start") {
+		t.Fatalf("thinking block start was dropped while holding a partial secret: %s", body)
+	}
+}
+
+func TestSecretDLPAnthropicStartWithoutDeltaFlushesDeltaThroughHandler(t *testing.T) {
+	secretPrefix := fakeGitHubToken()[:20]
+	for _, tc := range []struct {
+		name, blockType, field, deltaType, deltaField string
+	}{
+		{name: "text", blockType: "text", field: "text", deltaType: "text_delta", deltaField: "text"},
+		{name: "thinking", blockType: "thinking", field: "thinking", deltaType: "thinking_delta", deltaField: "thinking"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			frames := []string{
+				`event: message_start` + "\n" + `data: {"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"anthropic-model","content":[],"usage":{"input_tokens":1,"output_tokens":0}}}`,
+				fmt.Sprintf(`event: content_block_start`+"\n"+`data: {"type":"content_block_start","index":0,"content_block":{"type":%q,%q:%q}}`, tc.blockType, tc.field, secretPrefix),
+				`event: content_block_stop` + "\n" + `data: {"type":"content_block_stop","index":0}`,
+				`event: message_stop` + "\n" + `data: {"type":"message_stop"}`,
+			}
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				for _, frame := range frames {
+					_, _ = io.WriteString(w, frame+"\n\n")
+				}
+			}))
+			defer upstream.Close()
+			target := Target{Provider: "native", Model: "anthropic-model", ToolSupport: ToolSupport{AnthropicMessages: []string{"client_tools"}}}
+			svc := nativeStreamTestService(t, upstream.URL, "anthropic", []Target{target}, func(cfg *Config) {
+				group := cfg.Models["native-stream"]
+				group.PIIFilter.Enabled = true
+				group.PIIFilter.SecretsEnabled = true
+				cfg.Models["native-stream"] = group
+			})
+			req := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader(`{"model":"native-stream","stream":true,"max_tokens":32,"messages":[{"role":"user","content":"hello"}]}`))
+			req.Header.Set("Authorization", "Bearer "+testToken)
+			response := httptest.NewRecorder()
+			svc.Handler().ServeHTTP(response, req)
+			body := response.Body.String()
+			if response.Code != http.StatusOK || strings.Count(body, "event: content_block_start") != 1 {
+				t.Fatalf("status=%d content_block_start count=%d: %s", response.Code, strings.Count(body, "event: content_block_start"), body)
+			}
+			if strings.Count(body, "event: content_block_delta") != 1 || !strings.Contains(body, `"type":"`+tc.deltaType+`"`) || !strings.Contains(body, `"`+tc.deltaField+`":"`+secretPrefix+`"`) {
+				t.Fatalf("held start suffix was not emitted as one %s: %s", tc.deltaType, body)
+			}
+		})
+	}
+}
