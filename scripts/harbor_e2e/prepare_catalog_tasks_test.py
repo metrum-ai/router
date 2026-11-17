@@ -27,6 +27,8 @@ class PrepareCatalogTasksTest(unittest.TestCase):
                 self.assertTrue((task / "environment" / "workspace").is_dir())
                 dockerfile = (task / "environment" / "Dockerfile").read_text()
                 self.assertIn("pi-coding-agent@1.4.0", dockerfile)
+                self.assertIn("FROM node:22.19.0-bookworm-slim", dockerfile)
+                self.assertIn("--engine-strict", dockerfile)
                 self.assertIn("useradd --uid 10001", dockerfile)
                 self.assertIn("ENV HOME=/home/harbor", dockerfile)
                 self.assertIn("COPY --chown=10001:10001 workspace/ /app/", dockerfile)
