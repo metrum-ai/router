@@ -49,3 +49,37 @@ func TestProviderSpendBreakerIgnoresInvalidCosts(t *testing.T) {
 		t.Fatal("invalid costs must not trip breaker")
 	}
 }
+
+func TestProviderSpendBreakerReevaluatesUpdatedCeilings(t *testing.T) {
+	t.Run("raised hourly ceiling clears trip", func(t *testing.T) {
+		b := newProviderSpendBreaker()
+		b.nowFunc = func() time.Time { return time.Date(2026, 11, 16, 10, 0, 0, 0, time.UTC) }
+		old := ProviderSpendBreakerConfig{HourlyUSD: 1, DailyUSD: 5}
+		b.add("alpha", old, 1.5)
+		if b.allow("alpha", old) {
+			t.Fatal("hourly ceiling should be tripped")
+		}
+		updated := ProviderSpendBreakerConfig{HourlyUSD: 2, DailyUSD: 5}
+		if !b.allow("alpha", updated) {
+			t.Fatal("raising the hourly ceiling should clear the cached trip")
+		}
+	})
+
+	t.Run("removed hourly ceiling keeps daily enforcement", func(t *testing.T) {
+		b := newProviderSpendBreaker()
+		b.nowFunc = func() time.Time { return time.Date(2026, 11, 16, 10, 0, 0, 0, time.UTC) }
+		old := ProviderSpendBreakerConfig{HourlyUSD: 1, DailyUSD: 5}
+		b.add("alpha", old, 2)
+		if b.allow("alpha", old) {
+			t.Fatal("hourly ceiling should be tripped")
+		}
+		updated := ProviderSpendBreakerConfig{DailyUSD: 5}
+		if !b.allow("alpha", updated) {
+			t.Fatal("removing the hourly ceiling should clear only its trip")
+		}
+		b.add("alpha", updated, 4)
+		if b.allow("alpha", updated) {
+			t.Fatal("daily ceiling must still trip")
+		}
+	})
+}

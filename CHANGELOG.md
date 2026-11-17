@@ -161,6 +161,7 @@ from v4.8.0.
 
 ### Fixed
 
+- Reevaluate provider spend-breaker trips against current ceilings so raising or removing a limit takes effect on the next admission check.
 - Keep migration JSON output free of database diagnostics and preserve valid JSON on failures.
 - Prevent caller-controlled forwarded addresses from overriding the client address through trusted proxy chains.
 - Bound caches, detector queues, approval holds, stream inspection, and audit retention; fail closed on unavailable authorization, invalid policy, or exhausted inspection bounds.
