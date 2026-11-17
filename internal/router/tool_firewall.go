@@ -881,6 +881,8 @@ func appendFirewallArgumentStrings(out *strings.Builder, value any, depth int, b
 	switch typed := value.(type) {
 	case string:
 		appendString(typed)
+	case bool:
+		appendString(fmt.Sprint(typed))
 	case json.Number:
 		appendString(string(typed))
 	case []any:

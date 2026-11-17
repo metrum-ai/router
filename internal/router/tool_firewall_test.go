@@ -1264,6 +1264,8 @@ func TestToolFirewallHandlerFailsClosedOnTruncatedAndEscapedCalls(t *testing.T) 
 		{name: "escaped URL", body: `{"url":"http:\/\/evil.example/send"}`},
 		{name: "escaped metadata IP", body: `{"host":"\u0031\u0036\u0039.\u0032\u0035\u0034.\u0031\u0036\u0039.\u0032\u0035\u0034"}`},
 		{name: "escaped configured regex", body: `{"token":"s\u0065cret"}`, config: ToolFirewallConfig{Deny: []ToolFirewallDenyRule{{Tool: "run", ArgsRegex: "secret"}}}},
+		{name: "boolean true argument deny", body: `{"dangerous":true}`, config: ToolFirewallConfig{Deny: []ToolFirewallDenyRule{{Tool: "run", ArgsRegex: `true`}}}},
+		{name: "boolean false argument deny", body: `{"enabled":false}`, config: ToolFirewallConfig{Deny: []ToolFirewallDenyRule{{Tool: "run", ArgsRegex: `false`}}}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
