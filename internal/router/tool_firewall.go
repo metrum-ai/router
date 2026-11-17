@@ -928,6 +928,7 @@ func (s *toolFirewallRuntime) checkSequence(cfg ToolFirewallConfig, key, callerI
 	if s == nil || key == "" || len(calls) == 0 {
 		return toolFirewallOutcome{Mode: mode}
 	}
+	out := toolFirewallOutcome{Mode: mode}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now().UTC()
@@ -961,13 +962,23 @@ func (s *toolFirewallRuntime) checkSequence(cfg ToolFirewallConfig, key, callerI
 		for i, rule := range rules {
 			if strings.EqualFold(call.Name, rule.raw.ThenTool) {
 				if first, ok := firstTurns[i]; ok && turn-first <= uint64(rule.raw.WithinTurns) {
-					if rule.raw.Action == "hold" && approved {
-						delete(firstTurns, i)
-						continue
+					if rule.raw.Action == "hold" {
+						// Keep the hold trigger live until a retry consumes its own
+						// approval. Refresh it so pending retries cannot age out of
+						// the sequence window and bypass the hold.
+						firstTurns[i] = turn
+						if approved {
+							continue
+						}
+						out = toolFirewallOutcome{Mode: mode, Action: "hold", RuleCode: "sequence_rule"}
+						break
 					}
 					return toolFirewallOutcome{Mode: mode, Action: rule.raw.Action, RuleCode: "sequence_rule"}
 				}
 			}
+		}
+		if out.Action != "" {
+			break
 		}
 		for i, rule := range rules {
 			if strings.EqualFold(call.Name, rule.raw.FirstTool) && (rule.firstRE == nil || rule.firstRE.MatchString(call.Arguments)) {
@@ -1014,5 +1025,5 @@ func (s *toolFirewallRuntime) checkSequence(cfg ToolFirewallConfig, key, callerI
 	entry.turn = turn
 	entry.firstTurns = firstTurns
 	entry.expires = now.Add(ttl)
-	return toolFirewallOutcome{Mode: mode}
+	return out
 }
