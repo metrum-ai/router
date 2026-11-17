@@ -88,8 +88,8 @@ esac
         self.assertNotEqual(completed.returncode, 0)
         self.assertIn("unexpected maintenance failure", completed.stderr)
 
-    def test_expected_router_config_schema_includes_offline_markers(self):
-        self.assertEqual(MODULE.ROUTER_CONFIG_SCHEMA_VERSION, 20)
+    def test_expected_router_config_schema_includes_authentication_counters(self):
+        self.assertEqual(MODULE.ROUTER_CONFIG_SCHEMA_VERSION, 21)
 
     def test_v48_legacy_caller_config_migrates_with_real_commands(self):
         root = Path(__file__).parents[1]

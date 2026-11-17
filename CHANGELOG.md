@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Bound authentication audit writes with durable per-replica five-minute counters, chain one count-delta row at window close, and fall back to direct chained writes when the counter table is full; deny authentication if either audit write fails.
+
 - Evaluate tool-firewall sequence rules in response order, including first and second steps returned in one response.
 - Remove the unsupported legacy admin route setting from both hardening guides and direct operators to the separate `/admin/v1` listener.
 - Align the release procedure with the committed AI review artifact gate and document the required artifact preparation path.

@@ -34,7 +34,7 @@ const usageTargetRegionDiagnosticsMigrationID = 2026090901
 const usageCachedInputPricingMigrationID = 2026091301
 const usageResponseAffinityMigrationID = 2026110201
 
-var usageMigrationCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 24, MinData: 0, MaxData: 1}
+var usageMigrationCompatibility = MigrationCompatibility{MinSchema: 0, MaxSchema: 25, MinData: 0, MaxData: 1}
 
 // usageMigrationDefinitions is the sole owner of usage application schema.
 // The first migration creates fresh-install tables/indexes through its reviewed
@@ -219,7 +219,7 @@ var usageMigrationDefinitions = []MigrationDefinition{{
 }, UsageAdminAuditMigrationDefinition(), UsageAdminDenialColumnsMigrationDefinition(), PolicyRuntimeMigrationDefinition(), MCPToolAuditMigrationDefinition(), AutomaticContainmentMigrationDefinition(), TraceCorrelationMigrationDefinition(), usageRecomputedInputMigrationDefinition()}
 
 func init() {
-	usageMigrationDefinitions = append(usageMigrationDefinitions, SecurityPostureReportMigrationDefinition(), UsageMissionAttributionMigrationDefinition(), ToolRoutingUsageMigrationDefinition(), HierarchyAuditMigrationDefinition(), offlineOperationMarkerUsageMigrationDefinition(), AdminAuditChainUsageMigrationDefinition())
+	usageMigrationDefinitions = append(usageMigrationDefinitions, SecurityPostureReportMigrationDefinition(), UsageMissionAttributionMigrationDefinition(), ToolRoutingUsageMigrationDefinition(), HierarchyAuditMigrationDefinition(), offlineOperationMarkerUsageMigrationDefinition(), AdminAuditChainUsageMigrationDefinition(), adminCredentialAuditCounterUsageMigration())
 	for i := range usageMigrationDefinitions {
 		usageMigrationDefinitions[i] = FinalizeMigrationDefinition(usageMigrationDefinitions[i])
 	}

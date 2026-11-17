@@ -18,7 +18,7 @@ func hierarchyAuditMigrationTestRunner(cfg UsageDBConfig) (*migrationRunner, fun
 	}
 	definitions := make([]MigrationDefinition, 0, len(usageMigrationDefinitions)-2)
 	for _, definition := range usageMigrationDefinitions {
-		if definition.ID != offlineOperationMarkerMigrationID && definition.ID != adminAuditChainUsageMigrationID {
+		if definition.ID != offlineOperationMarkerMigrationID && definition.ID != adminAuditChainUsageMigrationID && definition.ID != adminCredentialAuditCounterMigrationID {
 			definitions = append(definitions, definition)
 		}
 	}
@@ -59,6 +59,16 @@ func clearAdminAuditChainMigrationLedger(t *testing.T, db *gorm.DB) {
 	}
 }
 
+func clearAdminCredentialAuditCounterMigrationLedger(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	if err := db.Where("scope = ? AND migration_id = ?", usageMigrationScope, adminCredentialAuditCounterMigrationID).Delete(&migrationAttemptRecord{}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Where("scope = ? AND migration_id = ?", usageMigrationScope, adminCredentialAuditCounterMigrationID).Delete(&migrationLedgerRecord{}).Error; err != nil {
+		t.Fatal(err)
+	}
+}
+
 func clearOfflineOperationMarkerUsageMigration(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	if err := db.Where("scope = ? AND migration_id = ?", usageMigrationScope, offlineOperationMarkerMigrationID).Delete(&migrationAttemptRecord{}).Error; err != nil {
@@ -81,6 +91,7 @@ func TestHierarchyAuditSchema22SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) {
 	}
 	clearOfflineOperationMarkerUsageMigration(t, store.db)
 	clearAdminAuditChainMigrationLedger(t, store.db)
+	clearAdminCredentialAuditCounterMigrationLedger(t, store.db)
 	if err := revertHierarchyAuditMigration(store.db); err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +137,7 @@ func TestHierarchyAuditSchema22SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) {
 
 	priorDefinitions := make([]MigrationDefinition, 0, len(usageMigrationDefinitions)-2)
 	for _, definition := range usageMigrationDefinitions {
-		if definition.ID != offlineOperationMarkerMigrationID && definition.ID != adminAuditChainUsageMigrationID {
+		if definition.ID != offlineOperationMarkerMigrationID && definition.ID != adminAuditChainUsageMigrationID && definition.ID != adminCredentialAuditCounterMigrationID {
 			priorDefinitions = append(priorDefinitions, definition)
 		}
 	}

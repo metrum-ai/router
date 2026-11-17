@@ -113,6 +113,8 @@ infer the running version from a date written in documentation.
 | --- | --- | --- | --- | --- | --- | --- |
 | `2026110601` | `router-config` | 10 | admin API Idempotency-Key store | online | none | `restore-required` |
 | `2026110701` | `router-config` | 11 | admin audit columns and credential events | online | none | `restore-required` |
+| `2026111629` | `router-config` | 21 | durable credential audit counters | online | none | `restore-required` |
+| `2026111629` | `usage` | 25 | durable credential audit counters | online | none | `restore-required` |
 | `2026110801` | `router-config` | 12 | admin API-issued key metadata and generations | online | none | `restore-required` |
 | `2026110702` | `usage` | 13 | admin audit events for usage-database changes | online | none | `restore-required` |
 | `2026110703` | `usage` | 14 | admin denial columns on the security access log | online | none | `restore-required` |

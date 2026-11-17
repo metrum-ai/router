@@ -1431,3 +1431,12 @@ offline-operation markers in schema 23 (migration `2026111627`), and router-conf
 follows offline-operation markers in schema 19. Apply both scopes with the non-serving migration job before
 serving. Retention prunes expired rows, including delete markers, and advances the checkpoint so
 the remaining audit chain can be verified offline.
+
+Authentication audit counters use migration `2026111629`: router-config schema 21
+and usage schema 25 each add a bounded durable counter table for file-backed and
+database-backed admin configurations. Counters are isolated by replica. If a
+counter write fails, authentication is denied; when all 4,096 buckets are occupied,
+the router falls back to a direct chained audit write for that event. Closed windows
+become chained count-delta rows; pending counters survive restart and are included
+in database backups. Apply both scopes with the non-serving migration job before
+serving.

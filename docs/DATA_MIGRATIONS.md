@@ -201,7 +201,7 @@ authentication phases 12 and 13, which use the same control-plane scope.
   when it exists: a deployment without this step starts normally and answers `503`
   on the key lifecycle routes rather than advertising a store it does not have.
 
-The v5.0.0 `router-config` migration ledger reaches schema version 20 and includes
+The v5.0.0 `router-config` migration ledger reaches schema version 21 and includes
 `2026111606` (durable asynchronous admin operations; schema 16), followed by
 `2026111610` (admin client identities; schema 17), then `2026111611` (honeytoken
 caller metadata; schema 18). The operations migration creates
@@ -214,7 +214,7 @@ router-config scope with the non-serving migration CLI before enabling the new
 operation, backup, machine-client, honeytoken, or audit-chain database features; serving
 startup and read-only migration status never create or upgrade the tables. The
 packaged Kubernetes Job example plans or applies both scopes and verifies both
-resulting ledgers, including router-config schema 20 and usage schema 24.
+resulting ledgers, including router-config schema 21 and usage schema 25.
 
 Migration `2026111627` adds bounded offline-operation provenance markers to router-config schema 19 and usage schema 23 after hierarchy audit schema 22. Apply the migrations before offline maintenance; backup and restore of unmigrated v4.8 databases remain supported without creating marker tables.
 
@@ -223,6 +223,11 @@ router-config ledgers. They follow offline-operation marker migration `202611162
 producing schema versions 24 and 20 respectively. The usage migration also follows
 `2026111626` (hierarchy audit attribution); the router-config migration follows
 `2026111627` (offline-operation markers).
+
+Authentication audit counters add migration `2026111629` to both scopes, advancing usage to schema 25 and
+router-config to schema 21. The new table durably aggregates successful authentication outcomes by replica and
+five-minute window. Apply both scopes with the non-serving migration job before serving; failed counter writes
+deny authentication, and full tables use a direct chained write.
 
 ### Upgrading with `migration_policy: deployment-job`
 

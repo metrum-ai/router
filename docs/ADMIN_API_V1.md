@@ -446,9 +446,18 @@ operator ticket) and `router_admin_audit_events` for usage-database changes. A f
 insert aborts the change, so a write is refused rather than committed unaudited.
 
 Credential lifecycle changes (issue, rotate, revoke) write their audit row **and** a
-redacted credential event in the same transaction. Authentication outcomes are recorded per
-credential kind with a keyed client-IP digest (HMAC-SHA256). The key comes from `ROUTER_ADMIN_CLIENT_IP_HASH_KEY`; without it a random per-process key is used, so digests and the per-source failure caps are then per-process only and do not correlate across replicas or restarts. Only authentication events with identical outcomes within one second collapse
-into a counted row; lifecycle events remain individually recorded. One source can create at most ten failure rows per minute, so a
+redacted credential event in the same transaction. Each authentication outcome is durably
+recorded before the request proceeds, per credential kind with a keyed client-IP digest
+(HMAC-SHA256). The key comes from `ROUTER_ADMIN_CLIENT_IP_HASH_KEY`; without it a random
+per-process key is used, so digests and the per-source failure caps are then per-process only
+and do not correlate across replicas or restarts. Authentication events with identical
+credential, outcome, and IP digest in a five-minute window are durably counted in an
+unchained counter row before the request proceeds; when the window closes, the count is
+written as one chained audit row. Pending counters survive restart and flush at shutdown.
+Counters are isolated by replica, and shutdown flushes only that replica's pending buckets;
+the periodic flusher also drains closed buckets left by a stopped replica. If all 4,096 counter
+buckets are occupied, the request falls back to a direct chained audit write.
+Lifecycle events remain individually recorded. One source can create at most ten failure rows per minute, so a
 credential-guessing flood cannot grow the audit table. `admin.api.audit.retention_days`
 (default 90) governs how long admin audit rows are kept.
 

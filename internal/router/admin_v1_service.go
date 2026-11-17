@@ -63,7 +63,7 @@ func (s *Service) MountAdminV1(r adminRouter, authenticate Authenticator, author
 	keyStoreMounted := s.adminKeys != nil
 	idempotency, idempotencyOn := s.adminIdempotencyStore()
 	settings := s.adminAPISettings()
-	return RegisterAdminV1(r, AdminV1Deps{
+	if err := RegisterAdminV1(r, AdminV1Deps{
 		Registry:     registry,
 		Authenticate: authenticate,
 		Authorize:    s.Authorize,
@@ -93,7 +93,11 @@ func (s *Service) MountAdminV1(r adminRouter, authenticate Authenticator, author
 		Observe:           s.adminObserveHookFor(),
 		Audit:             s.adminAuditSink,
 		Clock:             s.adminNow,
-	})
+	}); err != nil {
+		return err
+	}
+	s.runAdminCredentialAuditCounterFlusher()
+	return nil
 }
 
 // adminV1Handlers binds every operation to its handler, adding the guarded
@@ -411,12 +415,6 @@ func (s *Service) adminCredentialEventSink() AdminCredentialEventSink {
 	if s == nil {
 		return adminCredentialEventSinkFunc(func(context.Context, AdminCredentialEvent) error { return errors.New("service is nil") })
 	}
-	if s.adminCredentialAuditAggregator == nil {
-		s.adminCredentialAuditAggregator = newAdminCredentialAuditAggregator(func(event AdminCredentialEvent) error {
-			return s.writeAdminCredentialEvent(context.Background(), event)
-		})
-	}
-	aggregator := s.adminCredentialAuditAggregator
 	return adminCredentialEventSinkFunc(func(ctx context.Context, event AdminCredentialEvent) error {
 		if s == nil {
 			return errors.New("service is nil")
@@ -424,14 +422,14 @@ func (s *Service) adminCredentialEventSink() AdminCredentialEventSink {
 		if event.At.IsZero() {
 			event.At = time.Now().UTC()
 		}
-		if event.Outcome == "success" && event.Lifecycle == "auth" {
-			if err := s.checkAdminCredentialAuditStore(ctx); err != nil {
+		if event.Lifecycle == "auth" && s.adminCredentialAuditCounterDB() != nil {
+			if err := s.addAdminCredentialAuditCounter(ctx, event); err != nil {
+				if errors.Is(err, errAdminCredentialAuditCounterCapacity) {
+					return s.writeAdminCredentialEvent(ctx, event)
+				}
 				return err
 			}
-			if aggregator == nil {
-				return ErrAuthorizationUnavailable
-			}
-			return aggregator.add(event)
+			return nil
 		}
 		return s.writeAdminCredentialEvent(ctx, event)
 	})
