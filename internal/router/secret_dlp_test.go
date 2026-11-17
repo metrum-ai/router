@@ -198,6 +198,90 @@ func TestSecretDLPToolArgumentJSONDecodesEscapedSecrets(t *testing.T) {
 	}
 }
 
+func TestSecretDLPNonStreamMalformedPEMRequestAndResponse(t *testing.T) {
+	privateBody := strings.Repeat("M", 400)
+	for _, blockCase := range []struct {
+		name string
+		text string
+	}{
+		{name: "mismatched end", text: testPEMMarker("BEGIN", "RSA PRIVATE KEY") + "\n" + privateBody + "\n" + testPEMMarker("END", "EC PRIVATE KEY") + "\ninterstitial " + testPEMMarker("BEGIN", "EC PRIVATE KEY") + "\n" + privateBody + "\n" + testPEMMarker("END", "EC PRIVATE KEY") + "\nafter block"},
+		{name: "unterminated", text: testPEMMarker("BEGIN", "RSA PRIVATE KEY") + "\n" + privateBody + " tail"},
+	} {
+		for _, mode := range []string{"redact_only", "fail_on_match"} {
+			for _, direction := range []string{"request", "response"} {
+				t.Run(blockCase.name+"/"+mode+"/"+direction, func(t *testing.T) {
+					var calls atomic.Int64
+					upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						calls.Add(1)
+						if direction == "request" {
+							body, err := io.ReadAll(r.Body)
+							if err != nil {
+								t.Error(err)
+							}
+							if mode == "redact_only" {
+								wantReplacements := 1
+								if blockCase.name == "mismatched end" {
+									wantReplacements = 2
+								}
+								if bytes.Contains(body, []byte(privateBody)) || strings.Count(string(body), "[SECRET_PRIVATE_KEY_") < wantReplacements {
+									t.Errorf("malformed PEM request not fully redacted: leaked=%t replacements=%d want=%d", bytes.Contains(body, []byte(privateBody)), strings.Count(string(body), "[SECRET_PRIVATE_KEY_"), wantReplacements)
+								}
+							}
+						}
+						content := "safe response"
+						if direction == "response" {
+							content = blockCase.text
+						}
+						writeJSON(w, http.StatusOK, map[string]any{"id": "malformed-pem", "choices": []any{map[string]any{"message": map[string]any{"role": "assistant", "content": content}}}, "usage": map[string]any{"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}})
+					}))
+					defer upstream.Close()
+					cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
+					group := cfg.Models["default"]
+					group.PIIFilter.Enabled = true
+					group.PIIFilter.SecretsEnabled = true
+					group.PIIFilter.Mode = mode
+					cfg.Models["default"] = group
+					svc, err := New(cfg)
+					if err != nil {
+						t.Fatal(err)
+					}
+					defer svc.Close()
+
+					content := "hello"
+					if direction == "request" {
+						content = blockCase.text
+					}
+					body, err := json.Marshal(map[string]any{"model": "default", "messages": []any{map[string]any{"role": "user", "content": content}}})
+					if err != nil {
+						t.Fatal(err)
+					}
+					req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+					req.Header.Set("Authorization", "Bearer "+testToken)
+					response := httptest.NewRecorder()
+					svc.Handler().ServeHTTP(response, req)
+
+					if mode == "redact_only" {
+						if response.Code != http.StatusOK || calls.Load() != 1 {
+							t.Fatalf("redact_only status=%d calls=%d body_len=%d", response.Code, calls.Load(), response.Body.Len())
+						}
+						if direction == "response" && (strings.Contains(response.Body.String(), privateBody) || (blockCase.name == "mismatched end" && strings.Count(response.Body.String(), "[SECRET_PRIVATE_KEY_") < 2) || !strings.Contains(response.Body.String(), "[SECRET_PRIVATE_KEY_1]")) {
+							t.Fatalf("malformed PEM response not fully redacted: leaked=%t replacements=%d", strings.Contains(response.Body.String(), privateBody), strings.Count(response.Body.String(), "[SECRET_PRIVATE_KEY_"))
+						}
+					} else {
+						wantStatus := http.StatusBadRequest
+						if direction == "response" {
+							wantStatus = http.StatusBadGateway
+						}
+						if response.Code != wantStatus || calls.Load() != map[bool]int64{true: 1, false: 0}[direction == "response"] || !strings.Contains(response.Body.String(), "pii-filter-blocked") || strings.Contains(response.Body.String(), privateBody) {
+							t.Fatalf("fail_on_match status=%d calls=%d body_len=%d", response.Code, calls.Load(), response.Body.Len())
+						}
+					}
+				})
+			}
+		}
+	}
+}
+
 func TestSecretDLPMalformedToolArgumentsRedactNormalizedCopy(t *testing.T) {
 	credential := strings.Repeat("h", 20) + "Q7r9W2x4"
 	var calls atomic.Int64
@@ -2000,7 +2084,8 @@ func TestSecretDLPBuiltinsAndBenign(t *testing.T) {
 		{"github_benign", "ghp_short is documentation text", "ghp_short is documentation text"},
 		{"private_key", fakePrivateKeyBlock(), "[SECRET_PRIVATE_KEY_1]"},
 		{"encrypted_private_key", "-----BEGIN ENCRYPTED" + " PRIVATE KEY-----\\nmaterial\\n-----END ENCRYPTED" + " PRIVATE KEY-----", "[SECRET_PRIVATE_KEY_1]"},
-		{"private_key_benign", "-----BEGIN PRIVATE KEY----- without matching end marker", "-----BEGIN PRIVATE KEY----- without matching end marker"},
+		{"private_key_unterminated", testPEMMarker("BEGIN", "PRIVATE KEY") + " without matching end marker", "[SECRET_PRIVATE_KEY_1]"},
+		{"other_private_key_label", testPEMMarker("BEGIN", "CUSTOM PRIVATE KEY") + " material " + testPEMMarker("END", "MISMATCH PRIVATE KEY"), "[SECRET_PRIVATE_KEY_1]"},
 		{"slack", "xoxb-" + strings.Repeat("a", 24), "[SECRET_SLACK_1]"},
 		{"slack_benign", "xoxb-short is not a complete Slack token", "xoxb-short is not a complete Slack token"},
 		{"stripe", "sk_live_" + strings.Repeat("a", 20), "[SECRET_STRIPE_1]"},

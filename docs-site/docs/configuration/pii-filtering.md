@@ -142,7 +142,7 @@ PII filtering applies to normalized text across supported caller APIs:
 - text parts in multimodal messages
 - tool-result text when `apply_to.tool_results: true`
 
-The router preserves image parts, tool-call IDs, tool schemas, usage fields, request IDs, provider metadata, and model metadata. Image URLs are not filtered unless `apply_to.image_urls: true`. PEM private-key blocks remain held until the END label matches the BEGIN label; an unresolved block fails closed at terminal. When secret filtering is enabled for streaming, Chat refusal deltas use the same per-choice rolling inspection as content and reasoning; `redact_only` replaces matching credentials, and `fail_on_match` blocks them before forwarding.
+The router preserves image parts, tool-call IDs, tool schemas, usage fields, request IDs, provider metadata, and model metadata. Image URLs are not filtered unless `apply_to.image_urls: true`. PEM private-key blocks are redacted as a whole when the END label matches the BEGIN label. For mismatched or missing END markers, non-stream text is redacted through the next BEGIN marker or the end of the text; streaming holds an unresolved block and fails closed at terminal. When secret filtering is enabled for streaming, Chat refusal deltas use the same per-choice rolling inspection as content and reasoning; `redact_only` replaces matching credentials, and `fail_on_match` blocks them before forwarding.
 
 Scope ownership follows what a value is, not only which field holds it: `apply_to.system` covers instruction text in `system`/`developer` messages and in `content` fields on those items, and `apply_to.responses_input` covers the caller's Responses `input` array including its items.
 

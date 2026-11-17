@@ -29,7 +29,7 @@ use when a guarantee is required.
 
 ## Streamed PEM private-key filtering
 
-Secret filtering now holds a PEM private-key block until its END label matches the BEGIN label. A mismatched marker does not release buffered text, and an unresolved block at stream termination fails closed. No configuration migration is required.
+Secret filtering redacts a PEM private-key block as a whole when the END label matches the BEGIN label. In non-stream text, a mismatched or missing END marker redacts through the next BEGIN marker or the end of the text. In streams, an unresolved block remains held and fails closed at terminal. No configuration migration is required.
 
 ## Chat refusal stream secret filtering
 
