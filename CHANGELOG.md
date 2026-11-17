@@ -166,6 +166,10 @@ Security release. This section summarizes the v5.0.0 release scope; see the
 [upgrade guide](docs-site/docs/release-notes/upgrade-guide.md) before upgrading
 from v4.8.0.
 
+### Release note
+
+- The v5.0.0-rc.1 tag was not published because of a release-tooling failure; v5.0.0-rc.2 is the next release candidate.
+
 ### Security
 
 - Add caller token checksum and entropy hygiene, database-backed leaked-key self-revocation, caller network and mTLS binding, and short-lived workload mission tokens with bounded grant budgets.

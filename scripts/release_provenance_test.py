@@ -44,6 +44,8 @@ def validate(workflow):
     assert "ANTHROPIC_API_KEY" not in str(ai_step)
     assert not any("cache" in step.get("name", "").lower() for step in ai_review["steps"])
     resolve_run = next(step["run"] for step in jobs["resolve"]["steps"] if step.get("name") == "Resolve immutable build metadata")
+    resolve_steps = jobs["resolve"]["steps"]
+    assert [step.get("name") for step in resolve_steps].index("Install pinned GitHub CLI") < [step.get("name") for step in resolve_steps].index("Resolve immutable build metadata")
     assert "select_previous_release.py" in resolve_run and "git describe" not in resolve_run
     assert 'git merge-base --is-ancestor "${commit}" origin/main' in resolve_run
     assert 'git rev-parse --verify "${previous_tag}^{commit}"' in resolve_run
@@ -61,9 +63,13 @@ def validate(workflow):
     assert upgrade["needs"] == ["resolve", "package-binaries"]
     assert "release_upgrade_rollback.py" in "\n".join(step.get("run", "") for step in upgrade["steps"])
     assert any(step.get("name") == "Download and verify previous production package" for step in upgrade["steps"])
+    upgrade_names = [step.get("name") for step in upgrade["steps"]]
+    assert upgrade_names.index("Install pinned GitHub CLI") < upgrade_names.index("Download and verify previous production package")
     assert "docker-runner-preflight" not in jobs and "package-images" not in jobs
     steps = publish["steps"]
     names = [step.get("name") for step in steps]
+    assert "Publish tool contract" in names
+    assert names.index("Publish tool contract") < names.index("Verify release environment protection before publish")
     environment = names.index("Verify release environment protection before publish")
     assemble = names.index("Assemble and publish multi-architecture image from release packages")
     smoke = names.index("Smoke the Crane-built image without a daemon")
@@ -113,6 +119,7 @@ def validate(workflow):
     assert "release-review-artifact.json" in steps[names.index("Confirm payload and publish immutable release")]["run"]
     assert "-eq 26" in steps[names.index("Confirm payload and publish immutable release")]["run"]
     assert 'ref="${IMAGE}@${digest}"' in steps[sign].get("run", "")
+    assert "cosign sign --yes" in steps[sign]["run"] and "cosign verify" in steps[sign]["run"]
     release_command = steps[publish_release]["run"]
     assert 'gh release create "${VERSION}" --verify-tag' in release_command
     assert not any(token in all_runs for token in ("git tag -a", "git tag -m", "git tag --annotate"))
@@ -172,6 +179,50 @@ def validate_cosign_installation(workflow, job_name):
     assert verify.get("run") == "cosign version"
 
 
+def validate_publish_tool_contract(workflow, job_name):
+    steps = workflow["jobs"][job_name]["steps"]
+    names = [step.get("name") for step in steps]
+    contract = next((step for step in steps if step.get("name") == "Publish tool contract"), None)
+    assert contract is not None
+    assert "scripts/release_publish_tool_contract.py" in contract.get("run", "")
+    assert '--gh "${RUNNER_TEMP}/gh-cli/bin/gh"' in contract["run"]
+    assert '--crane "${CRANE}"' in contract["run"]
+    assert '--syft "${SYFT_COMMAND}"' in contract["run"]
+    assert '--jsign-jar "${JSIGN_JAR}"' in contract["run"]
+    required_steps = (
+        "Install pinned GitHub CLI",
+        "Install pinned Crane",
+        "Provide envsubst for Cosign installer",
+        "Install pinned Cosign",
+        "Verify Cosign installation",
+        "Install pinned Syft",
+        "Set up pinned Java for jsign",
+        "Fetch pinned jsign (checksum-verified)",
+    )
+    for name in required_steps:
+        assert name in names, f"missing publish-tool setup step: {name}"
+        assert names.index(name) < names.index("Publish tool contract"), name
+    gh_install = next(step for step in steps if step.get("name") == "Install pinned GitHub CLI")
+    assert 'scripts/install_github_cli.sh "${RUNNER_TEMP}/gh-cli/bin"' in gh_install.get("run", "")
+    crane_install = next(step for step in steps if step.get("name") == "Install pinned Crane")
+    assert 'scripts/install_crane.sh "${CRANE}"' in crane_install.get("run", "")
+    cosign_install = next(step for step in steps if step.get("name") == "Install pinned Cosign")
+    assert cosign_install.get("uses", "").startswith("sigstore/cosign-installer@")
+    assert cosign_install.get("with", {}).get("cosign-release") == "v3.1.4"
+    syft_install = next(step for step in steps if step.get("name") == "Install pinned Syft")
+    assert syft_install.get("uses", "").startswith("anchore/sbom-action/download-syft@")
+    assert syft_install.get("with", {}).get("syft-version") == "v1.57.1"
+    java_setup = next(step for step in steps if step.get("name") == "Set up pinned Java for jsign")
+    assert java_setup.get("with", {}).get("java-version") == "21"
+    jsign_fetch = next(step for step in steps if step.get("name") == "Fetch pinned jsign (checksum-verified)")
+    assert "6cf58aa080e7ff82656f320cff8d4a3bff30408df8766806dcba3740dd839fa5" in jsign_fetch.get("run", "")
+    if job_name == "publish-release":
+        assert names.index("Publish tool contract") < names.index("Verify release environment protection before publish")
+    else:
+        assert names.index("Publish tool contract") < names.index("Resolve the main commit and latest production release")
+    return contract
+
+
 class ProvenanceWorkflowTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -183,6 +234,7 @@ class ProvenanceWorkflowTest(unittest.TestCase):
         validate_binary_inventory_snapshot(self.workflow)
         validate_clean_rebuild_cache_env(self.workflow)
         validate_cosign_installation(self.workflow, "publish-release")
+        validate_publish_tool_contract(self.workflow, "publish-release")
 
     def test_release_job_requires_environment_protection(self):
         doc = copy.deepcopy(self.workflow)
@@ -227,6 +279,7 @@ class ProvenanceWorkflowTest(unittest.TestCase):
         validate_binary_inventory_snapshot(workflow)
         validate_clean_rebuild_cache_env(workflow)
         validate_cosign_installation(workflow, "dry-run")
+        validate_publish_tool_contract(workflow, "dry-run")
         triggers = workflow.get("on", workflow.get(True))
         dispatch = triggers["workflow_dispatch"]["inputs"]["dry_run"]
         self.assertEqual(dispatch, {"description": "Run the full release validation without publishing", "type": "boolean", "required": True, "default": True})
@@ -286,6 +339,47 @@ class ProvenanceWorkflowTest(unittest.TestCase):
             for step in job.get("steps", []):
                 if step.get("uses", "").startswith("actions/checkout@"):
                     self.assertEqual(step.get("with", {}).get("ref"), "main")
+
+    def test_publish_tool_contract_is_required_and_identical_in_both_workflows(self):
+        release_contract = validate_publish_tool_contract(self.workflow, "publish-release")
+        dry_run_contract = validate_publish_tool_contract(self.dry_run_workflow, "dry-run")
+        self.assertEqual(release_contract["run"], dry_run_contract["run"])
+        for source, job_name in ((self.workflow, "publish-release"), (self.dry_run_workflow, "dry-run")):
+            doc = copy.deepcopy(source)
+            doc["jobs"][job_name]["steps"] = [
+                step for step in doc["jobs"][job_name]["steps"]
+                if step.get("name") != "Publish tool contract"
+            ]
+            with self.assertRaises(AssertionError):
+                validate_publish_tool_contract(doc, job_name)
+
+        contract_source = (ROOT / "scripts/release_publish_tool_contract.py").read_text(encoding="utf-8")
+        for required in (
+            "--signer-workflow", "--source-ref", "--verify-tag", "--notes-file", "--pattern", "--password-stdin",
+            "--tarball", "--storetype", "--tsaurl", "--certificate-oidc-issuer",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, contract_source)
+        installer = (ROOT / "scripts/install_github_cli.sh").read_text(encoding="utf-8")
+        self.assertIn("version=2.104.0", installer)
+        self.assertIn('checksum_asset="gh_${version}_checksums.txt"', installer)
+        self.assertIn("sha256sum --check", installer)
+        self.assertIn('>> "$GITHUB_PATH"', installer)
+
+    def test_release_rerun_never_replaces_existing_image_tags(self):
+        steps = self.workflow["jobs"]["publish-release"]["steps"]
+        names = [step.get("name") for step in steps]
+        image_step = steps[names.index("Assemble and publish multi-architecture image from release packages")]
+        self.assertIn('if "${CRANE}" manifest "$ref"', image_step["run"])
+        self.assertIn("existing immutable image ref", image_step["run"])
+        self.assertIn('test "$digest" = "$expected_digest"', image_step["run"])
+        self.assertIn('"${CRANE}" push "$image_tar" "$ref"', image_step["run"])
+        self.assertNotIn("Reuse verified attestations", "\n".join(name for name in names if name))
+        signature_step = steps[names.index("Sign images keylessly")]
+        self.assertIn('ref="${IMAGE}@${digest}"', signature_step["run"])
+        self.assertNotIn("if cosign verify", signature_step["run"])
+        for name in ("Attest release archives", "Attest OCI image index", "Attest linux/amd64 image", "Attest linux/arm64 image"):
+            self.assertNotIn("if", steps[names.index(name)])
 
     def test_binary_inventory_validation_requires_advisory_snapshot_everywhere(self):
         for source in (self.workflow, self.dry_run_workflow):
