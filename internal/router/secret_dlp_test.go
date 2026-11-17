@@ -1239,6 +1239,104 @@ func TestSecretDLPResponsesInterleavedTextItemsThroughHandler(t *testing.T) {
 	}
 }
 
+func TestSecretDLPResponsesAddedTextSnapshotsThroughHandler(t *testing.T) {
+	secret := fakeGitHubToken()
+	for _, tc := range []struct {
+		name   string
+		frames []string
+	}{
+		{name: "output item", frames: []string{`event: response.output_item.added` + "\n" + `data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","id":"msg_secret","role":"assistant","content":[{"type":"output_text","text":"` + secret + `"}]}}`}},
+		{name: "content part", frames: []string{`event: response.content_part.added` + "\n" + `data: {"type":"response.content_part.added","output_index":0,"item_id":"msg_secret","content_index":0,"part":{"type":"output_text","text":"` + secret + `"}}`}},
+		{name: "refusal content part", frames: []string{`event: response.content_part.added` + "\n" + `data: {"type":"response.content_part.added","output_index":0,"item_id":"msg_secret","content_index":0,"part":{"type":"refusal","refusal":"` + secret + `"}}`}},
+		{name: "reasoning summary part", frames: []string{`event: response.reasoning_summary_part.added` + "\n" + `data: {"type":"response.reasoning_summary_part.added","output_index":0,"item_id":"reasoning_secret","summary_index":0,"part":{"type":"summary_text","text":"` + secret + `"}}`}},
+		{name: "split across added part and delta", frames: []string{
+			`event: response.content_part.added` + "\n" + `data: {"type":"response.content_part.added","output_index":0,"item_id":"msg_split","content_index":0,"part":{"type":"output_text","text":"` + secret[:len(secret)/2] + `"}}`,
+			`event: response.output_text.delta` + "\n" + `data: {"type":"response.output_text.delta","output_index":0,"item_id":"msg_split","content_index":0,"delta":"` + secret[len(secret)/2:] + `"}`,
+			`event: response.completed` + "\n" + `data: {"type":"response.completed","response":{"status":"completed"}}`,
+		}},
+		{name: "split across reasoning part and delta", frames: []string{
+			`event: response.reasoning_summary_part.added` + "\n" + `data: {"type":"response.reasoning_summary_part.added","output_index":0,"item_id":"reasoning_split","summary_index":0,"part":{"type":"summary_text","text":"` + secret[:len(secret)/2] + `"}}`,
+			`event: response.reasoning_summary_text.delta` + "\n" + `data: {"type":"response.reasoning_summary_text.delta","output_index":0,"item_id":"reasoning_split","summary_index":0,"delta":"` + secret[len(secret)/2:] + `"}`,
+			`event: response.completed` + "\n" + `data: {"type":"response.completed","response":{"status":"completed"}}`,
+		}},
+	} {
+		for _, mode := range []string{"redact_only", "fail_on_match"} {
+			t.Run(tc.name+"/"+mode, func(t *testing.T) {
+				upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.Header().Set("Content-Type", "text/event-stream")
+					for _, frame := range tc.frames {
+						_, _ = io.WriteString(w, frame+"\n\n")
+					}
+				}))
+				defer upstream.Close()
+				target := Target{Provider: "native", Model: "responses-model", ToolSupport: ToolSupport{OpenAIResponses: []string{"function", "tool_choice"}}}
+				svc := nativeStreamTestService(t, upstream.URL, "openai-responses", []Target{target}, func(cfg *Config) {
+					group := cfg.Models["native-stream"]
+					group.PIIFilter.Enabled = true
+					group.PIIFilter.SecretsEnabled = true
+					group.PIIFilter.Mode = mode
+					cfg.Models["native-stream"] = group
+				})
+				defer svc.Close()
+				req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"native-stream","stream":true,"input":"hello"}`))
+				req.Header.Set("Authorization", "Bearer "+testToken)
+				response := httptest.NewRecorder()
+				svc.Handler().ServeHTTP(response, req)
+				body := response.Body.String()
+				if strings.Contains(body, secret) {
+					t.Fatalf("added snapshot leaked secret: %s", body)
+				}
+				if mode == "redact_only" && (response.Code != http.StatusOK || !strings.Contains(body, "[SECRET_GITHUB_1]")) {
+					t.Fatalf("status=%d body=%s", response.Code, body)
+				}
+				if mode == "fail_on_match" {
+					wantStatus := http.StatusBadGateway
+					if strings.HasPrefix(tc.name, "split across") {
+						wantStatus = http.StatusOK // Headers were committed before the cross-event match completed.
+					}
+					if response.Code != wantStatus {
+						t.Fatalf("status=%d want=%d body=%s", response.Code, wantStatus, body)
+					}
+					if strings.HasPrefix(tc.name, "split across") && (strings.Contains(body, `"type":"response.output_text.delta"`) || strings.Contains(body, `"type":"response.reasoning_summary_text.delta"`)) {
+						t.Fatalf("fail_on_match released a split credential delta: %s", body)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestSecretDLPResponsesAddedSnapshotTextIsNotReemitted(t *testing.T) {
+	const addedText = "safe-added-prefix"
+	frames := []string{
+		`event: response.content_part.added` + "\n" + `data: {"type":"response.content_part.added","output_index":0,"item_id":"msg_safe","content_index":0,"part":{"type":"output_text","text":"` + addedText + `"}}`,
+		`event: response.output_text.delta` + "\n" + `data: {"type":"response.output_text.delta","output_index":0,"item_id":"msg_safe","content_index":0,"delta":"` + strings.Repeat("x", 600) + `"}`,
+		`event: response.completed` + "\n" + `data: {"type":"response.completed","response":{"status":"completed"}}`,
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, frame := range frames {
+			_, _ = io.WriteString(w, frame+"\n\n")
+		}
+	}))
+	defer upstream.Close()
+	target := Target{Provider: "native", Model: "responses-model", ToolSupport: ToolSupport{OpenAIResponses: []string{"function", "tool_choice"}}}
+	svc := nativeStreamTestService(t, upstream.URL, "openai-responses", []Target{target}, func(cfg *Config) {
+		group := cfg.Models["native-stream"]
+		group.PIIFilter.Enabled = true
+		group.PIIFilter.SecretsEnabled = true
+		cfg.Models["native-stream"] = group
+	})
+	defer svc.Close()
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"native-stream","stream":true,"input":"hello"}`))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	response := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(response, req)
+	if response.Code != http.StatusOK || strings.Count(response.Body.String(), addedText) != 1 {
+		t.Fatalf("status=%d added text count=%d body=%s", response.Code, strings.Count(response.Body.String(), addedText), response.Body.String())
+	}
+}
+
 func TestSecretDLPResponsesFailedAndIncompleteSnapshotsThroughHandler(t *testing.T) {
 	secret := fakeGitHubToken()
 	for _, terminal := range []string{"failed", "incomplete"} {
