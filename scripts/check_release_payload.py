@@ -22,6 +22,14 @@ ARCHIVES = {
 PASS = re.compile(r"^\- Decision: \*\*PASS\*\*$", re.MULTILINE)
 
 
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def validate(dist: Path, version: str) -> list[str]:
     errors: list[str] = []
     expected_archives = {item.format(version=version) for item in ARCHIVES}
@@ -46,8 +54,13 @@ def validate(dist: Path, version: str) -> list[str]:
         errors.append("unexpected release assets: " + ", ".join(extra))
     try:
         inventory = json.loads((dist / "release-artifacts.json").read_text(encoding="utf-8"))
-        inventory_names = {item["filename"] for item in inventory.get("artifacts", [])}
-        if inventory.get("artifact_set") != "binary" or inventory_names != expected_archives:
+        inventory_items = inventory.get("artifacts", [])
+        inventory_names = {item["filename"] for item in inventory_items}
+        if (
+            inventory.get("artifact_set") != "binary"
+            or len(inventory_items) != len(expected_archives)
+            or inventory_names != expected_archives
+        ):
             errors.append("release inventory does not describe the complete binary package set")
     except (OSError, json.JSONDecodeError, KeyError, TypeError):
         errors.append("release inventory is missing or malformed")
@@ -146,16 +159,78 @@ def validate(dist: Path, version: str) -> list[str]:
     return errors
 
 
+def validate_unsigned(dist: Path, version: str) -> list[str]:
+    """Require the complete pre-sign payload and reject every extra entry."""
+    errors: list[str] = []
+    expected_archives = {item.format(version=version) for item in ARCHIVES}
+    expected_names = expected_archives | {
+        "SHA256SUMS", "release-artifacts.json", "upgrade-rollback-results.json"
+    }
+    if not dist.is_dir():
+        return ["release payload directory is missing"]
+    entries = list(dist.iterdir())
+    found_names = {path.name for path in entries}
+    missing = sorted(expected_names - found_names)
+    extra = sorted(found_names - expected_names)
+    if missing:
+        errors.append("missing unsigned release assets: " + ", ".join(missing))
+    if extra:
+        errors.append("unexpected unsigned release assets: " + ", ".join(extra))
+    if any(not path.is_file() for path in entries):
+        errors.append("unsigned release payload contains a non-file entry")
+    try:
+        inventory = json.loads((dist / "release-artifacts.json").read_text(encoding="utf-8"))
+        inventory_items = inventory.get("artifacts", [])
+        inventory_names = {item["filename"] for item in inventory_items}
+        if (
+            inventory.get("artifact_set") != "binary"
+            or len(inventory_items) != len(expected_archives)
+            or inventory_names != expected_archives
+        ):
+            errors.append("release inventory does not describe the complete binary package set")
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, AttributeError):
+        errors.append("release inventory is missing or malformed")
+    try:
+        checksums: dict[str, str] = {}
+        for line in (dist / "SHA256SUMS").read_text(encoding="utf-8").splitlines():
+            digest, name = line.split("  ", 1)
+            if not re.fullmatch(r"[0-9a-f]{64}", digest) or name in checksums:
+                raise ValueError
+            checksums[name] = digest
+        if set(checksums) != expected_archives:
+            errors.append("checksum file does not cover the complete release package set")
+        else:
+            for name, digest in checksums.items():
+                if (dist / name).is_file() and sha256_file(dist / name) != digest:
+                    errors.append(f"checksum mismatch: {name}")
+    except (OSError, ValueError):
+        errors.append("checksum file is missing or malformed")
+    try:
+        rollback = json.loads((dist / "upgrade-rollback-results.json").read_text(encoding="utf-8"))
+        if rollback.get("schema") != "router.release-upgrade-rollback/v1":
+            errors.append("upgrade and rollback evidence has an unknown schema")
+        checks = rollback.get("checks")
+        failed_check = not isinstance(checks, list) or not checks or any(
+            not isinstance(item, dict) or item.get("passed") is not True for item in checks
+        )
+        if rollback.get("candidate_version") != version or failed_check:
+            errors.append("upgrade and rollback evidence is incomplete or contains a failed check")
+    except (OSError, json.JSONDecodeError, AttributeError):
+        errors.append("upgrade and rollback evidence is missing or malformed")
+    return errors
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dist-dir", type=Path, default=Path("dist"))
     parser.add_argument("--version", required=True)
+    parser.add_argument("--stage", choices=("unsigned", "signed"), default="signed")
     args = parser.parse_args()
-    errors = validate(args.dist_dir, args.version)
+    errors = validate_unsigned(args.dist_dir, args.version) if args.stage == "unsigned" else validate(args.dist_dir, args.version)
     if errors:
         print("release payload check failed: " + "; ".join(errors), file=sys.stderr)
         return 1
-    print("release payload has four binary packages, signed archive and image SPDX SBOMs, checksums, manifests and digest-bound AI review")
+    print("release payload passed its unsigned check" if args.stage == "unsigned" else "release payload has four binary packages, signed archive and image SPDX SBOMs, checksums, manifests and digest-bound AI review")
     return 0
 
 
