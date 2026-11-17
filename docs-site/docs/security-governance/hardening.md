@@ -17,7 +17,7 @@ Review warnings before using `--fail-on warn` in CI. `--target` probes unauthent
 
 ## Admin listener and TLS
 
-Keep `admin.enabled: false` unless the deployment needs the separate control plane. When enabled, bind `admin.listen` to loopback or a private interface. Use `admin.tls.mode: router` with a certificate, or `proxy` behind a trusted TLS terminator. Keep `admin.allow_plaintext_non_loopback: false`. Use `admin.tls.client_auth: require` when admin clients support mTLS. Keep `admin.legacy_routes_on_serving_port: false` after clients move to `/admin/v1`.
+Keep `admin.enabled: false` unless the deployment needs the separate control plane. When enabled, bind `admin.listen` to loopback or a private interface. Use `admin.tls.mode: router` with a certificate, or `proxy` behind a trusted TLS terminator. Keep `admin.allow_plaintext_non_loopback: false`. Use `admin.tls.client_auth: require` when admin clients support mTLS. Migrate clients to `/admin/v1` on the separate admin listener; v5 no longer accepts the legacy serving-port route setting.
 
 Protect the serving listener with `server.tls` when traffic crosses an untrusted network. Set the minimum TLS version to `1.2` or `1.3`. Do not treat a private network as a substitute for authentication.
 
