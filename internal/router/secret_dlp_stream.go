@@ -447,7 +447,7 @@ func (d *secretStreamDLP) filterChatEvent(event stream.Event, payload map[string
 			delta = make(map[string]any)
 			choice["delta"] = delta
 		}
-		for _, field := range []string{"content", "reasoning_content", "thinking"} {
+		for _, field := range []string{"content", "reasoning_content", "thinking", "refusal"} {
 			value, exists := delta[field].(string)
 			if !exists {
 				continue
@@ -470,7 +470,7 @@ func (d *secretStreamDLP) filterChatEvent(event stream.Event, payload map[string
 		finishReason := choice["finish_reason"]
 		terminal := finishReason != nil && strings.TrimSpace(stringValue(finishReason)) != ""
 		if terminal {
-			for _, field := range []string{"content", "reasoning_content", "thinking"} {
+			for _, field := range []string{"content", "reasoning_content", "thinking", "refusal"} {
 				pending := choiceState.pending[field]
 				if pending == "" {
 					continue
@@ -533,7 +533,7 @@ func (d *secretStreamDLP) flushChatBefore(event stream.Event) ([]stream.Event, b
 		choiceState := d.chatChoices[index]
 		choice := cloneSecretStreamMap(choiceState.choice)
 		delta := make(map[string]any)
-		for _, field := range []string{"content", "reasoning_content", "thinking"} {
+		for _, field := range []string{"content", "reasoning_content", "thinking", "refusal"} {
 			pending := choiceState.pending[field]
 			if pending == "" {
 				continue

@@ -31,6 +31,7 @@
 
 ### Security
 
+- Inspect streamed Chat refusal deltas with per-choice secret DLP, redacting split credentials or blocking them under `fail_on_match`.
 - Invalidate pending and released tool-firewall approvals when the effective policy changes, so retries are evaluated and approved under the current rules.
 - Inspect Anthropic text and thinking carried by streamed block-start events before forwarding them when secret DLP is enabled.
 - Keep independent secret-scanning buffers for each Responses text item and content part so interleaved deltas cannot hide credentials.
