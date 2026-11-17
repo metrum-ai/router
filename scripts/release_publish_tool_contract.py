@@ -6,17 +6,19 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import re
 import shlex
 import subprocess
 import sys
+import zipfile
 from pathlib import Path
 
 GH_MINIMUM = (2, 104, 0)
 COSIGN_VERSION = "v3.1.4"
 CRANE_VERSION = "0.22.1"
 SYFT_VERSION = "1.57.1"
-JSIGN_VERSION = "7.6"
+JSIGN_SHA256 = "6cf58aa080e7ff82656f320cff8d4a3bff30408df8766806dcba3740dd839fa5"
 
 
 def capture(command: list[str]) -> str:
@@ -107,9 +109,21 @@ def verify_java_and_jsign(java: list[str], jsign_jar: Path) -> None:
         raise RuntimeError(f"Java 21 is required; got {output.splitlines()[0] if output else 'no version output'}")
     if not jsign_jar.is_file():
         raise RuntimeError("pinned jsign jar is missing")
-    version_output = capture([*java, "-jar", str(jsign_jar), "--version"])
-    if JSIGN_VERSION not in version_output:
-        raise RuntimeError(f"jsign must be {JSIGN_VERSION}; got {version_output.splitlines()[0] if version_output else 'no version output'}")
+    jar_digest = hashlib.sha256(jsign_jar.read_bytes()).hexdigest()
+    if jar_digest != JSIGN_SHA256:
+        raise RuntimeError("pinned jsign jar SHA-256 mismatch")
+    try:
+        with zipfile.ZipFile(jsign_jar) as archive:
+            manifest = archive.read("META-INF/MANIFEST.MF").decode("utf-8")
+    except (OSError, KeyError, UnicodeDecodeError, zipfile.BadZipFile) as exc:
+        raise RuntimeError("pinned jsign jar manifest could not be read") from exc
+    implementation_versions = [
+        line.partition(":")[2].strip()
+        for line in manifest.splitlines()
+        if line.startswith("Implementation-Version:")
+    ]
+    if implementation_versions != ["7.6"]:
+        raise RuntimeError("pinned jsign jar manifest must declare Implementation-Version: 7.6")
     help_output = capture([*java, "-jar", str(jsign_jar), "--help"])
     for flag in ("--storetype", "--keystore", "--storepass", "--alias", "--tsaurl", "--tsmode"):
         if flag not in help_output:

@@ -157,7 +157,8 @@ jobs:
           set -euo pipefail
           mkdir -p "${RUNNER_TEMP}/signing"
           curl -fsSL -o "${RUNNER_TEMP}/signing/jsign.jar" https://github.com/ebourg/jsign/releases/download/7.6/jsign-7.6.jar
-          echo "6cf58aa080e7ff82656f320cff8d4a3bff30408df8766806dcba3740dd839fa5  ${RUNNER_TEMP}/signing/jsign.jar" | sha256sum -c -
+          jsign_sha256="$(PYTHONPATH=scripts python3 -c 'from release_publish_tool_contract import JSIGN_SHA256; print(JSIGN_SHA256)')"
+          printf '%s  %s\n' "${jsign_sha256}" "${RUNNER_TEMP}/signing/jsign.jar" | sha256sum -c -
       - name: Publish tool contract
         env:
           JSIGN_JAR: ${{ runner.temp }}/signing/jsign.jar
