@@ -338,7 +338,7 @@ jobs:
           cp "${RUNNER_TEMP}/release-review/AI-release-review.md" dist/AI-release-review.md
           cp "${RUNNER_TEMP}/release-review/review.json" dist/release-review-artifact.json
       - name: Validate binary inventory
-        run: python3 scripts/release_artifact_inventory.py --dist-dir dist --version "${VERSION}" --commit "${COMMIT}" --build-date "${BUILD_DATE}" --set binary
+        run: python3 scripts/release_artifact_inventory.py --dist-dir dist --version "${VERSION}" --commit "${COMMIT}" --build-date "${BUILD_DATE}" --set binary --advisories-snapshot
       - name: Install pinned Crane
         run: bash scripts/install_crane.sh "${CRANE}"
       - uses: sigstore/cosign-installer@ba7bc0a3fef59531c69a25acd34668d6d3fe6f22 # v4.1.0

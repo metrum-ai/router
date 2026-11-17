@@ -612,6 +612,14 @@ def main() -> int:
     assert_tool_compat_live_workflow()
     assert_hierarchy_release_gate()
     release = read(WORKFLOWS / "release.yml")
+    for workflow_name in ("release.yml", "release-dry-run.yml"):
+        workflow_text = read(WORKFLOWS / workflow_name)
+        inventory_calls = re.findall(
+            r"(?m)^[ \t]*.*scripts/release_artifact_inventory\.py.*--set binary.*$",
+            workflow_text,
+        )
+        require(bool(inventory_calls) and all("--advisories-snapshot" in call for call in inventory_calls),
+                f"every binary inventory validation in {workflow_name} must require the advisory snapshot")
     require("environment: release" in release, "release image publication must be protected by the release environment")
     require("ROUTER_DOCKER_RUNNER" not in release and "docker-runner-preflight" not in release,
             "release image publication must not require a Docker runner")
