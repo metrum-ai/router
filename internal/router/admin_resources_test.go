@@ -181,7 +181,7 @@ func TestConfigAdminProviderWriteRejectsInvalidDialect(t *testing.T) {
 	}
 }
 
-func TestConfigAdminProviderUpdatePreservesSpendBreaker(t *testing.T) {
+func TestConfigAdminProviderUpdatePreservesExistingSettings(t *testing.T) {
 	db := configAdminTestDB(t)
 	revision, err := currentRevisionForScope(db, "prod")
 	if err != nil {
@@ -191,6 +191,7 @@ func TestConfigAdminProviderUpdatePreservesSpendBreaker(t *testing.T) {
 		provider := cfg.Provider["alpha"]
 		provider.SpendBreaker = ProviderSpendBreakerConfig{HourlyUSD: 12, DailyUSD: 40, OnTrip: "stop"}
 		provider.TrafficShape = TrafficShapeConfig{Enabled: boolPtr(true), RequestStartPerSec: 1, RequestBurst: 7}
+		provider.PropagateTrace = boolPtr(false)
 		cfg.Provider["alpha"] = provider
 		return nil
 	}); err != nil {
@@ -226,6 +227,9 @@ func TestConfigAdminProviderUpdatePreservesSpendBreaker(t *testing.T) {
 	}
 	if provider.TrafficShape.Enabled == nil || !*provider.TrafficShape.Enabled || provider.TrafficShape.RequestBurst != 7 {
 		t.Fatalf("provider update dropped traffic shaping: %+v", provider.TrafficShape)
+	}
+	if provider.PropagateTrace == nil || *provider.PropagateTrace {
+		t.Fatalf("provider update did not preserve disabled trace propagation: %+v", provider.PropagateTrace)
 	}
 }
 
