@@ -6,6 +6,7 @@ package router
 import (
 	"bytes"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -514,12 +515,29 @@ func (h *adminAuditExportRequest) export(w http.ResponseWriter, r *http.Request)
 		writeAdminProblemCode(w, r, http.StatusBadRequest, "invalid-sort", "audit export supports ascending order only")
 		return
 	}
+	var usageSnapshot, controlSnapshot *gorm.DB
+	if h.DB != nil {
+		usageSnapshot = h.DB.WithContext(r.Context()).Begin(&sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+		if usageSnapshot.Error != nil {
+			writeAdminProblemCode(w, r, http.StatusServiceUnavailable, "unavailable", "")
+			return
+		}
+		defer usageSnapshot.Rollback()
+	}
+	if h.ControlDB != nil {
+		controlSnapshot = h.ControlDB.WithContext(r.Context()).Begin(&sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true})
+		if controlSnapshot.Error != nil {
+			writeAdminProblemCode(w, r, http.StatusServiceUnavailable, "unavailable", "")
+			return
+		}
+		defer controlSnapshot.Rollback()
+	}
 	var records []adminAuditExportRecord
 	for _, source := range []struct {
 		name string
 		db   *gorm.DB
 	}{
-		{"control", h.ControlDB}, {"usage", h.DB},
+		{"control", controlSnapshot}, {"usage", usageSnapshot},
 	} {
 		if source.db == nil {
 			continue
@@ -572,9 +590,9 @@ func (h *adminAuditExportRequest) export(w http.ResponseWriter, r *http.Request)
 			records = append(records, item)
 		}
 	}
-	if h.ControlDB != nil && meta.Domain == string(AdminDomainCredential) && h.ControlDB.Migrator().HasTable(adminCredentialEventsTable) {
+	if controlSnapshot != nil && meta.Domain == string(AdminDomainCredential) && controlSnapshot.Migrator().HasTable(adminCredentialEventsTable) {
 		var batch []adminAuditCredentialExportRecord
-		query := h.ControlDB.WithContext(r.Context()).Model(&adminAuditCredentialExportRecord{})
+		query := controlSnapshot.Model(&adminAuditCredentialExportRecord{})
 		if len(values) == 4 {
 			if descending {
 				query = query.Where("(at < ? OR (at = ? AND event_id < ?))", values[0], values[0], values[1])
@@ -620,7 +638,7 @@ func (h *adminAuditExportRequest) export(w http.ResponseWriter, r *http.Request)
 	if len(values) == 4 {
 		result.CursorSource = values[2]
 	}
-	result.ChainStarts, result.ChainHeads = h.auditChainAnchors(meta.Domain)
+	result.ChainStarts, result.ChainHeads = (&adminAuditExportRequest{DB: usageSnapshot, ControlDB: controlSnapshot}).auditChainAnchors(meta.Domain)
 	firstBySource, lastBySource := map[string]string{}, map[string]string{}
 	for _, record := range records {
 		if _, ok := firstBySource[record.Source]; !ok {
