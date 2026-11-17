@@ -1262,9 +1262,13 @@ func TestSecretDLPResponsesAddedTextSnapshotsThroughHandler(t *testing.T) {
 	} {
 		for _, mode := range []string{"redact_only", "fail_on_match"} {
 			t.Run(tc.name+"/"+mode, func(t *testing.T) {
+				frames := append([]string(nil), tc.frames...)
+				if !strings.HasPrefix(tc.name, "split across") {
+					frames = append(frames, `event: response.completed`+"\n"+`data: {"type":"response.completed","response":{"status":"completed"}}`)
+				}
 				upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					w.Header().Set("Content-Type", "text/event-stream")
-					for _, frame := range tc.frames {
+					for _, frame := range frames {
 						_, _ = io.WriteString(w, frame+"\n\n")
 					}
 				}))
@@ -1285,6 +1289,9 @@ func TestSecretDLPResponsesAddedTextSnapshotsThroughHandler(t *testing.T) {
 				body := response.Body.String()
 				if strings.Contains(body, secret) {
 					t.Fatalf("added snapshot leaked secret: %s", body)
+				}
+				if strings.HasPrefix(tc.name, "split across") && strings.Contains(body, secret[:len(secret)/2]) {
+					t.Fatalf("added snapshot released a credential prefix before continuation inspection: %s", body)
 				}
 				if mode == "redact_only" && (response.Code != http.StatusOK || !strings.Contains(body, "[SECRET_GITHUB_1]")) {
 					t.Fatalf("status=%d body=%s", response.Code, body)
@@ -1334,6 +1341,39 @@ func TestSecretDLPResponsesAddedSnapshotTextIsNotReemitted(t *testing.T) {
 	svc.Handler().ServeHTTP(response, req)
 	if response.Code != http.StatusOK || strings.Count(response.Body.String(), addedText) != 1 {
 		t.Fatalf("status=%d added text count=%d body=%s", response.Code, strings.Count(response.Body.String(), addedText), response.Body.String())
+	}
+}
+
+func TestSecretDLPResponsesAddedSnapshotShortContinuationFlushesOnce(t *testing.T) {
+	const addedText = "safe-added-prefix"
+	const continuation = "-tail"
+	frames := []string{
+		`event: response.content_part.added` + "\n" + `data: {"type":"response.content_part.added","output_index":0,"item_id":"msg_safe","content_index":0,"part":{"type":"output_text","text":"` + addedText + `"}}`,
+		`event: response.output_text.delta` + "\n" + `data: {"type":"response.output_text.delta","output_index":0,"item_id":"msg_safe","content_index":0,"delta":"` + continuation + `"}`,
+		`event: response.completed` + "\n" + `data: {"type":"response.completed","response":{"status":"completed"}}`,
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, frame := range frames {
+			_, _ = io.WriteString(w, frame+"\n\n")
+		}
+	}))
+	defer upstream.Close()
+	target := Target{Provider: "native", Model: "responses-model", ToolSupport: ToolSupport{OpenAIResponses: []string{"function", "tool_choice"}}}
+	svc := nativeStreamTestService(t, upstream.URL, "openai-responses", []Target{target}, func(cfg *Config) {
+		group := cfg.Models["native-stream"]
+		group.PIIFilter.Enabled = true
+		group.PIIFilter.SecretsEnabled = true
+		cfg.Models["native-stream"] = group
+	})
+	defer svc.Close()
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"native-stream","stream":true,"input":"hello"}`))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	response := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(response, req)
+	body := response.Body.String()
+	if response.Code != http.StatusOK || strings.Count(body, addedText) != 1 || strings.Count(body, continuation) != 1 {
+		t.Fatalf("status=%d added text count=%d continuation count=%d body=%s", response.Code, strings.Count(body, addedText), strings.Count(body, continuation), body)
 	}
 }
 

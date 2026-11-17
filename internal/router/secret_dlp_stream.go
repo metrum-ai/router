@@ -656,7 +656,7 @@ func responseTextPartChannel(payload map[string]any, part map[string]any, reason
 }
 
 func (d *secretStreamDLP) seedResponsesTextSnapshot(payload map[string]any, eventType string) error {
-	seed := func(channel, text string) error {
+	seed := func(channel string, channelPayload, part map[string]any, textKey, text string) error {
 		if text == "" {
 			return nil
 		}
@@ -668,10 +668,34 @@ func (d *secretStreamDLP) seedResponsesTextSnapshot(payload map[string]any, even
 			state = &secretResponsesTextState{}
 			d.responsesText[channel] = state
 		}
-		combined := state.pending + text
-		start := utf8SafeBoundary(combined, len(combined)-secretStreamTailBytes)
-		state.pending = combined[start:]
-		state.seeded = state.pending
+		before := d.state.result.Replacements
+		safe, pending, err := redactSecretStreamChunk(d.state, state.pending, text, false)
+		if err != nil {
+			return err
+		}
+		if err := d.failIfMatched(before); err != nil {
+			return err
+		}
+		state.pending = pending
+		state.seeded = ""
+		part[textKey] = safe
+		deltaType := "response.output_text.delta"
+		if strings.HasPrefix(channel, "refusal/") {
+			deltaType = "response.refusal.delta"
+		} else if strings.HasPrefix(channel, "reasoning/") {
+			deltaType = "response.reasoning_summary_text.delta"
+		}
+		deltaPayload := make(map[string]any, len(channelPayload)+2)
+		for key, value := range channelPayload {
+			deltaPayload[key] = value
+		}
+		deltaPayload["type"] = deltaType
+		deltaPayload["delta"] = safe
+		encoded, err := json.Marshal(deltaPayload)
+		if err != nil {
+			return err
+		}
+		state.lastEvent = stream.Event{Name: deltaType, Type: deltaType, Data: encoded}
 		return nil
 	}
 	if eventType == "response.output_item.added" {
@@ -689,7 +713,11 @@ func (d *secretStreamDLP) seedResponsesTextSnapshot(payload map[string]any, even
 			}
 			channel, ok := responseTextPartChannel(channelPayload, part, false)
 			if ok {
-				if err := seed(channel, responseTextPart(part)); err != nil {
+				textKey := "text"
+				if _, ok := part[textKey].(string); !ok {
+					textKey = "refusal"
+				}
+				if err := seed(channel, channelPayload, part, textKey, responseTextPart(part)); err != nil {
 					return err
 				}
 			}
@@ -704,7 +732,11 @@ func (d *secretStreamDLP) seedResponsesTextSnapshot(payload map[string]any, even
 	if !ok {
 		return nil
 	}
-	return seed(channel, responseTextPart(part))
+	textKey := "text"
+	if _, ok := part[textKey].(string); !ok {
+		textKey = "refusal"
+	}
+	return seed(channel, payload, part, textKey, responseTextPart(part))
 }
 
 func removeSecretStreamSeededPrefix(seeded, safe string) string {
