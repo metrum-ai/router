@@ -32,6 +32,7 @@
 
 ### Security
 
+- Use one shared placeholder counter per built-in namespace so different secret detectors cannot collide during restoration.
 - Hold PEM private-key blocks through only a matching END label and fail closed when the stream ends unresolved.
 - Inspect streamed Chat refusal deltas with per-choice secret DLP, redacting split credentials or blocking them under `fail_on_match`.
 - Invalidate pending and released tool-firewall approvals when the effective policy changes, so retries are evaluated and approved under the current rules.

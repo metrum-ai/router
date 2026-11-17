@@ -198,6 +198,67 @@ func TestSecretDLPToolArgumentJSONDecodesEscapedSecrets(t *testing.T) {
 	}
 }
 
+func TestPIIPlaceholderPrefixCountersRestoreAcrossRequestResponseAndStream(t *testing.T) {
+	openAISecret := "sk-proj-" + strings.Repeat("a", 32)
+	googleSecret := "AIza" + strings.Repeat("B", 35)
+	for _, order := range []struct {
+		name   string
+		values []string
+	}{
+		{name: "openai then google", values: []string{openAISecret, googleSecret}},
+		{name: "google then openai", values: []string{googleSecret, openAISecret}},
+	} {
+		for _, direction := range []string{"request", "response"} {
+			for _, transport := range []string{"unary", "stream"} {
+				t.Run(order.name+"/"+direction+"/"+transport, func(t *testing.T) {
+					original := strings.Join(order.values, " and ")
+					seed := "safe prompt"
+					if direction == "request" && transport == "unary" {
+						seed = original
+					}
+					req := &IRRequest{Messages: []IRMessage{{Role: "user", Content: seed}}}
+					cfg := PIIFilterConfig{Enabled: true, SecretsEnabled: true, Mode: "redact_and_restore"}
+					result, err := applyPIIFilter(req, cfg)
+					if err != nil {
+						t.Fatal(err)
+					}
+					redacted := req.Messages[0].Content
+					if transport == "unary" && direction == "response" {
+						resp := &IRResponse{Text: original}
+						redactPIIResponse(resp, result.state, normalizePIIApplyTo(cfg.ApplyTo))
+						redacted = resp.Text
+					} else if transport == "stream" {
+						var out strings.Builder
+						var pending string
+						for start := 0; start < len(original); start += 7 {
+							end := min(start+7, len(original))
+							chunk, next, err := redactSecretStreamChunk(result.state, pending, original[start:end], false)
+							if err != nil {
+								t.Fatal(err)
+							}
+							out.WriteString(chunk)
+							pending = next
+						}
+						chunk, _, err := redactSecretStreamChunk(result.state, pending, "", true)
+						if err != nil {
+							t.Fatal(err)
+						}
+						out.WriteString(chunk)
+						redacted = out.String()
+					}
+					result = *result.state.result
+					if strings.Count(redacted, "[SECRET_PROVIDER_") != 2 || strings.Contains(redacted, openAISecret) || strings.Contains(redacted, googleSecret) {
+						t.Fatalf("two provider credentials did not get distinct placeholders: replacements=%d leaked_openai=%t leaked_google=%t", strings.Count(redacted, "[SECRET_PROVIDER_"), strings.Contains(redacted, openAISecret), strings.Contains(redacted, googleSecret))
+					}
+					if got := restorePIIText(redacted, result.Placeholders); got != original {
+						t.Fatalf("restored value does not match original order: got_len=%d want_len=%d", len(got), len(original))
+					}
+				})
+			}
+		}
+	}
+}
+
 func TestSecretDLPNonStreamMalformedPEMRequestAndResponse(t *testing.T) {
 	privateBody := strings.Repeat("M", 400)
 	for _, blockCase := range []struct {
@@ -1434,7 +1495,7 @@ func TestSecretDLPResponsesAddedSnapshotTextIsNotReemitted(t *testing.T) {
 }
 
 func TestSecretDLPResponsesAddedLongCredentialInspectedAcrossDeltas(t *testing.T) {
-	secret := "ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	secret := fakeGitHubToken()
 	split := len("ghp_") + 30
 	frames := []string{
 		`event: response.content_part.added` + "\n" + `data: {"type":"response.content_part.added","output_index":0,"item_id":"msg_long_split","content_index":0,"part":{"type":"output_text","text":"` + secret[:split] + `"}}`,

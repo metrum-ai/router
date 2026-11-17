@@ -7,7 +7,7 @@ doc_type: howto
 
 Model groups can redact configured text patterns before the router sends a request to an upstream model. This is useful when a deployment needs central privacy controls for LLM and agent traffic without changing every client.
 
-PII filtering is deployment-defined. Group names, rules, and placeholder names below are examples. Set `secrets_enabled: true` to add the bounded built-in detector pack for private-key blocks, common AWS/GitHub/Slack/Stripe, OpenAI, Anthropic and Google provider credentials, router tokens, JWTs, bearer authorization values, and credential assignments. Built-in matches use the same `mode`, `apply_to`, and replacement limit as configured rules. This pack is heuristic and does not replace a full DLP product.
+PII filtering is deployment-defined. Group names, rules, and placeholder names below are examples. Set `secrets_enabled: true` to add the bounded built-in detector pack for private-key blocks, common AWS/GitHub/Slack/Stripe, OpenAI, Anthropic and Google provider credentials, router tokens, JWTs, bearer authorization values, and credential assignments. Built-in matches use the same `mode`, `apply_to`, and replacement limit as configured rules. Detectors sharing a placeholder namespace use a shared counter so each detected value receives a unique placeholder. This pack is heuristic and does not replace a full DLP product.
 
 The added DLP processing cost was measured with deterministic Go microbenchmarks
 (`-benchtime=200ms -count=3`) on Go 1.27.4 and an AMD EPYC 9R14 CPU. Values are
