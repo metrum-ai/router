@@ -6,6 +6,7 @@ package router
 import (
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -25,7 +26,7 @@ type streamToolCallHold struct {
 	inspectors          []toolCallInspector
 	indexes             map[int]bool
 	chatToolChoices     map[int]bool
-	chatFinishedChoices map[int]bool
+	chatFinishedChoices map[int]string
 	hostedDeltas        map[int]string
 	idle                *streamIdleReader
 	baseIdle            time.Duration
@@ -288,12 +289,7 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 					continue
 				}
 				choiceIndex := streamToolIndex(choice["index"])
-				if finish := stringValue(choice["finish_reason"]); finish != "" {
-					if h.chatFinishedChoices == nil {
-						h.chatFinishedChoices = make(map[int]bool)
-					}
-					h.chatFinishedChoices[choiceIndex] = true
-				}
+				finishReason := stringValue(choice["finish_reason"])
 				delta, _ := choice["delta"].(map[string]any)
 				if rawLegacy, exists := delta["function_call"]; exists {
 					legacy, ok := rawLegacy.(map[string]any)
@@ -317,6 +313,7 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 				}
 				rawCalls, _ := delta["tool_calls"].([]any)
 				if len(rawCalls) == 0 {
+					h.markChatChoiceFinished(choiceIndex, finishReason)
 					if len(heldChoices) > 0 {
 						if len(delta) == 0 {
 							choice["delta"] = map[string]any{}
@@ -344,6 +341,7 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 					h.calls.addDelta("openai-chat", idx, stringValue(call["id"]), stringValue(function["name"]), stringValue(function["arguments"]))
 					h.indexes[idx] = true
 				}
+				h.markChatChoiceFinished(choiceIndex, finishReason)
 				delete(delta, "tool_calls")
 				if len(delta) == 0 {
 					choice["delta"] = map[string]any{}
@@ -376,13 +374,13 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 			if len(h.chatToolChoices) > 0 {
 				terminal = true
 				for choiceIndex := range h.chatToolChoices {
-					if !h.chatFinishedChoices[choiceIndex] {
+					if h.chatFinishedChoices[choiceIndex] == "" {
 						terminal = false
 						break
 					}
 				}
 				if terminal {
-					terminalReason = "tool_calls"
+					terminalReason = h.chatToolChoicesFinishReason()
 				}
 			}
 		}
@@ -739,6 +737,38 @@ func (h *streamToolCallHold) markChatToolChoice(index int) {
 		h.chatToolChoices = make(map[int]bool)
 	}
 	h.chatToolChoices[index] = true
+}
+
+func (h *streamToolCallHold) markChatChoiceFinished(index int, finishReason string) {
+	if finishReason == "" || !h.chatToolChoices[index] {
+		return
+	}
+	if h.chatFinishedChoices == nil {
+		h.chatFinishedChoices = make(map[int]string)
+	}
+	h.chatFinishedChoices[index] = finishReason
+}
+
+func (h *streamToolCallHold) chatToolChoicesFinishReason() string {
+	var fallback string
+	choices := make([]int, 0, len(h.chatToolChoices))
+	for index := range h.chatToolChoices {
+		choices = append(choices, index)
+	}
+	sort.Ints(choices)
+	for _, index := range choices {
+		reason := h.chatFinishedChoices[index]
+		if reason == "length" || reason == "max_tokens" {
+			return reason
+		}
+		if fallback == "" && reason != "" {
+			fallback = reason
+		}
+	}
+	if fallback != "" {
+		return fallback
+	}
+	return "tool_calls"
 }
 
 func chatStreamCallIndex(choiceIndex, callIndex int) int {

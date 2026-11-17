@@ -1160,8 +1160,9 @@ func TestStreamToolCallHoldValidationFailureFailsClosedE2E(t *testing.T) {
 func TestStreamToolCallHoldWaitsForEveryChoiceThroughHandler(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		_, _ = io.WriteString(w, `data: {"id":"multi","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_a","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"a.txt\"}"}}]},"finish_reason":null},{"index":1,"delta":{"tool_calls":[{"index":0,"id":"call_b","type":"function","function":{"name":"read_file","arguments":"{\"path\":"}}]},"finish_reason":null}]}`+"\n\n")
-		_, _ = io.WriteString(w, `data: {"id":"multi","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"},{"index":1,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"b.txt\"}"}}]},"finish_reason":null}]}`+"\n\n")
+		_, _ = io.WriteString(w, `data: {"id":"multi","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_a","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"a.txt\"}"}}]},"finish_reason":null},{"index":1,"delta":{"tool_calls":[{"index":0,"id":"call_b","type":"function","function":{"name":"read_file","arguments":"{\"path\":\""}}]},"finish_reason":null}]}`+"\n\n")
+		_, _ = io.WriteString(w, `data: {"id":"multi","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}`+"\n\n")
+		_, _ = io.WriteString(w, `data: {"id":"multi","choices":[{"index":1,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"b.txt\"}"}}]},"finish_reason":null}]}`+"\n\n")
 		_, _ = io.WriteString(w, `data: {"id":"multi","choices":[{"index":1,"delta":{},"finish_reason":"tool_calls"}]}`+"\n\n")
 		_, _ = io.WriteString(w, "data: [DONE]\n\n")
 	}))
@@ -1170,6 +1171,7 @@ func TestStreamToolCallHoldWaitsForEveryChoiceThroughHandler(t *testing.T) {
 		Mode:      "observe",
 		Streaming: ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20},
 	})
+	cfg.Server.ToolFirewall = ToolFirewallConfig{Mode: toolFirewallEnforce, Deny: []ToolFirewallDenyRule{{Tool: "read_file", ArgsRegex: `b\.txt`}}}
 	svc, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -1182,9 +1184,59 @@ func TestStreamToolCallHoldWaitsForEveryChoiceThroughHandler(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(recorder, req)
 	response := recorder.Body.String()
-	firstFinish := strings.Index(response, `"finish_reason":"tool_calls"`)
-	if recorder.Code != http.StatusOK || !strings.Contains(response, `"id":"call_a"`) || !strings.Contains(response, `"id":"call_b"`) || !strings.Contains(response, `a.txt`) || !strings.Contains(response, `b.txt`) || firstFinish < 0 || strings.Index(response, `"id":"call_b"`) > firstFinish {
-		t.Fatalf("multi-choice tool calls were released before all choices completed or lost their fragments: status=%d body=%s", recorder.Code, response)
+	if recorder.Code != http.StatusOK || !strings.Contains(response, "Tool call blocked") || strings.Contains(response, `"id":"call_a"`) || strings.Contains(response, `"id":"call_b"`) {
+		t.Fatalf("multi-choice deny was missed or held calls escaped: status=%d body=%s", recorder.Code, response)
+	}
+}
+
+func TestStreamToolCallHoldUnfinishedChoiceFailsOnDoneOrEOFThroughHandler(t *testing.T) {
+	for _, terminator := range []string{"done", "eof"} {
+		t.Run(terminator, func(t *testing.T) {
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = io.WriteString(w, `data: {"id":"multi","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_a","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"a.txt\"}"}}]},"finish_reason":null},{"index":1,"delta":{"tool_calls":[{"index":0,"id":"call_b","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"b.txt\"}"}}]},"finish_reason":null}]}`+"\n\n")
+				_, _ = io.WriteString(w, `data: {"id":"multi","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}`+"\n\n")
+				if terminator == "done" {
+					_, _ = io.WriteString(w, "data: [DONE]\n\n")
+				}
+			}))
+			defer upstream.Close()
+			cfg := toolRoutingConfig(t, upstream.URL, t.TempDir(), ToolRoutingConfig{
+				Mode:      "observe",
+				Streaming: ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20},
+			})
+			svc, err := New(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer svc.Close()
+			body := strings.Replace(toolRoutingRequestBody, "%s", "agent-tools", 1)
+			body = strings.Replace(body, `"stream":false`, `"stream":true`, 1)
+			req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+			req.Header.Set("Authorization", "Bearer "+testToken)
+			recorder := httptest.NewRecorder()
+			svc.Handler().ServeHTTP(recorder, req)
+			if recorder.Code != http.StatusBadGateway || strings.Contains(recorder.Body.String(), `"id":"call_a"`) || strings.Contains(recorder.Body.String(), `"id":"call_b"`) {
+				t.Fatalf("unfinished choice escaped or was not rejected: status=%d body=%s", recorder.Code, recorder.Body.String())
+			}
+		})
+	}
+}
+
+func TestStreamToolCallHoldPrefersTrackedLengthFinishReason(t *testing.T) {
+	schema := &schemaToolCallInspector{}
+	hold := newStreamToolCallHold(ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20}, nil, toolValidationOptions{})
+	hold.inspectors = []toolCallInspector{schema}
+	first := stream.Event{Data: []byte(`{"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_a","function":{"name":"lookup","arguments":"{}"}}]},"finish_reason":null},{"index":1,"delta":{"tool_calls":[{"index":0,"id":"call_b","function":{"name":"lookup","arguments":"{}"}}]},"finish_reason":null}]}`)}
+	if _, err := hold.apply(first); err != nil {
+		t.Fatal(err)
+	}
+	terminal := stream.Event{Data: []byte(`{"choices":[{"index":0,"delta":{},"finish_reason":"length"},{"index":1,"delta":{},"finish_reason":"tool_calls"}]}`)}
+	if _, err := hold.apply(terminal); err != nil {
+		t.Fatal(err)
+	}
+	if schema.stopReason != "length" {
+		t.Fatalf("schema inspector stop reason=%q, want length", schema.stopReason)
 	}
 }
 
