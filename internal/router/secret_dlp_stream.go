@@ -5,6 +5,7 @@ package router
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -52,22 +53,26 @@ func compiledSecretStreamMatcher() *regexp.Regexp {
 // call inspection. A holder invokes redactCandidate only after the complete
 // candidate is available and before releasing it downstream.
 type secretStreamDLP struct {
-	state             *piiRedactionState
-	mode              string
-	failOnMatch       bool
-	pending           string
-	lastEvent         stream.Event
-	lastKind          string
-	sequenceAdd       int
-	chatChoices       map[int]*secretChatChoiceState
-	anthropicThinking map[int]*secretAnthropicThinkingState
-	responsesText     map[string]*secretResponsesTextState
+	state                *piiRedactionState
+	mode                 string
+	failOnMatch          bool
+	pending              string
+	lastEvent            stream.Event
+	lastKind             string
+	sequenceAdd          int
+	responsesSequence    int
+	hasResponsesSequence bool
+	chatChoices          map[int]*secretChatChoiceState
+	anthropicThinking    map[int]*secretAnthropicThinkingState
+	responsesText        map[string]*secretResponsesTextState
 }
 
 type secretResponsesTextState struct {
-	pending   string
-	seeded    string
-	lastEvent stream.Event
+	pending          string
+	forwardedBytes   int
+	lastEvent        stream.Event
+	lastSnapshotHash [32]byte
+	hasSnapshot      bool
 }
 
 type secretChatChoiceState struct {
@@ -617,6 +622,7 @@ func clearSecretStreamChatContent(payload map[string]any) {
 
 func responseTextChannelKey(payload map[string]any) (string, bool) {
 	contentIndex, hasContentIndex := numberAsInt(payload["content_index"])
+	summaryIndex, hasSummaryIndex := numberAsInt(payload["summary_index"])
 	outputIndex, hasOutputIndex := numberAsInt(payload["output_index"])
 	itemID := stringValue(payload["item_id"])
 	if hasContentIndex {
@@ -624,6 +630,15 @@ func responseTextChannelKey(payload map[string]any) (string, bool) {
 			return fmt.Sprintf("output:%d/content:%d", outputIndex, contentIndex), true
 		}
 		return fmt.Sprintf("item:%s/content:%d", itemID, contentIndex), true
+	}
+	if hasSummaryIndex {
+		if hasOutputIndex {
+			return fmt.Sprintf("output:%d/summary:%d", outputIndex, summaryIndex), true
+		}
+		if itemID != "" {
+			return fmt.Sprintf("item:%s/summary:%d", itemID, summaryIndex), true
+		}
+		return fmt.Sprintf("summary:%d", summaryIndex), true
 	}
 	if hasOutputIndex {
 		return fmt.Sprintf("output:%d", outputIndex), true
@@ -655,21 +670,111 @@ func responseTextPartChannel(payload map[string]any, part map[string]any, reason
 	return channel, true
 }
 
-func (d *secretStreamDLP) seedResponsesTextSnapshot(payload map[string]any, eventType string) error {
-	seed := func(channel string, channelPayload, part map[string]any, textKey, text string) error {
-		if text == "" {
-			return nil
+type responseTextSnapshotPart struct {
+	channel        string
+	channelPayload map[string]any
+	part           map[string]any
+	textKey        string
+	text           string
+}
+
+func responseTextSnapshotParts(payload map[string]any, eventType string) []responseTextSnapshotPart {
+	var parts []responseTextSnapshotPart
+	appendPart := func(channelPayload, part map[string]any, reasoning bool) {
+		if part == nil {
+			return
 		}
-		state := d.responsesText[channel]
+		channel, ok := responseTextPartChannel(channelPayload, part, reasoning)
+		if !ok {
+			return
+		}
+		textKey := "text"
+		if _, ok := part[textKey].(string); !ok {
+			textKey = "refusal"
+		}
+		parts = append(parts, responseTextSnapshotPart{channel: channel, channelPayload: channelPayload, part: part, textKey: textKey, text: responseTextPart(part)})
+	}
+	appendItem := func(item map[string]any, outputIndex any) {
+		content, _ := item["content"].([]any)
+		itemID := stringValue(item["id"])
+		for index, raw := range content {
+			part, _ := raw.(map[string]any)
+			appendPart(map[string]any{
+				"output_index":  outputIndex,
+				"item_id":       itemID,
+				"content_index": index,
+			}, part, false)
+		}
+		if summary, ok := item["summary"].([]any); ok {
+			for index, raw := range summary {
+				part, _ := raw.(map[string]any)
+				appendPart(map[string]any{
+					"output_index":  outputIndex,
+					"item_id":       itemID,
+					"summary_index": index,
+				}, part, true)
+			}
+		}
+	}
+	if eventType == "response.output_item.added" || eventType == "response.output_item.done" {
+		item, _ := payload["item"].(map[string]any)
+		appendItem(item, payload["output_index"])
+		return parts
+	}
+	switch eventType {
+	case "response.content_part.added", "response.reasoning_summary_part.added", "response.content_part.done", "response.reasoning_summary_part.done":
+		part, _ := payload["part"].(map[string]any)
+		appendPart(payload, part, eventType == "response.reasoning_summary_part.added" || eventType == "response.reasoning_summary_part.done")
+	case "response.output_text.done", "response.reasoning_summary_text.done", "response.refusal.done":
+		appendPart(payload, payload, eventType == "response.reasoning_summary_text.done")
+	case "response.completed", "response.failed", "response.incomplete":
+		response, _ := payload["response"].(map[string]any)
+		output, _ := response["output"].([]any)
+		for index, raw := range output {
+			item, _ := raw.(map[string]any)
+			appendItem(item, index)
+		}
+	}
+	return parts
+}
+
+func (d *secretStreamDLP) prepareResponsesTextSnapshot(payload map[string]any, eventType string) (map[string]bool, error) {
+	duplicates := make(map[string]bool)
+	for _, part := range responseTextSnapshotParts(payload, eventType) {
+		if part.text == "" {
+			continue
+		}
+		state := d.responsesText[part.channel]
 		if state == nil {
 			if len(d.responsesText) >= maxResponsesTextChannels {
-				return errSecretStreamWindowExceeded
+				return nil, errSecretStreamWindowExceeded
 			}
 			state = &secretResponsesTextState{}
-			d.responsesText[channel] = state
+			d.responsesText[part.channel] = state
+		}
+		hash := sha256.Sum256([]byte(part.text))
+		if state.hasSnapshot && state.lastSnapshotHash == hash {
+			part.part[part.textKey] = ""
+			duplicates[part.channel] = true
+			continue
+		}
+		state.lastSnapshotHash = hash
+		state.hasSnapshot = true
+	}
+	return duplicates, nil
+}
+
+func (d *secretStreamDLP) seedResponsesTextSnapshot(payload map[string]any, eventType string, duplicates map[string]bool) error {
+	for _, part := range responseTextSnapshotParts(payload, eventType) {
+		if duplicates[part.channel] || part.text == "" {
+			continue
+		}
+		state := d.responsesText[part.channel]
+		if state == nil {
+			return errSecretStreamWindowExceeded
 		}
 		before := d.state.result.Replacements
-		safe, pending, err := redactSecretStreamChunk(d.state, state.pending, text, false)
+		safe, pending, err := redactSecretStreamChunk(d.state, state.pending, part.text, false)
 		if err != nil {
 			return err
 		}
@@ -677,17 +782,19 @@ func (d *secretStreamDLP) seedResponsesTextSnapshot(payload map[string]any, even
 			return err
 		}
 		state.pending = pending
-		state.seeded = ""
-		part[textKey] = safe
+		state.forwardedBytes += len(safe)
+		part.part[part.textKey] = safe
 		deltaType := "response.output_text.delta"
-		if strings.HasPrefix(channel, "refusal/") {
+		if strings.HasPrefix(part.channel, "refusal/") {
 			deltaType = "response.refusal.delta"
-		} else if strings.HasPrefix(channel, "reasoning/") {
+		} else if strings.HasPrefix(part.channel, "reasoning/") {
 			deltaType = "response.reasoning_summary_text.delta"
 		}
-		deltaPayload := make(map[string]any, len(channelPayload)+2)
-		for key, value := range channelPayload {
-			deltaPayload[key] = value
+		deltaPayload := make(map[string]any, 6)
+		for _, key := range []string{"output_index", "item_id", "content_index", "summary_index"} {
+			if value, ok := part.channelPayload[key]; ok {
+				deltaPayload[key] = value
+			}
 		}
 		deltaPayload["type"] = deltaType
 		deltaPayload["delta"] = safe
@@ -696,56 +803,8 @@ func (d *secretStreamDLP) seedResponsesTextSnapshot(payload map[string]any, even
 			return err
 		}
 		state.lastEvent = stream.Event{Name: deltaType, Type: deltaType, Data: encoded}
-		return nil
 	}
-	if eventType == "response.output_item.added" {
-		item, _ := payload["item"].(map[string]any)
-		content, _ := item["content"].([]any)
-		for index, raw := range content {
-			part, _ := raw.(map[string]any)
-			if part == nil {
-				continue
-			}
-			channelPayload := map[string]any{
-				"output_index":  payload["output_index"],
-				"item_id":       stringValue(item["id"]),
-				"content_index": index,
-			}
-			channel, ok := responseTextPartChannel(channelPayload, part, false)
-			if ok {
-				textKey := "text"
-				if _, ok := part[textKey].(string); !ok {
-					textKey = "refusal"
-				}
-				if err := seed(channel, channelPayload, part, textKey, responseTextPart(part)); err != nil {
-					return err
-				}
-			}
-		}
-		return nil
-	}
-	part, _ := payload["part"].(map[string]any)
-	if part == nil {
-		return nil
-	}
-	channel, ok := responseTextPartChannel(payload, part, eventType == "response.reasoning_summary_part.added")
-	if !ok {
-		return nil
-	}
-	textKey := "text"
-	if _, ok := part[textKey].(string); !ok {
-		textKey = "refusal"
-	}
-	return seed(channel, payload, part, textKey, responseTextPart(part))
-}
-
-func removeSecretStreamSeededPrefix(seeded, safe string) string {
-	common := 0
-	for common < len(seeded) && common < len(safe) && seeded[common] == safe[common] {
-		common++
-	}
-	common = utf8SafeBoundary(safe, common)
-	return safe[common:]
+	return nil
 }
 
 func (d *secretStreamDLP) filterResponsesTextEvent(event stream.Event, payload map[string]any, eventType string) ([]stream.Event, bool, error) {
@@ -779,13 +838,11 @@ func (d *secretStreamDLP) filterResponsesTextEvent(event stream.Event, payload m
 		if err := d.failIfMatched(before); err != nil {
 			return nil, true, err
 		}
-		if state.seeded != "" && safe != "" {
-			safe = removeSecretStreamSeededPrefix(state.seeded, safe)
-			state.seeded = ""
-		}
+		state.forwardedBytes += len(safe)
 		state.pending = pending
 		payload["delta"] = safe
 		addSecretStreamSequence(payload, d.sequenceAdd)
+		d.recordResponsesSequence(payload)
 		encoded, err := json.Marshal(payload)
 		if err != nil {
 			return nil, true, err
@@ -801,9 +858,9 @@ func (d *secretStreamDLP) filterResponsesTextEvent(event stream.Event, payload m
 	var channels []string
 	if eventType == "response.output_item.added" || eventType == "response.content_part.added" || eventType == "response.reasoning_summary_part.added" {
 		// Added events can carry populated snapshots before any text deltas.
-	} else if eventType == "response.output_text.done" || eventType == "response.content_part.done" || eventType == "response.reasoning_summary_text.done" || eventType == "response.refusal.done" {
+	} else if eventType == "response.output_text.done" || eventType == "response.content_part.done" || eventType == "response.reasoning_summary_text.done" || eventType == "response.reasoning_summary_part.done" || eventType == "response.refusal.done" {
 		if channel, ok := responseTextChannelKey(payload); ok {
-			if eventType == "response.reasoning_summary_text.done" {
+			if eventType == "response.reasoning_summary_text.done" || eventType == "response.reasoning_summary_part.done" {
 				channel = "reasoning/" + channel
 			} else if eventType == "response.refusal.done" {
 				channel = "refusal/" + channel
@@ -825,7 +882,7 @@ func (d *secretStreamDLP) filterResponsesTextEvent(event stream.Event, payload m
 			}
 		}
 		for key := range d.responsesText {
-			if prefix != "" && (key == prefix || strings.HasPrefix(key, prefix+"/content:")) {
+			if prefix != "" && (key == prefix || strings.HasPrefix(key, prefix+"/")) {
 				channels = append(channels, key)
 			}
 		}
@@ -837,6 +894,37 @@ func (d *secretStreamDLP) filterResponsesTextEvent(event stream.Event, payload m
 		return nil, false, nil
 	}
 	sort.Strings(channels)
+	addedSnapshot := eventType == "response.output_item.added" || eventType == "response.content_part.added" || eventType == "response.reasoning_summary_part.added"
+	inspectSnapshot := addedSnapshot || eventType == "response.output_text.done" || eventType == "response.content_part.done" || eventType == "response.reasoning_summary_text.done" || eventType == "response.reasoning_summary_part.done" || eventType == "response.refusal.done" || eventType == "response.output_item.done" || eventType == "response.completed" || eventType == "response.failed" || eventType == "response.incomplete"
+	terminalSnapshotText := make(map[string]string)
+	duplicates := map[string]bool(nil)
+	if addedSnapshot {
+		var err error
+		duplicates, err = d.prepareResponsesTextSnapshot(payload, eventType)
+		if err != nil {
+			return nil, true, err
+		}
+	}
+	if inspectSnapshot {
+		before := d.state.result.Replacements
+		var err error
+		_, err = redactSecretStreamSnapshot(payload, d.state)
+		if err != nil {
+			return nil, true, err
+		}
+		if err := d.failIfMatched(before); err != nil {
+			return nil, true, err
+		}
+		if addedSnapshot {
+			if err := d.seedResponsesTextSnapshot(payload, eventType, duplicates); err != nil {
+				return nil, true, err
+			}
+		} else {
+			for _, part := range responseTextSnapshotParts(payload, eventType) {
+				terminalSnapshotText[part.channel] = part.text
+			}
+		}
+	}
 
 	var out []stream.Event
 	for _, channel := range channels {
@@ -848,13 +936,27 @@ func (d *secretStreamDLP) filterResponsesTextEvent(event stream.Event, payload m
 			delete(d.responsesText, channel)
 			continue
 		}
-		before := d.state.result.Replacements
-		tail, _, err := redactSecretStreamChunk(d.state, state.pending, "", true)
-		if err != nil {
-			return nil, true, err
-		}
-		if err := d.failIfMatched(before); err != nil {
-			return nil, true, err
+		tail, hasSnapshot := terminalSnapshotText[channel]
+		if hasSnapshot {
+			if state.forwardedBytes > len(tail) {
+				delete(d.responsesText, channel)
+				continue
+			}
+			boundary := utf8SafeBoundary(tail, state.forwardedBytes)
+			if boundary != state.forwardedBytes {
+				return nil, true, errSecretStreamWindowExceeded
+			}
+			tail = tail[boundary:]
+		} else {
+			before := d.state.result.Replacements
+			var err error
+			tail, _, err = redactSecretStreamChunk(d.state, state.pending, "", true)
+			if err != nil {
+				return nil, true, err
+			}
+			if err := d.failIfMatched(before); err != nil {
+				return nil, true, err
+			}
 		}
 		var previous map[string]any
 		if err := json.Unmarshal(state.lastEvent.Data, &previous); err != nil {
@@ -863,6 +965,12 @@ func (d *secretStreamDLP) filterResponsesTextEvent(event stream.Event, payload m
 		previous["delta"] = tail
 		if sequence, ok := numberAsInt(payload["sequence_number"]); ok {
 			previous["sequence_number"] = sequence + d.sequenceAdd
+			d.responsesSequence = sequence + d.sequenceAdd
+			d.hasResponsesSequence = true
+			d.sequenceAdd++
+		} else if d.hasResponsesSequence {
+			d.responsesSequence++
+			previous["sequence_number"] = d.responsesSequence
 			d.sequenceAdd++
 		}
 		encoded, err := json.Marshal(previous)
@@ -876,22 +984,9 @@ func (d *secretStreamDLP) filterResponsesTextEvent(event stream.Event, payload m
 		state.lastEvent = stream.Event{}
 		delete(d.responsesText, channel)
 	}
-	if eventType == "response.output_item.added" || eventType == "response.content_part.added" || eventType == "response.reasoning_summary_part.added" || eventType == "response.output_text.done" || eventType == "response.content_part.done" || eventType == "response.reasoning_summary_text.done" || eventType == "response.reasoning_summary_part.done" || eventType == "response.refusal.done" || eventType == "response.output_item.done" || eventType == "response.completed" || eventType == "response.failed" || eventType == "response.incomplete" {
-		before := d.state.result.Replacements
-		if _, err := redactSecretStreamSnapshot(payload, d.state); err != nil {
-			return nil, true, err
-		}
-		if err := d.failIfMatched(before); err != nil {
-			return nil, true, err
-		}
-		if eventType == "response.output_item.added" || eventType == "response.content_part.added" || eventType == "response.reasoning_summary_part.added" {
-			if err := d.seedResponsesTextSnapshot(payload, eventType); err != nil {
-				return nil, true, err
-			}
-		}
-	}
 	if len(out) == 0 {
 		addSecretStreamSequence(payload, d.sequenceAdd)
+		d.recordResponsesSequence(payload)
 		encoded, err := json.Marshal(payload)
 		if err != nil {
 			return nil, true, err
@@ -900,6 +995,7 @@ func (d *secretStreamDLP) filterResponsesTextEvent(event stream.Event, payload m
 		out = append(out, event)
 	} else if event.Data != nil {
 		addSecretStreamSequence(payload, d.sequenceAdd)
+		d.recordResponsesSequence(payload)
 		encoded, err := json.Marshal(payload)
 		if err != nil {
 			return nil, true, err
@@ -908,6 +1004,13 @@ func (d *secretStreamDLP) filterResponsesTextEvent(event stream.Event, payload m
 		out = append(out, event)
 	}
 	return out, true, nil
+}
+
+func (d *secretStreamDLP) recordResponsesSequence(payload map[string]any) {
+	if sequence, ok := numberAsInt(payload["sequence_number"]); ok {
+		d.responsesSequence = sequence
+		d.hasResponsesSequence = true
+	}
 }
 
 func (d *secretStreamDLP) filterEvents(events []stream.Event) ([]stream.Event, error) {

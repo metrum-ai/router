@@ -17,7 +17,7 @@ When streaming Chat completions with tool-call inspection enabled, tool calls re
 
 When secret filtering is enabled, v5.0.0 now inspects and redacts output snapshots in failed and incomplete Responses terminal events. `fail_on_match` rejects those events when a configured secret is found. No configuration migration is required.
 
-Populated text in Responses added events is inspected as a stream chunk. The router withholds the unresolved suffix until later text or terminal flushing completes inspection, so a credential split across events cannot expose its prefix. No configuration migration is required.
+Populated text in Responses added events is inspected as a rolling stream. The router holds unresolved suffixes until later text or terminal snapshot inspection completes, and suppresses repeated snapshots for the same part. This prevents split credentials from leaking prefixes and avoids repeating output. No configuration migration is required.
 
 ## v4.8 to v5.0.0 breaking-change map
 
