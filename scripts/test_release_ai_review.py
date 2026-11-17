@@ -472,6 +472,70 @@ class ReleaseAIReviewTest(unittest.TestCase):
             self.assertIn(artifact["artifact_digest"], output.read_text(encoding="utf-8"))
             self.assertEqual(json.loads(artifact_output.read_text(encoding="utf-8")), artifact)
 
+    def test_finding_acceptance_matches_title_and_files_across_changing_ids(self) -> None:
+        candidate = {
+            "summary": "A detector limitation is accepted for a later release.",
+            "findings": [{
+                "severity": "blocking", "category": "security",
+                "title": "Detector deadline does not bound queued classifier work",
+                "rationale": "The classifier can continue after the request deadline.",
+                "locations": [{"file": "examples/detectors/prompt-injection/server.py", "line": 115}],
+            }],
+        }
+        first = review.build_artifact(candidate, "v4.8.0", "a" * 40)
+        later = review.build_artifact(candidate, "v4.8.0", "b" * 40)
+        self.assertNotEqual(first["findings"][0]["id"], later["findings"][0]["id"])
+        matches = review.parse_finding_acceptances([{
+            "title": "Detector deadline does not bound queued classifier work",
+            "files": ["examples/detectors/prompt-injection/server.py"],
+            "response": "Accepted for v5.1; bound classifier admission and work before that release.",
+        }])
+        report, unanswered = review.evaluate(later, {}, "v4.8.0", "b" * 40, matches)
+        self.assertEqual(unanswered, 0)
+        self.assertEqual(report["findings"][0]["maintainer_response"], matches[(
+            "Detector deadline does not bound queued classifier work",
+            ("examples/detectors/prompt-injection/server.py",),
+        )])
+        mismatched = review.parse_finding_acceptances([{
+            "title": "Detector deadline does not bound queued classifier work",
+            "files": ["examples/other.py"],
+            "response": "Accepted for v5.1.",
+        }])
+        report, unanswered = review.evaluate(later, {}, "v4.8.0", "b" * 40, mismatched)
+        self.assertEqual(unanswered, 1)
+        self.assertEqual(report["findings"][0]["maintainer_response"], "")
+
+    def test_finding_acceptances_reject_duplicate_or_invalid_entries(self) -> None:
+        entry = {
+            "title": "Accepted finding", "files": ["docs/release.md"], "response": "Accepted for v5.1.",
+        }
+        with self.assertRaisesRegex(ValueError, "duplicate"):
+            review.parse_finding_acceptances([entry, entry])
+        with self.assertRaisesRegex(ValueError, "repository-relative"):
+            review.parse_finding_acceptances([{
+                "title": "Unsafe path", "files": ["../outside"], "response": "Accepted.",
+            }])
+
+    def test_detector_v51_acceptance_is_bound_to_title_and_file(self) -> None:
+        response_data = json.loads((Path(__file__).parent.parent / "docs/release-review-responses.json").read_text(encoding="utf-8"))
+        acceptances = review.parse_finding_acceptances(response_data["finding_acceptances"])
+        candidate = {
+            "summary": "Detector deadline is deferred.",
+            "findings": [{
+                "severity": "informational", "category": "security",
+                "title": "Detector deadline does not bound queued classifier work",
+                "rationale": "Queued work can outlive the deadline.",
+                "locations": [
+                    {"file": "examples/detectors/prompt-injection/server.py", "line": 115},
+                    {"file": "examples/detectors/prompt-injection/server.py", "line": 185},
+                ],
+            }],
+        }
+        artifact = review.build_artifact(candidate, "v4.8.0", "c" * 40)
+        report, unanswered = review.evaluate(artifact, {}, "v4.8.0", "c" * 40, acceptances)
+        self.assertEqual(unanswered, 0)
+        self.assertIn("Accepted for v5.1", report["findings"][0]["maintainer_response"])
+
     def test_streaming_request_accumulates_final_text_block_and_message_delta_stop_reason(self) -> None:
         response = sse_response([
             ("content_block_start", {"index": 0, "content_block": {"type": "text", "text": ""}}),

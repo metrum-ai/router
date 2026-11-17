@@ -38,7 +38,7 @@ Before committing, scan both generated outputs and stop if the scan fails:
 gitleaks dir --redact "${OUTPUT_DIR}"
 ```
 
-If the review reports a blocking finding, the maintainer may record an acceptance reason in `docs/release-review-responses.json`, keyed by the artifact digest. Regenerate the report using that responses file; release validation requires every blocking finding to have a non-empty reason. The artifact's `verdict` records the model's findings, while the report's decision reflects the recorded maintainer response.
+If the review reports a blocking finding, the maintainer may record an acceptance reason in `docs/release-review-responses.json`, keyed by the artifact digest. For a finding accepted across review ranges, use the `finding_acceptances` array with the exact finding `title`, complete `files` list, and a reason in `response`; this identity remains stable when generated IDs change. A title or file mismatch does not match. Regenerate the report using that responses file; release validation requires every blocking finding to have a non-empty reason. Matching responses are shown for informational findings too, so accepted deferrals remain documented. The artifact's `verdict` records the model's findings, while the report's decision reflects the recorded maintainer response.
 
 Create the artifact change from the exact reviewed head. The artifact commit must be its direct child and contain the generated `docs/release-reviews/${KEY}.json`; it may also include the responses-file update when recording an acceptance. Do not include source changes after the reviewed head. The release validator rejects extra changes between the reviewed head and the release commit.
 

@@ -1,4 +1,13 @@
 {
   "schema": "metrum-ai-router-release-review-responses/v1",
-  "acceptances": {}
+  "acceptances": {},
+  "finding_acceptances": [
+    {
+      "title": "Detector deadline does not bound queued classifier work",
+      "files": [
+        "examples/detectors/prompt-injection/server.py"
+      ],
+      "response": "Accepted for v5.1; bound classifier admission and detection work to the request deadline before that release."
+    }
+  ]
 }
