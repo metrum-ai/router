@@ -201,11 +201,9 @@ func rewriteHeldToolCalls(events []stream.Event, calls []IRToolCall) ([]stream.E
 			if item != nil {
 				if replacement, ok := arguments[idx]; ok && (eventType != "response.output_item.added" || responsesItemHasArguments(item) || isHostedResponsesTool(IRToolCall{Dialect: "openai-responses", Kind: stringValue(item["type"])})) {
 					if isHostedResponsesTool(IRToolCall{Dialect: "openai-responses", Kind: stringValue(item["type"])}) {
-						redactedItem, err := decodeResponsesHostedItem(replacement)
-						if err != nil {
+						if err := setResponsesHostedPayload(item, replacement); err != nil {
 							return nil, err
 						}
-						payload["item"] = redactedItem
 					} else if err := setResponsesItemArguments(item, replacement); err != nil {
 						return nil, err
 					}
@@ -268,11 +266,9 @@ func rewriteHeldToolCalls(events []stream.Event, calls []IRToolCall) ([]stream.E
 				}
 				if replacement, ok := arguments[outputIndex]; ok {
 					if isHostedResponsesTool(IRToolCall{Dialect: "openai-responses", Kind: stringValue(item["type"])}) {
-						redactedItem, err := decodeResponsesHostedItem(replacement)
-						if err != nil {
+						if err := setResponsesHostedPayload(item, replacement); err != nil {
 							return nil, err
 						}
-						output[outputIndex] = redactedItem
 					} else if err := setResponsesItemArguments(item, replacement); err != nil {
 						return nil, err
 					}
@@ -360,39 +356,43 @@ func rewriteHeldToolCalls(events []stream.Event, calls []IRToolCall) ([]stream.E
 	return out, nil
 }
 
-func decodeResponsesHostedItem(arguments string) (map[string]any, error) {
-	var item map[string]any
-	if err := json.Unmarshal([]byte(arguments), &item); err != nil || item == nil {
-		return nil, fmt.Errorf("decode redacted hosted Responses item")
-	}
-	return item, nil
-}
-
 func responsesHostedArgumentField(arguments, kind string) (string, error) {
-	item, err := decodeResponsesHostedItem(arguments)
-	if err != nil {
-		return "", err
-	}
-	var value any
-	switch kind {
-	case "mcp_call":
-		value = item["arguments"]
-	case "code_interpreter_call":
-		value = item["code"]
-	default:
+	if kind != "mcp_call" && kind != "code_interpreter_call" {
 		return "", fmt.Errorf("unsupported hosted Responses argument event")
 	}
-	if value == nil {
-		return "", fmt.Errorf("redacted hosted Responses item lacks arguments")
+	return arguments, nil
+}
+
+func setResponsesHostedPayload(item map[string]any, arguments string) error {
+	kind := stringValue(item["type"])
+	fields := map[string][]string{"mcp_call": {"arguments"}, "code_interpreter_call": {"code"}}
+	selected := fields[kind]
+	if len(selected) == 0 {
+		return fmt.Errorf("unsupported hosted Responses item payload")
 	}
-	if text, ok := value.(string); ok {
-		return text, nil
+	var value any
+	if err := json.Unmarshal([]byte(arguments), &value); err != nil {
+		value = arguments
 	}
-	encoded, err := json.Marshal(value)
-	if err != nil {
-		return "", fmt.Errorf("encode redacted hosted Responses arguments: %w", err)
+	if len(selected) == 1 {
+		if values, ok := value.(map[string]any); ok {
+			if wrapped, exists := values[selected[0]]; exists {
+				value = wrapped
+			}
+		}
+		item[selected[0]] = value
+		return nil
 	}
-	return string(encoded), nil
+	values, ok := value.(map[string]any)
+	if !ok {
+		return fmt.Errorf("decode redacted hosted Responses payload")
+	}
+	for _, field := range selected {
+		if v, exists := values[field]; exists {
+			item[field] = v
+		}
+	}
+	return nil
 }
 
 func responsesItemHasArguments(item map[string]any) bool {
