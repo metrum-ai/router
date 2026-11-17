@@ -32,16 +32,102 @@ type piiFilterResult struct {
 }
 
 type compiledPIIRule struct {
-	name    string
-	prefix  string
-	re      *regexp.Regexp
-	entropy bool
+	name     string
+	prefix   string
+	re       *regexp.Regexp
+	entropy  bool
+	pemBlock bool
 }
 
 var (
 	builtinPIIRulesOnce sync.Once
 	builtinPIIRules     []compiledPIIRule
 )
+
+func (s *piiRedactionState) redactMatch(rule compiledPIIRule, match string) string {
+	if match == "" {
+		return match
+	}
+	placeholderKey := rule.name + "\x00" + match
+	if placeholder := s.placeholderFor[placeholderKey]; placeholder != "" {
+		return placeholder
+	}
+	if s.result.Replacements >= s.limit {
+		s.result.LimitExceeded = true
+		s.result.Warnings = appendWarning(s.result.Warnings, "pii-filter-replacement-limit-reached")
+		return match
+	}
+	s.result.RuleCounts[rule.name]++
+	placeholder := fmt.Sprintf("[%s_%d]", rule.prefix, s.result.RuleCounts[rule.name])
+	s.placeholderFor[placeholderKey] = placeholder
+	s.result.Replacements++
+	s.result.Placeholders = append(s.result.Placeholders, piiPlaceholder{
+		Placeholder: placeholder,
+		Original:    match,
+		RuleName:    rule.name,
+	})
+	return placeholder
+}
+
+func (s *piiRedactionState) redactPEMPrivateKeys(text string, rule compiledPIIRule) string {
+	dashes := strings.Repeat("-", 5)
+	beginMarker := dashes + "BEGIN "
+	var out strings.Builder
+	cursor := 0
+	for cursor < len(text) {
+		rel := strings.Index(text[cursor:], beginMarker)
+		if rel < 0 {
+			out.WriteString(text[cursor:])
+			break
+		}
+		begin := cursor + rel
+		labelStart := begin + len(beginMarker)
+		labelEndRel := strings.Index(text[labelStart:], dashes)
+		if labelEndRel < 0 {
+			out.WriteString(text[cursor:])
+			break
+		}
+		labelEnd := labelStart + labelEndRel
+		label := text[labelStart:labelEnd]
+		if !isPrivateKeyPEMLabel(label) {
+			out.WriteString(text[cursor : begin+len(beginMarker)])
+			cursor = begin + len(beginMarker)
+			continue
+		}
+		blockStart := labelEnd + len(dashes)
+		nextRel := strings.Index(text[blockStart:], beginMarker)
+		blockLimit := len(text)
+		if nextRel >= 0 {
+			blockLimit = blockStart + nextRel
+		}
+		endMarker := dashes + "END " + label + dashes
+		matchEndRel := strings.Index(text[blockStart:blockLimit], endMarker)
+		blockEnd := blockLimit
+		if matchEndRel >= 0 {
+			blockEnd = blockStart + matchEndRel + len(endMarker)
+		}
+		out.WriteString(text[cursor:begin])
+		out.WriteString(s.redactMatch(rule, text[begin:blockEnd]))
+		cursor = blockEnd
+	}
+	return out.String()
+}
+
+func isPrivateKeyPEMLabel(label string) bool {
+	prefix := strings.TrimSuffix(label, "PRIVATE KEY")
+	if label != "PRIVATE KEY" && prefix == label {
+		return false
+	}
+	if prefix != "" && !strings.HasSuffix(prefix, " ") {
+		return false
+	}
+	for _, r := range strings.TrimSuffix(prefix, " ") {
+		if r != ' ' && (r < 'A' || r > 'Z') {
+			return false
+		}
+	}
+	return true
+}
 
 func applyPIIFilter(req *IRRequest, cfg PIIFilterConfig, caller ...string) (piiFilterResult, error) {
 	result := piiFilterResult{RuleCounts: map[string]int{}}
@@ -148,6 +234,11 @@ func applyPIIFilter(req *IRRequest, cfg PIIFilterConfig, caller ...string) (piiF
 func compiledBuiltinSecretRules() []compiledPIIRule {
 	builtinPIIRulesOnce.Do(func() {
 		builtinPIIRules, _ = compilePIIRules(builtinSecretRules())
+		for i := range builtinPIIRules {
+			if builtinPIIRules[i].name == "private_key" {
+				builtinPIIRules[i].pemBlock = true
+			}
+		}
 	})
 	return builtinPIIRules
 }
@@ -233,8 +324,14 @@ func compilePIIRules(rules []PIIFilterRule) ([]compiledPIIRule, error) {
 // builtinSecretRules is deliberately small and bounded. Go's RE2 engine keeps
 // every expression linear in the size of the request.
 func builtinSecretRules() []PIIFilterRule {
+	dashes := strings.Repeat("-", 5)
+	labels := []string{"RSA PRIVATE KEY", "EC PRIVATE KEY", "OPENSSH PRIVATE KEY", "DSA PRIVATE KEY", "ENCRYPTED PRIVATE KEY", "PRIVATE KEY"}
+	pemExpressions := make([]string, 0, len(labels))
+	for _, label := range labels {
+		pemExpressions = append(pemExpressions, dashes+"BEGIN "+label+dashes+`[\s\S]*?`+dashes+"END "+label+dashes)
+	}
 	return []PIIFilterRule{
-		{Name: "private_key", Expression: `-----BEGIN (?:RSA |EC |OPENSSH |DSA |ENCRYPTED )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |OPENSSH |DSA |ENCRYPTED )?PRIVATE KEY-----`, PlaceholderPrefix: "SECRET_PRIVATE_KEY"},
+		{Name: "private_key", Expression: strings.Join(pemExpressions, "|"), PlaceholderPrefix: "SECRET_PRIVATE_KEY"},
 		{Name: "aws_access_key", Expression: `\b(?:AKIA|ASIA)[A-Z0-9]{16}\b`, PlaceholderPrefix: "SECRET_AWS"},
 		{Name: "github_token", Expression: `\b(?:gh[pousr]_[A-Za-z0-9]{30,256}|github_pat_[A-Za-z0-9_]{40,256})\b`, PlaceholderPrefix: "SECRET_GITHUB"},
 		{Name: "slack_token", Expression: `\bxox[baprs]-[A-Za-z0-9-]{20,256}\b`, PlaceholderPrefix: "SECRET_SLACK"},
@@ -302,29 +399,12 @@ func (s *piiRedactionState) redact(text string) string {
 		if text == "" {
 			return text
 		}
+		if rule.pemBlock {
+			text = s.redactPEMPrivateKeys(text, rule)
+			continue
+		}
 		text = rule.re.ReplaceAllStringFunc(text, func(match string) string {
-			if match == "" {
-				return match
-			}
-			placeholderKey := rule.name + "\x00" + match
-			if placeholder := s.placeholderFor[placeholderKey]; placeholder != "" {
-				return placeholder
-			}
-			if s.result.Replacements >= s.limit {
-				s.result.LimitExceeded = true
-				s.result.Warnings = appendWarning(s.result.Warnings, "pii-filter-replacement-limit-reached")
-				return match
-			}
-			s.result.RuleCounts[rule.name]++
-			placeholder := fmt.Sprintf("[%s_%d]", rule.prefix, s.result.RuleCounts[rule.name])
-			s.placeholderFor[placeholderKey] = placeholder
-			s.result.Replacements++
-			s.result.Placeholders = append(s.result.Placeholders, piiPlaceholder{
-				Placeholder: placeholder,
-				Original:    match,
-				RuleName:    rule.name,
-			})
-			return placeholder
+			return s.redactMatch(rule, match)
 		})
 	}
 	if s.result.LimitExceeded {

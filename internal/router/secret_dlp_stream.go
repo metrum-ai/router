@@ -1606,36 +1606,55 @@ func secretStreamPEMReleaseBoundary(combined string, boundary int, final bool) (
 			break
 		}
 		begin := search + beginRel
-		endRel := strings.Index(combined[begin+len("-----BEGIN "):], "-----END ")
-		if endRel < 0 {
+		labelStart := begin + len("-----BEGIN ")
+		labelEndRel := strings.Index(combined[labelStart:], "-----")
+		if labelEndRel < 0 {
 			if final || len(combined)-begin >= secretStreamPEMMax {
 				return 0, errSecretStreamWindowExceeded
 			}
-			if begin < boundary {
-				boundary = begin
-			}
-			break
+			return min(boundary, begin), nil
 		}
-		end := begin + len("-----BEGIN ") + endRel
-		endLabel := end + len("-----END ")
-		closeRel := strings.Index(combined[endLabel:], "-----")
-		if closeRel < 0 {
-			if final || len(combined)-begin >= secretStreamPEMMax {
+		labelEnd := labelStart + labelEndRel
+		beginLabel := combined[labelStart:labelEnd]
+		endSearch := labelEnd + len("-----")
+		resolved := false
+		for {
+			endRel := strings.Index(combined[endSearch:], "-----END ")
+			if endRel < 0 {
+				if final || len(combined)-begin >= secretStreamPEMMax {
+					return 0, errSecretStreamWindowExceeded
+				}
+				return min(boundary, begin), nil
+			}
+			end := endSearch + endRel
+			endLabelStart := end + len("-----END ")
+			endLabelEndRel := strings.Index(combined[endLabelStart:], "-----")
+			if endLabelEndRel < 0 {
+				if final || len(combined)-begin >= secretStreamPEMMax {
+					return 0, errSecretStreamWindowExceeded
+				}
+				return min(boundary, begin), nil
+			}
+			endLabelEnd := endLabelStart + endLabelEndRel
+			pemEnd := endLabelEnd + len("-----")
+			if pemEnd-begin > secretStreamPEMMax {
 				return 0, errSecretStreamWindowExceeded
 			}
-			if begin < boundary {
-				boundary = begin
+			if combined[endLabelStart:endLabelEnd] == beginLabel {
+				if begin < boundary && boundary < pemEnd {
+					boundary = begin
+				}
+				search = pemEnd
+				resolved = true
+				break
 			}
+			// A mismatched END marker does not close this block. Continue looking
+			// for the matching label while keeping the whole block held.
+			endSearch = pemEnd
+		}
+		if !resolved {
 			break
 		}
-		pemEnd := endLabel + closeRel + len("-----")
-		if pemEnd-begin > secretStreamPEMMax {
-			return 0, errSecretStreamWindowExceeded
-		}
-		if begin < boundary && boundary < pemEnd {
-			boundary = begin
-		}
-		search = pemEnd
 		if search >= len(combined) {
 			break
 		}
