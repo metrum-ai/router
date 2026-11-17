@@ -973,6 +973,8 @@ func (s *toolFirewallRuntime) checkSequence(cfg ToolFirewallConfig, key, callerI
 						out = toolFirewallOutcome{Mode: mode, Action: "hold", RuleCode: "sequence_rule"}
 						break
 					}
+					// Keep the trigger live across repeated denied retries, like a hold.
+					firstTurns[i] = turn
 					out = toolFirewallOutcome{Mode: mode, Action: rule.raw.Action, RuleCode: "sequence_rule"}
 					break
 				}

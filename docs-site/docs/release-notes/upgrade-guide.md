@@ -11,7 +11,7 @@ Tool-firewall argument deny rules now include boolean values in their inspected 
 
 Tool-firewall sequence holds remain active across retries. Each repeated retry must consume a fresh approval before the router forwards its tool call. No configuration migration is required.
 
-When a Chat response returns both a sequence rule’s `first_tool` and `then_tool`, the denial now records the first step before returning. A retry that contains only the `then_tool` remains denied within the configured sequence window.
+When a Chat response returns both a sequence rule’s `first_tool` and `then_tool`, the denial now records the first step before returning. Each denied retry refreshes the sequence trigger, so repeated then-only retries remain denied rather than aging past the configured window.
 
 ## Streaming tool calls with multiple choices
 

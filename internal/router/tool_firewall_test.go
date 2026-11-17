@@ -1195,7 +1195,8 @@ func TestToolFirewallSameResponseSequenceRetryRemainsBlocked(t *testing.T) {
 	if first.Code != http.StatusOK || strings.Contains(first.Body.String(), "tool_calls") || !strings.Contains(first.Body.String(), "Tool call blocked") {
 		t.Fatalf("same-response sequence was not denied: status=%d body=%s", first.Code, first.Body.String())
 	}
-	for i := 0; i < 2; i++ {
+	retries := int(cfg.Server.ToolFirewall.Sequences[0].WithinTurns) + 3
+	for i := 0; i < retries; i++ {
 		rec := makeRequest()
 		if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), "tool_calls") || !strings.Contains(rec.Body.String(), "Tool call blocked") {
 			t.Fatalf("then-only retry %d escaped: status=%d body=%s", i+1, rec.Code, rec.Body.String())
