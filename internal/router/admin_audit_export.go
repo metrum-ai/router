@@ -342,7 +342,10 @@ func VerifyAdminAuditExport(reader io.Reader) error {
 	if !document.HasMore {
 		for source, head := range document.ChainHeads {
 			if !seen[source] && !document.HasCursor {
-				return fmt.Errorf("audit export is missing the %s chain", source)
+				start, ok := document.ChainStarts[source]
+				if !ok || start != head {
+					return fmt.Errorf("audit export is missing the %s chain", source)
+				}
 			}
 			if seen[source] && previousBySource[source] != head {
 				return fmt.Errorf("audit export is missing or reorders rows at %s chain head", source)
@@ -404,7 +407,11 @@ func VerifyAdminAuditExportPages(readers ...io.Reader) error {
 	}
 	for source, head := range previousPage.ChainHeads {
 		if !seenSource[source] {
-			return fmt.Errorf("audit export is missing the %s chain", source)
+			start, ok := previousPage.ChainStarts[source]
+			if !ok || start != head {
+				return fmt.Errorf("audit export is missing the %s chain", source)
+			}
+			continue
 		}
 		if lastBySource[source] != head {
 			return fmt.Errorf("audit export is missing or reorders rows at %s chain head", source)
@@ -644,8 +651,11 @@ func (h *adminAuditExportRequest) export(w http.ResponseWriter, r *http.Request)
 					return
 				}
 			} else if !result.HasCursor {
-				writeAdminProblemCode(w, r, http.StatusServiceUnavailable, "audit-chain-invalid", source)
-				return
+				start, ok := result.ChainStarts[source]
+				if !ok || start != head {
+					writeAdminProblemCode(w, r, http.StatusServiceUnavailable, "audit-chain-invalid", source)
+					return
+				}
 			}
 		}
 	}

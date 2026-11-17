@@ -139,6 +139,44 @@ func TestAdminAuditOfflineVerifierDetectsTamperDeleteInsertAndReorder(t *testing
 	}
 }
 
+func TestAdminAuditExportVerifiesEmptyAnchoredChain(t *testing.T) {
+	checkpoint := strings.Repeat("a", 64)
+	doc := adminAuditExportDocument{
+		Items:       []adminAuditExportItem{},
+		ChainStarts: map[string]string{"usage": checkpoint},
+		ChainHeads:  map[string]string{"usage": checkpoint},
+		ChainTo:     "",
+		Checksum:    "",
+	}
+	data, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyAdminAuditExport(bytes.NewReader(data)); err != nil {
+		t.Fatalf("verify empty checkpointed export: %v", err)
+	}
+	if err := VerifyAdminAuditExportPages(bytes.NewReader(data)); err != nil {
+		t.Fatalf("verify empty checkpointed pages: %v", err)
+	}
+	doc.ChainHeads["usage"] = strings.Repeat("b", 64)
+	data, err = json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyAdminAuditExport(bytes.NewReader(data)); err == nil {
+		t.Fatal("accepted empty chain with different checkpoint and head")
+	}
+	doc.ChainHeads["usage"] = ""
+	doc.ChainStarts = nil
+	data, err = json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyAdminAuditExport(bytes.NewReader(data)); err == nil {
+		t.Fatal("accepted empty chain without a checkpoint")
+	}
+}
+
 func TestAdminAuditStoredAnchorDetectsDeletionAndTampering(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -639,5 +677,20 @@ func TestAdminAuditRetentionUsesInjectedClock(t *testing.T) {
 	}
 	if controlExpired != 0 || controlFresh != 1 {
 		t.Fatalf("control-plane checkpoint=%d fresh=%d", controlExpired, controlFresh)
+	}
+	if _, err := PurgeAdminAuditEventsBefore(store.db, time.Now().UTC().Add(24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	emptyResponse := httptest.NewRecorder()
+	emptyRequest := httptest.NewRequest(http.MethodGet, "/admin/v1/audit-events/export", nil).WithContext(WithAdminAuditMeta(context.Background(), AdminAuditMeta{Subject: "operator", Domain: "team/prod"}))
+	usageExport(emptyResponse, emptyRequest)
+	if emptyResponse.Code != http.StatusOK {
+		t.Fatalf("empty export after retention=%d body=%s", emptyResponse.Code, emptyResponse.Body.String())
+	}
+	if err := VerifyAdminAuditExport(strings.NewReader(emptyResponse.Body.String())); err != nil {
+		t.Fatalf("verify empty export after retention: %v", err)
+	}
+	if err := VerifyAdminAuditExportPages(strings.NewReader(emptyResponse.Body.String())); err != nil {
+		t.Fatalf("verify empty export pages after retention: %v", err)
 	}
 }
