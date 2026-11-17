@@ -6,10 +6,12 @@ package router
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"gorm.io/gorm"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -87,6 +89,51 @@ func TestAdminAuditExportPagesVerifyAsOneChainAndFilterDomain(t *testing.T) {
 	}
 	if err := VerifyAdminAuditExportPages(bytes.NewReader(firstWriter.Body.Bytes())); err == nil {
 		t.Fatal("incomplete page sequence verified")
+	}
+}
+
+func TestAdminAuditExportUsesOneSnapshotForRowsAndAnchors(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "audit-snapshot.sqlite")
+	store, err := OpenUsageStore(uncachedSQLiteUsageDBConfigForTest(path + "?_journal_mode=WAL&_busy_timeout=5000"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	if err := store.db.Exec(usageAdminAuditDDL[0]).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := insertAdminAuditUsageTx(store.db, AdminAuditRecord{EventID: "snapshot-event", At: time.Now().UTC(), Domain: "team/prod", Outcome: "committed"}); err != nil {
+		t.Fatal(err)
+	}
+	writer, err := sql.Open("sqlite", path+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = writer.Close() })
+	var changed bool
+	if err := store.db.Callback().Query().After("gorm:query").Register("test:advance-audit-anchor", func(tx *gorm.DB) {
+		if changed || tx.Statement.Table != usageAdminAuditTable {
+			return
+		}
+		changed = true
+		if _, err := writer.Exec(`UPDATE `+adminAuditChainAnchorsTable+` SET head_hash=? WHERE source='usage' AND domain=?`, strings.Repeat("f", 64), "team/prod"); err != nil {
+			t.Errorf("advance anchor concurrently: %v", err)
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/admin/v1/audit-events/export", nil)
+	request = request.WithContext(WithAdminAuditMeta(context.Background(), AdminAuditMeta{Subject: "operator", Domain: "team/prod"}))
+	response := httptest.NewRecorder()
+	adminAuditExportHandlers(store.db, nil)["admin.audit.export"](response, request)
+	if !changed {
+		t.Fatal("concurrent anchor update did not run")
+	}
+	if response.Code != http.StatusOK {
+		t.Fatalf("export status=%d body=%s", response.Code, response.Body.String())
+	}
+	if err := VerifyAdminAuditExport(strings.NewReader(response.Body.String())); err != nil {
+		t.Fatalf("snapshot export failed verification: %v", err)
 	}
 }
 
