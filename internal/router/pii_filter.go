@@ -57,8 +57,12 @@ func (s *piiRedactionState) redactMatch(rule compiledPIIRule, match string) stri
 		s.result.Warnings = appendWarning(s.result.Warnings, "pii-filter-replacement-limit-reached")
 		return match
 	}
+	if s.prefixCounts == nil {
+		s.prefixCounts = make(map[string]int)
+	}
+	s.prefixCounts[rule.prefix]++
 	s.result.RuleCounts[rule.name]++
-	placeholder := fmt.Sprintf("[%s_%d]", rule.prefix, s.result.RuleCounts[rule.name])
+	placeholder := fmt.Sprintf("[%s_%d]", rule.prefix, s.prefixCounts[rule.prefix])
 	s.placeholderFor[placeholderKey] = placeholder
 	s.result.Replacements++
 	s.result.Placeholders = append(s.result.Placeholders, piiPlaceholder{
@@ -152,6 +156,7 @@ func applyPIIFilter(req *IRRequest, cfg PIIFilterConfig, caller ...string) (piiF
 		limit:          limit,
 		result:         &result,
 		placeholderFor: map[string]string{},
+		prefixCounts:   map[string]int{},
 	}
 	result.state = state
 	apply := normalizePIIApplyTo(cfg.ApplyTo)
@@ -389,6 +394,7 @@ type piiRedactionState struct {
 	limit          int
 	result         *piiFilterResult
 	placeholderFor map[string]string
+	prefixCounts   map[string]int
 }
 
 func (s *piiRedactionState) redact(text string) string {

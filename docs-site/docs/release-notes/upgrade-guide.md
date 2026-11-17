@@ -490,7 +490,9 @@ before inspection, with string values checked alongside their property names as
 JSON-escaped credential characters are normalized before matching. Object-valued
 Chat arguments and Anthropic `tool_use.input` objects receive the same key/value inspection.
 Malformed or truncated argument strings are scanned in best-effort `key=` and
-`key: ` forms so partial JSON cannot hide credentials. Responses function-call
+`key: ` forms so partial JSON cannot hide credentials. Built-in detectors that
+share a placeholder namespace now use one counter, keeping each placeholder
+unique when multiple credential types appear together. Responses function-call
 arguments and custom tool input are redacted in output snapshots.
 When firewall policy selects a hosted Responses tool for inspection, DLP
 redactions also rewrite its item snapshots and argument or code events before
