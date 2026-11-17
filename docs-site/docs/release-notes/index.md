@@ -5,9 +5,55 @@ doc_type: reference
 
 # Release Notes
 
-## v5.0.0 planned breaking change
+## v5.0.0 - planned for 2026-11-23
 
-The in-process TypeScript routing strategy is removed. Move custom logic to a standalone external policy service; see the [upgrade guide](/docs/release-notes/upgrade-guide). User code never runs inside the router process.
+v5.0.0 is a security release with a target GA date of 2026-11-23. Review the
+[v4.8 to v5.0.0 upgrade guide](/docs/release-notes/upgrade-guide) before
+upgrading. Release verification results will be published after the release
+checks complete.
+
+### Security
+
+- Add caller-token hygiene and leaked-key self-revocation, caller network and
+  mTLS binding, short-lived mission tokens, secret DLP, and cache isolation.
+- Add a tool-call firewall, honeytokens and canary groups, bounded external
+  detectors, key containment, and an OCSF security-event stream.
+- Add security posture checks, dependency and image verification, hash-chained
+  admin audit export, and tenant hierarchy policy with shared parent budgets.
+- Keep prompts, tokens, and tool payloads out of audit events and usage metadata.
+
+### Breaking
+
+- Machine `/admin/*` routes leave the serving listener. Use `/admin/v1` on the
+  admin listener. Browser reports and `/admin/auth/*` session routes remain on
+  the serving listener.
+- Online `routerctl` admin operations use `/admin/v1`. Offline mutations require
+  deliberate `--offline` use and stopped v5 router replicas.
+- The in-process TypeScript routing strategy is removed. Run custom policy code
+  in a standalone external service.
+- Non-empty `callers[].token_sha256` is removed. Run
+  `routerctl callers migrate-legacy` with held tokens or rotate the callers
+  before deploying v5.
+
+### Added
+
+- Add admin APIs for machine clients, credential lifecycle, resources, policy
+  simulation, audit export, operations, containment, and backup/restore.
+- Add MCP tool governance with allow-lists, masking, approval holds, budgets,
+  and audit export.
+- Add virtual model groups, hierarchy governance, KV-cache routing and metering,
+  CPU-first routing for compact reference workloads, and provider-usage
+  reconciliation.
+- Add bounded streaming tool inspection, provider spend breakers, Bedrock
+  reasoning continuity, and tool-routing reliability records.
+
+### Fixed
+
+- Keep migration JSON output valid and separate from database diagnostics.
+- Resolve client IPs from trusted proxy hops so untrusted forwarded headers do
+  not control caller binding or security records.
+- Bound stream buffers, detector queues, cache state, and policy approval holds;
+  refuse unsafe requests when validation or authorization is unavailable.
 
 
 Release notes help customer operators decide whether to deploy, how to validate the release, and how to roll back if needed. Each packaged router build also displays its router version and build timestamp on every docs page.

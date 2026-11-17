@@ -5,6 +5,116 @@ doc_type: reference
 
 # Upgrade Guide
 
+## v4.8 to v5.0.0 breaking-change map
+
+Review these changes before a rolling upgrade. Router v5 and v4.8 can read some
+of the same migrated config, but a mixed fleet does not protect offline
+database operations. Complete config migration and maintenance while all
+replicas are on v4.8, then upgrade every replica together.
+
+| Area | v4.8 | v5.0.0 action |
+| --- | --- | --- |
+| Machine admin routes | `/admin/*` may be served on inference listener | Move clients to `/admin/v1/*` on the admin listener or configured Unix socket. Browser reports and `/admin/auth/*` remain on serving listener. |
+| Online `routerctl` | Commands may use legacy endpoints or direct database access | Online commands use `/admin/v1`; configure `--router-url` or `--socket` only when needed. |
+| TypeScript policy | `strategy: script` can run in-process | Move logic to a standalone external policy service and use `strategy: external`. |
+| Caller verifier | `callers[].token_sha256` is accepted | Migrate held tokens with `routerctl callers migrate-legacy` or rotate them before deploying v5. Empty legacy fields are ignored; non-empty fields fail load. |
+| Unix socket | TCP listener is typical | A configured `admin.unix_socket.path` without `admin.listen` disables TCP and makes the socket the sole admin listener. Set `admin.listen` to retain TCP. |
+| Offline mutations | CLI can write the database directly | Add `--offline` deliberately. Import, activate, rollback, emergency actions, and backup/restore refuse while a v5 router holds the runtime lock. Stop every v5 replica first. |
+
+### Before and after: admin listener
+
+Before, v4.8 can retain machine routes on the serving port:
+
+```yaml
+admin:
+  enabled: true
+  legacy_routes_on_serving_port: true
+```
+
+After, remove both v4-only compatibility keys and direct machine traffic to the
+dedicated admin listener. The listener starts on loopback by default:
+
+```yaml
+admin:
+  enabled: true
+  listen: 127.0.0.1:8081
+```
+
+An admin socket can replace TCP. Omit `admin.listen` only when socket-only
+access is intended:
+
+```yaml
+admin:
+  enabled: true
+  unix_socket:
+    path: /run/router/admin.sock
+    mode: "0660"
+```
+
+### Before and after: routing policy
+
+Before, a v4.8 config may select an in-process script:
+
+```yaml
+models:
+  support:
+    strategy: script
+    script: ./policy.ts
+```
+
+After, run policy code as a separate service and configure its bounded endpoint:
+
+```yaml
+models:
+  support:
+    strategy: external
+    external_policy:
+      url: https://policy.example.com/route
+      allow_hosts: [policy.example.com]
+      timeout_ms: 100
+```
+
+### Before and after: caller verifier
+
+Before, v4.8 may store an unsalted verifier:
+
+```yaml
+callers:
+  - id: worker
+    token_sha256: <legacy-sha256>
+```
+
+After, run `routerctl callers migrate-legacy` against the v4.8 config with the
+held token in a private file, or rotate it. The command writes a salted
+`token_hash` and removes `token_sha256`; never place the raw token in an
+argument. See [caller-token migration](#caller-token-verifier-removal) for
+file and database procedures.
+
+### Mixed fleets and offline operations
+
+Do not perform offline mutations while any v5 router uses the database. Stop
+all replicas, run the operation, then restart them. A v4.8 process does not
+take the v5 runtime lock, so lock protection does not cover mixed v4.8/v5
+fleets. Upgrade every replica before relying on offline exclusion. Apply the
+database maintenance migration before v5 startup; see [admin listener and
+serving-port routes](#v500-admin-listener-and-serving-port-routes) and
+[routerctl Admin API changes](#v500-routerctl-admin-api-changes).
+
+Before v5, direct database operations can be selected by the command's
+database flags. In v5, use the online Admin API by default; add `--offline`
+only for a planned maintenance operation while all v5 replicas are stopped:
+
+```sh
+# v4.8 direct database activation
+metrum-ai-routerctl config activate --set-id <set-id> --db <config-db> --scope prod
+
+# v5 online activation through /admin/v1
+metrum-ai-routerctl config activate --set-id <set-id>
+
+# v5 deliberate offline activation, with every v5 router stopped
+metrum-ai-routerctl config activate --offline --set-id <set-id> --db <config-db> --scope prod
+```
+
 ## Governed fine-tuning workflow
 
 Training capture remains disabled unless an operator explicitly enables it for

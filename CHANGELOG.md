@@ -123,6 +123,43 @@ All notable changes to Metrum AI Router are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [5.0.0] - 2026-11-23
+
+Security release. This section summarizes the v5.0.0 release scope; see the
+[upgrade guide](docs-site/docs/release-notes/upgrade-guide.md) before upgrading
+from v4.8.0.
+
+### Security
+
+- Add caller token checksum and entropy hygiene, database-backed leaked-key self-revocation, caller network and mTLS binding, and short-lived workload mission tokens with bounded grant budgets.
+- Add secret and PII DLP for prompts, responses, and inspected tool calls; tool-call firewall rules and approval holds; caller honeytokens and targetless canary groups.
+- Add bounded external detector services, an OCSF 1.4 security event stream, caller containment with signed SOAR/EDR webhooks, and a security posture self-test.
+- Isolate caches by caller and project by default; add tenant hierarchy policy and shared parent organization budgets.
+- Add verifiable dependency and image controls, chained admin audit storage and export, retention, and policy simulation. Audit checkpoints remain stored in the database and are not externally signed.
+
+### Breaking
+
+- Remove machine `/admin/*` routes from the serving listener. Use `/admin/v1` on the admin listener; browser reports and `/admin/auth/*` session routes remain on the serving listener.
+- Route online `routerctl` configuration and admin operations through `/admin/v1`. Offline mutations require `--offline` and refuse while any v5 router holds the database runtime lock.
+- Remove in-process TypeScript routing policies. Move custom logic to a standalone external policy service.
+- Remove non-empty `callers[].token_sha256`. Migrate held tokens with `routerctl callers migrate-legacy` or rotate them; empty legacy fields are ignored.
+
+### Added
+
+- Add versioned admin APIs for providers, models, projects, memberships, quotas, budgets, retention, machine client identities and credential lifecycle, operations, containment, and control-plane backup/restore.
+- Add cursor-paginated hash-chained audit export, access review, and candidate policy simulation.
+- Add KV-cache-aware routing and recomputed-input metering; add an opt-in CPU-first tier for compact requests in the hierarchy reference.
+- Add parent/child hierarchy policy inheritance, shared organization budgets, virtual model groups, tool-routing reliability data, and provider-usage reconciliation.
+- Add MCP gateway governance with caller authentication, allow-lists, secret and PII masking, approvals, per-tool budgets, and audit export.
+- Add Bedrock Converse reasoning continuity, bounded streaming inspection and process-wide SSE buffer limits, provider spend breakers, and async admin operations.
+
+### Fixed
+
+- Keep migration JSON output free of database diagnostics and preserve valid JSON on failures.
+- Prevent caller-controlled forwarded addresses from overriding the client address through trusted proxy chains.
+- Bound caches, detector queues, approval holds, stream inspection, and audit retention; fail closed on unavailable authorization, invalid policy, or exhausted inspection bounds.
+- Preserve provider-reported cached and recomputed token accounting, request-shape fallback behavior, and sampled tool-call outcomes in usage records and reports.
+
 ## [Unreleased]
 
 ### Security
