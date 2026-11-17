@@ -32,8 +32,12 @@ redacted before release. PEM blocks are held through their matching end marker,
 up to 64 KiB. A plausible JWT is held from its `eyJ` marker while its bounded
 segments are inspected; segments over 4,096 bytes fail closed. A single
 provider-token or credential-assignment candidate longer than the 256-byte
-token window fails the stream closed rather than releasing a partial match. A
-JSON-encoded tool-call argument is decoded before inspection; string values
+token window fails the stream closed rather than releasing a partial match.
+For streamed responses, `redact_only` redaction is best-effort when a secret is
+split across stream events (for example an added snapshot and the following
+delta). `fail_on_match` blocks the response in those cases and is the mode to
+use when a guarantee is required. A JSON-encoded tool-call argument is decoded
+before inspection; string values
 are checked with their property names as `key=value`, while header-shaped
 values are also checked as `key: value`, including JSON-escaped characters.
 Object-valued Chat arguments and Anthropic `tool_use.input` receive the same key/value
