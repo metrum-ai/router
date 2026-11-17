@@ -159,7 +159,7 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 				}
 				h.calls.addDelta("openai-responses", idx, call.ID, call.Name, "")
 				h.calls.setKind(idx, call.Kind)
-				if err := h.setResponsesSnapshotArguments(idx, call.Arguments); err != nil {
+				if err := h.setResponsesSnapshotArguments(idx, call.Arguments, true); err != nil {
 					h.reset()
 					return nil, err
 				}
@@ -187,7 +187,7 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 				}
 				h.calls.addDelta("openai-responses", idx, call.ID, call.Name, "")
 				h.calls.setKind(idx, call.Kind)
-				if err := h.setResponsesSnapshotArguments(idx, call.Arguments); err != nil {
+				if err := h.setResponsesSnapshotArguments(idx, call.Arguments, true); err != nil {
 					h.reset()
 					return nil, err
 				}
@@ -682,6 +682,7 @@ func (h *streamToolCallHold) clear() {
 	h.held = nil
 	h.calls = newToolCallAccumulator()
 	h.indexes = map[int]bool{}
+	h.hostedDeltas = nil
 }
 
 func chatStreamCallIndex(choiceIndex, callIndex int) int {
