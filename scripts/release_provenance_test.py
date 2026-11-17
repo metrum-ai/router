@@ -6,6 +6,9 @@
 from __future__ import annotations
 
 import copy
+import os
+import subprocess
+import sys
 import unittest
 from pathlib import Path
 
@@ -153,6 +156,22 @@ def validate_clean_rebuild_cache_env(workflow):
         )
 
 
+def validate_cosign_installation(workflow, job_name):
+    steps = workflow["jobs"][job_name]["steps"]
+    names = [step.get("name") for step in steps]
+    provide = next((step for step in steps if step.get("name") == "Provide envsubst for Cosign installer"), None)
+    install = next((step for step in steps if step.get("name") == "Install pinned Cosign"), None)
+    verify = next((step for step in steps if step.get("name") == "Verify Cosign installation"), None)
+    assert provide is not None and install is not None and verify is not None
+    assert names.index("Provide envsubst for Cosign installer") < names.index("Install pinned Cosign") < names.index("Verify Cosign installation")
+    assert "command -v envsubst" in provide["run"]
+    assert "scripts/envsubst_compat.py" in provide["run"]
+    assert '"${GITHUB_PATH}"' in provide["run"]
+    assert install.get("uses", "").startswith("sigstore/cosign-installer@")
+    assert install["with"].get("cosign-release") == "v3.1.4"
+    assert verify.get("run") == "cosign version"
+
+
 class ProvenanceWorkflowTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -163,6 +182,7 @@ class ProvenanceWorkflowTest(unittest.TestCase):
         validate(self.workflow)
         validate_binary_inventory_snapshot(self.workflow)
         validate_clean_rebuild_cache_env(self.workflow)
+        validate_cosign_installation(self.workflow, "publish-release")
 
     def test_release_job_requires_environment_protection(self):
         doc = copy.deepcopy(self.workflow)
@@ -206,6 +226,7 @@ class ProvenanceWorkflowTest(unittest.TestCase):
         workflow = self.dry_run_workflow
         validate_binary_inventory_snapshot(workflow)
         validate_clean_rebuild_cache_env(workflow)
+        validate_cosign_installation(workflow, "dry-run")
         triggers = workflow.get("on", workflow.get(True))
         dispatch = triggers["workflow_dispatch"]["inputs"]["dry_run"]
         self.assertEqual(dispatch, {"description": "Run the full release validation without publishing", "type": "boolean", "required": True, "default": True})
@@ -245,7 +266,8 @@ class ProvenanceWorkflowTest(unittest.TestCase):
         self.assertIn("release_image_oci_layout.py", all_runs)
         self.assertIn("check_release_dry_run.py", all_runs)
         self.assertNotIn("crane push", all_runs)
-        self.assertNotIn("cosign", all_runs)
+        self.assertIn("cosign version", all_runs)
+        self.assertNotIn("cosign sign", all_runs)
         self.assertNotIn("gh release create", all_runs)
         self.assertIsNone(dry_run.get("environment"))
         self.assertEqual(dry_run["permissions"], {"actions": "read", "checks": "read", "contents": "read"})
@@ -288,6 +310,25 @@ class ProvenanceWorkflowTest(unittest.TestCase):
             step["env"].pop("GOCACHE")
             with self.assertRaises(AssertionError):
                 validate_clean_rebuild_cache_env(doc)
+
+    def test_envsubst_compatibility_expands_environment_variables(self):
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "scripts/envsubst_compat.py")],
+            input="image=${COSIGN_TEST_IMAGE}\n",
+            capture_output=True,
+            text=True,
+            env={**os.environ, "COSIGN_TEST_IMAGE": "registry.example/router:v5"},
+            check=True,
+        )
+        self.assertEqual(result.stdout, "image=registry.example/router:v5\n")
+
+    def test_cosign_installer_contract_is_required_in_both_workflows(self):
+        for source, job_name in ((self.workflow, "publish-release"), (self.dry_run_workflow, "dry-run")):
+            doc = copy.deepcopy(source)
+            steps = doc["jobs"][job_name]["steps"]
+            steps[:] = [step for step in steps if step.get("name") != "Verify Cosign installation"]
+            with self.assertRaises(AssertionError):
+                validate_cosign_installation(doc, job_name)
 
     def test_dry_run_checkout_does_not_follow_workflow_dispatch_ref(self):
         doc = copy.deepcopy(self.dry_run_workflow)
