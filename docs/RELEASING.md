@@ -122,20 +122,7 @@ environment must require a reviewer and allow only `v*` tags; the workflow
 checks both conditions before publishing. A retry resumes already-pushed
 version tags only when their digests match the rebuilt packages; a mismatch
 fails closed and requires maintainer investigation before another publish.
-The AI review job uses the separate `release-review` environment, which allows
-only `v*` tags and provides no reviewer gate. The Anthropic API key is scoped
-to that environment and is not a repository secret.
-
-The review artifact records the findings and a SHA-256 digest for the exact
-base and head commits. It is retained as a workflow artifact keyed to that
-range, so rerunning the same workflow run reuses the stored result instead of
-calling the model again. If a blocking finding needs an acceptance, add a
-short acceptance under that artifact digest in the `acceptances` object in
-`docs/release-review-responses.json` on `main`, then rerun the same tag
-workflow. The acceptance applies only to the exact reviewed artifact; a new
-commit range produces a new model review and digest. Unanswered blockers, a
-missing API credential, a review timeout, or an invalid model response block
-publication.
+The tag job validates a committed AI review artifact for the exact previous stable tag, base commit, release commit, and tag. It does not call a model. Prepare the artifact locally from the exact release commit, record any accepted blocking findings against its digest, and commit the artifact as a direct child of the reviewed commit. The release validator rejects a mismatched range, missing artifact, unanswered blocking finding, or invalid required CI evidence. See [Preparing the release AI review](RELEASE_AI_REVIEW.md) for artifact generation and acceptance steps. A source change after review requires a new artifact for the new commit range.
 
 Verify one downloaded package asset and its signature and provenance:
 
