@@ -492,6 +492,56 @@ func TestToolFirewallSequenceHoldPersistsAfterApprovalConsumption(t *testing.T) 
 	}
 }
 
+func TestToolFirewallSequenceHoldSlidesWindowAfterPendingApprovalPruned(t *testing.T) {
+	now := time.Unix(300, 0).UTC()
+	policy := ToolFirewallConfig{
+		Mode:              toolFirewallEnforce,
+		ApprovalTimeoutMS: 10,
+		Sequences:         []ToolFirewallSequenceRule{{FirstTool: "read_customer", FirstArgsRegex: "account", ThenTool: "http_request", WithinTurns: 1, Action: "hold"}},
+	}
+	runtime := newToolFirewallRuntime()
+	approvals := newToolApprovalRuntime(2)
+	approvals.now = func() time.Time { return now }
+	service := &Service{toolFirewall: runtime, toolApprovals: approvals}
+	request := &IRRequest{Messages: []IRMessage{{Role: "user", Content: "conversation seed"}}}
+	const callerID = "caller"
+	first := []IRToolCall{{Name: "read_customer", Arguments: `{"record":"account-1"}`}}
+	then := []IRToolCall{{Name: "http_request", Arguments: `{"body":"send"}`}}
+	if outcome := runtime.check(policy, callerID, "group", request, first); outcome.Action != "" {
+		t.Fatalf("first sequence step blocked: %+v", outcome)
+	}
+	fingerprint, ok := toolCallApprovalFingerprint(callerID, then)
+	if !ok {
+		t.Fatal("tool call fingerprint failed")
+	}
+	checkRetry := func(label string) toolFirewallDisposition {
+		t.Helper()
+		approvalID, approvalState := approvals.lookup(fingerprint)
+		outcome := runtime.checkWithTruncation(policy, callerID, "group", request, then, false, approvalState == "release")
+		if outcome.Action != "hold" {
+			t.Fatalf("%s escaped sequence hold: %+v (approval state %q)", label, outcome, approvalState)
+		}
+		return service.resolveToolFirewallDecision(nil, callerID, fingerprint, approvalID, approvalState, outcome, policy)
+	}
+
+	if disposition := checkRetry("initial then-tool call"); !disposition.pending {
+		t.Fatalf("initial hold did not create a pending approval: %+v", disposition)
+	}
+	now = now.Add(20 * time.Millisecond)
+	if disposition := checkRetry("expired pending approval"); !disposition.blocked || disposition.pending {
+		t.Fatalf("expired approval was not blocked: %+v", disposition)
+	}
+	now = now.Add(2 * time.Minute)
+	if _, state := approvals.lookup(fingerprint); state != "" {
+		t.Fatalf("expired approval was not pruned: state=%q", state)
+	}
+	for retry := 1; retry <= 3; retry++ {
+		if disposition := checkRetry(fmt.Sprintf("retry after pruning %d", retry)); !disposition.pending {
+			t.Fatalf("retry %d did not remain held for a fresh approval: %+v", retry, disposition)
+		}
+	}
+}
+
 func TestToolFirewallPolicyChangeDeniesOutstandingApprovals(t *testing.T) {
 	for _, initialDecision := range []string{"pending", "release"} {
 		t.Run(initialDecision, func(t *testing.T) {

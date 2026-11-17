@@ -335,6 +335,10 @@ including first and second steps returned together. Schema validation still runs
 Each release is consumed once. Concurrent retries sharing the same approved
 call cannot both proceed; the retry that loses consumption remains held or is
 blocked.
+For hold sequence rules, the `within_turns` window slides forward on every
+matching then-tool call while the sequence remains held, including retries
+while an approval is pending or expired. Each forwarded retry still requires a
+freshly consumed release.
 Changing the effective firewall policy clears pending and already released approvals. Retries are evaluated under the
 current policy; resolve a new hold, if one is created, then retry the same call.
 
