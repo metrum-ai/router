@@ -13,19 +13,20 @@ import (
 )
 
 type streamToolCallHold struct {
-	timeout    time.Duration
-	maxBytes   int
-	started    time.Time
-	usedBytes  int
-	budget     stream.LineBufferBudget
-	reserved   int64
-	emitting   int64
-	held       []stream.Event
-	calls      *toolCallAccumulator
-	inspectors []toolCallInspector
-	indexes    map[int]bool
-	idle       *streamIdleReader
-	baseIdle   time.Duration
+	timeout      time.Duration
+	maxBytes     int
+	started      time.Time
+	usedBytes    int
+	budget       stream.LineBufferBudget
+	reserved     int64
+	emitting     int64
+	held         []stream.Event
+	calls        *toolCallAccumulator
+	inspectors   []toolCallInspector
+	indexes      map[int]bool
+	hostedDeltas map[int]string
+	idle         *streamIdleReader
+	baseIdle     time.Duration
 }
 
 // clearStreamToolCallHold starts a clean per-target attempt and releases any
@@ -77,6 +78,10 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 	eventType := event.Type
 	if eventType == "" {
 		eventType = stringValue(payload["type"])
+	}
+	if err := h.recordHostedArgumentEvent(eventType, payload); err != nil {
+		h.reset()
+		return nil, err
 	}
 	toolEvent := false
 	terminal := false
@@ -261,20 +266,14 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 				if !h.indexes[idx] {
 					return []stream.Event{event}, nil
 				}
-				if strings.HasPrefix(eventType, "response.mcp_call_arguments.delta") {
-					h.calls.addDelta("openai-responses", idx, "", "", stringValue(payload["delta"]))
-				} else if strings.HasPrefix(eventType, "response.code_interpreter_call_code.delta") {
+				if strings.HasPrefix(eventType, "response.mcp_call_arguments.delta") || strings.HasPrefix(eventType, "response.code_interpreter_call_code.delta") {
 					h.calls.addDelta("openai-responses", idx, "", "", stringValue(payload["delta"]))
 				} else if strings.HasSuffix(eventType, ".done") {
 					field := "arguments"
 					if kind == "code_interpreter_call" {
 						field = "code"
 					}
-					h.calls.addDelta("openai-responses", idx, "", "", "")
-					if err := h.setResponsesSnapshotArguments(idx, stringValue(payload[field]), true); err != nil {
-						h.reset()
-						return nil, err
-					}
+					h.calls.setArguments(idx, stringValue(payload[field]))
 				}
 				toolEvent = true
 				passThrough = stream.Event{}
@@ -456,6 +455,39 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 	return out, nil
 }
 
+func (h *streamToolCallHold) recordHostedArgumentEvent(eventType string, payload map[string]any) error {
+	kind := hostedResponsesCallEventType(eventType)
+	if kind != "mcp_call" && kind != "code_interpreter_call" {
+		return nil
+	}
+	idx := streamToolIndex(payload["output_index"])
+	if !h.indexes[idx] {
+		return nil
+	}
+	if strings.HasSuffix(eventType, ".delta") {
+		if h.hostedDeltas == nil {
+			h.hostedDeltas = make(map[int]string)
+		}
+		h.hostedDeltas[idx] += stringValue(payload["delta"])
+		return nil
+	}
+	if !strings.HasSuffix(eventType, ".done") {
+		return nil
+	}
+	delta, ok := h.hostedDeltas[idx]
+	if !ok {
+		return nil
+	}
+	field := "arguments"
+	if kind == "code_interpreter_call" {
+		field = "code"
+	}
+	if delta != stringValue(payload[field]) {
+		return upstreamError{Class: "tool_call_snapshot_mismatch", Message: "Responses tool argument snapshot does not match streamed arguments", Committed: true, Fallbackable: false}
+	}
+	return nil
+}
+
 func (h *streamToolCallHold) failClosedUnsupportedTool(kind string) ([]stream.Event, error) {
 	h.reset()
 	return nil, upstreamError{Class: "tool_call_hold_unsupported_type", Message: fmt.Sprintf("streamed tool item type %q cannot be inspected safely", kind), Committed: true, Fallbackable: false}
@@ -555,15 +587,14 @@ func responsesToolItemCall(item map[string]any, index int) (IRToolCall, bool, bo
 	case "local_shell_call":
 		call.Arguments = canonicalToolCallArguments(item["action"])
 	case "web_search_call", "file_search_call", "code_interpreter_call", "image_generation_call", "browser_search_call", "vector_store_search_call", "mcp_call":
-		call.Arguments = canonicalToolCallArguments(responsesHostedToolPayload(item))
+		call.Arguments = canonicalToolCallArguments(responsesHostedToolPayload(kind, item))
 	default:
 		return call, toolBearing, false
 	}
 	return call, true, true
 }
 
-func responsesHostedToolPayload(item map[string]any) any {
-	kind := stringValue(item["type"])
+func responsesHostedToolPayload(kind string, item map[string]any) any {
 	fields := map[string][]string{
 		"web_search_call":          {"action", "query", "search_query"},
 		"file_search_call":         {"queries", "query"},

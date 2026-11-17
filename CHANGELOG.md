@@ -10,7 +10,6 @@
 - Correct the upgrade guide to describe successful local sinkhole responses for unknown or disallowed honeytoken model names.
 - Align OpenAI and Anthropic compatibility matrix versions with the pinned Python SDK lockfile and regenerate the published matrix page.
 
-- Fail closed when OpenAI Responses tool argument snapshots differ from the deltas already inspected, so a cleaned final snapshot cannot release earlier unsafe arguments.
 - Align the standalone cache isolation guide with v5 caller-scoped response-cache and vLLM prefix-salt behavior; document that SGLang prefix isolation is unsupported.
 
 ### Security
@@ -129,6 +128,7 @@
 
 - Label direct-provider nightly spend as a list-rate estimate, retain measured Router usage as its own basis, and report gate violations from runs older than 30 days as historical.
 - Align Harbor's provider-free Docker preflight with the live OpenAI Responses adapter and retain its sanitized summary on failure.
+- Reject Responses tool snapshots that do not match the accumulated arguments inspected from streamed deltas.
 
 All notable changes to Metrum AI Router are documented in this file.
 
