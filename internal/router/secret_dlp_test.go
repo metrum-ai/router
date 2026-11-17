@@ -1278,6 +1278,38 @@ func TestSecretDLPResponsesFailedAndIncompleteSnapshotsThroughHandler(t *testing
 	}
 }
 
+func TestSecretDLPResponsesRefusalDeltaAndSnapshotThroughHandler(t *testing.T) {
+	secret := fakeGitHubToken()
+	frames := []string{
+		`event: response.refusal.delta` + "\n" + `data: {"type":"response.refusal.delta","item_id":"refusal_1","output_index":0,"delta":"` + secret[:len(secret)/2] + `"}`,
+		`event: response.refusal.delta` + "\n" + `data: {"type":"response.refusal.delta","item_id":"refusal_1","output_index":0,"delta":"` + secret[len(secret)/2:] + `"}`,
+		`event: response.failed` + "\n" + `data: {"type":"response.failed","response":{"status":"failed","output":[{"type":"refusal","id":"refusal_1","refusal":"` + secret + `"}]}}`,
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, frame := range frames {
+			_, _ = io.WriteString(w, frame+"\n\n")
+		}
+	}))
+	defer upstream.Close()
+	target := Target{Provider: "native", Model: "responses-model", ToolSupport: ToolSupport{OpenAIResponses: []string{"function", "tool_choice"}}}
+	svc := nativeStreamTestService(t, upstream.URL, "openai-responses", []Target{target}, func(cfg *Config) {
+		group := cfg.Models["native-stream"]
+		group.PIIFilter.Enabled = true
+		group.PIIFilter.SecretsEnabled = true
+		cfg.Models["native-stream"] = group
+	})
+	defer svc.Close()
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"native-stream","stream":true,"input":"hello"}`))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	response := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(response, req)
+	body := response.Body.String()
+	if response.Code != http.StatusOK || strings.Contains(body, secret) || !strings.Contains(body, "[SECRET_GITHUB_1]") {
+		t.Fatalf("status=%d refusal delta or snapshot leaked/missed redaction: %s", response.Code, body)
+	}
+}
+
 func TestSecretDLPRedactsEscapedSecretSplitAcrossToolArgumentDeltas(t *testing.T) {
 	secret := "sk-or-v1-" + strings.Repeat("a", 64)
 	arguments := `{"api_key":"sk-or-v1\u002d` + strings.Repeat("a", 64) + `"}`
