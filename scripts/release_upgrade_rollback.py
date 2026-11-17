@@ -18,7 +18,7 @@ import tempfile
 import time
 from pathlib import Path
 
-ROUTER_CONFIG_SCHEMA_VERSION = 20
+ROUTER_CONFIG_SCHEMA_VERSION = 21
 
 
 def run(command: list[str], *, timeout: int, check: bool = True) -> subprocess.CompletedProcess[str]:
