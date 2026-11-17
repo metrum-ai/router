@@ -5,6 +5,7 @@
 ### Fixed
 
 - Include boolean values when matching tool-firewall argument deny rules.
+- Inspect and redact output snapshots in failed and incomplete Responses stream events, honoring `fail_on_match` before forwarding them.
 - Keep only `id`, `type`, `status`, and `error` on non-message and non-reasoning output items in failed and incomplete Responses snapshots, including unrecognized item kinds.
 - Keep pending provider usage windows inside the configured catch-up age bound.
 - Read audit export rows and chain anchors from repeatable snapshots so concurrent writes and retention do not produce invalid pages.

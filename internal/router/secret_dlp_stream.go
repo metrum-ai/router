@@ -637,10 +637,13 @@ func (d *secretStreamDLP) filterResponsesTextEvent(event stream.Event, payload m
 	if d.responsesText == nil {
 		d.responsesText = make(map[string]*secretResponsesTextState)
 	}
-	if eventType == "response.output_text.delta" {
+	if eventType == "response.output_text.delta" || eventType == "response.refusal.delta" {
 		channel, ok := responseTextChannelKey(payload)
 		if !ok {
 			return []stream.Event{event}, true, nil
+		}
+		if eventType == "response.refusal.delta" {
+			channel = "refusal/" + channel
 		}
 		state := d.responsesText[channel]
 		if state == nil {
@@ -745,7 +748,7 @@ func (d *secretStreamDLP) filterResponsesTextEvent(event stream.Event, payload m
 		state.lastEvent = stream.Event{}
 		delete(d.responsesText, channel)
 	}
-	if eventType == "response.output_text.done" || eventType == "response.content_part.done" || eventType == "response.output_item.done" || eventType == "response.completed" {
+	if eventType == "response.output_text.done" || eventType == "response.content_part.done" || eventType == "response.output_item.done" || eventType == "response.completed" || eventType == "response.failed" || eventType == "response.incomplete" {
 		before := d.state.result.Replacements
 		if _, err := redactSecretStreamSnapshot(payload, d.state); err != nil {
 			return nil, true, err
@@ -951,7 +954,7 @@ func redactSecretStreamSnapshot(value any, state *piiRedactionState) (bool, erro
 			}
 			switch v := child.(type) {
 			case string:
-				if key == "text" || key == "content" || key == "output_text" {
+				if key == "text" || key == "content" || key == "output_text" || key == "refusal" {
 					redacted, _, err := redactSecretStreamChunk(state, "", v, true)
 					if err != nil {
 						return changed, err
