@@ -175,6 +175,47 @@ func TestAdminAuditExportVerifiesEmptyAnchoredChain(t *testing.T) {
 	if err := VerifyAdminAuditExport(bytes.NewReader(data)); err == nil {
 		t.Fatal("accepted empty chain without a checkpoint")
 	}
+	doc.ChainStarts = map[string]string{"usage": "!missing-anchor"}
+	doc.ChainHeads = map[string]string{"usage": "!missing-anchor"}
+	data, err = json.Marshal(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyAdminAuditExport(bytes.NewReader(data)); err == nil {
+		t.Fatal("accepted missing-anchor placeholder")
+	}
+	if err := VerifyAdminAuditExportPages(bytes.NewReader(data)); err == nil {
+		t.Fatal("accepted missing-anchor placeholder in paginated export")
+	}
+}
+
+func TestAdminAuditExportRejectsDeletedRowsWithUnmatchedAnchor(t *testing.T) {
+	store := adminUsageAuditTestStore(t)
+	if err := store.db.Exec(usageAdminAuditDDL[0]).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := store.db.Transaction(func(tx *gorm.DB) error {
+		return insertAdminAuditUsageTx(tx, AdminAuditRecord{EventID: "tamper-deleted", At: time.Now().UTC(), Domain: "team/tamper", Outcome: "committed"})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var start, head string
+	if err := store.db.Raw("SELECT start_hash,head_hash FROM "+adminAuditChainAnchorsTable+" WHERE source='usage' AND domain=?", "team/tamper").Row().Scan(&start, &head); err != nil {
+		t.Fatal(err)
+	}
+	if start == head {
+		t.Fatalf("test setup needs non-empty chain: start=%q head=%q", start, head)
+	}
+	if err := store.db.Exec("DELETE FROM "+usageAdminAuditTable+" WHERE domain=?", "team/tamper").Error; err != nil {
+		t.Fatal(err)
+	}
+	handler := adminAuditExportHandlers(store.db, nil)["admin.audit.export"]
+	request := httptest.NewRequest(http.MethodGet, "/admin/v1/audit-events/export", nil).WithContext(WithAdminAuditMeta(context.Background(), AdminAuditMeta{Subject: "operator", Domain: "team/tamper"}))
+	response := httptest.NewRecorder()
+	handler(response, request)
+	if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), "audit-chain-invalid") {
+		t.Fatalf("export after raw row deletion=%d %s, want 503 audit-chain-invalid", response.Code, response.Body.String())
+	}
 }
 
 func TestAdminAuditStoredAnchorDetectsDeletionAndTampering(t *testing.T) {

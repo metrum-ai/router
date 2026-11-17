@@ -312,6 +312,9 @@ func VerifyAdminAuditExport(reader io.Reader) error {
 	if err := json.NewDecoder(reader).Decode(&document); err != nil {
 		return err
 	}
+	if err := validateAdminAuditExportAnchors(document.ChainStarts, document.ChainHeads); err != nil {
+		return err
+	}
 	previousBySource := make(map[string]string)
 	seen := make(map[string]bool)
 	lastExportHash := document.ChainFrom
@@ -349,6 +352,17 @@ func VerifyAdminAuditExport(reader io.Reader) error {
 			}
 			if seen[source] && previousBySource[source] != head {
 				return fmt.Errorf("audit export is missing or reorders rows at %s chain head", source)
+			}
+		}
+	}
+	return nil
+}
+
+func validateAdminAuditExportAnchors(starts, heads map[string]string) error {
+	for _, anchors := range []map[string]string{starts, heads} {
+		for source, hash := range anchors {
+			if hash == "!missing-anchor" {
+				return fmt.Errorf("audit export has a missing %s chain anchor", source)
 			}
 		}
 	}
