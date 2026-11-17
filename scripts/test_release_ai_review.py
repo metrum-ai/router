@@ -283,6 +283,129 @@ class ReleaseAIReviewTest(unittest.TestCase):
                 expected_redactions={"one.go": 1, "two.go": 0},
             )
 
+    def test_incremental_plan_reviews_only_changed_hashes_and_reuses_unchanged_findings(self) -> None:
+        prior = [
+            {"file": "same.go", "status": "reviewed", "diff_sha256": "a" * 64},
+            {"file": "changed.go", "status": "reviewed", "diff_sha256": "b" * 64},
+            {"file": "pair.go", "status": "reviewed", "diff_sha256": "c" * 64},
+        ]
+        current = [
+            {"file": "same.go", "status": "reviewed", "diff_sha256": "a" * 64},
+            {"file": "changed.go", "status": "reviewed", "diff_sha256": "d" * 64},
+            {"file": "pair.go", "status": "reviewed", "diff_sha256": "c" * 64},
+            {"file": "new.go", "status": "reviewed", "diff_sha256": "e" * 64},
+        ]
+        findings = [
+            {"id": "unchanged", "files": ["same.go"]},
+            {"id": "cross-file", "files": ["changed.go", "pair.go"]},
+            {"id": "changed", "files": ["changed.go"]},
+        ]
+        unchanged, changed, reusable = review.incremental_review_plan(prior, current, findings)
+        self.assertEqual(unchanged, {"same.go", "pair.go"})
+        self.assertEqual(changed, {"changed.go", "new.go"})
+        self.assertEqual([finding["id"] for finding in reusable], ["unchanged"])
+
+    def test_reviewed_file_diff_hash_is_bound_into_artifact_and_verified(self) -> None:
+        diff_hash = "a" * 64
+        artifact = review.build_artifact(
+            {"summary": "No blockers found.", "findings": []}, "v4.8.0", "a" * 40,
+            file_coverage=[{
+                "file": "one.go", "status": "reviewed", "redaction_count": 0,
+                "diff_sha256": diff_hash,
+            }],
+        )
+        self.assertEqual(artifact["file_coverage"][0]["diff_sha256"], diff_hash)
+        review.validate_artifact(
+            artifact, "v4.8.0", "a" * 40, {"one.go"},
+            expected_diff_hashes={"one.go": diff_hash},
+        )
+        with self.assertRaisesRegex(ValueError, "diff hashes do not match"):
+            review.validate_artifact(
+                artifact, "v4.8.0", "a" * 40, {"one.go"},
+                expected_diff_hashes={"one.go": "b" * 64},
+            )
+
+    def test_file_diff_hashes_are_bound_to_each_git_diff_header(self) -> None:
+        first = "diff --git a/one.go b/one.go\n+one\n"
+        second = "diff --git a/two.go b/two.go\n+two\n"
+        hashes = review.file_diff_hashes_from_batches([(first + second, ("one.go", "two.go"))])
+        self.assertEqual(hashes, {
+            "one.go": __import__("hashlib").sha256(first.encode()).hexdigest(),
+            "two.go": __import__("hashlib").sha256(second.encode()).hexdigest(),
+        })
+
+    def test_prior_review_enriches_legacy_coverage_and_selects_only_changed_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            subprocess.run(["git", "init", "-q", str(root)], check=True)
+            subprocess.run(["git", "-C", str(root), "config", "user.name", "Review Test"], check=True)
+            subprocess.run(["git", "-C", str(root), "config", "user.email", "review@example.invalid"], check=True)
+            for name in ("one.go", "two.go"):
+                (root / name).write_text("base\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(root), "add", "one.go", "two.go"], check=True)
+            subprocess.run(["git", "-C", str(root), "commit", "-qm", "base"], check=True)
+            base = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+            subprocess.run(["git", "-C", str(root), "tag", "v4.8.0"], check=True)
+            (root / "one.go").write_text("first reviewed change\n", encoding="utf-8")
+            (root / "two.go").write_text("second reviewed change\n", encoding="utf-8")
+            subprocess.run(["git", "-C", str(root), "add", "one.go", "two.go"], check=True)
+            subprocess.run(["git", "-C", str(root), "commit", "-qm", "initial reviewed head"], check=True)
+            prior_head = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+            original_cwd = Path.cwd()
+            try:
+                os.chdir(root)
+                prior_coverage = review.git_file_coverage("v4.8.0", prior_head)
+                finding = {
+                    "severity": "informational", "category": "correctness", "title": "Prior finding",
+                    "rationale": "A test finding.", "locations": [{"file": "two.go", "line": 1}],
+                }
+                prior = review.build_artifact(
+                    {"summary": "Full review completed.", "findings": [finding]},
+                    "v4.8.0", prior_head, file_coverage=prior_coverage,
+                    provider="codex", model="gpt-6.1-sol", codex_cli_version="codex-cli test",
+                    base_commit=base,
+                )
+                prior_path = root / "prior.json"
+                prior_path.write_text(json.dumps(prior), encoding="utf-8")
+                (root / "one.go").write_text("fixed changed file\n", encoding="utf-8")
+                subprocess.run(["git", "-C", str(root), "add", "one.go"], check=True)
+                subprocess.run(["git", "-C", str(root), "commit", "-qm", "fix one file"], check=True)
+                target_head = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
+                loaded = review.load_prior_artifact(prior_path, "v4.8.0", base, target_head)
+                current_coverage = review.git_file_coverage("v4.8.0", target_head)
+                current_hashes = review.git_file_diff_hashes("v4.8.0", target_head)
+                current_coverage = [
+                    {**entry, **({"diff_sha256": current_hashes[entry["file"]]} if entry["status"] == "reviewed" else {})}
+                    for entry in current_coverage
+                ]
+                unchanged, changed, reusable = review.incremental_review_plan(
+                    loaded["file_coverage"], current_coverage, loaded["findings"],
+                )
+                responses = root / "responses.json"
+                responses.write_text(json.dumps({"schema": "metrum-ai-router-release-review-responses/v1", "acceptances": {}}))
+                output = root / "review.md"
+                artifact_output = root / "review.json"
+                with patch.object(review, "codex_cli_version", return_value="codex-cli test"), \
+                     patch.object(review, "call_codex", return_value={"summary": "Changed file reviewed.", "findings": []}) as call_codex, \
+                     patch("sys.argv", [
+                         "release_ai_review.py", "--provider", "codex", "--model", "gpt-6.1-sol",
+                         "--base", "v4.8.0", "--base-commit", base, "--head", target_head,
+                         "--tag", "v5.0.0", "--responses", str(responses), "--prior-artifact", str(prior_path),
+                         "--artifact-output", str(artifact_output), "--output", str(output),
+                     ]):
+                    self.assertEqual(review.main(), 0)
+                call_codex.assert_called_once()
+                self.assertIn("one.go", call_codex.call_args.args[0])
+                self.assertNotIn("two.go", call_codex.call_args.args[0])
+                incremental = json.loads(artifact_output.read_text(encoding="utf-8"))
+                self.assertEqual({item["file"] for item in incremental["file_coverage"]}, {"one.go", "two.go"})
+                self.assertEqual(incremental["findings"][0]["title"], "Prior finding")
+            finally:
+                os.chdir(original_cwd)
+            self.assertEqual(unchanged, {"two.go"})
+            self.assertEqual(changed, {"one.go"})
+            self.assertEqual([item["title"] for item in reusable], ["Prior finding"])
+
     def test_model_timeout_fails_without_logging_request(self) -> None:
         with patch.object(review.urllib.request, "urlopen", side_effect=TimeoutError()):
             with self.assertRaisesRegex(review.RequestTimeoutError, "timed out after"):
@@ -543,7 +666,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
             ])
             artifact = json.loads((root / "review-output" / "review.json").read_text(encoding="utf-8"))
             self.assertEqual(artifact["summary"],
-                             "Reviewed 2 text files across 2 bounded batches; recorded 0 binary file hashes and 0 generated-file checks within a 2-file release range.")
+                             "Reviewed 2 changed text files across 2 bounded batches; reused prior results for 0 unchanged text files; recorded 0 binary file hashes and 0 generated-file checks within a 2-file release range.")
             self.assertEqual(artifact["file_coverage"], [
                 {"file": "docs/release.md", "status": "reviewed", "redaction_count": 0},
                 {"file": "router.go", "status": "reviewed", "redaction_count": 0},
@@ -765,6 +888,11 @@ class ReleaseAIReviewTest(unittest.TestCase):
             try:
                 os.chdir(root)
                 coverage = review.git_file_coverage(base, reviewed_head)
+                diff_hashes = review.git_file_diff_hashes(base, reviewed_head)
+                coverage = [
+                    {**item, **({"diff_sha256": diff_hashes[item["file"]]} if item["status"] == "reviewed" else {})}
+                    for item in coverage
+                ]
                 base_commit = review.resolve_git_commit(base)
                 artifact = review.build_artifact(
                     {"summary": "No blocking findings.", "findings": []}, base, reviewed_head,

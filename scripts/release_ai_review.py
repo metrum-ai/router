@@ -321,6 +321,26 @@ def git_file_coverage(base: str, head: str) -> list[dict[str, Any]]:
     return coverage
 
 
+def file_diff_hashes_from_batches(batches: list[tuple[str, tuple[str, ...]]]) -> dict[str, str]:
+    hashes: dict[str, str] = {}
+    for diff, paths in batches:
+        starts = [match.start() for match in re.finditer(r"(?m)^diff --git ", diff)]
+        if not starts:
+            continue
+        elif len(starts) != len(paths):
+            raise ValueError("release diff file headers do not match the changed-file list")
+        else:
+            chunks = [diff[start:end] for start, end in zip(starts, [*starts[1:], len(diff)])]
+        for path, chunk in zip(paths, chunks):
+            hashes[path] = hashlib.sha256(chunk.encode("utf-8")).hexdigest()
+    return hashes
+
+
+def git_file_diff_hashes(base: str, head: str) -> dict[str, str]:
+    batches = git_diff_batches(base, head, max_bytes=MAX_DIFF_BYTES, max_single_file_bytes=MAX_DIFF_BYTES)
+    return file_diff_hashes_from_batches(batches)
+
+
 def git_redaction_counts(base: str, head: str) -> dict[str, int]:
     """Recompute per-file counts from model-eligible text diffs without invoking a model."""
     counts: dict[str, int] = {}
@@ -328,6 +348,35 @@ def git_redaction_counts(base: str, head: str) -> dict[str, int]:
     for diff, paths in batches:
         redact_sensitive_credentials(diff, paths=paths, redaction_counts=counts)
     return counts
+
+
+def incremental_review_plan(
+    prior_coverage: list[dict[str, Any]],
+    current_coverage: list[dict[str, Any]],
+    prior_findings: list[dict[str, Any]],
+) -> tuple[set[str], set[str], list[dict[str, Any]]]:
+    """Return unchanged paths, changed text paths and findings safe to reuse by file hash."""
+    prior_by_path = {item["file"]: item for item in prior_coverage}
+    unchanged: set[str] = set()
+    changed: set[str] = set()
+    for item in current_coverage:
+        if item["status"] != "reviewed":
+            continue
+        previous = prior_by_path.get(item["file"])
+        if (
+            previous is not None
+            and previous.get("status") == "reviewed"
+            and isinstance(previous.get("diff_sha256"), str)
+            and previous["diff_sha256"] == item.get("diff_sha256")
+        ):
+            unchanged.add(item["file"])
+        else:
+            changed.add(item["file"])
+    reusable = [
+        finding for finding in prior_findings
+        if finding.get("files") and set(finding["files"]) <= unchanged
+    ]
+    return unchanged, changed, reusable
 
 
 def git_binary_hashes(base: str, head: str, paths: set[str]) -> dict[str, dict[str, str | None]]:
@@ -695,6 +744,7 @@ def build_artifact(
         sha256_before = item.get("sha256_before")
         sha256_after = item.get("sha256_after")
         redaction_count = item.get("redaction_count", 0)
+        diff_sha256 = item.get("diff_sha256")
         if (
             not isinstance(file_path, str)
             or not file_path
@@ -705,8 +755,13 @@ def build_artifact(
             raise ValueError("AI release review file coverage contains an invalid or duplicate path")
         if not isinstance(redaction_count, int) or isinstance(redaction_count, bool) or redaction_count < 0:
             raise ValueError("AI release review file coverage has an invalid redaction count")
+        if diff_sha256 is not None and (not isinstance(diff_sha256, str) or not re.fullmatch(r"[0-9a-f]{64}", diff_sha256)):
+            raise ValueError("AI release review file coverage has an invalid diff hash")
         if status == "reviewed" and not verification:
-            normalized_coverage.append({"file": file_path, "status": status, "redaction_count": redaction_count})
+            entry = {"file": file_path, "status": status, "redaction_count": redaction_count}
+            if diff_sha256 is not None:
+                entry["diff_sha256"] = diff_sha256
+            normalized_coverage.append(entry)
         elif status == "generated-and-verified":
             required_check = generated_check(file_path)
             if not required_check or verification != required_check:
@@ -758,6 +813,7 @@ def validate_artifact(
     expected_binary: dict[str, dict[str, str | None]] | None = None,
     base_commit: str | None = None,
     expected_redactions: dict[str, int] | None = None,
+    expected_diff_hashes: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     if artifact.get("schema") != "metrum-ai-router-release-review-artifact/v3" or artifact.get("base") != base or artifact.get("head") != head:
         raise ValueError("stored AI release review artifact does not match the requested range")
@@ -792,6 +848,11 @@ def validate_artifact(
         item["file"]: item["redaction_count"] for item in artifact["file_coverage"]
     } != expected_redactions:
         raise ValueError("stored AI release review redaction counts do not match the release range")
+    if expected_diff_hashes and {
+        item["file"]: item.get("diff_sha256") for item in artifact["file_coverage"]
+        if item["status"] == "reviewed"
+    } != expected_diff_hashes:
+        raise ValueError("stored AI release review diff hashes do not match the release range")
     for item in artifact["file_coverage"]:
         path, status = item["file"], item["status"]
         required_status = "binary" if path in (expected_binary or {}) else ("generated-and-verified" if generated_check(path) else "reviewed")
@@ -855,13 +916,61 @@ def load_committed_artifact(
     }
     expected_redactions = {entry["file"]: entry.get("redaction_count", 0) for entry in expected_coverage}
     expected_redactions.update(git_redaction_counts(base, review_head))
+    expected_diff_hashes = git_file_diff_hashes(base, review_head)
     candidate = validate_artifact(
         candidate, base, review_head, expected_files, expected_binary, base_commit,
-        expected_redactions=expected_redactions,
+        expected_redactions=expected_redactions, expected_diff_hashes=expected_diff_hashes,
     )
     if candidate.get("provider") != "codex" or candidate.get("model") != CODEX_MODEL:
         raise ValueError("committed review artifact uses an unexpected provider or model")
     return candidate, review_head
+
+
+def load_prior_artifact(path: Path, base: str, base_commit: str, target_head: str) -> dict[str, Any]:
+    """Validate an earlier full review and confirm its head precedes the requested head."""
+    candidate = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(candidate, dict):
+        raise ValueError("prior AI release review artifact must be a JSON object")
+    prior_head = candidate.get("head")
+    if not isinstance(prior_head, str) or not re.fullmatch(r"[0-9a-f]{40}", prior_head):
+        raise ValueError("prior AI release review artifact has an invalid head commit")
+    if candidate.get("base") != base or candidate.get("base_commit") != base_commit:
+        raise ValueError("prior AI release review artifact uses a different base range")
+    try:
+        subprocess.run(
+            ["git", "merge-base", "--is-ancestor", prior_head, target_head],
+            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+    except subprocess.CalledProcessError as exc:
+        raise ValueError("prior review head is not an ancestor of the requested head") from exc
+    prior_coverage = git_file_coverage(base, prior_head)
+    prior_files = {entry["file"] for entry in prior_coverage}
+    prior_binary = {
+        entry["file"]: {"before": entry.get("sha256_before"), "after": entry.get("sha256_after")}
+        for entry in prior_coverage if entry["status"] == "binary"
+    }
+    prior_redactions = {entry["file"]: entry.get("redaction_count", 0) for entry in prior_coverage}
+    prior_redactions.update(git_redaction_counts(base, prior_head))
+    validated = validate_artifact(
+        candidate, base, prior_head, prior_files, prior_binary, base_commit,
+        expected_redactions=prior_redactions,
+    )
+    expected_hashes = git_file_diff_hashes(base, prior_head)
+    recorded_hashes = {
+        item["file"]: item["diff_sha256"] for item in validated["file_coverage"]
+        if item["status"] == "reviewed" and "diff_sha256" in item
+    }
+    if recorded_hashes and recorded_hashes != expected_hashes:
+        raise ValueError("prior AI release review per-file hashes do not match its reviewed head")
+    if not recorded_hashes:
+        for item in validated["file_coverage"]:
+            if item["status"] == "reviewed":
+                item["diff_sha256"] = expected_hashes[item["file"]]
+    else:
+        for item in validated["file_coverage"]:
+            if item["status"] == "reviewed":
+                item["diff_sha256"] = expected_hashes[item["file"]]
+    return validated
 
 
 def verify_generated_file_checks(artifact: dict[str, Any], review_head: str) -> None:
@@ -979,6 +1088,7 @@ def main() -> int:
     parser.add_argument("--tag", required=True, help="release tag")
     parser.add_argument("--responses", type=Path, default=Path("docs/release-review-responses.json"))
     parser.add_argument("--artifact-cache", type=Path)
+    parser.add_argument("--prior-artifact", type=Path, help="reuse unchanged per-file results from an earlier reviewed head")
     parser.add_argument("--committed-artifact", type=Path, help="validate a committed range artifact without invoking a model")
     parser.add_argument("--committed-artifact-dir", type=Path, help="select and validate the committed artifact for the release range")
     parser.add_argument("--provider", choices=("codex", "anthropic"), default="anthropic")
@@ -986,6 +1096,8 @@ def main() -> int:
     parser.add_argument("--artifact-output", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    if args.prior_artifact and (args.artifact_cache or args.committed_artifact or args.committed_artifact_dir):
+        parser.error("--prior-artifact cannot be combined with another artifact input")
     try:
         response_data = json.loads(args.responses.read_text(encoding="utf-8"))
         if not isinstance(response_data, dict) or response_data.get("schema") != "metrum-ai-router-release-review-responses/v1":
@@ -1004,6 +1116,7 @@ def main() -> int:
         expected_files: set[str] = set()
         binary_hashes: dict[str, dict[str, str | None]] = {}
         expected_redactions: dict[str, int] = {}
+        expected_diff_hashes: dict[str, str] = {}
         if not args.committed_artifact_dir:
             expected_coverage = git_file_coverage(args.base, args.head)
             expected_files = {entry["file"] for entry in expected_coverage}
@@ -1019,9 +1132,10 @@ def main() -> int:
         elif args.committed_artifact:
             artifact = json.loads(args.committed_artifact.read_text(encoding="utf-8"))
             expected_redactions.update(git_redaction_counts(args.base, args.head))
+            expected_diff_hashes.update(git_file_diff_hashes(args.base, args.head))
             artifact = validate_artifact(
                 artifact, args.base, args.head, expected_files, binary_hashes, base_commit,
-                expected_redactions=expected_redactions,
+                expected_redactions=expected_redactions, expected_diff_hashes=expected_diff_hashes,
             )
             cache_hit = True
         elif args.artifact_cache and args.artifact_cache.exists():
@@ -1030,9 +1144,10 @@ def main() -> int:
             except json.JSONDecodeError as exc:
                 raise ValueError("stored AI release review artifact is malformed") from exc
             expected_redactions.update(git_redaction_counts(args.base, args.head))
+            expected_diff_hashes.update(git_file_diff_hashes(args.base, args.head))
             artifact = validate_artifact(
                 artifact, args.base, args.head, expected_files, binary_hashes, base_commit,
-                expected_redactions=expected_redactions,
+                expected_redactions=expected_redactions, expected_diff_hashes=expected_diff_hashes,
             )
             cache_hit = True
         else:
@@ -1043,25 +1158,67 @@ def main() -> int:
             if provider == "anthropic" and not api_key:
                 print("AI release review failed: required API credential is unavailable", file=sys.stderr)
                 return 2
+            prior_artifact = None
+            unchanged_paths: set[str] = set()
+            changed_paths: set[str] | None = None
+            reusable_findings: list[dict[str, Any]] = []
+            prior_coverage: list[dict[str, Any]] = []
+            if args.prior_artifact:
+                prior_artifact = load_prior_artifact(args.prior_artifact, args.base, base_commit, args.head)
+                if prior_artifact["provider"] != provider or prior_artifact["model"] != model:
+                    raise ValueError("prior artifact provider and model must match this incremental review")
+                prior_coverage = prior_artifact["file_coverage"]
+                expected_diff_hashes = git_file_diff_hashes(args.base, args.head)
+                expected_coverage = [
+                    {
+                        **entry,
+                        **({"diff_sha256": expected_diff_hashes[entry["file"]]} if entry["status"] == "reviewed" else {}),
+                    }
+                    for entry in expected_coverage
+                ]
+                unchanged_paths, changed_paths, reusable_findings = incremental_review_plan(
+                    prior_coverage, expected_coverage, prior_artifact["findings"],
+                )
+                print(
+                    f"AI release review incremental plan: reuse {len(unchanged_paths)} unchanged files; "
+                    f"review {len(changed_paths)} changed text files",
+                    file=sys.stderr,
+                )
             binary_paths = set(git_binary_paths(args.base, args.head))
             diff_limit = INITIAL_DIFF_BYTES
-            batches = git_diff_batches(
-                args.base,
-                args.head,
-                max_bytes=diff_limit,
-                max_single_file_bytes=MAX_DIFF_BYTES,
-            )
+            batch_options: dict[str, Any] = {
+                "max_bytes": diff_limit,
+                "max_single_file_bytes": MAX_DIFF_BYTES,
+            }
+            if changed_paths is not None:
+                batch_options["only_paths"] = changed_paths
+            batches = git_diff_batches(args.base, args.head, **batch_options)
             batched_files = {path for _diff, paths in batches for path in paths}
             generated_paths = {path for path in expected_files if generated_check(path)}
-            if batched_files != expected_files - binary_paths - generated_paths:
+            expected_review_files = changed_paths if changed_paths is not None else expected_files - binary_paths - generated_paths
+            if batched_files != expected_review_files:
                 raise ValueError("release review batches do not match git diff --name-only")
+            expected_diff_hashes.update(file_diff_hashes_from_batches(batches))
             measured_redactions = {path: 0 for path in expected_files}
             findings_by_id: dict[str, dict[str, Any]] = {}
+            if prior_artifact is not None:
+                prior_by_path = {item["file"]: item for item in prior_coverage}
+                for path in unchanged_paths:
+                    measured_redactions[path] = prior_by_path[path].get("redaction_count", 0)
+                if reusable_findings:
+                    reused = build_artifact(
+                        {"summary": "Reused findings from unchanged per-file diffs.", "findings": reusable_findings},
+                        args.base, args.head, allowed_files=unchanged_paths,
+                        provider=provider, model=model, base_commit=base_commit,
+                        codex_cli_version=cli_version,
+                    )
+                    findings_by_id.update({item["id"]: item for item in reused["findings"]})
             batch_index = 0
             while batch_index < len(batches):
                 if len(batches) > MAX_REVIEW_BATCHES:
                     raise ValueError("release diff exceeds the maximum number of review batches")
                 diff, paths = batches[batch_index]
+                expected_diff_hashes.update(file_diff_hashes_from_batches([(diff, paths)]))
                 batch_label = f"{batch_index + 1}/{len(batches)}"
                 print(f"AI release review batch {batch_label} started", file=sys.stderr)
                 try:
@@ -1124,12 +1281,18 @@ def main() -> int:
             generated_paths = {path for path in expected_files if generated_check(path)}
             expected_redactions = measured_redactions
             expected_coverage = [
-                {**entry, "redaction_count": expected_redactions.get(entry["file"], 0)}
+                {
+                    **entry,
+                    "redaction_count": expected_redactions.get(entry["file"], 0),
+                    **({"diff_sha256": expected_diff_hashes[entry["file"]]}
+                       if entry["status"] == "reviewed" and entry["file"] in expected_diff_hashes else {}),
+                }
                 for entry in expected_coverage
             ]
             artifact = build_artifact({
                 "summary": (
-                    f"Reviewed {len(batched_files)} text files across {len(batches)} bounded batches; "
+                    f"Reviewed {len(batched_files)} changed text files across {len(batches)} bounded batches; "
+                    f"reused prior results for {len(unchanged_paths)} unchanged text files; "
                     f"recorded {len(binary_paths)} binary file hashes and {len(generated_paths - binary_paths)} generated-file checks "
                     f"within a {changed_files}-file release range."
                 ),
@@ -1138,7 +1301,7 @@ def main() -> int:
                 provider=provider, model=model, base_commit=base_commit, codex_cli_version=cli_version)
             artifact = validate_artifact(
                 artifact, args.base, args.head, expected_files, binary_hashes, base_commit,
-                expected_redactions=expected_redactions,
+                expected_redactions=expected_redactions, expected_diff_hashes=expected_diff_hashes,
             )
         report, unanswered = evaluate(artifact, acceptances, args.base, review_head)
         args.output.parent.mkdir(parents=True, exist_ok=True)
