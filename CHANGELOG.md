@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Remove the unsupported legacy admin route setting from both hardening guides and direct operators to the separate `/admin/v1` listener.
+
 ### Security
 
 - Mark honeytoken and canary OCSF findings Critical and include the caller ID and source IP for SIEM correlation.
