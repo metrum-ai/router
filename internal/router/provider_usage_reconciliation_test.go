@@ -585,6 +585,47 @@ func TestProviderUsageReconciliationRetriesEarliestUncheckpointedWindow(t *testi
 	}
 }
 
+type windowRecordingProviderUsageSource struct {
+	from []time.Time
+}
+
+func (s *windowRecordingProviderUsageSource) ProviderCost(_ context.Context, _ string, from, _ time.Time) (float64, error) {
+	s.from = append(s.from, from.UTC())
+	return 0, nil
+}
+
+func TestProviderUsagePendingWindowCannotExceedCatchUpFloor(t *testing.T) {
+	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	service := &Service{usage: store, cfg: &Config{Server: ServerConfig{
+		AdminReports: AdminReportsConfig{Security: AdminSecurityReportsConfig{Enabled: true}},
+		ProviderUsageReconciliation: ProviderUsageReconciliationConfig{
+			Enabled: true, MaxCatchUpDays: 2,
+			Providers: []ProviderUsageReconciliationEntry{{Provider: "primary"}},
+		},
+	}}}
+	checkpoint := time.Date(2026, 11, 10, 0, 0, 0, 0, time.UTC)
+	if err := service.recordProviderUsageCheckpoint("primary", checkpoint); err != nil {
+		t.Fatal(err)
+	}
+	pending := time.Date(2026, 11, 12, 0, 0, 0, 0, time.UTC)
+	if err := service.recordProviderUsageFailure("primary", pending, pending.Add(24*time.Hour), 502, "provider_usage_source_failed"); err != nil {
+		t.Fatal(err)
+	}
+	source := &windowRecordingProviderUsageSource{}
+	now := time.Date(2026, 11, 16, 6, 0, 0, 0, time.UTC)
+	if err := service.runProviderUsageReconciliation(context.Background(), source, now); err != nil {
+		t.Fatal(err)
+	}
+	floor := now.UTC().Truncate(24 * time.Hour).Add(-48 * time.Hour)
+	if len(source.from) != 2 || !source.from[0].Equal(floor) || !source.from[1].Equal(floor.Add(24*time.Hour)) {
+		t.Fatalf("provider windows = %v; want %s and %s", source.from, floor, floor.Add(24*time.Hour))
+	}
+}
+
 func TestProviderUsageScheduleDelayAndCatchUpCheckpoint(t *testing.T) {
 	got := nextProviderUsageRun(time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC), providerUsageDefaultScheduleHour)
 	if !got.Equal(time.Date(2026, 11, 16, 6, 0, 0, 0, time.UTC)) {

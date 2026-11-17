@@ -1408,6 +1408,10 @@ The prompt-injection detector is an optional external example. It is off unless 
 
 Failed or incomplete Responses terminal events preserve `message` and `reasoning` output items. Other output items retain only `id`, `type`, `status`, and `error`, including unrecognized item types. No configuration change is required.
 
+## Anthropic streamed secret DLP
+
+When secret DLP is enabled, Anthropic text and thinking included in `content_block_start` frames is now inspected with the same rolling detector as later deltas. A credential split between a block start and a delta is redacted before either frame reaches the caller. No configuration change is required.
+
 ## v5.0.0 admin client identities
 
 Registering any credential makes its policy subject managed immediately. Only

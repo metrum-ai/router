@@ -5,6 +5,7 @@
 ### Fixed
 
 - Keep only `id`, `type`, `status`, and `error` on non-message and non-reasoning output items in failed and incomplete Responses snapshots, including unrecognized item kinds.
+- Keep pending provider usage windows inside the configured catch-up age bound.
 - Bound authentication audit writes with durable per-replica five-minute counters, chain one count-delta row at window close, and fall back to direct chained writes when the counter table is full; deny authentication if either audit write fails.
 
 - Evaluate tool-firewall sequence rules in response order, including first and second steps returned in one response.
@@ -21,6 +22,7 @@
 
 ### Security
 
+- Inspect Anthropic text and thinking carried by streamed block-start events before forwarding them when secret DLP is enabled.
 - Keep independent secret-scanning buffers for each Responses text item and content part so interleaved deltas cannot hide credentials.
 - Mark honeytoken and canary OCSF findings Critical and include the caller ID and source IP for SIEM correlation.
 - Include firewall decisions and honeytoken/canary use in the opt-in OCSF 1.4.0 security event stream.
