@@ -117,6 +117,9 @@ func (s *Service) runProviderUsageReconciliation(parent context.Context, source 
 		if pending, ok := s.providerUsagePendingWindow(ctx, entry.Provider, checkpoint.OperationID); ok && pending.Before(start) {
 			start = pending
 		}
+		if start.Before(catchUpFloor) {
+			start = catchUpFloor
+		}
 		for dayStart, days := start, 0; dayStart.Before(dayEnd) && days < catchUp; dayStart, days = dayStart.Add(24*time.Hour), days+1 {
 			if ctx.Err() != nil {
 				return ctx.Err()
