@@ -1,0 +1,4500 @@
+{
+  "artifact_digest": "798ce87591814dbb95042dcc3f6e7bc34d2b0fb8a10e0a836f6b539e6301b102",
+  "base": "v4.8.0",
+  "base_commit": "f826f2046ba19cba79645fd0c1aac09fbeec0ae0",
+  "codex_cli_version": "codex-cli 0.169.0",
+  "file_coverage": [
+    {
+      "diff_sha256": "003f3ecea972f85e534622360ed7edc54e3d18ed3986e18deb0dcc3bbeb1d6de",
+      "file": ".github/trivy-k8s-ignore.yaml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c3ab2bdc9e0eff994dd077700c6d842a8a4f9d470a0b8c8ab21f899e49b49d6d",
+      "file": ".github/workflows/admin-typecheck.yml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "990fdd8a9546dbd2a862b267a1b991622acf467c5f2c93dfa8ef496003f71761",
+      "file": ".github/workflows/agent-tool-compat-live.yml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "f62547b2054910dad0f34f30c1d5c82313fe3e8dd983f3dd5493cc66f63578a4",
+      "file": ".github/workflows/agent-tool-compat.yml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "bdd294753eb1402fe4eb87e36c3aba7145554f6423cc08b89108695fd4589f02",
+      "file": ".github/workflows/api-compat-live.yml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "8242031716bbe5e7fa80f82391218e207357284a69a3d2ad705da3a8093ed384",
+      "file": ".github/workflows/ci.yml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "35e2e2dab7422453c0a1768a487f65dcb9f0557d2a357be1aeb898ad06fef0a5",
+      "file": ".github/workflows/codeql.yml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "fbd870136e42c4beb4b1eae77e664d176ee702aef0d6d4ed39e6712207a715ba",
+      "file": ".github/workflows/dco.yml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "4318ae0031d1584a7d0a1efe016239df3f8d37ab76e36d1110eec8a9e6977888",
+      "file": ".github/workflows/decision-models-smoke.yml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "87ecb802b90398e7b1ad4dccb2a5e39b04c780f54d6aada841c82c7a4d680dd8",
+      "file": ".github/workflows/docs-qa.yml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "483fff0632f68d2042f7d20d2b33328f9e446636f57dee43b202ebb5002fe651",
+      "file": ".github/workflows/engine-advisory-gate.yml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "7b400d4c27e9c9e4cf04c418c271786209fa230f8d84aacba82fa3cbe7e7026f",
+      "file": ".github/workflows/eval-infra-nightly.yml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "e1138f491a79cc0d622b9da6b6d07d2ee9824afb3c3d6d8acdc02d7d49d9ad97",
+      "file": ".github/workflows/examples-catalog-smoke.yml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "5aab2a3815888c2107abefa26ad8a18d65563458d87acdd30458c1ccf33c2e7f",
+      "file": ".github/workflows/expert-routing-smoke.yml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "2c73e6ea2824df77110647ecd4b7d9606adcee7bcf7dc93d2c4cf6c1c27c1374",
+      "file": ".github/workflows/ft-example.yml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "2d7e1dd07e98f55d9c2cbacbab974d9445b4574110a4c10015e1b0bd5be4946b",
+      "file": ".github/workflows/governance-example-smoke.yml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "2d94266e81fa62498f22a977e7401f69b4eb53d5377ceea50ca59d1f252485e6",
+      "file": ".github/workflows/inspect-coding-evaluation.yml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "dce4e911c3e0eecf5f34249383b54891f9aa4dfce0bfee1e58c312b24de95c02",
+      "file": ".github/workflows/lrp.yml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "0057ab07b31b89440f267ae517acd243a3b5ec323c731fed5ae8596141d04da6",
+      "file": ".github/workflows/nightly-fuzz.yml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "f97419f6e46a1c5eb1c12ebb1da633edd4c278dd523bef9602ba87c5607aaf5f",
+      "file": ".github/workflows/release-dry-run.yml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "7807599ee81f8d9f264202f800d8ed66390af2cf6e2a6d31336fd92c95d2e31d",
+      "file": ".github/workflows/release-upgrade-check.yml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "6ba3d77f94824323d1e6ba7d3746dac1176f24d6193b821e0777e25256fa32de",
+      "file": ".github/workflows/release.yml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "1797804750b2260c6323b88a10753a5b1c7dc4c438bf1af1692e066782dfb0ce",
+      "file": ".github/workflows/run3-gate-smoke.yml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "87cb311be18e4f8f176e6e03aff83d431ce09ba4b6881b97a1934d15beb64c57",
+      "file": ".github/workflows/run3-gpu-safety-smoke.yml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "08e2970dbc2b8add062f6228d181090831f4848afdea9d9c9e98ea8943610e42",
+      "file": ".github/workflows/security-evidence.yml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "d547c394abdb7ee6f8328a6a900e85fc100b88238b538d7cc70dc9bc68d11e36",
+      "file": ".github/workflows/supplemental-checks.yml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "1366feb07607b419d797294f48c623cce212e04637b1f7dd3ab69f4f05a48fe0",
+      "file": ".grype.yaml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "b1f4984544e5f6580abb9cb77016493026a8ec9a4818329cfef5089c02a3612c",
+      "file": "AGENTS.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "f63ea74286126e6aeb90d3382e43319c468be312059786404a90876d2268aaea",
+      "file": "CHANGELOG.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "b7303c59b6785da69dd4b025fb5951bc41cbe38d24b42691507d1b75f8da9776",
+      "file": "Dockerfile",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "86be8f614e1140f99185bf3be1a4f9b3a6dd2aa7b1200645fca6ef0bef7b4192",
+      "file": "Makefile",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "31ab364b919a2662ea56db26251ab2e7cea67633208d3b8401b7b4f212b86ec3",
+      "file": "README.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c1207423a5e171d07b349b8ce5f860d70231b902ecf3ab984d597c5e0ae674fc",
+      "file": "THIRD_PARTY_NOTICES.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "3a10b514f3b210811b4dd539b74bfc956a722819ad43fbb57d07131a3a516cc1",
+      "file": "benchmarks/hierarchy-latency/README.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "39cd1e497d1458da2306eb25e87052a7748949b926cac4fa8b9232fe09906481",
+      "file": "benchmarks/overhead/decision_smoke.py",
+      "redaction_count": 1,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "a3240b3ce38500825dfdbcc5f47954d785810224fa1a9647884072e5073b3d65",
+      "file": "benchmarks/overhead/integration_smoke.py",
+      "redaction_count": 1,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "2066257d2d17bc146e61ff1ad04f65d99eedcb2a7b2da8adb06fed732e366e05",
+      "file": "benchmarks/overhead/profile_integration_smoke.py",
+      "redaction_count": 1,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "196580e394038a51d9562e2fd4b774406e9c89474498d8e8dc1ebce3b6b7954f",
+      "file": "benchmarks/overhead/profiled-router/smoke.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "b7fe19f5a2f8601cb695a19440e821b52c97d64264ed842e0b38b6889686a6e9",
+      "file": "cmd/docs-diag-schema/main.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "94df3d536a008b5f7650a7710ef3e6b1baf20ec5a2e79556b9db1464707ec671",
+      "file": "cmd/metrum-ai-router-migrate/main_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "8a69177664d39e7db0e333ae0d3a4b363cae436837b9b15efdd93cb54613a769",
+      "file": "cmd/metrum-ai-router-token-gen/main.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "1a5867402cea859be58afb15e311ec9b9ebab16a6ba6081bfbfa296d8b4a80eb",
+      "file": "cmd/metrum-ai-router/admin_plane.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c1f4ef32442a7852fa549b9a515fe113af5a7946cb60accc464501a792f08d0a",
+      "file": "cmd/metrum-ai-router/main.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "b3f7aa56ed51c0d0c62d34cfe7f2a022930fdec26fbb3cfffe99cc29f0cdd362",
+      "file": "cmd/metrum-ai-router/server_timeouts_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "9f05eb6ebe661cd61004c85b01399638b2ea8c97e2d3d4bb147e25bda19da162",
+      "file": "cmd/metrum-ai-router/tls_startup_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "5e1842a6793986b17ed656b89302981e38f9c2694d95ffb2b414bd93d328c335",
+      "file": "cmd/metrum-ai-routerctl/admin_cli_errors_test.go",
+      "redaction_count": 1,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "8c617cd714a4c766d91bb0c10aeab89ca76ae4ef8643fd709fb13901346c0453",
+      "file": "cmd/metrum-ai-routerctl/admin_operations_cli_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "669714ecda6f787877666e57c9a21e7f0fbbb7e96bf1f1611cfd4b51a31c2ab9",
+      "file": "cmd/metrum-ai-routerctl/admin_route_parity_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "e4f79756640cf93f04065669b6b9bd155cd31b87b316a20569d6feba48fd5f18",
+      "file": "cmd/metrum-ai-routerctl/admin_v1_parity_test.go",
+      "redaction_count": 1,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "0222f181f9ca9ea547564f31ec171040968408c3944d90dccb9814cb6996da2c",
+      "file": "cmd/metrum-ai-routerctl/cfo_report.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "722c70786577322ceb61c1c0265259432d2d76dd984670429e9ff512636f3c61",
+      "file": "cmd/metrum-ai-routerctl/cfo_report_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "8a0df8327c60d0aa381f9a107b5b7724207b3cbe1e54e34996665ac28dd181e9",
+      "file": "cmd/metrum-ai-routerctl/groups_api_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "18cd1e5e464054702ea4e446e60c8ff897de259c0e83387dcf6d1527fd33b681",
+      "file": "cmd/metrum-ai-routerctl/honeytoken.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "80bfc13e87fe362e093be752b55d970a402bf5876c443b6595695a91f375589c",
+      "file": "cmd/metrum-ai-routerctl/main.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "5347f1df4f10637ea411635e1e8d50ee4f229c0b92b59056a8eb5f9b34c4fe1a",
+      "file": "cmd/metrum-ai-routerctl/main_test.go",
+      "redaction_count": 1,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "8012689654c33354cc7aea86dbd65c20ed02e6b96a0390ba0ab9cd0b4a3042c1",
+      "file": "cmd/metrum-ai-routerctl/policies_api.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "5cd69f3bdb87d8679ccd57b5cb2a90ea984e5b487d977fdab1d524412e9058a3",
+      "file": "cmd/metrum-ai-routerctl/security_doctor.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "4f9edd67512267cbfa99c1dfc8c644195452ab5ed78c2ce859f2115b59811593",
+      "file": "cmd/metrum-ai-routerctl/security_doctor_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "fe1caf9fbff9ba6d6da1f1b2ded910e8d5b36481dc8419f26bc524d1b7a4d88f",
+      "file": "cmd/metrum-ai-routerctl/virtual_model.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c37c88e39a7cbfb8f6db2ae5508467b42f85a964768c3dd387877b7acb13ed79",
+      "file": "cmd/metrum-ai-routerctl/virtual_model_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "9859d66212393627d2e1f6d7bbfa926d77ac208b7120649938790aefdfcded4c",
+      "file": "config.example.yaml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "b790185dce203db8896b1f7818612292e1c6256cea79b3b4d802af7ba508aa86",
+      "file": "config/authz/policy.example.csv",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "7f39507c6651811904cc44924df5df5a1490eb56e2ae0e550382d0cb97e53b87",
+      "file": "config/cache-isolation.example.yaml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "ff2e6de9d362d8d6c0b6bf4d4a7e090d13698a893df19999f0cb06a9b1e002ae",
+      "file": "deploy/edge/README.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "a9fb5f521812b83a69646ee4e9e5236e6fa673a3d0575813a1f4e6e009b5aae2",
+      "file": "deploy/edge/compose.amd.yaml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "08c3b4fded1b955dcf8b1ae11b92608f9dba9be55f4bf8f46803f8ce7dba0db9",
+      "file": "deploy/edge/install.sh",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "0d4c78344973840c3af50c61560eec776b904e9e009f82e7ff92818d36b90fc8",
+      "file": "deploy/edge/test/install_e2e.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "885cbdf4a659105ea390dc7b160eb2e31cdcb94a27f6f5c7698f1a5f53ab9842",
+      "file": "deploy/github-runners-router/Dockerfile",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "56eadb0e2c449de1341b35fa8a6d9ea5479186af31c8af0b627a98529274337c",
+      "file": "deploy/kubernetes/base/deployment.yaml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "e291c016321757b0d15dd93cbd018f17334492efdba427a9b565529b858e6bd5",
+      "file": "deploy/kubernetes/examples/postgres-migration-plan-job.yaml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "f03cced0cd4548b81896f86d5589468d568f26534f805a1c7c8d544f4c51cf73",
+      "file": "deploy/kubernetes/intents/shadeform-nvidia-llmd-compat.example.yaml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "203188e2a3ca2aba077c4cc28e18e5ac8c1dff189fd7e8510b30dcbf104fb30a",
+      "file": "deploy/kubernetes/intents/shadeform-nvidia-local-models-b200.example.yaml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "b6095264429b227df9b547cf7424d61dbb3e66acc895855b2c38818431e2eb52",
+      "file": "deploy/kubernetes/intents/shadeform-nvidia-local-models.example.yaml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "48cef51374743ab98bd7fa8d364e2fdad18169ddebf79178c57a837377c9a291",
+      "file": "deploy/kubernetes/overlays/admin-plane/config.yaml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "ae64ce2b74ea710ae01003dbd8c0a31357f7174b4898c5ce6fe33164f76ee89e",
+      "file": "deploy/kubernetes/overlays/example/patch-image.yaml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "4f14b98730871f5ba4e57dc99e0a63073361a7f4b7a9ea8fd9d1c74cfee358bc",
+      "file": "deploy/kubernetes/overlays/k3s-amd-instinct-local-serving/serving/vllm-chat-deployment.yaml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c05544dd31f8ffc6089424dd5e4c4604e24764c09395745adb8a6e099d02decf",
+      "file": "deploy/kubernetes/overlays/k3s-amd-instinct-local-serving/serving/vllm-coder-deployment.yaml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "53bc3f95891b55e7cb07113eebfca8be012173e82cd9bd83d500b420500beef6",
+      "file": "deploy/kubernetes/overlays/k3s-amd-instinct-local-serving/serving/vllm-tiny-deployment.yaml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "f4db43b87b452d5582666ff5d9941e440061ff432389101c4c7c7751b35d16f4",
+      "file": "deploy/kubernetes/overlays/nvidia-local-serving/config.example.yaml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "ec7d76ecbe7879b8faab0b93250b5699e7bd24779132eed07f06b09cc1c8b059",
+      "file": "deploy/kubernetes/overlays/nvidia-local-serving/patch-image.yaml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "5e331d38d2792a80ec7f77a9015c59c95068656fc545561f0f2d6303b10b73a3",
+      "file": "deploy/kubernetes/overlays/nvidia-local-serving/serving/vllm-chat-deployment.yaml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "d22466f974b28556f87402f6f245ec9629e97e75b2772dab1fc3f0181ea9d993",
+      "file": "deploy/kubernetes/overlays/nvidia-local-serving/serving/vllm-coder-deployment.yaml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "7bdd689ac38654be8891fcb4ff5837e16f8956724929f4aa369c33c834e80401",
+      "file": "deploy/kubernetes/overlays/nvidia-local-serving/serving/vllm-tiny-deployment.yaml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "353f8d4e8914a2e28a66218c0b3b77ef41027a996b18b7c25246adbaf691ff4c",
+      "file": "deploy/kubernetes/overlays/sqlite-bootstrap/job.yaml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "42cc9014c61a9c8146cec03d5ccf37595512a11e2ea78385e085016f17e4d3d3",
+      "file": "deploy/kubernetes/trusted-registry-policy.example.yaml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "7036fcd3644d418dc2d2545cac7aea8d4337bc9b005f018626b690730f2a4f2a",
+      "file": "deploy/reference/README.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "2676f5e9e1c43f3f3e9fe9e1fadcf336019dd5a3961a32f2de84f1d13d25a9cc",
+      "file": "deploy/reference/amd-mi350p-datacenter/README.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "b86c1c3af94ea40aba93386b35335dc15834f3112d61baf13036f4df395bb8b8",
+      "file": "deploy/reference/amd-mi350p-datacenter/compose.yaml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "1530ad5cbe11c6d9b3cd9ea29524a5b6802e3e7a240ceb3563672f97d027d4bc",
+      "file": "deploy/reference/amd-mi350p-datacenter/config.yaml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c535488aafcdcaba9e02bdd3e5eaad5f64d19fa9a2b1af88e741a67d95724f51",
+      "file": "deploy/reference/amd-mi350p-datacenter/images.lock",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "e0519410899292b9a970cb07c436d9f812897c4a1df210bf732d298c8b2358e6",
+      "file": "deploy/reference/amd-strix-halo-edge/README.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "fa4628a09048689e502d25a7f204bf40daab26fc1075727870dc350f298e14ff",
+      "file": "deploy/reference/amd-strix-halo-edge/compose.yaml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "bd4df4a2230dece78e5aaed6e6a036ac24ba4c42ea154ebd840e84580a2b435b",
+      "file": "deploy/reference/amd-strix-halo-edge/config.yaml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "a80aa3cec4e8171332d8f2a5fdde8b0cac7c7abefe2abc5d258bd6a5c0c3ad22",
+      "file": "deploy/reference/amd-strix-halo-edge/images.lock",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "444732d87fe35dc6dd092e0d72298494fb2207f10210f10294da5136768037c8",
+      "file": "deploy/reference/hierarchy/CPU-SIZING.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "195bf72ed07d8fe5461d017e6549401b27322b2c12107eeffc9ffee949733f38",
+      "file": "deploy/reference/hierarchy/README.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "3bd542b5cea79589232930c7bed6ad0d57b399806c489824346127a3d9f09e9d",
+      "file": "deploy/reference/hierarchy/case-study.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "e975a9263e5977e65ccd971acf9735f03858487f189dff1561fb27f18af3c78b",
+      "file": "deploy/reference/hierarchy/config/dc.yaml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "7e4925ffd5b504bf1e64212cbc28dc76796ba2eb51c9a7eb23ac8d766934a794",
+      "file": "deploy/reference/hierarchy/config/edge.yaml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "87a83c5042d16ac769024dbdbb3d24bfd83394d1d7b67e066da19fc45ffeb5e6",
+      "file": "deploy/reference/hierarchy/demo-frontier/echo.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "77543b787414e649125cfbe2f4895ae7e35fc3042f4bc0d73b8470fb710e9cbe",
+      "file": "deploy/reference/hierarchy/docker-compose.yml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "f7753c34e3de667bb87e4fdddd8c3b86f02d82d1055d643774c9f20d35f32305",
+      "file": "deploy/reference/hierarchy/env.example",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "9c4d9369a3ba40eca7461a2fbf8080a25267a1598ad85f34ed26280f01c37f6f",
+      "file": "deploy/reference/hierarchy/evidence/case-study-2026-11-16.json",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "ee1779f3858074718433968781f44c3f5cd1f299fc0d8e575069b3642122d35e",
+      "file": "deploy/reference/hierarchy/verify.sh",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "42efed68acf576ea80c1c1d0b93cc17da1209768783600f6383cd1edff72a26c",
+      "file": "deploy/reference/nvidia-datacenter/README.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "26c84e0dfee238e15cdf73c62d6da870277fddfa2edf60f353948f2efb898ab1",
+      "file": "deploy/reference/nvidia-datacenter/config.yaml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "91ae1d5daeb5fedf8e94b9eddc8a64e0c8a79d0faea41f2ba6527a16aa40e45e",
+      "file": "deploy/reference/nvidia-gb10-edge/README.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "afe458dcbdf50122764f5274aa5df1fd78c4b55b8316db55d1a863d914473928",
+      "file": "deploy/reference/nvidia-gb10-edge/config.yaml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "837de2b283067e17d0205e3e9e9eae03577a23b68bdc141b7253e5857d6c07bf",
+      "file": "docs-site/docs/concepts.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "401a5855bc5d9c6a38fe4921bb86cf6db047ef14f06974379d2ea5440ba7d156",
+      "file": "docs-site/docs/concepts/glossary.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "d8560721b5d0c3b7eeb710530a4950814607201e37b026bf02d6ecb3b5eacb5e",
+      "file": "docs-site/docs/configuration/admin-listener.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "351069e6f131461fff59bb0609d6e3234f4203122658cd3f62b8418e425b7fc4",
+      "file": "docs-site/docs/configuration/caller-tokens.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "4edea335ecda1437e4a813768c02f76515d36ec41746935d129933077399da0b",
+      "file": "docs-site/docs/configuration/dynamic-score-routing.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "3e73d295f8441ad541c24693b1072430b4a5af1f920b7d50413b5f389fd204ed",
+      "file": "docs-site/docs/configuration/external-routing-policy.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "361ed2a0e65084a0e31a8fa1e855f08d8c73b375d787243933918ca6bb7f2e99",
+      "file": "docs-site/docs/configuration/fine-tune-own-model.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "4f3ab511e7984ca80864d6f0b80c2bd6d76175baeec9ab0946327c23044e7462",
+      "file": "docs-site/docs/configuration/mcp-gateway.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "3ff59ed9eaa47967a149c0ddae5fd5f31ca95b5f895fb4c4b47d300fab556923",
+      "file": "docs-site/docs/configuration/model-group-contracts.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "88616b399bc8160dde744ca06a6ba4bf989cdd3782a1984128726dee4dfa7afa",
+      "file": "docs-site/docs/configuration/model-groups.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "03d65c7e2be94cc3f262231ad10e94d71b5c4e329c5bc8b76bca46f8994c3624",
+      "file": "docs-site/docs/configuration/pii-filtering.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "b5bf3fd69a6ce505f00b5a6f0a128a857e5b6abcd8518ae9bfc70a8e0b3b94f3",
+      "file": "docs-site/docs/configuration/router-config.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "5e0f8d9a17619545e9a297450c3173c87b41e51ff5c2c363f75e829d1836248e",
+      "file": "docs-site/docs/configuration/routing-typescript.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "0ddd789e1ba14d9134569b96f08a53456e8a6a4472ea08b107363e018060a9d3",
+      "file": "docs-site/docs/configuration/tool-firewall.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "6dbdc3507af39ff1ed77eab3a3c2b97a45730fa7572833e74b902bc2e1e5a47f",
+      "file": "docs-site/docs/evaluation/competitive-landscape.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "679e7697c94781eb792f40990d669ef9ea8dc0ad607d31ad94f42229b59cbb01",
+      "file": "docs-site/docs/evaluation/deployment-readiness.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "35c3607726a2a2ea1d9cc6a3df3eebc3eedb200d5e52f8d7b58554edbfcd5cbb",
+      "file": "docs-site/docs/evaluation/deployment-security-assessment.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c3eb96a566d050deb0022e33b7ce72f9caf1c4a0f0de364d78203e2eac8cc07b",
+      "file": "docs-site/docs/evaluation/product-capabilities.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "237edd61c530f5fd212fa2fc3d354f52297bed4efd4d0f45f230e9843124a247",
+      "file": "docs-site/docs/evaluation/security-and-trust.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "e9b791ec114dca44f532a10e987a1ba3943ad6110acca081d1b0bba5d0bdbdd8",
+      "file": "docs-site/docs/evaluation/tool-call-matrix.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "f1e262c5779bd514e84fc6798cde42fd1d468443d45bcc5d71340dfc8a3b537c",
+      "file": "docs-site/docs/evaluation/tool-routing-case-study.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c87d6e09fb0bbf63acd2f85448df5ee57c1db65679fbe7df0567245a62345d6a",
+      "file": "docs-site/docs/faq.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "04c8a858d2c35be6b6d3f18d3b3f8861ce9b222c883a9d9869a2a9e8a6f9e071",
+      "file": "docs-site/docs/getting-started/available-models.mdx",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "2a39a37b3287d7e5da34546850bdef46a9b8759089a82629189a6c399ce750df",
+      "file": "docs-site/docs/installation/binary.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "a4eb140bbd213693cb11ef2ca72fc4039b39cd28911c085ac7cde867d16fde9f",
+      "file": "docs-site/docs/installation/docker-compose.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "5b821c612a93d65eb8952df59401675801b127986bf6eb69c7dac2fbf9d927b0",
+      "file": "docs-site/docs/installation/kubernetes.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "55b37f5524b345dec406ab6a90aed9611f7c3ca81d41a4bd714f02b171b10218",
+      "file": "docs-site/docs/installation/package-validation.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "f4db93b767c60bb0e71198e262e8da097774bae9ebca7e69f86b9b99ba2fbc20",
+      "file": "docs-site/docs/operations/admin-browser-reports.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "944270778657c8e44807b896d6b15afa7436111210ce5afcd6e3036bfaa516c1",
+      "file": "docs-site/docs/operations/cpu-tier.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "fc483dc549e9641e4acdfe90a091dc3797a8befa9ef0c136410078317372d87e",
+      "file": "docs-site/docs/operations/domain-fine-tuning.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "3f5a986f9efcf6f282a0304abe4c0ad9800748b60d43b4651bad2b7c12c4ce0a",
+      "file": "docs-site/docs/operations/hierarchy-governance.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "9217333e85467bfa155e492ea527a17bfad19671b618641cee86b6f6d07b3c3d",
+      "file": "docs-site/docs/operations/key-generation.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "6c295a4f80f8d5dbc8aade9acea8e8f826cd9f03d05afc8709eaf17e0c109067",
+      "file": "docs-site/docs/operations/switch-models-price-change.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "5481974876893d24147a0fa37862b245eb983641b805f0ef5d9a5f722474d7a6",
+      "file": "docs-site/docs/operations/usage-reporting.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "928852f1904f9221686eeaab5867c3c09c174fb014a6f8d243c79400f6c519a4",
+      "file": "docs-site/docs/providers-models/overview.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "1a064467978c22eb982b2e03e2b547defa1876bc8a18a55b3c90822e672c48f3",
+      "file": "docs-site/docs/reference/admin-config-api.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "206f5b0da291d4b2c82078f569a1c170bd196f72a663c19db87cf2d773c0778f",
+      "file": "docs-site/docs/reference/api-compatibility.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "1616d57008f875e7bb764de5fc0901e23d70ba7013f17c25f8f1f7755d00f639",
+      "file": "docs-site/docs/reference/architecture-limitations.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "f700d88f2113638147c244a13d67c464299a9e9b3e1c22da37a7db97a5977826",
+      "file": "docs-site/docs/reference/diagnostics-schema.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "0656c85fede80c2ea4a847c3e91624f4503ad5aeeb7dcba6c8b3a3116e92ec61",
+      "file": "docs-site/docs/reference/errors.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "153b3f46339962671e40d826657a2265fe303b0d1ee44cf05dec366ef89ef436",
+      "file": "docs-site/docs/reference/model-metadata.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "f073790dc381bef59a7b3f091a714e7591a979e2094d99b4b0f60ec24cb804fc",
+      "file": "docs-site/docs/release-notes/index.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "284562e32a963982643b007308453a65e1e7ec806024c281a2247de4cd32f5d5",
+      "file": "docs-site/docs/release-notes/upgrade-guide.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "3ff2ba77d7c01203943a6af59575d217859ee3d98da6d0626083e6f29151e524",
+      "file": "docs-site/docs/routing/customer-controlled-routing.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "e27582db67f4308e8be247a2ce3ddb44c06e93f74016864280bc58009fc08e54",
+      "file": "docs-site/docs/routing/overview.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "33a5a105b3d79eda13b8dd1dfcc0567409e6fb840fa230b98e68e91605ebc165",
+      "file": "docs-site/docs/routing/strategy-decision-tree.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "ded74de3643f0e0da009cd673755605ae6f2382da61145fd19943c70a9af2142",
+      "file": "docs-site/docs/security-governance/admin-audit-export.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "a3d9ec369e437b7c1184184c8b1cb268d78026ee16593904269e37869d51d4ea",
+      "file": "docs-site/docs/security-governance/admin-client-identities.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "de45edc90d275df7aafbad5e82dcdfc6d92fe97aed40cc4412af760ff4bd03d2",
+      "file": "docs-site/docs/security-governance/cache-isolation.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "4a48f05c9bc23bf859795e3a2b72e3851403f961950283ebd89793e7b66510a7",
+      "file": "docs-site/docs/security-governance/compromise-runbook.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "f878679ecf1c72d25e0af6d3cc56808f8fca5a7e42dc2ada09280337be28dc03",
+      "file": "docs-site/docs/security-governance/detectors.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c102f06cc33fb2ccb2fbc6cf9752132dae0f910ce4a3605f3d9dd5d5e4d7d88f",
+      "file": "docs-site/docs/security-governance/hardening.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "f9150b212727c5087f46a2d564d60e3a97446097a2947f5e0bde62011796c592",
+      "file": "docs-site/docs/security-governance/honeytokens.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "581f8c617003ed3df68b984fa22b9fb52cea4c696a8165ca541beb33d95d19ae",
+      "file": "docs-site/docs/security-governance/overview.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "27b07b62282e9f7a602bc5acb7cb4ed09d1dc5343f0e8ef26ecf1d1b7c39a0df",
+      "file": "docs-site/docs/security-governance/provider-usage-reconciliation.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "b73a5ea7bb7333e0f16bb14e302e666fd34bc580928218e583ada11eb674fcc1",
+      "file": "docs-site/docs/security-governance/security-doctor.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "17005424090a472a167fdaca0bb25c572e493a26d2228c14d8803095f37811a1",
+      "file": "docs-site/docs/security-governance/security-events.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c278f6f9e3e15d126d6d037d9d7c0e6787dea331f4810a35b4df2831caeb5879",
+      "file": "docs-site/docs/security-governance/threat-model-v5.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "5bb5c69561f87254bd62b10d9b2ff38ba9b2f440324c33c10e51b384e12e4f94",
+      "file": "docs-site/docs/security-governance/token-exchange.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "0ce09d4320bae9b9e5b4d2608ad6b75e8a3c7f208e674d61d04ce1dc5eecad91",
+      "file": "docs-site/docs/solution-brief.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c4d236a850b4494bf6502cee7dbc0089024d0acd1c4aeeaf88a66ff80f187d88",
+      "file": "docs-site/docs/troubleshooting/requests.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "bd252a9545a298794a1b6a8c75cb0d2369bc0a0ecc3586e8fd2a0b6097143bbb",
+      "file": "docs-site/sidebars.js",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "4446c4eb224562da0a537ff040c6e961fa626e958b8f60ba82890b8127192c2f",
+      "file": "docs-site/static/llms.txt",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "0e859fcb3d5fd95a4863b95c16d49cefc988d61f40d9853b6df78b2add4f2a72",
+      "file": "docs/ADMIN_API_KEYS.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "f739abfcc6e2aa4fe2bfaf299b01ea4af79ff7059424ad4f03b1b0f5be83cab2",
+      "file": "docs/ADMIN_API_V1.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "922bc85aa1cda42f9e84ab0b864a765e3608c58fb56db5c486d641c2eee9e45b",
+      "file": "docs/ADMIN_AUDIT.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "008cb4b52f0909ec6a5db05d9580fc44b036cf0d561ebc45e3bd620bc894fbae",
+      "file": "docs/ADMIN_AUTH.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "6d3e46455e71abfeeb5f714d4643e823e7824c8282b7ddc3bd35c326cdc54aab",
+      "file": "docs/ADMIN_PLANE_UPGRADE.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "aad47067ab3804f2846a5d4dd8d0cd5992e431b6d348f811553325506ee79b2c",
+      "file": "docs/AUTHORIZATION.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "7f264ee7ba1b9aa85ebdd96a9e1a77e789e05ade123a844f1ae053f19e4cd052",
+      "file": "docs/BINARY_INSTALL.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "09283b40912775b8b5c20af59a2076736ef3f6d444ce8fb07582ce0e8693583b",
+      "file": "docs/CACHE_ISOLATION.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "df6fdd7c4a6f4bc2210a9ca18e9c299d754615ac55f97ae3be50d99c7adaea65",
+      "file": "docs/CALLER_IDENTITY_BINDING.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "857997605aa5920801afe9c2a0fdfb7f4a2d704697b936f35dabf69d9ff41956",
+      "file": "docs/CONFIG_CONTROL_PLANE.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "d641af55a2fc7bf6d64610c92dc34709f506f5ae6f11aeed92c2dda20a6c53cf",
+      "file": "docs/DATA_MIGRATIONS.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "dc58b47235607355cd9d8ae1fd4e0a8dbc3066d26d4059dcad2c17384b3d5913",
+      "file": "docs/DEPLOYMENT.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "4d43a475cd89ef0cb2f6839320801b4248334d229a38b31c024c311cba1812a7",
+      "file": "docs/DOCKER_DEPLOYMENT.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "e97de112084ad158ba43f3b188b7f2660ea4d12fe2bc2c9e871c620ae990e81e",
+      "file": "docs/DOCS_MAINTENANCE.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "56f06bf1e5a9a16a69665a843f7ad7451dea8d63cfda6bf38b2d7af72a0f78b0",
+      "file": "docs/EVALUATION_INFRA.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "395af20c495dfdd8b88ebe574dc61ccd0933e5e3859975ca36d8ead72e2553b5",
+      "file": "docs/GOVERNANCE_HTTP_LOAD.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "6734ddc75c7b374ea93369fe2e3398da65545af012e66e360badef9a01b7bcec",
+      "file": "docs/K3S_AMD_INSTINCT_LOCAL_SERVING_E2E.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "ad8b9aecc89052f69883f5aa4ab8f5ffcbd979b80a52f8ac6c710b4d0ca11c07",
+      "file": "docs/MCP_GATEWAY.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c3557f4246a4f2e5e74ee34f1d79829f8b243d084f8867e65f41a2ad4ffd75a2",
+      "file": "docs/MODEL_GROUP_CONTRACTS.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "a15387b124b62aee4445b16fe8c16453144fcb8062873c70af1427b6a1b7215e",
+      "file": "docs/OSS_LAUNCH_READINESS.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "4213780615ae1c7e86c0cb26c2ebde5b9f3dee38ab38676b1d7cd932956e2a12",
+      "file": "docs/PACKAGE_README.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "dcb680f95e8f17e5b15d502eacdc73b5dd0e39e319773674c02e1456572f31c2",
+      "file": "docs/PII_FILTERING.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "141f230eb3a6e4a1f15f1e9d030b5ad2f70a2494a244d215e709f83f58015a14",
+      "file": "docs/PRODUCT_CAPABILITY_MATRIX.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "48181c3f2201d8202bb7f53a45cf95690d0b51c66b53265cdff31b62dc350985",
+      "file": "docs/RELEASE_AI_REVIEW.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "2ec478cf67b65bbe421e2dc6fd1f105e70024fb12a18e85f42e0453b0c8af140",
+      "file": "docs/RELEASE_CHECKS.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "eeb82b5ec72cdb8be7c0cb52a5816c7c43d25c4c6fed03d58fbcbfcb3af59a44",
+      "file": "docs/RELEASING.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "61eac841b6320c3db1d27f46ee800973db189de49d3e2cd39c9d03017db07dd2",
+      "file": "docs/SECURITY_DOCTOR.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "7b2cc95a04e76b5bf623479cee225b3410a1787d44eb2390c8c66912729aa421",
+      "file": "docs/SECURITY_EVENTS.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "31ed8a4c49b67dab9d32df7431523288a9da0cb95306440bbf4fa2e1c57d7080",
+      "file": "docs/SECURITY_REVIEW_NOTES.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "1607b563c1517bce7a7858abddf74f20da3fcbead8682820dccfa23a05efe7e5",
+      "file": "docs/TOKEN_EXCHANGE.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "1c4838e49c5928c21aa25d39a27452f8f36708a877b76d9af46d2df2ee04a3b4",
+      "file": "docs/TOOL_AWARE_ROUTING.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "2df9e70f779f24bfd0eac2f35ce96e7497fa7ad5da41e1445ade1e1bc7e35c3d",
+      "file": "docs/TROUBLESHOOTING_RUNBOOK.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "d4417f3bc5d76da610478adb5b910f37bea3c4c0c555db7510979e856a6ab008",
+      "file": "docs/admin-authz-advisory-gate.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "3a1539eac13a6d5788b0521981853d55eb9659305cdbab472183cbb9f6ef587d",
+      "file": "docs/admin-policy-api.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "7ecaad877863772344f4c44375995b48b774690628d43448f926eab648dd0804",
+      "file": "docs/admin-policy-cli.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "2ed50bae10b47550bd512488620e73d339b7228733ac3db35bff77820a204180",
+      "file": "docs/amd-instinct-local-serving-reference-architecture.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "8cd75c254766d20bde41d60fc3ebc232dc00ad45e8afd5e8eee48f53595fb2d4",
+      "file": "docs/bedrock.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "ea2c55c88aea594ffecb8f004ba9b766d3be8ac8f96edd7ce636117ca70787c5",
+      "file": "docs/marketing-copy-handoff.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "a5316853201fc84f333da07b5a9a5a7a1509eb31152024c59324326cfd69e038",
+      "file": "docs/release-review-responses.json",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "019b91d39d5afcfcca2e357133c9662f7e5e4c1c6d37007b8d254f6e762d7779",
+      "file": "docs/release-reviews/8d84e643320ac993eafb7c9f.json",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "9ec94034fa2a80876fb320a18491d01a3219389ab6d76b84d1adbb46f4e09839",
+      "file": "docs/release-reviews/f08845e70e03856ebb1f1316.json",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "d34432634dbfb77a3a831541a00a74c4d7a0a317ad9d17a87232932f86cf3ac7",
+      "file": "docs/release-reviews/fc2f46af880d0ec65b68f0ed.json",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "0ef98dc647468b52c98ae9200764b34481c17bb1677d05ff9dec9c4afc81f493",
+      "file": "docs/security/COMPROMISE_RUNBOOK.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "4cdfcb63197b6e0aad14b7aed584009058ea3484374930059c384a48e3224297",
+      "file": "docs/security/HARDENING.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "af040de5c4299b94d8eb6161a251d180e0ab221959f58d3e1496c4ed16f0e3b1",
+      "file": "docs/security/THREAT_MODEL_V5.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "3b4891f085b9eed3a5f3a9bb86f8e5b5bbef7f80fd5e1cc6b585bbf77458e5e9",
+      "file": "docs/solution-brief.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "file": "docs/specs/admin-v1.openapi.json",
+      "redaction_count": 0,
+      "status": "generated-and-verified",
+      "verification": "supplemental-checks / generated-release-files"
+    },
+    {
+      "diff_sha256": "f8f7abf9d8f6d4b4dd67397aa1caa795764e33f34ee55537df5aaa456f3f4347",
+      "file": "docs/specs/kubernetes-deployment-31aug2026.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "ebf49df53200e288b7d9527429bc44eb56b92ae5489a2cddc27371ac2fc94513",
+      "file": "docs/specs/kubernetes-deployment.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "9cb40fddd75c5f956de964016f4384ff280694cc63862c7b8284d419e491b64c",
+      "file": "e2e/admin-api/README.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "fbd805bc39adf278501b494610c221994930822748f6874a9c657d1ca9e33f9a",
+      "file": "e2e/admin-api/run_e2e.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c9b7517cd5c9df782c07799a42078d5364bd4a4409de9b9e9af4aca15d7651d1",
+      "file": "evaluators/eval-infra/preregistered-matrix.yaml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "53133d081de9f92c2eab5fc557d9a45446d0eb1202593e3f7c8f8edb16b6d698",
+      "file": "examples/README.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "37c045c034111abc880e3171ac4073806a64d04de66f99be38371d2fa5820de1",
+      "file": "examples/detectors/prompt-injection/README.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "cd6bb9506c0fa13f2ea38fa86c7901e9b2463892f74be284b8cbff64fb192789",
+      "file": "examples/detectors/prompt-injection/requirements.in",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "3dae8a58215f42d1b79608118782b274c396a35d49477e4020811d7195b7dfa7",
+      "file": "examples/detectors/prompt-injection/requirements.txt",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "593300353599821d423e21a4a8647a2e1aa4fade921a7f8730577740a32497c3",
+      "file": "examples/detectors/prompt-injection/server.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "77d4082d6bd0b9f9fbb4c310c3e87cdf80a1b0a19d7286e41f4a8017d56f0384",
+      "file": "examples/detectors/prompt-injection/test_server.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "dda3b15d9bbb91ab8902fbedd1de2b3896e1bf462350a27f063712e3b14f0be8",
+      "file": "examples/expert-routing-benchmark/PLAN.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "2258534999b220cc9fa054e809cc9cfee68eb525418e05e53745f8f18decbf6e",
+      "file": "examples/expert-routing-benchmark/policy.test.mjs",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "1d789cdab6c912783ec365a16be679468da05fb08328b5235cc9c1b5476f8ffa",
+      "file": "examples/expert-routing-benchmark/policy.ts",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "98104808210c8ba890fe54eb422b2ed9f51396d6ba3657edbd4bc3e8614f8a87",
+      "file": "examples/expert-routing-benchmark/policy_service.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c06d0740d5a22f316f3e19e74a67d8100ecd68c4f88230a728fb05b8b9aa1d81",
+      "file": "examples/expert-routing-benchmark/setup.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "f2c2b05c07ab9b6bea82f148ab04ff8eaa640a5a65dd9564b5bf7042b6732756",
+      "file": "examples/expert-routing-benchmark/test_integration.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "824c1c00d2f977f18cac051933303dd5389a8680fac1a6faa65a8ab0383ce15f",
+      "file": "examples/expert-routing-benchmark/test_policy_service.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "f54d7bf7675019e7b1ad4ced15d9631de7e6930b7f4983cfd59d3ffa746a8b72",
+      "file": "examples/expert-routing-benchmark/test_setup.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "958eddc0178038e1618dbf750d26225e3b413ad1f33459d3d3cbf193a8fb353d",
+      "file": "examples/external-detector/main.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "0841ab9296f9e0dd7a318fa7eb76555daafbbfd4a4b3a8d4d61c3432cd22288a",
+      "file": "examples/external-detector/main_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "0a4cbc06e8a1950b8e0b74418e295abd0385bea6ff42ba9f3d011e4a938ebae5",
+      "file": "examples/external-detector/rules.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "e8cc6b444079eb4a715fdc5fc37816571f733eb0ed30697df66ed2030f0ffec4",
+      "file": "examples/external-detector/rules_contract_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "13db7928135c1a3e117091ee1790aa2ed0b606920f249d1d524398f34c9dac9c",
+      "file": "examples/external-detector/rules_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "69244b2d9fad99721e379e981223d5e23e649023cb74a0f069fcb86df7456037",
+      "file": "examples/fine-tune-qwen3p8-27b/eval/package-lock.json",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "d365a913de82bfad5fbbd8563cf661181137baea0da3c0609f0c594141afb59e",
+      "file": "examples/fine-tune-qwen3p8-27b/eval/package.json",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "61dcbcb2c8b9372011d487ac7f3f33ecd9b9ca89830cba76ab02a89ba5610dec",
+      "file": "examples/fine-tune-qwen3p8-27b/router-loop/README.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "dc70fd2279a08bb040c0edd027a9da427d8a96f768182dbc04037972f5e9c3b6",
+      "file": "examples/fine-tune-qwen3p8-27b/router-loop/canary.ts",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "ec6bad5713f9ef818f83ebca9dd7875482502a9a72ba35da381b907c7337eac2",
+      "file": "examples/fine-tune-qwen3p8-27b/router-loop/canary_policy.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "a37c241e07e471fe5bc57317de1a0c139f801c0bf803e95c3bb5dbe598386da5",
+      "file": "examples/fine-tune-qwen3p8-27b/router-loop/collect.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "9684915fff71a2a8f735fa7e54d18bba71d39864af68283f1ae09429d7136e55",
+      "file": "examples/fine-tune-qwen3p8-27b/router-loop/external_trainer.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "989a260d38606e3fc7b97457e96052e653ebf4759a42e0214d30357c99a2c37b",
+      "file": "examples/fine-tune-qwen3p8-27b/router-loop/full.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "e4dbc1d90769cfa20fe756014e7938641b383fae7b45158133294e496d0d1cfa",
+      "file": "examples/fine-tune-qwen3p8-27b/router-loop/local.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "f98f9d737ba6849eb68da753e7acbd5b54d4e90700adea86ea95cd49ec844ff4",
+      "file": "examples/fine-tune-qwen3p8-27b/router-loop/test_canary_policy.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "1f82587fe4e55013a1daa97a93edbeaf4c68994e9f257584327abc5df5f3a7c5",
+      "file": "examples/fine-tune-qwen3p8-27b/router-loop/test_external_trainer.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "e5c30f5319f51ae759b7331b5d64be8d0717c2f4d47209fb35e7f676eaaa3bfa",
+      "file": "examples/fine-tune-qwen3p8-27b/run3/collector.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "f95d0a1cb20b7d933cbc07e2f347c52ef44922cc5a81beb753dcf52d2cc8903a",
+      "file": "examples/kv-cache-cost/README.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c3b393582bbe904cded5d9718fa3699683860bcffa34d21069dfe5403412db06",
+      "file": "examples/kv-cache-cost/config.example.json",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "1be6a7409f156e48788e15b3fe1148de9b088a34b35a36712966cfb77e20d848",
+      "file": "examples/kv-cache-cost/evidence/hosted-affinity-pair-2026-11-16.json",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "1144cea807e116a3251d6c26dcffbba48ccf060b0dc347c83a21ccb2f5eedb60",
+      "file": "examples/kv-cache-cost/evidence/mock-output.json",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "1970c679b76bfd76cf85aebdd6a79d2f7db4967c5fdf0b55efc462537e5caa98",
+      "file": "examples/kv-cache-cost/run.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "dedd3edb55b511ab02b584f3ffa34d998aab72b94dfd0b72e9b16969bf8465c9",
+      "file": "examples/kv-cache-cost/test_run.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "4a1d9613e87887d4632664758b761bef235b1537b77f2dc6a35b5c471a41ea03",
+      "file": "examples/mcp-governance.yaml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "66116119f610efd616e20f35a953e18e50d0bd35a27eeba49d175d7e47683853",
+      "file": "examples/provider-usage-reconciliation.yaml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c01056eb493ce6081dc33d42f3e532208b586ecefef8504792f6c7bbd5f7bead",
+      "file": "examples/security-events/README.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "3ec2dfa8636e45da0cb1c189e8e9c390d4756049e8d1a3eef05eae47d6c94f9a",
+      "file": "examples/security-events/authentication-failure.yml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "10a697b2d3596ba3181081ff0f8e89175d7e2bee1f5888460d39cc9015bddd59",
+      "file": "examples/security-events/containment-action.yml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "cda66b4f70e2c9db1582445df1cb1c57a9ed96e537669f8734b6b626efefa061",
+      "file": "examples/security-events/detection-finding.yml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "438fb09a27217bb491535e7ed22a1cf0b2cf9e65ef77b5669e4321c263c4954d",
+      "file": "examples/security-events/security-finding.yml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "494e726c993ac3fa7b5480c3ac6eeecbba78149e19f1b50540f3066bb0da3e82",
+      "file": "examples/typescript-pii-policy/README.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "d43a5e54921f9a7e06842898ffaddc8adf8f2eed91d9b09dbc4075d8c3e4e8e4",
+      "file": "examples/typescript-pii-policy/pii_policy.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "3f8b39c54424e8e8efea4732d36dcededd05cc7fb05d7d672cc51e30011c6edb",
+      "file": "examples/typescript-pii-policy/router.ts",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c6e9b1bf75a2c6542ea1be75fb38db1faf099d3cedbc1cb9c084f09b46ca7b96",
+      "file": "examples/typescript-pii-policy/test_pii_policy.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "a168dc14a5e6a5c0968a412696696bc4d1bc89d8b0d211d1cc935707aec6f7fe",
+      "file": "examples/typescript-request-shape/README.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "e7ef00dfdc3c024bad41b5f031c3d6b6ea1697996414b3930978c650bd5d39ea",
+      "file": "examples/typescript-request-shape/request_shape_policy.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "439c375e19fe56a00b58bbe3eb31516c4499a1f3bdaec39f86a6e27ac768707c",
+      "file": "examples/typescript-request-shape/router.ts",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "a4a11c1f23bc5bfe674b2d0ba282c2d34c3d266ee4cfeb3e2972352ec32d035f",
+      "file": "examples/typescript-request-shape/test_request_shape_policy.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "3517f26cad3d22867e40e71e921af6d45a0d76d9cc49f5ff28a74aeab6ada4e0",
+      "file": "go.mod",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "90c98e2f8c968ef76c6fb1753df6c2998b61aa6ef6cb0f032b6cfc100332728b",
+      "file": "go.sum",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "8de9fbbcbfd36e0c7dd2a9c8f0eda547e2657049351f0fa4348233097e33c797",
+      "file": "internal/buildinfo/buildinfo.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "4689c5bf84577c3029d4a05954af60fc9498e9d038fd4381a712ce8b74b0c773",
+      "file": "internal/buildinfo/buildinfo_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "b1c3aeda747d2658fac020a3a4157452b5ca176d4b90ac07d8ee6c2088c11323",
+      "file": "internal/releaseverify/verify.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "9b9bca7ab82e8ca1555200aad581c0d1cc5a127d401e969b599999cd20f94b94",
+      "file": "internal/releaseverify/verify_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "094946192f2049698e57db9e6e4f45ba952d2a90db336979e3f8a25a58ba8fda",
+      "file": "internal/router/accounts.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "6c78fd0616d989a1f21b0b77c8dd8c3af5a11d87ef3809f752fda8da427e444b",
+      "file": "internal/router/admin_api_key.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "be03cd764c83ef1fbd4bb194f4125cdf442a9454a53e0518e8205321eb75aa55",
+      "file": "internal/router/admin_api_key_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "5949c698c9a391c6f5a1ce2a72a09bc09a5b3ee8afe8c6d6751357df1f8deb47",
+      "file": "internal/router/admin_audit_chain_integrity_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "5bf9b3d47067567a0ac92945efa66724d421fb36c70ca1d761e460e08c397158",
+      "file": "internal/router/admin_audit_chain_migration.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "9dc2e7c254ef8d07d0b150a70bea62e646d961358deda8388c5a9f861c6c726e",
+      "file": "internal/router/admin_audit_export.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "39f81910f1fb16aabf17381f1f723fa99675620f6f709d96bc35f7272a29a1b5",
+      "file": "internal/router/admin_audit_export_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "84adcf2fba525a874463b62c86cda67244dec1dc1886564894e621bb052cf5bc",
+      "file": "internal/router/admin_audit_records.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "4ee2d9da514996504382a53a7c24fe21e93cd53e56b08f3c13b9ebc12a10f167",
+      "file": "internal/router/admin_audit_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "1e2ab8ff6cd11da45b314a5a92c67b31ab10b4203d3bf14633a9c5c2156d3b79",
+      "file": "internal/router/admin_audit_usage.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "32038e4d92e036d9cd40e43aaf9e812cfee69c851911ccbc7c3222bc39ed7a51",
+      "file": "internal/router/admin_audit_usage_upgrade_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "de408121c259e5b2860cb6e22489fec78f85fab90c3d6432547d5fa439f71c73",
+      "file": "internal/router/admin_authenticator.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "cbd99694c9b4b1c0d1cf3ccfb1440e22fae21be9c560356da4d527a889ad5e17",
+      "file": "internal/router/admin_authorizer.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "1baa3fdcf4dc51542a402774821b3c236eb8db4a6923b243d6b9f6a96c336be0",
+      "file": "internal/router/admin_client_guard.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "977391d3a427571058621a325dc5f0ae97482a917dc996e74e7e422463941a04",
+      "file": "internal/router/admin_client_store.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "674cd27c1938cf4cced2e4f85d306a1f67869618eb420b5eaacf02b29fb78ea8",
+      "file": "internal/router/admin_client_store_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "885051b67d03960313efc1fde5a15b1f4e25aff49e235159cd40c3a11759adb4",
+      "file": "internal/router/admin_contract_clients.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c496034ff7a1a46ddbba5c40c6781fe47c7b429ba7fe4b7d2e6500e5d96f6904",
+      "file": "internal/router/admin_contract_clients_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "b4181dd1a1bd9dff18f76afe52f3a037cba75a126ada19ca746f926455535536",
+      "file": "internal/router/admin_contract_freshness_mount_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "a71788b15211ef66f8aee748cee185c501296470a94a9a4af2741308429247dd",
+      "file": "internal/router/admin_contract_idempotency.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "93e121c422083b19e83839991684f18c009abfe457a6210a1c3f8b464dd0b96c",
+      "file": "internal/router/admin_contract_mount.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "ea7775a04ff580a5c0f8d4fbc96e49306729f273681823d3686afe0236dc8f5f",
+      "file": "internal/router/admin_contract_mount_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "187028119dc377bf50ca63dd4f3589b933c7d7175e54447b3f14d5281626fd68",
+      "file": "internal/router/admin_contract_openapi.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "58e9f39b9cf3d2cd806e2ad23329c497c1ec65d10f688fb7b171c0b0e847b8a9",
+      "file": "internal/router/admin_contract_openapi_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "cb52a8047b372d8eede5e96294e72440dbec2f71c76ed81fa1545be92b500786",
+      "file": "internal/router/admin_contract_pagination.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "bc61499ac8677c547ad2c9dba62f81d75f478d2a6ca496f40b0ae65fa7eb8cdb",
+      "file": "internal/router/admin_contract_problem.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "583bd06fd9b9b7a5f36c4327dea675b71b31b60972e03a6a5b08ad9ec81a7b3d",
+      "file": "internal/router/admin_contract_registry.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "1747116fb882012231a0cdd264459ce06439ed8c612faf22070eb3a6f6f7a1ed",
+      "file": "internal/router/admin_contract_v1_specs.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "7b3907324968983da09fd45df14b0aa373562fd79d62a5ad7f3f1f08feabfaa1",
+      "file": "internal/router/admin_credential_audit_aggregate.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "ed3cc96f4e08c45cfda27559e6849bd8f66254d6f4084530b883cb667ea60a72",
+      "file": "internal/router/admin_key_listener_e2e_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "e1c2f744028949a049af63cce4e0d4846a1522270904443eb0cb2d855fce5544",
+      "file": "internal/router/admin_legacy_routes.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "5957216b85c900c9edf3a880d01db255cbc50372b1cb8a361ceee8090dc909f3",
+      "file": "internal/router/admin_legacy_routes_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "daeb49ade46aac04280b2ce905356b7b0ca29c24d9d4a5ffb5ce0758c8f7a8f8",
+      "file": "internal/router/admin_machine_generation.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "1bfd886efd2d087ee1f0205c519da101b5f00ddb1404edee2fd04c7339daa536",
+      "file": "internal/router/admin_machine_inventory.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "e5977b1aa7b148f2439e7b9b91a6a33cbc004f7944f23d526bc76e40ee5fd295",
+      "file": "internal/router/admin_machine_jwt.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c5e4ee68245cb398c825f99646418b0b9107df676f6741371273ee81ea9d4337",
+      "file": "internal/router/admin_machine_jwt_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "012741c283c5ce84be81957e395ed003df1967b328402d53095f23598fdcd841",
+      "file": "internal/router/admin_machine_publication_regression_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "278f54ef03ff8331354ca6046e52c447cd045fdeeaaf59532a4051d2ea78aa4d",
+      "file": "internal/router/admin_machine_runtime.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "b57b242bfda6fa03d3be2759edeaebe61ce56daf9e28911b38853b404d1699ce",
+      "file": "internal/router/admin_metrics.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "4dc0a7bc5f391ecd9d4e817006efa43125a4463f627d3ba0d91199bac1caebc5",
+      "file": "internal/router/admin_mtls_machine.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "a701df441cef97eb4c54f96c5284502a8d843e21c4036ba33876adc1913b83c5",
+      "file": "internal/router/admin_mtls_machine_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "e1743631f594409b6669d3932b151990bc0cd3d6407e39885c5c72349ad44852",
+      "file": "internal/router/admin_operations.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "8cb592ac5e86938b81a98d7037b1900c11e1055d245037fe036a06ede36525af",
+      "file": "internal/router/admin_operations_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "a0d815bf50bf110f09be4f764c683cbd0b77ccbec384ae5bb35c4b562daaca49",
+      "file": "internal/router/admin_plane.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "b0a8d61b26174a3fa0dbcc4f200da546dd0ac55cd6b4c088472db756575ed25f",
+      "file": "internal/router/admin_plane_config.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "e2be7b2e66803efc41b73edcd941043e2826bdc87f0187f3b7e00ff4609c5871",
+      "file": "internal/router/admin_plane_config_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "5bd617828d28a086cfd878f8b6d8b6cbd535af4661aede14d7664178b44d3f5b",
+      "file": "internal/router/admin_plane_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "f0da35db0d40fcdb0a2c2a38346932f8f1c4677a9b4a7ffc90a15c2a26a550ee",
+      "file": "internal/router/admin_policy_contract_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "14ed656d7cfc88e47b1b668704ad1a8716d135c7c1e958899dba5bc2d1e11429",
+      "file": "internal/router/admin_policy_http.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "858ffa80cb768824a348c47cb80de4ab3d6d6a43e6982c4e4e86aac5a5297cfe",
+      "file": "internal/router/admin_policy_http_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "834898e303cccfd49427658b50f6ffc3f82f539c3856d3e84bd7b065d05a4664",
+      "file": "internal/router/admin_policy_preview_http.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "be2b7fc8781c7b1c42c038715c5db36f1118dd7228e26d1e9761021ca629cb98",
+      "file": "internal/router/admin_policy_preview_http_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "4aa5c2ee12c42e2e03de2bf5310447202378f62bd5583cc45bc94e35f378babd",
+      "file": "internal/router/admin_policy_wiring.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "e1f82024b5bdd0ab05994b006547f1378a2b1149692096c677ed8e6beb495be8",
+      "file": "internal/router/admin_quota_status.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "457362ec4d94e1f93656ae9d495ea7b254a3013a9734ac80af0760d27c5c290c",
+      "file": "internal/router/admin_quota_status_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "fb278029dba312a815f90d9a66b9680aa44c5361d0d386114acc39e7866aa43a",
+      "file": "internal/router/admin_reports.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "19140931f6fe8537b594ae06586611411665d59b248055d664747e03ca688bb3",
+      "file": "internal/router/admin_resource_policy_example_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "074308d7ffe863e2753375124f3525a66a904cc2f81d3d2e08ca01fa0d932787",
+      "file": "internal/router/admin_resources.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "84b13e0095e02e2235a7c525baef82ca5722ca14ea15deda1411bf3faeb21008",
+      "file": "internal/router/admin_resources_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c65b5456f4379bc45403d63e7e61efb4fa206691a6be6e07bca5035a0531f16a",
+      "file": "internal/router/admin_unix_socket_listener_other.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "6c838e99e5dc8e3ff8d83e40675e8ff39588c05565937331177602324bfe63d3",
+      "file": "internal/router/admin_unix_socket_listener_unix.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "792a018f078d752900d2203bff2d82d8327bdb0ad6669c6249f1f3ac0d58993e",
+      "file": "internal/router/admin_unix_socket_listener_unix_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "dba41ec2b0743723dbbb619a5f678ce31dca9e6dc215cd4d618bcc19749d5fdd",
+      "file": "internal/router/admin_unix_socket_permissions_linux_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c9108317c251b286b7f087621e3aa0b461cd13e16ad6c31eecbc8877ddd6cb4f",
+      "file": "internal/router/admin_unix_socket_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "a78cc815ea657eedb8facde2f57a774dca5e6cfbd98ba0f1da2e6493d81bab69",
+      "file": "internal/router/admin_v1_handlers.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "51161495ff560331039e5773b63e646e50e70607346dec0e95b8ffd61741110b",
+      "file": "internal/router/admin_v1_resolve.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "60501678290274628e0188476874eb916b152841e218e2534bb412412fbdd835",
+      "file": "internal/router/admin_v1_service.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "b420df57a6a77d89f282f236e0c2b2ee1b2e514cab0a4b5b9530743c43f9645c",
+      "file": "internal/router/admindist/index.html",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "file": "internal/router/admindist/static/assets/admin-CnEoGXrr.css",
+      "redaction_count": 0,
+      "status": "generated-and-verified",
+      "verification": "supplemental-checks / generated-release-files"
+    },
+    {
+      "file": "internal/router/admindist/static/assets/admin-D7T4m6t1.js",
+      "redaction_count": 0,
+      "status": "generated-and-verified",
+      "verification": "supplemental-checks / generated-release-files"
+    },
+    {
+      "file": "internal/router/admindist/static/assets/admin-S7rpXrAb.css",
+      "redaction_count": 0,
+      "status": "generated-and-verified",
+      "verification": "supplemental-checks / generated-release-files"
+    },
+    {
+      "file": "internal/router/admindist/static/assets/admin-_-l24iz2.js",
+      "redaction_count": 0,
+      "status": "generated-and-verified",
+      "verification": "supplemental-checks / generated-release-files"
+    },
+    {
+      "diff_sha256": "0d45d22f871cee5b49124a6c719557ec30035d9397c3ad054e5e5e22a8353434",
+      "file": "internal/router/admindist/web/e2e/admin-reports.spec.ts",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c7ab72c113b461771ecacf4efd66a17725f0c3f43cf33948503e11c036288c27",
+      "file": "internal/router/admindist/web/src/App.tsx",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "55541ed942344df848b78b2c53c71276436f3e1e27dc2b65c68dbf32934bd14b",
+      "file": "internal/router/admindist/web/src/components/ReportPanel.tsx",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "b40140479691ef9a303efcff3cccceda40f2709cd21bae77f8bcc489386a1896",
+      "file": "internal/router/admindist/web/src/components/SecurityConsole.tsx",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "26871a2292f312e30856f20abde4ee2ccb3315bcbd1e823ccefd456d21895401",
+      "file": "internal/router/admindist/web/src/components/TokenUsageBreakdown.test.tsx",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "92b055495cd5476c9bb4e4ce8d28f018ebae3ba559db118191a87238ebc8751f",
+      "file": "internal/router/admindist/web/src/components/TokenUsageBreakdown.tsx",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "b443f0cec8b554ebf77954ad6947b3dc6a1169c93a9001cd8e0619f5d9d535a4",
+      "file": "internal/router/admindist/web/src/lib/reports.ts",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "e424d87b2128456ab7bd2975c5b2430354f15b944266d8a1fe78b46d19fa446c",
+      "file": "internal/router/anthropic_models.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "7915d61683223c4b5a11d89eabf0615b4f2f7ebbeffb770c2aa51d8029716a09",
+      "file": "internal/router/anthropic_tools_bridge.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "0309a7873c968ec740255312d2733382df8e30c93fc41af415de7fea4dd28c77",
+      "file": "internal/router/anthropic_tools_bridge_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "ea07b2df16d429b002f9287eb5242cd0758fc79b14e5d23afe336c72a26914d9",
+      "file": "internal/router/authorization.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "4097685c672e72ffad0badfbb5cbdb3fde4e017982849d0e9a763b5655840631",
+      "file": "internal/router/authorization_fixture_matrix_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "a5fa12ada524ca055dd540b89537e6138edb2704385663d1944c4618f2f9197f",
+      "file": "internal/router/authorization_loaded_fixtures_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "a7e999493ae814af1da057dce434b0b9493a8debf819620e224bcf156ed888f3",
+      "file": "internal/router/automatic_containment.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "5ab0d4fc57bfdcbfb9b37ec9c566fef8931955aa9ff65cbfb9aa5fb64dd7a26c",
+      "file": "internal/router/automatic_containment_migration.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "5092dad54e2ab8af9a74905273821f060b8133b6d6ebf430262f03a6f49e0a4b",
+      "file": "internal/router/automatic_containment_postgres_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "7dedfb4385793da7f0b9dd9cdafbf8e26cac206d1f564f1cb14e99e2862bd178",
+      "file": "internal/router/automatic_containment_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c4f820fbfd3d77a69adea4446bb31570c3aedb48fc364ff78e93b46cf2a01546",
+      "file": "internal/router/bedrock.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "f17d68c00bc66be372fe4d5347f0062bd1e94608f3153ad2f2bc42acbd202cf2",
+      "file": "internal/router/bedrock_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "99e60593ab2f122317a84dd0766f1df23c6897e917038e8000679662a67743ea",
+      "file": "internal/router/cache.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "2c5ebba4ef2b21dbb5c1dcfc2f174fee54b2434692b5bd99913652aaf2efae2e",
+      "file": "internal/router/cache_billing_e2e_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "25dbafc995dc3fae70fe03193ebf1994f546c57fe75f5c1bc05ed8f34735763a",
+      "file": "internal/router/cache_billing_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "f6d1b4b6e7710e7faa8eb86df7a22f95b418ac7a8e475a1a641ff24fea0f9f33",
+      "file": "internal/router/cache_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "7495ada90feb76c7152ab715c3e88bc84bcbf4bab346ee5059d7b47f7d093ef2",
+      "file": "internal/router/cache_write_migration.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "02a47d2fce43a1ad8f7006302000cf1437b9ede55d3ff76e2c0969dbda0e947a",
+      "file": "internal/router/cached_input_pricing_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "03eb6cca307b742c55b9bcada1a5dd74bbefcf7a8211c7fd06059310cce5a589",
+      "file": "internal/router/caller_auth.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "ce4715014b34956fbe983984817f102a79e4788a497f10d7ae6285a5545f0d87",
+      "file": "internal/router/caller_binding.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "b476fe042cbde0c0f6641c820d42120f189a80b40981bdf31a5e87907271f60f",
+      "file": "internal/router/caller_binding_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "016942dbb3d21a5050637b6740cbff6cf6daf9d6d798b34bcd59fa869867b00d",
+      "file": "internal/router/caller_token_hash.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "2d82e743b5cc1b16eed9b2afb053c510f9ac413b6b76c6b43a2039a057b17237",
+      "file": "internal/router/cfo_budget.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "1ad1bd935b74c16e8fb7797c301015b16b24ddea41cfd24d396e47bb2a03ee5a",
+      "file": "internal/router/cfo_budget_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "9069f4ead819cbc14b13faeb668f0993938223128679d10e9889ff927607b21c",
+      "file": "internal/router/cfo_report_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "72fbd8930f6c553f3aca8c5392db77f3f01e85c833de98f3a25d7e59b2d8ccec",
+      "file": "internal/router/chat_responses_bridge.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "8c0f64afa29706ed73ee5e2066191db39573e5481e898bfebc0adbff6bff0e0b",
+      "file": "internal/router/client_ip.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c13b91f22a0276ff42d6beb51e3423a7fe83991932639d4e651152d495a89e66",
+      "file": "internal/router/client_ip_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "204de32e54944fa151da03d429b07dcbcec5499a9b80bb1020bff4fd7fd24726",
+      "file": "internal/router/config.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "1ee49d6ffcf36ea8248ffef6b223004fe2db4ce1bd59442ff6dc0225e67911d1",
+      "file": "internal/router/config_admin_api.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "024607b2e2aaf65fa98f2ff90d7ce7f9ab1f89db7c45dc47a289cc58c5f218d1",
+      "file": "internal/router/config_admin_api_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "78a34d93d9ef40af2883b492868a9e874315e674d96a7488f0f99ec706d5ce92",
+      "file": "internal/router/config_admin_groups.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "e43fde698fccc535d367859d89653d51c28f58d8bb5174384c9ab941c1df25a7",
+      "file": "internal/router/config_admin_serve_e2e_test.go",
+      "redaction_count": 1,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "2b1848c65acc3fee7c5a7b706caa0a1cbef231e459e7e7a00cd56037596dd81d",
+      "file": "internal/router/config_admin_shadow.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "f5d48a2d4ea0973d36356d365202a981ff01ca49f033876b8a3035250f25bc18",
+      "file": "internal/router/config_admin_shadow_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "bf3990a20f7918b05532b30b0b522ad6c95090ff0d5736e86d51eb2328d30929",
+      "file": "internal/router/config_admin_test_helpers_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "57811f0f5a676f500fb84b664dcecc6d5827f63985d7dd1612fcc99e6ca36d17",
+      "file": "internal/router/config_apply_mode.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "44fb21343cd1277d2610e0523107573348ba51964c0ff91ccdebcc79610f109a",
+      "file": "internal/router/config_apply_mode_inventory.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "380cf197f76daf2be682e023502e990dff418ecdcc8eddc95dfc702ee141b63a",
+      "file": "internal/router/config_apply_mode_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "877927d51daac0d531f22aa043ff8ac38dfe477aa357631428453f60691bd1ab",
+      "file": "internal/router/config_control_plane.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "367979a7a36ae18dd292ea623e1d239b7ee4b1ccda66975354e40008d0d8bd50",
+      "file": "internal/router/config_control_plane_activate.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "69cd13eab768b0309d8a56239f844b7021714f49e648ca9b7d6f0533c7016973",
+      "file": "internal/router/config_control_plane_callers_admin.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "9ead80f4b3377f00412697806cba4c6e0f3001e799c13ba40237390391553bae",
+      "file": "internal/router/config_control_plane_callers_admin_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "cb6adb88c60de6501a085fc5cafe12f43d85b64ecbe2463b0ade514c9acfa866",
+      "file": "internal/router/config_control_plane_document.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "ff20056536f47b8b353a7225138cd3e451564354266bfe0b95fec178b47461f6",
+      "file": "internal/router/config_control_plane_document_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "8ec7d72b80c372219e923ce876caa2f030a80bfe1626ef39b5a9743967d053ac",
+      "file": "internal/router/config_control_plane_honeytokens.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "de726c13c5acadf31b8d3c4f1eddb7a8046e21ff81fc31f2265861ebbfec7941",
+      "file": "internal/router/config_control_plane_phase11.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "1e08ab80ea38746636b789b9879d691ccdf2b9e748f068c82e9621ce3a1a37e9",
+      "file": "internal/router/config_control_plane_phase14.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "a7939a41eb2eb9c43e1bf518b3719f6f27a2c026fabb84af119b95f561a32334",
+      "file": "internal/router/config_control_plane_phase15.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "ca9d6bc858d564da2ea466aef30807b330c1bd64cd71f732eb17c5e181e367e0",
+      "file": "internal/router/config_control_plane_phase15_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "d51deb22084d8f0dffce0e99d2e701882ec8b53235e1d5112facf8754573b367",
+      "file": "internal/router/config_control_plane_project.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "6c45f452e73b05f8123ccd8e22242ff83b6198dafa95ff986648e8b4fd108145",
+      "file": "internal/router/config_control_plane_project_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "450d5c1a1006f2ba00b0d301c95ec2c917202de43ed8a0a1a3cd46e4fb3af514",
+      "file": "internal/router/config_control_plane_runtime.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "be2c694119457d2d4e50a4195ed9a42d17df6c83c3b7179af36a0e66015e798e",
+      "file": "internal/router/config_control_plane_serve.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c932542dd8a5313b0ff23c6eda2a35dbd0a27d9d0ee57471f2678fa91d5eb329",
+      "file": "internal/router/config_control_plane_serve_e2e_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "7473b000a2282ddb68e0b1e518e70af45cdcb6b97a253c4df47dc897f4d49e49",
+      "file": "internal/router/config_control_plane_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "1e313394febd86a78263ac9c2b98285db984b5a799e3d5ec1244254fd485aac7",
+      "file": "internal/router/config_control_plane_v5_admin_cleanup.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "030154c059ec97adaf55d9508f5cdb123799fda9625ac0535bb45e613aeb6bc7",
+      "file": "internal/router/config_control_plane_v5_admin_cleanup_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "a2783ca98ebdc8d9d614b69b5b0d62adccce1a6bc13ebb72543fc544f6a62236",
+      "file": "internal/router/config_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "fe7598053088858bde23d841f929a455e2bb4d35f07167d9340678a21c2bed2b",
+      "file": "internal/router/config_tls.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c3181da3723619fc313f5a8a6e62edf2363ea752a8910187afe5ca3f04f8e367",
+      "file": "internal/router/config_tls_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "3aa58b03122eb5ccb50d760bca7a3639c39426b06795877df879fbd0867efdfc",
+      "file": "internal/router/containment_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "ee3319bc287b06ab9e03e755ee4fe163f8f71cc4e7f08d1c022b465dd98ff2c2",
+      "file": "internal/router/containment_webhook.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "49d34efe21a143a622f8a4f2296c508f6f780fed32cef57198331eeba8604f5c",
+      "file": "internal/router/content_capture.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "f12f1603fe16bd8589ad0e6c6d9886b86276168cceea2e560bd4de7b23ead39f",
+      "file": "internal/router/contract.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "9d993259d09e915cf518f217c7dfc66c5da87e2103d3d967d68c0c6d94118ee1",
+      "file": "internal/router/decision_telemetry.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "424d9d0e17f9e00806b1fbdfb6c2a7f0d608ee77c37856055d5e839b4ea7a34a",
+      "file": "internal/router/detector_config_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "a846c900fe66565281ad58686b97b02d7e6a561cd14375ee3be08922efb63ac5",
+      "file": "internal/router/detector_metrics_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "86f5fe55d373130e13ec16d679cd86607b5e46d4b8aed42abadf69db7d8ea91a",
+      "file": "internal/router/detector_route_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "4c255d4bb9fdc32485413e05fead898d214cb5f63b9b3e0afb07ff554cd87c6f",
+      "file": "internal/router/detector_segments.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "16cffd66e097226bac05d0a4f99103ba46924a9f8945a6034626e040efea27a6",
+      "file": "internal/router/detector_segments_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "aedbbe7d4c984278a4edc7a73687929a5c491879232934881b8ea9b8e0319592",
+      "file": "internal/router/detectors.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "100ce5a5a96e3bb73d381acc07ec28bfb0032e4f960f11303bdb3b57d8b68e96",
+      "file": "internal/router/dialect.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "3b65b0abedb5b93ddf989e19ad3a01a2557fcd24ed8100a9034169ad72bc9f35",
+      "file": "internal/router/dynamic_affinity.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "a8235f808801d7cb0b22041b42856c8cf2837ea873dbb72fbbba6f63e0fe0eca",
+      "file": "internal/router/dynamic_affinity_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "1a78a5d21ff45cf8ab0229658d3ed6bf8ac0ae2579ac5e21063813c4f92206ea",
+      "file": "internal/router/dynamic_strategy.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c57c46af8ee8e3a6c228f08e152744160155c410caeef002f9314c8715cde1a6",
+      "file": "internal/router/dynamic_strategy_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "687c3573618b41cd96f0847687900621a9c3a4fd7538571a0184c2dfabf32c6a",
+      "file": "internal/router/egress_policy.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "21a6b0d92943a96c55c35292063b19fa745899c168e174140bd9256051dcf538",
+      "file": "internal/router/egress_policy_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "354cdda9cf24a07daed569177f5f6fcd8c331fcc927c4a60bfffbd24fb7020d0",
+      "file": "internal/router/embeddings.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "9005925bb7e31bc914ec3d38983140fe2ebadb03869a92f17eddd9710a0c3b4e",
+      "file": "internal/router/error_unavailable_identifiers_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "7df31079ee77c23988a748a1f4226a074658bc3265e2b4222597f96e8e562501",
+      "file": "internal/router/external_detector.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "8ed0c3c5e1e11962941dac95ec197a85efbdc4085f50a3f5f626fc9895537717",
+      "file": "internal/router/external_detector_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "06b4d1990d07d019568221ae21060d950e13659bc2231a70c64c45aeef9aaa80",
+      "file": "internal/router/external_policy_contract.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "4fa83681f490217c22ee405d06408d375f29a0e02e52f897faa81976567fef39",
+      "file": "internal/router/external_policy_examples_e2e_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "a5245623567f282ce53ba740522570bb7a60331d6499a54ae0fca171eb67da2c",
+      "file": "internal/router/external_policy_feedback.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "1dc692b0eff1cdc0ae086473fa4d9c4842c462e0a6e315722ebb9e339bb63ce6",
+      "file": "internal/router/external_strategy.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "f33f36a1b4f28e5a6c460b0c81b4ba57b47797605a08122f3cf29269c3837d12",
+      "file": "internal/router/governance_load_audit_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "beb5d14c134460db038e97778d7f5a4597c430cdca8dca5126fd055ed3a96e47",
+      "file": "internal/router/governed_finetune_workflow_e2e_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "3d892973f64b972cd6366f5fae4c0aece08f27b80b8a3ffc14a090ab190b669b",
+      "file": "internal/router/hierarchy.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "b92e6ad32f746d8f358ec7350cde29897bfe82946448e686ed1a2ef933177b38",
+      "file": "internal/router/hierarchy_audit_migration.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "ff43557b39cc78612466fb2856afbe33ba89c30008de8b839245ca75f2a1c9c6",
+      "file": "internal/router/hierarchy_audit_migration_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "3875149ab29aeaf04d1a64d3f9abf28205cc582f85b0c92686d9adc30f66bbc2",
+      "file": "internal/router/hierarchy_test.go",
+      "redaction_count": 1,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "592a62c93b776fc6629048a1b4db5201cbd824882a099d5bad12e727a80ac338",
+      "file": "internal/router/honeytoken.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c0d24788d5fda53dcf3fbe925dcdbd4d4986f95187c9ab1135b0b807b5cba29a",
+      "file": "internal/router/honeytoken_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "39b897a7b9b07705e0df3a429ad4f8857b774d0d666d3fa38c9c7424e3c29292",
+      "file": "internal/router/identifier_transform_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "07b4e20653778fcd16c57556ab424d330212bf4e4ce4941b573c78f02e13564d",
+      "file": "internal/router/ir.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "1cf1773b86fe7d065b8c40b81ef472882007349ca2b9a7d8668928f7c4f3df83",
+      "file": "internal/router/kv_cache_routing_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "6e6e9693d7daaae19876a585c5ec6112247e600b11a279888afaf5f85de30be9",
+      "file": "internal/router/leaked_key_revoke_e2e_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "cc9ab02519abe307657bdab0197db240e79af29c3e2054d21b0ff4e7ca726187",
+      "file": "internal/router/license_removal_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "bb53909212223c24249c102e6e95d4143356de293f758835b085215fd9ccc32e",
+      "file": "internal/router/line_buffer_budget.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "4f3ee9e0510ae2cd67e4b815da728972cf2b2cc954e17ac2dea70daf6867d690",
+      "file": "internal/router/line_buffer_budget_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "3deac5a22e95168d2e150b7ccd3ae067b634777331a206e41b2a2b5d0e997a68",
+      "file": "internal/router/logger.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "55f8be1e8d858a2d809ba5207ecfc4827267114b77fa648d29852f82648c2dbf",
+      "file": "internal/router/mcp_gateway.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "3ec08d674bf0f461d2f0417eeb22997716cf1ce1b7b3e4143bbfe814a09fe629",
+      "file": "internal/router/mcp_gateway_test.go",
+      "redaction_count": 1,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "8c7391ad1fb72f6e4654d34aa8e05dc9a49f3eb5cb1c7416138d60d67ea44fcf",
+      "file": "internal/router/mcp_governance.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "2e5cec270b96ec1f84bf3057f23c121cf15e22f8282788893233395aab2d63ea",
+      "file": "internal/router/mcp_tool_audit.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "04f755f603dbcf3c97d7239fc76c836f95e528e0df4371a59f4a61816cab1ffa",
+      "file": "internal/router/media_capabilities.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c4bff3ae6258284d4480b494e6c3fdad5706b093ce2ea0ac73d68f167701c728",
+      "file": "internal/router/media_capabilities_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "565626f792edd43561256caf419b4738d2d1806d805e93d9aaf8414ee841d474",
+      "file": "internal/router/metrics.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "5388b2d0419485783d5c445057194e79be73163d3c82455e892ebdbb4c4570ba",
+      "file": "internal/router/migration_framework.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "6aeafddc6df6071176dfe03307dbd7d7499f7905574ab0a658916f01c399d44b",
+      "file": "internal/router/migration_framework_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "89d9a4f23ed62dfe1b2dfa10f2a1ba165d5394d9de43fa7b4e5a6e0a301c0e1c",
+      "file": "internal/router/migration_visibility_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "b2b03577e39990a656f6899dffabf024b9bd56d517582ffe66a4f20d59d87cb9",
+      "file": "internal/router/mission_route_guard_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "d63785d74e202d0f2d42a9ae4ad472514841c08115539e6636696fe18e1cefe9",
+      "file": "internal/router/model_strategy.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "20d5d4c7d2d887e67a939a053dae2240f07e6fd52516dd3b1bf813fba610a8b1",
+      "file": "internal/router/native_stream.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "24eeb1c75630fa3c3b3679150eae02bca537da1e0ad73304045f99ab658fcc71",
+      "file": "internal/router/native_stream_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "1abd26ee95df5a88693c7ad9388f98c9086cffd7222d305f399f7e850eea115d",
+      "file": "internal/router/offline_lock.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "286a21d635bfdc4670c752db51589c3f988213af572a0a9c7db50bf380c5a916",
+      "file": "internal/router/offline_lock_migration.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "ccf9ed846e76136270ad24de56569a60903f9b772d25d92c07a892e3d30092f2",
+      "file": "internal/router/offline_lock_other.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "31880da1e1d9180d6d6183c4eee07b74fd2fec252866ba6172ff3790f387bfb8",
+      "file": "internal/router/offline_lock_postgres_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "7d8186a9c6cfb926d1f2f73f3c7ffc12d8aad4f9c681bedd74c3058e7511291f",
+      "file": "internal/router/offline_lock_unix.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "35b0a31a31c329e96a42364db0df6c1ea40ae5339a8b9537cbfa7f33caea6710",
+      "file": "internal/router/offline_lock_unix_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "90b9bbcbab0cd449a9a26a780eb9ddbd0b801e9a3e6c15f804f02409ab6912c3",
+      "file": "internal/router/pi_chat_tool_result_continuation_627_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "cb17ad5649398e733da89cb2c4424cbc0b3c49b3ec3e4496920cd563c1f81802",
+      "file": "internal/router/pii_filter.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c90ce7baaa01e3d578fec96bd85bee0dbc0f7680a4a103d0a8dda2f1c2fb3d0b",
+      "file": "internal/router/production_derived_regression_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "e55b917a33c9a106a45e50793c437f1636df9583bfa4a249be25731a197a69c9",
+      "file": "internal/router/project_budget.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "4098f85efe5ad43619cb99d1a332a75db2077dc1f4bff5544fc0a317840aaba1",
+      "file": "internal/router/project_budget_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "4f68cdfb3dac3be411aec641b4bf840239a1e48a1f46e408716051910dd832d3",
+      "file": "internal/router/provider_spend_breaker.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "a2addc652d7b64270ec05dc85b11c739b93f286ad7710c517c7e314bce80e0bd",
+      "file": "internal/router/provider_spend_breaker_e2e_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "7f18e29904eac9c013743f7a8050f0331eb8693ff5febda73334d88fe451a87a",
+      "file": "internal/router/provider_spend_breaker_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "dbec06ebb74943d735f4b4ae632ff1986fd6ba2410968431bda687e3b484c066",
+      "file": "internal/router/provider_usage_bedrock.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "3178de162ac15f8b82decb659a018cf3dda97d861e22d03586b21c491cd8428c",
+      "file": "internal/router/provider_usage_clients.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "8b14022f43eb011c611bfd44eb1ad40194f6fe384f1ad2ba2e3ecca6f501d7a1",
+      "file": "internal/router/provider_usage_reconciliation.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "473d0d8e597e2f006532f5c5cd76efe9e94c168d60f56632b1fc3debaa5fdcc1",
+      "file": "internal/router/provider_usage_reconciliation_config.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "6b19bb4330a1a503f2e9b449c743ffee51fdee17405e270150d9cf22328a8cd7",
+      "file": "internal/router/provider_usage_reconciliation_config_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "84142801ab747df24d98b8ac34db612cd5f0086c37d6e3d992a46e33249ee073",
+      "file": "internal/router/provider_usage_reconciliation_job.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "6f491724af8e8939b1ae294d9ec0134c65e13d5defc1f0f11826fbdfd1a987e4",
+      "file": "internal/router/provider_usage_reconciliation_test.go",
+      "redaction_count": 1,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "27a5b1eab851d316c9247fa7fdf5795ac1c72122352e5449a766c3a6adf2bff8",
+      "file": "internal/router/quota.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "24eda677c9bb3e35149c9aaaf65434ad000e66083b8654b4c3dba062c6da79b6",
+      "file": "internal/router/quota_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "0590865dc329a7daf52f26e8920a4f0e8a186dbe75094adef20202599159b736",
+      "file": "internal/router/reasoning_bridge_bedrock_guard_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "8e79a6dbef5dfa33af9e6a13ace2993ca6a8f49795bf0f651ddd2c446db64ebd",
+      "file": "internal/router/reasoning_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "043de37e4d1693959132a34da6995880fee57674bffb6d85fd6a91093d12ccab",
+      "file": "internal/router/recomputed_input_migration.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "2fe47288c7b628bbf8b94771e7a2c61f4bde867b1edfda04a4dc112d10b46de9",
+      "file": "internal/router/recomputed_input_migration_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "f902276756367f0053cab6c3df885ff9452210da78ea3872b59b268e85f66b22",
+      "file": "internal/router/request_path_hardening_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "e9ead2a764d87f9a89441293b96546c2fee4689cc617793e0909db0d3ae8b948",
+      "file": "internal/router/request_shape_eligibility.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "2879aa23476cb945f30d0aae109bde5f125f6c834a2ebe1e6ae6df28d51bd70d",
+      "file": "internal/router/request_shape_eligibility_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "a676eaf6b4ef1c01dc84f837172cfc6cde45549afc4df8e38f1dc951a8fff6c4",
+      "file": "internal/router/response_affinity_migration.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "6811f5ad6338ac89e4f12085a62ce35c17e3135038d7cd8d529ef33a00914a10",
+      "file": "internal/router/response_affinity_migration_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "41693d470292e97648260c79ced4f1bf3e74c63303cf719072b7a2e394b7853e",
+      "file": "internal/router/responses_affinity_ops.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "13dda376a67d56cafcc859ab48e3909656d28f9ef6cff094d61b2e57670fae5d",
+      "file": "internal/router/responses_affinity_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "93b1115e965c9d3aab00b18914d302f970fc71cdc8bc1b519955efb28198af3c",
+      "file": "internal/router/responses_input_tokens.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "901bc38a5f59e0b1b0a783af05780b05bdf79c8cf16ecac8d1dc63fc4aeb9217",
+      "file": "internal/router/responses_no_store_bedrock_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "225cfbae3005ebbb17bb91bff2bcd0d55e3cd264006f733297ecc76c838d8269",
+      "file": "internal/router/responses_stream.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "b075a9b5c52d05005ee6c9d6ef22b1a4d01440c5c38faa8062ba74a6a292295d",
+      "file": "internal/router/responses_stream_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "a96af9f83aa73e1795bc000f7da2a737d2c41eab73f03877d87b5a2d0d6312aa",
+      "file": "internal/router/responses_to_chat_bridge.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "164bbce79e7e392c8bafeaa3c7c985bf03bab1fdd60e2d3955a23dc5e7302b1a",
+      "file": "internal/router/responses_to_chat_bridge_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "56e40f6f52c9e9103153d16b5fce1ad825c03de03d3eafab37dce6ddbfff494a",
+      "file": "internal/router/revoked_security_e2e_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "536db8a5eae40e019c185b68b7cd463cfb025141ea88ed75fccfcd305a2ba343",
+      "file": "internal/router/script_strategy.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "7e929068c3eb5c7af5c2386c11b23f1be242117d0adcb2a1ee9e4a6ee28cce5e",
+      "file": "internal/router/secret_dlp_stream.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "49a52f59ffd7d26a869e584dfd0922bc7a16277e4281127024fe9301f3662197",
+      "file": "internal/router/secret_dlp_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "cf21fccc9d52a25c177bb9d8cbab0589b2dc42b1714348dc38982e9a5906e8e0",
+      "file": "internal/router/security_access.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "ec77eca135bdf72d8592ccce2061c38b4d932cc3c9faf2d4e0563211c0f3c162",
+      "file": "internal/router/security_event_detector_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "5eda6c6aa640a4b2a2dc9cdfabdbfe3d59454376260bc4e5988e3a7bde750faf",
+      "file": "internal/router/security_event_stream.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "998eb8684a19db5530f6ac5be09b06849426ad27afde85bb373c8afea2c8e922",
+      "file": "internal/router/security_event_stream_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "d22f65387981bbd85c8b02989163542a6fc91d6e3b1fd01807ae036cde06d8e6",
+      "file": "internal/router/security_key_hygiene.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "febb3128c1aae06d1332683c78bfa8165354a767ea5e3dd5d3a6980dd2b1d2cb",
+      "file": "internal/router/security_posture_report.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "f5ab21a7ecfa60cdf816ba201ef583e9e4e4d5074a7504ee7f5cb2c576050086",
+      "file": "internal/router/security_posture_report_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "4053d64f03139ab48538df92e76f5fb83f724bff6263a95420c012b0776dc9ec",
+      "file": "internal/router/service.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "dcef38a70596c73d34f0905df2156c3e0c6bf6fe4ef9878c4806fe238a7b9364",
+      "file": "internal/router/service_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "42fdb1e289476ae4610416aef588caeb902c09665e1c0acbca8f2ef80e2c46ff",
+      "file": "internal/router/sse_line_limit_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "f58a721f9c1f90db7cccd7ac668a4833393d5abf285c86019afdf35ebc46b25e",
+      "file": "internal/router/stream_policy_e2e_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "345a423abf0dc2066a3bcd09bfa9fbae4c241c976921b7953b05685cfca6fd19",
+      "file": "internal/router/stream_tool_hold.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "243c241d2f4d39b310ccf96f428055612d3b0a448898bfe78a12d5df33176013",
+      "file": "internal/router/stream_tool_hold_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "4b028aee4e0036538f07dab890b69dd5f3e7c201e57e4ab6d6f0097203bf0801",
+      "file": "internal/router/stream_tool_inspection.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "ba73610de7e10d9c0cebefad4375bdbfde76edacdfad00d7a181efd77ec671c9",
+      "file": "internal/router/stream_write_deadline.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "de2491ef08313a39a3f9168915a3c3807fab47fd6cf91632fab435676256fd69",
+      "file": "internal/router/tenant_cache_isolation_e2e_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "7b2f4422545c6f54758c99662b635d8ccf9d88dccf4870bd44a6030141ae5da4",
+      "file": "internal/router/testdata/authz-v47-matrix.golden",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "4bdea8b1191b5dbb2b3fd47c11d6a50b4b5450d54d55dfd0fd40c806d164d389",
+      "file": "internal/router/testdata/ocsf-1.4.0/LICENSE",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "72b9541bbfd9936723a395cc75b7a0130a750c3cefc2789409de9264329630b4",
+      "file": "internal/router/testdata/ocsf-1.4.0/README.md",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "5567576507cb7d3aef6724835eec41a3567b9727299ce352d6d80e2644dd6821",
+      "file": "internal/router/testdata/ocsf-1.4.0/events/application/api_activity.json",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "0736d94dff839e22a57e95ffc67d147f2451afd982d02eddc41184411db22b16",
+      "file": "internal/router/testdata/ocsf-1.4.0/events/base_event.json",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "7fc4c026e15a970e0e42bbe49af8767ef9872f01740c9c6badd6082dd79a3635",
+      "file": "internal/router/testdata/ocsf-1.4.0/events/findings/detection_finding.json",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "517a470d704934208557209a92027f8371b3b0ff8a4b52f815e6545780f588e7",
+      "file": "internal/router/testdata/ocsf-1.4.0/events/iam/account_change.json",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "431e0dda8d7fda4f0b24bb9ac8e2709108cacc527a62035c2b7b49b0ea29c45a",
+      "file": "internal/router/testdata/ocsf-1.4.0/events/iam/authentication.json",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "2934e67db27439bb331b893c8ed15f7396362a5352b09ecdeb305148a6f38961",
+      "file": "internal/router/testdata/usage-v4.8.0-schema.sql",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "77dfe7d077c3e64703abb9969dba915afdc7acd38af5719e866e40e3bb4dccee",
+      "file": "internal/router/token.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "e3e26f70eb6f14f40ebc070d96198f377e06db1e72ebb09b8a3c2988a843a945",
+      "file": "internal/router/token_exchange.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "411418e4af7f1a69105c70cbd80bce3ce58f3ee438fb7348bdfe6f6ce2df5507",
+      "file": "internal/router/token_exchange_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "0ae5457bf31d5f61887fec00cf4c20236a48e9e484f45e22e6bb96088aa67d33",
+      "file": "internal/router/token_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "408cafb41a125fb0c0831097cddf3baf1acad72d174b18e7091f1c0436be252c",
+      "file": "internal/router/tool_call_validation_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "86b446be7297b51337456dbc8e3bd9368246ed9e25261970f2d095a2297d5f8c",
+      "file": "internal/router/tool_calls.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "b52a2d127c86a343254281a243f83c0a68573c55e865edd03de92c30e0b0f450",
+      "file": "internal/router/tool_enforce_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "8ba72f2120b1c780e1c4b208f0adf40d0925b36ec76560f0de90d502b2268f3f",
+      "file": "internal/router/tool_firewall.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "63aed2fcc5e1b7a41aa843d1171798540d8218064f260f4ccfddc23813613c46",
+      "file": "internal/router/tool_firewall_admin.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "42cd93c63b858858cabbe254b27b2b7f127ea271b121009a124bb289ac8364f3",
+      "file": "internal/router/tool_firewall_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "2cd1c9ebd0f18a1c0a09bde72e5d490621a291512c515170914e18377a3029c7",
+      "file": "internal/router/tool_reliability.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "35036169211207105164f92d78f8fc80b3f4c4201b656757e2cf18c5e03a29d6",
+      "file": "internal/router/tool_reliability_seed.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "da71b2cded558b0b09fa76028b24f3b87b1203313dac2d3cd618948329a972e0",
+      "file": "internal/router/tool_reliability_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "8482f4d82083bcbd299185bbea0c890d57f7838457bd6a2ff4d9bc9da903f214",
+      "file": "internal/router/tool_result_text_helpers_672_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "7c2ee560e29c98a8cb2f1bf40f5e012f99e021eed838f88e71336ad6b27b9ba6",
+      "file": "internal/router/tool_routing.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "65cce3ce2189008b9af1ea743c620146ccd2e3736428a3d7b73d1a32181cdc32",
+      "file": "internal/router/tool_routing_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "353b14867422151ebe3556f9d8fe841859c57e025a845e8a98a24b17d052fe72",
+      "file": "internal/router/tool_routing_usage_migration.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "27adee2485f1ae3f5b5b211c4efc96da6f96fab6205cc2f0ce05b508fd9746e8",
+      "file": "internal/router/tool_routing_usage_migration_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "716d9db0137f4cb98e1e134477e216d85e8ce163be98768245cb181b82b6983a",
+      "file": "internal/router/trace_correlation.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "727008f650bd243764748f9afbd6084f54b6ab17e6bb9d31794ea8d181a3dba3",
+      "file": "internal/router/trace_correlation_migration.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "5dbc0ade9c59f6849f246ef39608ca16ebf7a8c42b6ab88b4ef3428e3494e0d3",
+      "file": "internal/router/trace_correlation_migration_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "becffd6fcf0ed3597df60c6b56178bbb97d594010a0f0abdbed3cc315b460220",
+      "file": "internal/router/trace_correlation_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "21182d19499ae7a80e7791eb0570ec09872d2ab3801f38234609b046c8691c44",
+      "file": "internal/router/traffic_shape_service_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "5282f321769ea2d13135c1f0a48831911cf0d91306890d2249cab5ac72ab3bec",
+      "file": "internal/router/training_admin_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "85ea396d490bfa9c873f9202a3de7d92a914c4ace0da20723396abe7cf869870",
+      "file": "internal/router/usage_db.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "ecd28db4c7afd4d91f6fb74d027c3527eefab07c39cb4753d1a68602e2630529",
+      "file": "internal/router/usage_db_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "97d33a3b525126f0ce12a19cd7908d0d45b49e4047bc6f66cd9dbad376ed5853",
+      "file": "internal/router/usage_endpoint_migration.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "cb0a03d51d4fcbfc2c3b49eb082f701a08c7e32d2e54713738f8710137f380c2",
+      "file": "internal/router/usage_migration_test_helpers_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "91dc208264f2d273106ee1a600b81f94890e8c41b398e6560b9887f6d4dcabb0",
+      "file": "internal/router/usage_mission_attribution_migration.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "a2f90a850bf0c4c668b993edafce3ffe87ec68567a2ddd7417475120670b8664",
+      "file": "internal/router/usage_mission_attribution_migration_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "79389691d507cad1f9c80d7eb4ded3781cd6fc488f1d2d191a07ef2cc4084060",
+      "file": "internal/router/usage_provenance.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "696e632fb1dda280ac41e2a030b80540e0b03810f11b94c31ff37aaf0e5b2e5a",
+      "file": "internal/router/usage_rollup_reports.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "93e8ca9404024578e84fc49f922e76633787949ecc19e5773ba89fed7329bac1",
+      "file": "internal/router/usage_schema_contract_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "37724363504d9b887342406452a8184665bd857154aab9d0b4ee4303280869c6",
+      "file": "internal/router/usage_token_breakdown.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "228a3d09b46d425b889d409ee07c8f85249d7fd82af3996a875abcf2a0acddf4",
+      "file": "internal/router/usage_token_breakdown_e2e_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "f795379e64c4bf61e658033cd874b21d49c5321a58fd741663c87757e76093f8",
+      "file": "internal/router/usage_token_breakdown_migration.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "9ba12c7b082862b460659c8f2159708085835af2fd0d247132f4cef98cbf8f15",
+      "file": "internal/router/usage_token_breakdown_retention_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "87f2d4c5a6d18968a8c9f627e17aeb49968e18e75e3a5e6d9bb6c2d7796434f2",
+      "file": "internal/router/usage_token_breakdown_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "713430ccbaf6f8b2081f50955de47bc610c23032aabb41f708fa0cce7af90557",
+      "file": "internal/router/virtual_model_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "e76e64ba5bd94c94ece8d6a0f63a994d7a98ba05f0e231afa981f56ff945e735",
+      "file": "internal/security/detect/builtins.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "5f8e85c367c15e3d811acbdbb5c39cc8ecb55b42aae54c30e2f5acaeb7c3cf14",
+      "file": "internal/security/detect/builtins_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "91e7258d5196c38d994b97c5dcf7341ea5ec91eedecd00768491df0b6c2240d5",
+      "file": "internal/security/detect/queue.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "a109ea9ac53491b38a97d65d47a9c5d2651f247970436145eed7950d1615bc96",
+      "file": "internal/security/detect/queue_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "04f4b1a471e5c209f784f84dc186d416a8692ce097fe7408467710547d0b5163",
+      "file": "internal/smartrouterctl/admin_api.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "9c0ce0b1c2e94da280cef55da9361e0e1878aa1cd5e2b523fb067ea43b8f8cba",
+      "file": "internal/smartrouterctl/admin_api_socket_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "e4634178a7147b314567e09263abf251a5f98827cb9cfb26b2bbbfaa36309233",
+      "file": "internal/smartrouterctl/admin_api_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "9298b2161cf07941aac9c6cc06ef67340770c37e4b5e9a7e1a0b96c063557bd9",
+      "file": "internal/smartrouterctl/blueprint.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "bb14f2685cc295ac194d01f8ea8ec686a49f222dc0e9043cf381abaa9a1cf3a9",
+      "file": "internal/smartrouterctl/blueprint_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "71ed404b47d0da201204f1793e6fc1862d4c80f4e19da0fc7462822603c84369",
+      "file": "internal/smartrouterctl/caller_merge_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "81df1e3a5f08f8947432c30e519184b8f1925d5eb3d0c3324b508cf73245b9a5",
+      "file": "internal/smartrouterctl/configfile.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "3d1d4dc1ff416eacab123b8f6c55134e1c174d8f2b5aee139488f49a5111119c",
+      "file": "internal/smartrouterctl/operator.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "2445d7479d8d4916f36cfe6b935246eae1096cf29419c8efac788a3a920ff8ab",
+      "file": "internal/smartrouterctl/policy_api.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "94290b0f25af14bf1891ea256cb0936d1bfcf748ec9022a218d2e98df6f22a0a",
+      "file": "internal/smartrouterctl/policy_api_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "3dda9099ff1581d8feefab0bb83e95cfd0bd40cc46a7521429df9d722f526964",
+      "file": "internal/smartrouterctl/sqlite.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "a030a5e6694eaf040d5cf2046b65a2ab7668297b8b77951ec05eca9a7a2e9455",
+      "file": "internal/stream/anthropic_bridges.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "7eb15b564d4b3a46439a861befd0fdc7c0bf960722dec0f60d19dec2963f3710",
+      "file": "internal/stream/anthropic_bridges_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "4d9b6e898896238eb3c39add0cfa367d162b87fb67f55a946156d2a61c6b37ed",
+      "file": "internal/stream/framer.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "5c83be17c14be206bfceea023b84d8aebbc3043297f45c9f1cdd6e1feeac41cf",
+      "file": "internal/stream/framer_limit_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "6ca358c163211421f5888a289930f66ac91c0d023d8e920143e20388700a7ea6",
+      "file": "internal/stream/types.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "205df0f598eaaf78da9c2b3d4843dec9f406609289cf73ff158a2678ab0fdcca",
+      "file": "pkg/detector/detector.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "addc6e5bde8adf6f02fc319ba7a7b4581601a49c180a7fdbeba559511daac45b",
+      "file": "pkg/detector/detector_test.go",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "a64c120ded71bdda654d6e95cb57d8a52793015e9d0109070bcf7231d84306cf",
+      "file": "scripts/admin_authz_advisory_exceptions.json",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "2c17e90e22cd14e74b1ffa274e05f0aae7e22ed9fbabf75f9c5ed78dd0f572eb",
+      "file": "scripts/caller_token.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "5b005c2369c2406635aa91b8f10a94620796e1cc5071174f876aa7b4e0448547",
+      "file": "scripts/check_admin_authz_advisories.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "0518a67ad9dcd3f3dc57206159a165abd92b1b4a6386091edb7c28651718a50b",
+      "file": "scripts/check_go_toolchain.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c2f3407236457932fe027447d7da5ea9bd57f0fdb75341666e831685099dc211",
+      "file": "scripts/check_reference_configs.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "6b92c1c8a7b2e6037c6c2707641178bff6ab66738fa87dfd82467a351952f8b4",
+      "file": "scripts/check_reference_configs_test.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "f7afb2e487fb0cb4be86722d51aa614f8699fc513cbe738d2fcc48cff49af0da",
+      "file": "scripts/check_release_dry_run.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c1337fb0d66c0b0c827e88444323b7f9417813d97832ece2a2e1ec4a7c78838e",
+      "file": "scripts/check_release_dry_run_test.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "00f48e72351baf24632893f120f92b755a81eaede7bca7f85a78dabf606314d2",
+      "file": "scripts/check_release_environment.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "6191f039dc0f79a5232241925cf5d3d90ea0271e7016f0fa9b64d81da7cc36d5",
+      "file": "scripts/check_release_payload.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "29e486b1975465b49e2af7df5fb34b79c45dcc49784191da3191f2b2106f9108",
+      "file": "scripts/check_xcrypto_openpgp.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "92250c0e285e8d56a27b39df5fbb8eaa06c0f2b47acc72b19041cbfc608d2ada",
+      "file": "scripts/ci_topology_test.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "70c4adaaf3079651c0dba4c9c4871351acdbbe9691846469fdf665597f1366a8",
+      "file": "scripts/compare_release_checksums.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "94bef7349e9acd5d73ca97a4ee440f89a105e859c74ae5c0dae4fb66c76efb56",
+      "file": "scripts/compat_mock.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "954cfc9d28faedd1f073ff61d104117701cb5c13412ae1543f0144acede0a8e3",
+      "file": "scripts/compat_starter.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "6928c920eb6ac0039a7f4bac80d895225ef2d87a29c3a0b4d73b87bb7fb2842b",
+      "file": "scripts/compose_live_e2e.sh",
+      "redaction_count": 2,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "04fdcbc32a56e5b883ca3d5d78565bd47beb9b9ad3043db730cfe6ed26316ddf",
+      "file": "scripts/d3_live_eval_test.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "b1a97598d645131b87d60ef35fe9b6ce6e62fa7531bccb1cee19f67a54e4947e",
+      "file": "scripts/engine_advisory_gate.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "4400c7501bd91245d79d49759beb91991a5f7e84e66257c35cae28530765066b",
+      "file": "scripts/engine_advisory_gate_test.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "ba709904aa09d6a3341b9e63ca72fa6addb374c352b2a6789cc8e358b3c5059f",
+      "file": "scripts/envsubst_compat.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "5b4ca05a48cab0df8c0843cb38ec615895fdc67f16b1ebc6894be1a1947a7f53",
+      "file": "scripts/eval_nightly_aggregate.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "20e8a52437571272685546eb6096d7ecdec90fa8505806293fffabfe0fcc8d2c",
+      "file": "scripts/eval_nightly_aggregate_test.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "bc01c09aa34251a12ac258bdce34d8bcdbc6a9bd8ae411ce889ba1af53c3b3e1",
+      "file": "scripts/eval_nightly_live.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "95ecb2e2e60578e756faff0e8e9f972d14b55df3344f2c50eee745377e579c2f",
+      "file": "scripts/eval_nightly_live_test.py",
+      "redaction_count": 1,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "9229b5d459bc0ce9dd542e39fd0057028782f399722ca9963706042a056eddb1",
+      "file": "scripts/generate_release_spdx.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c69f5b6f87631bfd8da2bc9e9b79694c60203a6a38f79ff807f609666c4b6a35",
+      "file": "scripts/harbor_e2e/credential_permissions.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "27f8711c17b75ed1d6ffb7478942cc0fe671d0fabbb19c069f939574b9e63fa4",
+      "file": "scripts/harbor_e2e/credential_permissions_test.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "6f363d14585f92b481fdf2afd6c9f6cc4a6f8919df50904de2733def7addbfed",
+      "file": "scripts/harbor_e2e/generate_tasks.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "64abe10f260a709c51be41b59065978f7c171e30a40ed049ede91f3ae27816d2",
+      "file": "scripts/harbor_e2e/harbor_config.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "b1fd4bd167d3f223af8073be26d1ec944650afd096575312589b8545ca75ce78",
+      "file": "scripts/harbor_e2e/metrum_pi_tmpfs.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "b913706c0c62abe6360f8625ec3528de855949d6bbe885bc0f15aeafef58581a",
+      "file": "scripts/harbor_e2e/mock_messages.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "422a1b8c7208953f7c37f51a683e952eae46cfb71cedb0da6fab101b00ce4ae5",
+      "file": "scripts/harbor_e2e/mock_messages_test.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "faf695f69d8485e5982614791fb44c32c5edd16acc45b9b47ab7534ebd07ff09",
+      "file": "scripts/harbor_e2e/prepare_catalog_tasks.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "36be60befc1de66bb9ecdec03a6314978f59cbdc9dff9f60ac0b6cbd5a98065c",
+      "file": "scripts/harbor_e2e/prepare_catalog_tasks_test.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "fdb6e63bf17c5117d05dae959979cc3c2a8eaa239f87c14a4c93e7b6270f65e5",
+      "file": "scripts/harbor_e2e/run_matrix.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "7d6bd1dce9fa2f9efe813fb93fc19393eb4c359cf24332b725a440e9d473af06",
+      "file": "scripts/harbor_e2e/test_nonroot_images.sh",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "01d5e27241dd54acf7187648a1bcb29168ea69b1cac839fe02af065e1d1ddca8",
+      "file": "scripts/harbor_nightly_budget.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "9c7556c84ec82b7a7ddad2a55b881b96ebacf43e2b70a807ff42fb4d9f6cc71a",
+      "file": "scripts/harbor_nightly_budget_test.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "9257c5845460162f300410f1c1b35d0edc0095682cb5397454aca730db3f7199",
+      "file": "scripts/harness_security_test.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "781be89389be332dc33e69f3a94ccfc232d8774c3ed8c9bc1c4f8ebb053acbc4",
+      "file": "scripts/install_crane.sh",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "6a1735017deb5132eaf3982a873da2d63fecc77e595050c1584a3ec4629f203c",
+      "file": "scripts/install_crane_test.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "770872c94da3bbaf496113065b028acc0c30a48e08c4880ebaa5d6805e8c0219",
+      "file": "scripts/install_github_cli.sh",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "7e002fcb87f279cf1caa433b5380e80b5289bc2cd8abeb6f6ca4b7179f5efd4e",
+      "file": "scripts/live_cli_c_e2e.sh",
+      "redaction_count": 1,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "8a554c15ce3a5bcc674ace906d6440b4b16b280957b7e538580f64d1de70e3e7",
+      "file": "scripts/live_full_e2e.sh",
+      "redaction_count": 1,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "31f4ec1e6e2efcdeea4c8dc9a33a07215d21e4019886d19b6d407a1d32fcfc20",
+      "file": "scripts/live_upstream_routing_attribution_smoke.py",
+      "redaction_count": 2,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "3b00eb94b675c7c561b8f32c2afed27fb9dae12d3e58a8067d31f925f884fb44",
+      "file": "scripts/local_image_analysis_smoke.sh",
+      "redaction_count": 1,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "02b13a9629ffa64007fda0a9dc5f2431f4c20e374128da363e493288a412fc00",
+      "file": "scripts/local_launch_path_smoke.py",
+      "redaction_count": 2,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "a06b54109776ab3ca9fe8bad6b8858d4f86e91bcd8df972db9a930ec204a2423",
+      "file": "scripts/local_pi_instance.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "6d6fb35667b20d8b03fe9bff587297f3602cb52f21d0d09a257868f11ccfbc41",
+      "file": "scripts/makefile_security_test.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "a15094857f33ef6962191f6db1cd3d2ca1da9d263a98e383f915892cfbfdba85",
+      "file": "scripts/normalize_docs_404.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "738d5121087ffebea6044dd4870542fa46f3221614feea39f8616485c20959ba",
+      "file": "scripts/normalize_docs_404_test.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "21310596396941918cd1e52f992ced92b3a99e2feb9b60d8cf777212ba4aaa2a",
+      "file": "scripts/parallel_tool_live.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "6c897ae79af056c019e8e9ef55c7d2cdc079c390524ab2fd9bc5cad688d48e69",
+      "file": "scripts/parallel_tool_live_client_test.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "a1bb54abcaa7f44d365105e5f3a2e9233dbcedebc1064eb66a8867770452f77e",
+      "file": "scripts/parallel_tool_live_router_test.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "95a254f6ca10fa5b92f264fa3d4b2aba34e31fdebe6bc5906447e4a1a1e77420",
+      "file": "scripts/publish_github_release.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "7731a1b71a9bae0812aaa5fe87215521b6b9728b4636b2b6bba98d9abeab66b8",
+      "file": "scripts/release_ai_review.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "ec48f0a123637e75468ff77d574800e556f32bd5faf3ccf35df1f974086a55be",
+      "file": "scripts/release_artifact_inventory.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "870004b412a35d4610e6420768cd6d68574ae2b5abf3227e987d8cd43d7ef58f",
+      "file": "scripts/release_gate.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "eb551b87a22af06c049a5abf3153a8ceb555771a9445799d3d7fa2af8473bb8b",
+      "file": "scripts/release_gate_test.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "98423edaa98cc64434503f7c585d0f66dd3bc9d8c9f93d854a1cefd63bc8ce66",
+      "file": "scripts/release_image_binary_test.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "796598281f90788c6340f29408e561cebad1553538586c95cef36f2dbd68a726",
+      "file": "scripts/release_image_layer.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "e6b7b31b0fb8669a109e730f0c7b4b27dfe88398fd6850301f2a135362206379",
+      "file": "scripts/release_image_layer_test.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "d2cafe0eaa68606457441e45aefc26d5f3f024ff85878a6ea7f8f5050490f33f",
+      "file": "scripts/release_image_oci_layout.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "66aef3fdebd8fed893f7d33af03ae566da98c8389eea264f64473af80b0384b9",
+      "file": "scripts/release_image_oci_layout_test.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "0bbfb5d304792975b075482d08290c4c36c13b992f84461c297aba4e490729af",
+      "file": "scripts/release_image_smoke.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "ae9052fee99221991777b5396be0b7604f10ec2a9ad465c869c087262b2d5a9c",
+      "file": "scripts/release_provenance_test.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "5649d52fed4e9c458d62c6e85cc13dcdcf906682afc752d066d9e7dfa38a060c",
+      "file": "scripts/release_publish_tool_contract.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "bf42ce037058f7c9bb577ff410e367257a5c2a3c3de74c65a7cb5246370bc301",
+      "file": "scripts/release_review_artifact_key.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "cbb1453eee12a46201733f7f1b2d87ccb112d1406837c8cb646081a3b85d30e6",
+      "file": "scripts/release_review_artifact_key_test.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "d4b4816741fdca38f1583cba5941fc9d42bd5c75072b5d72542c87315cd3ecdd",
+      "file": "scripts/release_upgrade_rollback.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "48d32b360d147a82e048f50b391b57a121d51d68aec062e24d806259881c45b4",
+      "file": "scripts/release_upgrade_rollback_test.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "aa2c987a11bbf17a520b4486ba3fa0e73949c5f1f28a9129fc62f5dcbaa22ec0",
+      "file": "scripts/run_d3_policy_e2e.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "7093e83cc372999461be6016ddb07800ba137ceeebc6751710656ad7aa7666fd",
+      "file": "scripts/run_lrp_e2e.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "55757cd73e24069726e0d43e0d5e0534ff38c608026b8028ce32cd5dbd48821a",
+      "file": "scripts/select_previous_release.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "eebb07a61af9eb66a342d37935086a1229f36d6318cdac513fa3400fc1d1ee21",
+      "file": "scripts/select_previous_release_test.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "25fc4bd6d962cfada2314001063c1e889b6c40e9e95035425c9d557a0768fd03",
+      "file": "scripts/sign_release_windows_packages.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "8b2339a3f8666758118c930fadad60a41d13a107e91a7db5218ef3491aae7684",
+      "file": "scripts/smoke_stored_responses_affinity.sh",
+      "redaction_count": 1,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "ea289b8257ec70e34d8280e13f5ec2ee46841160bfd04385fe5ac23429c836c6",
+      "file": "scripts/test_check_admin_authz_advisories.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "d0f2e354d4e4192ecdd738d6d20686a67b18feded2dec15033132ccca69532bc",
+      "file": "scripts/test_check_go_toolchain.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "433a1ab05075358db2367572f8b7b11b6438371ecac17dc2a9e423ec7478d4e1",
+      "file": "scripts/test_check_release_environment.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "50bdca1b9b35907a73b2b95b21ebe0334e12fdb953460350b8939bd835b5e348",
+      "file": "scripts/test_check_release_payload.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "3faf78f2826c28f920c145910e0a1a733eaff39a4f8d3386ef9cd0becaebb956",
+      "file": "scripts/test_check_xcrypto_openpgp.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "45597438835fcc90b4768212d828005673e504f2d4c129f4da16f247f7cb91ca",
+      "file": "scripts/test_compare_release_checksums.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "e333360b40941a8a2b4085f379fcff61e16acf00a0547645c4f7994ce7568a65",
+      "file": "scripts/test_release_ai_review.py",
+      "redaction_count": 1,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "259c49852c8ff486e7193edc10938c4189f92cba635ab74e07d447f8785f1717",
+      "file": "scripts/test_scan_config_security.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "335dd77d1b12dfa2a4f0e608b451f01e56a2187a38d364345a1f62358f64958d",
+      "file": "scripts/test_sign_release_windows_packages.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "a5958b2a286ba7799d1da7782524e8458d6fe71887a49d882778534e2017ab4e",
+      "file": "scripts/tool_compat_live_matrix.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "f99c6550dda17b923485b24c6f54e2d8553433020b18d1d0cfce8f5b51ae693e",
+      "file": "scripts/tool_compat_live_matrix_test.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "63b3a3d8a44c73604d95dc86e159fa92d7da78531b130c00baa1f2f905e4e07b",
+      "file": "scripts/tool_compat_matrix.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "f9895b3d404d1feda24b64caa7dbba3e19b57db0623c073d1e3d23005e0cdcb1",
+      "file": "scripts/tool_compat_matrix_test.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "b929ee0784425463b8a48723f76786de8082a71d89453f0d6803f83e123ccaf1",
+      "file": "scripts/validate_build_metadata.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c962a5e03343cb25e20ebd8ee3d9ca6c1986d2fc45b430d71d5c66b9bdd7ac8c",
+      "file": "scripts/validate_package_contents.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "4a4796b4071926a5be2617a93e58d2b2ae22a9c1917d6bd77c824ef1e702ffe6",
+      "file": "scripts/validate_package_contents_test.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "62bf41798421144e85b6a008e1bf027d46c4b001f3ad29115b389bde509db4e4",
+      "file": "scripts/validate_production_bundle_config.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "09f462a1459ef3046de7841077d21a382d1e15ae1c189e516de0f7573585adac",
+      "file": "scripts/validate_production_bundle_config_test.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "d2f2a6cd0bac33716d171d7574c42f625c676aa5c188af66d1667edde93a33be",
+      "file": "scripts/validate_trivy_k8s_ignores_test.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "94693871a41cdf013f3a729e87a5ef2a5e0782026b35e593454e3a9a09b8ba49",
+      "file": "scripts/verify_release_image_binaries.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "0cae40d1077b1f0d9224498631b2f9fbba35bb332dc7638f380bc6da094cdb76",
+      "file": "tests/agent_compat/chat_responses_bridge_smoke.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "62ac717f677286f67bcacba04db04f7fb32e099b2e87637b32e922e92b848060",
+      "file": "tests/agent_compat/claude_anthropic_smoke.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "2ade2c8025f34f26464b30b36f0f656dabb005fdc0c4ed39c0b1a7ec3cbd9781",
+      "file": "tests/agent_compat/claude_mcp_smoke.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "bb8f74eb8d68f2e7d096d5b322ff8e6f7cc4aa3de4b3462b84493add7b5b3fe1",
+      "file": "tests/agent_compat/codex_responses_smoke.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "519334eecabdf0a84ded79b0cfb650a1fbe3c346cf91a6655e76bb35e7274b71",
+      "file": "tests/agent_compat/mcp_sdk_smoke.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "7074ca097e0e4ae39d9a13bc74772ab524dcc72ae2d362f50d43e9bedc227647",
+      "file": "tests/agent_compat/pyproject.toml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "014abf84d5e6ea7afc5e15f651f46e28bde6a1da87f7b6664edb23451b10934b",
+      "file": "tests/agent_compat/run_chat_smoke.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "69d209dc5ef195a686d18191a57bba0c74762388ac78110a5ee5178d71e6fc05",
+      "file": "tests/agent_compat/run_codex_chain.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "254a036fcd1b37c2719703b39d1e22c8f674936e148dec048944d5d9324e522b",
+      "file": "tests/agent_compat/run_codex_chain_test.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "aae81a4629690afe591584bd952cf925b56bfb2f15a14d1d71a4763efd4e20c8",
+      "file": "tests/agent_compat/uv.lock",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "9ec90de90e2a6aad21a15502b9f71d2676e4a74d24702fbcc64f97da8c6bde36",
+      "file": "tests/api_compat/harness/__init__.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "f4d04ef0e3cf266b6497e9df2f31815a4d3cdf4794a8fcb661a117c3f8cf7340",
+      "file": "tests/api_compat/harness/constants.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "af8434647cb85a9f992676169b94d9ea602f587511ce1fba88b6bcd9b8d84d45",
+      "file": "tests/api_compat/pyproject.toml",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "0f6eabf7869ab75aa2a292cad6b5d7c2bd392a0410ea195cfb9c3d174d040d8a",
+      "file": "tests/api_compat/tests/conftest.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "e792ad02c95f4a997348e9c7a06621526751a1c4bb09986db62c193e17282fe6",
+      "file": "tests/api_compat/tests/test_anthropic_capabilities.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "1ab7076363b0446e082c0797412258c6092c7c0346bf28cd119dda9a1adef533",
+      "file": "tests/api_compat/tests/test_anthropic_translated_tools.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "40e9ae050e20a4a7b36b5914aa21192c3283de0eb7b747be5169aa3dd8a40599",
+      "file": "tests/api_compat/tests/test_chat_controls.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "ad6b2815541ce95878d2ea7609a33171257b3e4e7d03639f7bc61664b3c2e958",
+      "file": "tests/api_compat/tests/test_http_contracts_p1.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "c4672973e718a1ff2795842d13288a777cca9db6fcd647f78dadf84684ddfa31",
+      "file": "tests/api_compat/tests/test_http_negatives.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "8ee009b6b383482a31c1aea6989fc80057ad9bb070a275087c991577dbc4d718",
+      "file": "tests/api_compat/tests/test_http_sdk.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "06fa0ad4f8b322d94fb2e03765c4ca4dde58b0a0796c380f497d8d079962ad77",
+      "file": "tests/api_compat/tests/test_media_eligibility.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "e11e5fa4fd1e347d030c9cbe915feb984c4e209282f8936d8e70301f217b1f30",
+      "file": "tests/api_compat/tests/test_media_matrix.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "e2b300c6f401737e8cac6f8c217acdee0af8892877c0f2bcfd268c2ff68614c8",
+      "file": "tests/api_compat/tests/test_ops_profile.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "3c1eb7c58ec8b998da3259b29ce9431541ce116d72773c3eba9d085e4704ccc4",
+      "file": "tests/api_compat/tests/test_ops_usage.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "72eefce005d1abc6894f46bcef867798e9aca07478747a7a3787bde77d600d87",
+      "file": "tests/api_compat/tests/test_responses_contracts.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "1603a66095f351705e133022b9bdc4d54a8d8fce29e7491e43e686cb54684a3c",
+      "file": "tests/api_compat/tests/test_route_matrix.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "fa42d46eb61ee12d5b1014ddb2ca0cc211fda0129726fe350225a57a56d24632",
+      "file": "tests/api_compat/tests/test_route_state.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "5e8f823b45e7144e31b3f52a05628614a6c9e25be743e26465a7b7f087817d87",
+      "file": "tests/api_compat/tests/test_stream_faults.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "bdb57a0ab0be5934fde4cbfb43ac9e10d2e33affaf8c2037ca5f50e4c200f456",
+      "file": "tests/api_compat/tests/test_stream_limits.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "6c1bd75502334b25d83e02c8652b088bf95cde73f1c1fdd7f9a539ca59c5dd7d",
+      "file": "tests/api_compat/tests/test_w3_eligibility_local.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "90b8d54fca7ddb244a6079ac30b72cb8e5a7452d1d40b6e689fb747cdea0ed8f",
+      "file": "tests/api_compat/uv.lock",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "999e7d27cebd319b6c70bbecbd232d35316a8001eee55a447f2fb093893e70ca",
+      "file": "tests/api_compat_ts/run_suite.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "ebc89a462aaf3eff8d1c0ecace3ee78b2a9625f61179e90c1c29a86fa0f34830",
+      "file": "tests/harbor/tasks/HARBOR-01-read-edit-repair/environment/Dockerfile",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "acb26d128754a5064899cb42c29c4804b17a75f473d0532564e1e6cb25c18a4a",
+      "file": "tests/harbor/tasks/HARBOR-02-nonce-chain/environment/Dockerfile",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "53ddaca6ddd645964b2fe88c3df65bff7ce3f277f486e89348121f93d28b5491",
+      "file": "tests/harbor/tasks/HARBOR-03-parallel-tool-ids/environment/Dockerfile",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "06ccb6d4bac2b313514bbb79c36a2616f6b29ebe586975de9afe94d90a4eb78c",
+      "file": "tests/harbor/tasks/HARBOR-04-tool-error-retry/environment/Dockerfile",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "db2613537ffe03a16247eed78ccdc0d86c57ae0c58c58e090d83954b091b223c",
+      "file": "tests/harbor/tasks/HARBOR-05-large-stream-patch/environment/Dockerfile",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "79a7feee66b36fe877cf61e31c8bea41e99431e4b4eea48ffabf0db998540f6f",
+      "file": "tests/harbor/tasks/HARBOR-06-no-replay-disconnect/environment/Dockerfile",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "dfa24f629b7cef28841f6e4cac51e43c72830adc3026fc52f5577e15904d4972",
+      "file": "tests/harbor/tests/test_verifier_integrity.py",
+      "redaction_count": 0,
+      "status": "reviewed"
+    },
+    {
+      "diff_sha256": "64dbd701e0af0bf640048837270e28c1984c0344f4f22640e9041900ab11d676",
+      "file": "tests/tool_compat/matrix.json",
+      "redaction_count": 0,
+      "status": "reviewed"
+    }
+  ],
+  "findings": [
+    {
+      "category": "security",
+      "files": [
+        "examples/detectors/prompt-injection/server.py"
+      ],
+      "id": "23a2faa1754f",
+      "locations": [
+        {
+          "file": "examples/detectors/prompt-injection/server.py",
+          "line": 115
+        },
+        {
+          "file": "examples/detectors/prompt-injection/server.py",
+          "line": 185
+        }
+      ],
+      "rationale": "The handler checks its deadline only after detection finishes. Detection waits indefinitely for the shared classifier lock and scores every chunk even after expiration. Concurrent requests can accumulate threads and continue consuming inference resources after router timeouts. Bound admission and check deadlines before lock acquisition and between chunks.",
+      "severity": "informational",
+      "title": "Detector deadline does not bound queued classifier work"
+    }
+  ],
+  "head": "f8e037f6b4b3f88397c8cdcb77a74d14455eca5c",
+  "model": "gpt-6.1-sol",
+  "provider": "codex",
+  "schema": "metrum-ai-router-release-review-artifact/v3",
+  "summary": "Reviewed 4 changed text files across 1 bounded batches; reused prior results for 735 unchanged text files; recorded 0 binary file hashes and 5 generated-file checks within a 744-file release range.",
+  "verdict": "PASS"
+}
