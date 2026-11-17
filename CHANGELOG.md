@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Correct the upgrade guide to describe successful local sinkhole responses for unknown or disallowed honeytoken model names.
+
 ### Security
 
 - Mark honeytoken and canary OCSF findings Critical and include the caller ID and source IP for SIEM correlation.
