@@ -133,6 +133,43 @@ func TestConcurrentSQLiteAuditWritersProduceOneChain(t *testing.T) {
 	}
 }
 
+func TestDuplicateUsageAuditEventDoesNotAdvanceChainHead(t *testing.T) {
+	store := adminUsageAuditTestStore(t)
+	if err := store.db.Exec(usageAdminAuditDDL[0]).Error; err != nil {
+		t.Fatal(err)
+	}
+	first := AdminAuditRecord{EventID: "duplicate-event", At: time.Date(2026, 11, 17, 4, 0, 0, 0, time.UTC), Domain: "team/retry", Outcome: "committed", Object: "admin:config"}
+	if err := store.db.Transaction(func(tx *gorm.DB) error { return insertAdminAuditUsageTx(tx, first) }); err != nil {
+		t.Fatal(err)
+	}
+	initialHead := readAdminAuditChainHead(store.db, "usage", first.Domain, usageAdminAuditTable, "domain")
+	retry := first
+	retry.Outcome = "denied"
+	if err := store.db.Transaction(func(tx *gorm.DB) error { return insertAdminAuditUsageTx(tx, retry) }); err != nil {
+		t.Fatal(err)
+	}
+	var count int64
+	if err := store.db.Table(usageAdminAuditTable).Where("event_id = ?", first.EventID).Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("duplicate event rows=%d, want 1", count)
+	}
+	if got := readAdminAuditChainHead(store.db, "usage", first.Domain, usageAdminAuditTable, "domain"); got != initialHead {
+		t.Fatalf("duplicate changed chain head to %q, want %q", got, initialHead)
+	}
+	handler := adminAuditExportHandlers(store.db, nil)["admin.audit.export"]
+	request := httptest.NewRequest(http.MethodGet, "/admin/v1/audit-events/export", nil).WithContext(WithAdminAuditMeta(context.Background(), AdminAuditMeta{Subject: "operator", Domain: first.Domain}))
+	response := httptest.NewRecorder()
+	handler(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("export after duplicate retry=%d %s", response.Code, response.Body.String())
+	}
+	if err := VerifyAdminAuditExport(strings.NewReader(response.Body.String())); err != nil {
+		t.Fatalf("verify export after duplicate retry: %v", err)
+	}
+}
+
 func TestAdminAuditDeletionMarkerCannotBeDeletedByAPIAndRetentionCanPrune(t *testing.T) {
 	store := adminUsageAuditTestStore(t)
 	if err := store.db.Exec(usageAdminAuditDDL[0]).Error; err != nil {
