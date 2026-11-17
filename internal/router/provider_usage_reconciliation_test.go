@@ -523,7 +523,7 @@ func TestProviderUsagePartialWatermarkDoesNotAdvanceCheckpoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	service := &Service{usage: store, cfg: &Config{Server: ServerConfig{AdminReports: AdminReportsConfig{Security: AdminSecurityReportsConfig{Enabled: true}}, ProviderUsageReconciliation: ProviderUsageReconciliationConfig{Enabled: true, Providers: []ProviderUsageReconciliationEntry{{Provider: "primary"}}}}}}
+	service := &Service{usage: store, cfg: &Config{Server: ServerConfig{AdminReports: AdminReportsConfig{Security: AdminSecurityReportsConfig{Enabled: true}}, ProviderUsageReconciliation: ProviderUsageReconciliationConfig{Enabled: true, MaxCatchUpDays: 1, Providers: []ProviderUsageReconciliationEntry{{Provider: "primary"}}}}}}
 	day := time.Date(2026, 11, 15, 0, 0, 0, 0, time.UTC)
 	source := watermarkProviderUsageSource{result: ProviderUsageResult{CostUSD: 20, DataRefreshedAt: day.Add(23 * time.Hour)}}
 	if err := service.runProviderUsageReconciliation(context.Background(), source, day.Add(24*time.Hour)); !errors.Is(err, errProviderUsagePartialData) {
@@ -536,6 +536,52 @@ func TestProviderUsagePartialWatermarkDoesNotAdvanceCheckpoint(t *testing.T) {
 	}
 	if err := store.db.Where("event_type = ?", "provider_usage_partial").First(&securityAccessEventRecord{}).Error; err != nil {
 		t.Fatalf("partial-data event missing: %v", err)
+	}
+}
+
+type firstWindowRetrySource struct {
+	calls int
+	from  []time.Time
+}
+
+func (s *firstWindowRetrySource) ProviderCost(_ context.Context, _ string, from, _ time.Time) (float64, error) {
+	s.calls++
+	s.from = append(s.from, from.UTC())
+	if s.calls <= 3 {
+		return 0, errors.New("temporary provider failure")
+	}
+	return 0, nil
+}
+
+func TestProviderUsageReconciliationRetriesEarliestUncheckpointedWindow(t *testing.T) {
+	store, err := openTestUsageStorePath(filepath.Join(t.TempDir(), "usage.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	service := &Service{usage: store, cfg: &Config{Server: ServerConfig{
+		AdminReports:                AdminReportsConfig{Security: AdminSecurityReportsConfig{Enabled: true}},
+		ProviderUsageReconciliation: ProviderUsageReconciliationConfig{Enabled: true, Providers: []ProviderUsageReconciliationEntry{{Provider: "primary"}}},
+	}}}
+	source := &firstWindowRetrySource{}
+	firstRun := time.Date(2026, 11, 16, 6, 0, 0, 0, time.UTC)
+	if err := service.runProviderUsageReconciliation(context.Background(), source, firstRun); err == nil {
+		t.Fatal("first run should fail before recording a checkpoint")
+	}
+	firstWindow := firstRun.UTC().Truncate(24 * time.Hour).Add(-24 * time.Hour)
+	secondRun := firstRun.Add(24 * time.Hour)
+	if err := service.runProviderUsageReconciliation(context.Background(), source, secondRun); err != nil {
+		t.Fatalf("second run should recover: %v", err)
+	}
+	if len(source.from) < 4 || !source.from[0].Equal(firstWindow) || !source.from[3].Equal(firstWindow) {
+		t.Fatalf("first window starts = %v; first retry should repeat %s", source.from, firstWindow)
+	}
+	var checkpoint securityAccessEventRecord
+	if err := store.db.Where("event_type = ? AND object = ?", "provider_usage_reconciled", "primary").Order("operation_id ASC").First(&checkpoint).Error; err != nil {
+		t.Fatalf("recovered window checkpoint missing: %v", err)
+	}
+	if checkpoint.OperationID != firstWindow.Format("2006-01-02") {
+		t.Fatalf("first checkpoint = %q, want recovered window %s", checkpoint.OperationID, firstWindow.Format("2006-01-02"))
 	}
 }
 
