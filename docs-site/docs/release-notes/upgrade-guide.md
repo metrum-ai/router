@@ -136,9 +136,10 @@ propagation is on by default for every provider. Set
 `providers.<name>.propagate_trace: false` to disable both headers for one
 provider. Inbound `tracestate` is
 deliberately dropped and never forwarded. A trusted proxy or ingress CIDR trusts
-every client behind it, so trust only the immediate router network. Schema 18
-adds scalar trace, span, and
-parent-span columns to the usage table and an index on `trace_id`; existing rows
+every client behind it, so trust only the immediate router network. The provider
+update API preserves this setting because its request does not include a field
+for changing it. Schema 18 adds scalar trace, span, and parent-span columns to
+the usage table and an index on `trace_id`; existing rows
 remain valid with empty values. Schema 19 adds mission task and owner
 attribution after trace-correlation schema 18. Schema 20 records recomputed
 input tokens and rollup coverage after schema 19; migration `2026111614` depends
