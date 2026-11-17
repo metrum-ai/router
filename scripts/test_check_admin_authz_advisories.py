@@ -228,6 +228,7 @@ class RequiredAggregateTests(unittest.TestCase):
             lanes = {name: "success" for name in ("ROUTER_RESULT", "OTHER_GO_RESULT", "OTHER_RESULT", "HARBOR_IMAGES_RESULT", "K8S_SECURITY_RESULT", "PARALLEL_TOOLS_RESULT", "TLS_ACME_RESULT")}
             if event == "push":
                 lanes = {name: "skipped" for name in lanes}
+            lanes["GENERATED_FILES_RESULT"] = "skipped" if event == "push" else "success"
             lanes.update(WARM_RESULT="success" if event == "push" else "skipped", SBOM_RESULT="success" if event in ("merge_group", "workflow_dispatch") else "skipped")
             for result in ("success", "failure", "cancelled", "skipped"):
                 with self.subTest(event=event, result=result):
