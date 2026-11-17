@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Fixed
+
+- Remove the unsupported legacy admin route setting from both hardening guides and direct operators to the separate `/admin/v1` listener.
+- Align the release procedure with the committed AI review artifact gate and document the required artifact preparation path.
+
+- Align the standalone cache isolation guide with v5 caller-scoped response-cache and vLLM prefix-salt behavior; document that SGLang prefix isolation is unsupported.
+
 ### Security
 
 - Mark honeytoken and canary OCSF findings Critical and include the caller ID and source IP for SIEM correlation.
@@ -155,10 +162,12 @@ from v4.8.0.
 
 ### Fixed
 
+- Reevaluate provider spend-breaker trips against current ceilings so raising or removing a limit takes effect on the next admission check.
 - Keep migration JSON output free of database diagnostics and preserve valid JSON on failures.
 - Prevent caller-controlled forwarded addresses from overriding the client address through trusted proxy chains.
 - Bound caches, detector queues, approval holds, stream inspection, and audit retention; fail closed on unavailable authorization, invalid policy, or exhausted inspection bounds.
 - Preserve provider-reported cached and recomputed token accounting, request-shape fallback behavior, and sampled tool-call outcomes in usage records and reports.
+- Keep SQL usage reports aligned with in-memory recomputed-token coverage when input counts are negative.
 
 ## [Unreleased]
 

@@ -739,6 +739,83 @@ class ReleaseAIReviewTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "generated-file checks have not passed"):
                 review.verify_generated_file_checks(artifact, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 
+    def test_generated_check_api_failure_is_clear_and_fails_closed(self) -> None:
+        artifact = review.build_artifact({"summary": "Generated spec was checked.", "findings": []}, "v4.8.0", "a" * 40, file_coverage=[{
+            "file": "docs/specs/admin-v1.openapi.json", "status": "generated-and-verified",
+            "verification": "supplemental-checks / generated-release-files",
+        }])
+        with patch.dict(os.environ, {"GITHUB_REPOSITORY": "metrum-ai/router"}), \
+             patch.object(review.subprocess, "run", side_effect=subprocess.CalledProcessError(1, ["gh", "api"])):
+            with self.assertRaisesRegex(ValueError, "GitHub could not verify required generated-file checks"):
+                review.verify_generated_file_checks(artifact, "a" * 40)
+
+    def test_fresh_review_verifies_generated_checks_before_pass(self) -> None:
+        generated = {
+            "file": "docs/specs/admin-v1.openapi.json", "status": "generated-and-verified",
+            "verification": "supplemental-checks / generated-release-files", "redaction_count": 0,
+        }
+        base_commit = "a" * 40
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            responses = root / "responses.json"
+            responses.write_text(json.dumps({
+                "schema": "metrum-ai-router-release-review-responses/v1", "acceptances": {},
+            }), encoding="utf-8")
+            args = [
+                "release_ai_review.py", "--base", "v4.8.0", "--base-commit", base_commit,
+                "--head", "d" * 40, "--tag", "v5.0.0", "--responses", str(responses),
+                "--provider", "codex", "--artifact-output", str(root / "review.json"),
+                "--output", str(root / "review.md"),
+            ]
+            with patch.dict(os.environ, {}, clear=True), \
+                 patch.object(review, "resolve_git_commit", return_value=base_commit), \
+                 patch.object(review, "git_file_coverage", return_value=[generated]), \
+                 patch.object(review, "git_binary_paths", return_value=[]), \
+                 patch.object(review, "git_diff_batches", return_value=[]), \
+                 patch.object(review, "codex_cli_version", return_value="codex-cli test"), \
+                 patch.object(review, "verify_generated_file_checks") as verify, \
+                 patch("sys.argv", args):
+                self.assertEqual(review.main(), 0)
+            verify.assert_called_once()
+            self.assertIn("Decision: **PASS**", (root / "review.md").read_text(encoding="utf-8"))
+
+    def test_cached_review_verifies_generated_checks_before_pass(self) -> None:
+        base_commit = review.resolve_git_commit("v4.8.0")
+        head = "d" * 40
+        coverage = [{
+            "file": "docs/specs/admin-v1.openapi.json", "status": "generated-and-verified",
+            "verification": "supplemental-checks / generated-release-files", "redaction_count": 0,
+        }]
+        artifact = review.build_artifact(
+            {"summary": "Generated spec was checked.", "findings": []}, "v4.8.0", head,
+            file_coverage=coverage, provider="codex", model="gpt-6.1-sol", base_commit=base_commit,
+            codex_cli_version="codex-cli test",
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            responses = root / "responses.json"
+            cache = root / "cache.json"
+            responses.write_text(json.dumps({
+                "schema": "metrum-ai-router-release-review-responses/v1", "acceptances": {},
+            }), encoding="utf-8")
+            cache.write_text(json.dumps(artifact), encoding="utf-8")
+            args = [
+                "release_ai_review.py", "--base", "v4.8.0", "--base-commit", base_commit,
+                "--head", head, "--tag", "v5.0.0", "--responses", str(responses),
+                "--provider", "codex", "--artifact-cache", str(cache),
+                "--artifact-output", str(root / "review.json"), "--output", str(root / "review.md"),
+            ]
+            with patch.dict(os.environ, {}, clear=True), \
+                 patch.object(review, "resolve_git_commit", return_value=base_commit), \
+                 patch.object(review, "git_file_coverage", return_value=coverage), \
+                 patch.object(review, "git_redaction_counts", return_value={}), \
+                 patch.object(review, "git_file_diff_hashes", return_value={}), \
+                 patch.object(review, "verify_generated_file_checks") as verify, \
+                 patch("sys.argv", args):
+                self.assertEqual(review.main(), 0)
+            verify.assert_called_once()
+            self.assertIn("Decision: **PASS**", (root / "review.md").read_text(encoding="utf-8"))
+
     def test_artifact_coverage_must_exactly_match_changed_files(self) -> None:
         candidate = {"summary": "No blockers found.", "findings": []}
         artifact = review.build_artifact(candidate, "v4.8.0", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", file_coverage=[{
