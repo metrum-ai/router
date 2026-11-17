@@ -1239,6 +1239,45 @@ func TestSecretDLPResponsesInterleavedTextItemsThroughHandler(t *testing.T) {
 	}
 }
 
+func TestSecretDLPResponsesFailedAndIncompleteSnapshotsThroughHandler(t *testing.T) {
+	secret := fakeGitHubToken()
+	for _, terminal := range []string{"failed", "incomplete"} {
+		for _, mode := range []string{"redact_only", "fail_on_match"} {
+			t.Run(terminal+"/"+mode, func(t *testing.T) {
+				frame := `event: response.` + terminal + "\n" + `data: {"type":"response.` + terminal + `","response":{"status":"` + terminal + `","output":[{"type":"message","id":"msg_secret","content":[{"type":"output_text","text":"` + secret + `"}]}]}}`
+				upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.Header().Set("Content-Type", "text/event-stream")
+					_, _ = io.WriteString(w, frame+"\n\n")
+				}))
+				defer upstream.Close()
+				target := Target{Provider: "native", Model: "responses-model", ToolSupport: ToolSupport{OpenAIResponses: []string{"function", "tool_choice"}}}
+				svc := nativeStreamTestService(t, upstream.URL, "openai-responses", []Target{target}, func(cfg *Config) {
+					group := cfg.Models["native-stream"]
+					group.PIIFilter.Enabled = true
+					group.PIIFilter.SecretsEnabled = true
+					group.PIIFilter.Mode = mode
+					cfg.Models["native-stream"] = group
+				})
+				defer svc.Close()
+				req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"native-stream","stream":true,"input":"hello"}`))
+				req.Header.Set("Authorization", "Bearer "+testToken)
+				response := httptest.NewRecorder()
+				svc.Handler().ServeHTTP(response, req)
+				body := response.Body.String()
+				if strings.Contains(body, secret) {
+					t.Fatalf("terminal snapshot exposed a credential: %s", body)
+				}
+				if mode == "redact_only" && (response.Code != http.StatusOK || !strings.Contains(body, "[SECRET_GITHUB_1]")) {
+					t.Fatalf("terminal snapshot was not redacted: status=%d body=%s", response.Code, body)
+				}
+				if mode == "fail_on_match" && response.Code != http.StatusBadGateway {
+					t.Fatalf("fail_on_match did not reject the terminal snapshot: status=%d body=%s", response.Code, body)
+				}
+			})
+		}
+	}
+}
+
 func TestSecretDLPRedactsEscapedSecretSplitAcrossToolArgumentDeltas(t *testing.T) {
 	secret := "sk-or-v1-" + strings.Repeat("a", 64)
 	arguments := `{"api_key":"sk-or-v1\u002d` + strings.Repeat("a", 64) + `"}`

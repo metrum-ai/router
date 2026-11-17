@@ -745,7 +745,7 @@ func (d *secretStreamDLP) filterResponsesTextEvent(event stream.Event, payload m
 		state.lastEvent = stream.Event{}
 		delete(d.responsesText, channel)
 	}
-	if eventType == "response.output_text.done" || eventType == "response.content_part.done" || eventType == "response.output_item.done" || eventType == "response.completed" {
+	if eventType == "response.output_text.done" || eventType == "response.content_part.done" || eventType == "response.output_item.done" || eventType == "response.completed" || eventType == "response.failed" || eventType == "response.incomplete" {
 		before := d.state.result.Replacements
 		if _, err := redactSecretStreamSnapshot(payload, d.state); err != nil {
 			return nil, true, err
