@@ -170,6 +170,53 @@ func TestDuplicateUsageAuditEventDoesNotAdvanceChainHead(t *testing.T) {
 	}
 }
 
+func TestConcurrentDuplicateUsageAuditRetriesProduceOneChain(t *testing.T) {
+	store := adminUsageAuditTestStore(t)
+	if err := store.db.Exec(usageAdminAuditDDL[0]).Error; err != nil {
+		t.Fatal(err)
+	}
+	const retries = 32
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	errCh := make(chan error, retries)
+	for i := 0; i < retries; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			record := AdminAuditRecord{EventID: "parallel-duplicate", At: time.Date(2026, 11, 17, 4, 30, i, 0, time.UTC), Domain: "team/parallel-retry", Outcome: "committed", Object: fmt.Sprintf("admin:config:%02d", i)}
+			errCh <- withSQLiteBusyRetry(func() error {
+				return store.db.Transaction(func(tx *gorm.DB) error { return insertAdminAuditUsageTx(tx, record) })
+			})
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+	close(errCh)
+	for err := range errCh {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	var count int64
+	if err := store.db.Table(usageAdminAuditTable).Where("event_id = ?", "parallel-duplicate").Count(&count).Error; err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("parallel retries inserted %d rows, want one", count)
+	}
+	handler := adminAuditExportHandlers(store.db, nil)["admin.audit.export"]
+	request := httptest.NewRequest(http.MethodGet, "/admin/v1/audit-events/export", nil).WithContext(WithAdminAuditMeta(context.Background(), AdminAuditMeta{Subject: "operator", Domain: "team/parallel-retry"}))
+	response := httptest.NewRecorder()
+	handler(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("export after parallel retries=%d %s", response.Code, response.Body.String())
+	}
+	if err := VerifyAdminAuditExport(strings.NewReader(response.Body.String())); err != nil {
+		t.Fatalf("verify export after parallel retries: %v", err)
+	}
+}
+
 func TestAdminAuditDeletionMarkerCannotBeDeletedByAPIAndRetentionCanPrune(t *testing.T) {
 	store := adminUsageAuditTestStore(t)
 	if err := store.db.Exec(usageAdminAuditDDL[0]).Error; err != nil {
