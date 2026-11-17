@@ -595,17 +595,8 @@ func responsesToolItemCall(item map[string]any, index int) (IRToolCall, bool, bo
 }
 
 func responsesHostedToolPayload(kind string, item map[string]any) any {
-	fields := map[string][]string{
-		"web_search_call":          {"action", "query", "search_query"},
-		"file_search_call":         {"queries", "query"},
-		"code_interpreter_call":    {"code"},
-		"image_generation_call":    {"prompt", "input"},
-		"browser_search_call":      {"action", "query", "url"},
-		"vector_store_search_call": {"query", "queries"},
-		"mcp_call":                 {"arguments"},
-	}
 	payload := make(map[string]any)
-	for _, field := range fields[kind] {
+	for _, field := range responsesHostedToolPayloadFields(kind) {
 		if value, ok := item[field]; ok {
 			payload[field] = value
 		}
@@ -616,6 +607,27 @@ func responsesHostedToolPayload(kind string, item map[string]any) any {
 		}
 	}
 	return payload
+}
+
+func responsesHostedToolPayloadFields(kind string) []string {
+	switch kind {
+	case "web_search_call":
+		return []string{"action", "query", "search_query"}
+	case "file_search_call":
+		return []string{"queries", "query"}
+	case "code_interpreter_call":
+		return []string{"code"}
+	case "image_generation_call":
+		return []string{"prompt", "input"}
+	case "browser_search_call":
+		return []string{"action", "query", "url"}
+	case "vector_store_search_call":
+		return []string{"query", "queries"}
+	case "mcp_call":
+		return []string{"arguments"}
+	default:
+		return nil
+	}
 }
 
 func stripResponsesTerminalToolArguments(payload map[string]any) error {
@@ -634,6 +646,13 @@ func stripResponsesTerminalToolArguments(payload map[string]any) error {
 			delete(item, "arguments")
 			delete(item, "input")
 			delete(item, "action")
+			if isHostedResponsesTool(IRToolCall{Dialect: "openai-responses", Kind: stringValue(item["type"])}) {
+				for _, kind := range []string{"web_search_call", "file_search_call", "code_interpreter_call", "image_generation_call", "browser_search_call", "vector_store_search_call", "mcp_call"} {
+					for _, field := range responsesHostedToolPayloadFields(kind) {
+						delete(item, field)
+					}
+				}
+			}
 		}
 	}
 	return nil

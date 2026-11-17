@@ -420,6 +420,53 @@ func TestStreamToolCallHoldStripsFailedResponsesTerminalArguments(t *testing.T) 
 	}
 }
 
+func TestStreamToolCallHoldStripsHostedPayloadsFromFailedResponsesThroughHandler(t *testing.T) {
+	secret := fakeGitHubToken()
+	for _, terminalType := range []string{"response.failed", "response.incomplete"} {
+		t.Run(terminalType, func(t *testing.T) {
+			terminal := `event: ` + terminalType + "\n" + `data: {"type":"` + terminalType + `","response":{"id":"resp_1","status":"failed","error":{"code":"upstream_error","message":"safe failure metadata"},"output":[` +
+				`{"type":"web_search_call","id":"web_1","call_id":"web","action":"search","query":"` + secret + `","search_query":"` + secret + `","status":"failed"},` +
+				`{"type":"file_search_call","id":"file_1","queries":["` + secret + `"],"query":"` + secret + `","status":"failed"},` +
+				`{"type":"code_interpreter_call","id":"code_1","code":"` + secret + `","prompt":"` + secret + `","status":"failed"},` +
+				`{"type":"image_generation_call","id":"image_1","prompt":"` + secret + `","input":"` + secret + `","status":"failed"},` +
+				`{"type":"browser_search_call","id":"browser_1","action":"` + secret + `","query":"` + secret + `","url":"` + secret + `","status":"failed"},` +
+				`{"type":"vector_store_search_call","id":"vector_1","query":"` + secret + `","queries":["` + secret + `"],"status":"failed"},` +
+				`{"type":"mcp_call","id":"mcp_1","call_id":"mcp","name":"lookup","arguments":"` + secret + `","status":"failed"}]}}`
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				frames := []string{
+					`event: response.output_item.added` + "\n" + `data: {"type":"response.output_item.added","output_index":0,"item":{"type":"code_interpreter_call","id":"code_1","call_id":"code_1","name":"code_interpreter_call","code":"","status":"in_progress"}}`,
+					`event: response.code_interpreter_call_code.delta` + "\n" + `data: {"type":"response.code_interpreter_call_code.delta","output_index":0,"delta":"` + secret + `"}`,
+					terminal,
+				}
+				for _, frame := range frames {
+					_, _ = io.WriteString(w, frame+"\n\n")
+				}
+			}))
+			defer upstream.Close()
+			target := Target{Provider: "native", Model: "responses-model", ToolSupport: ToolSupport{OpenAIResponses: []string{"function", "tool_choice"}}}
+			svc := nativeStreamTestService(t, upstream.URL, "openai-responses", []Target{target}, func(cfg *Config) {
+				group := cfg.Models["native-stream"]
+				group.Strategy = "tool_aware"
+				group.ToolRouting = ToolRoutingConfig{Mode: "observe", Streaming: ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20}}
+				group.PIIFilter.Enabled = true
+				group.PIIFilter.SecretsEnabled = true
+				cfg.Models["native-stream"] = group
+				cfg.Server.ToolFirewall = ToolFirewallConfig{Mode: toolFirewallShadow, Deny: []ToolFirewallDenyRule{{Tool: "code_interpreter_call"}}}
+			})
+			request := `{"model":"native-stream","stream":true,"input":"inspect","tools":[{"type":"function","name":"lookup","parameters":{"type":"object"}}]}`
+			req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(request))
+			req.Header.Set("Authorization", "Bearer "+testToken)
+			response := httptest.NewRecorder()
+			svc.Handler().ServeHTTP(response, req)
+			body := response.Body.String()
+			if response.Code != http.StatusOK || strings.Contains(body, secret) || !strings.Contains(body, "safe failure metadata") || !strings.Contains(body, terminalType) {
+				t.Fatalf("status=%d hosted terminal payload leaked or safe metadata was lost: %s", response.Code, body)
+			}
+		})
+	}
+}
+
 func TestStreamToolCallHoldFailsClosedOnUnknownResponsesToolType(t *testing.T) {
 	hold := newStreamToolCallHold(ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20}, nil, toolValidationOptions{})
 	unknown := stream.Event{Type: "response.output_item.added", Data: []byte(`{"type":"response.output_item.added","output_index":0,"item":{"type":"computer_call","call_id":"call_1","command":"secret"}}`)}
