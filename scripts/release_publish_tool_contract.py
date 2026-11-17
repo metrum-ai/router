@@ -107,9 +107,10 @@ def verify_java_and_jsign(java: list[str], jsign_jar: Path) -> None:
         raise RuntimeError(f"Java 21 is required; got {output.splitlines()[0] if output else 'no version output'}")
     if not jsign_jar.is_file():
         raise RuntimeError("pinned jsign jar is missing")
+    version_output = capture([*java, "-jar", str(jsign_jar), "--version"])
+    if JSIGN_VERSION not in version_output:
+        raise RuntimeError(f"jsign must be {JSIGN_VERSION}; got {version_output.splitlines()[0] if version_output else 'no version output'}")
     help_output = capture([*java, "-jar", str(jsign_jar), "--help"])
-    if JSIGN_VERSION not in help_output:
-        raise RuntimeError(f"jsign must be {JSIGN_VERSION}")
     for flag in ("--storetype", "--keystore", "--storepass", "--alias", "--tsaurl", "--tsmode"):
         if flag not in help_output:
             raise RuntimeError(f"jsign help lacks required flag: {flag}")

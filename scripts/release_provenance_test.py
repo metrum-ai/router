@@ -17,6 +17,7 @@ from pathlib import Path
 import yaml
 from publish_github_release import publish_release, release_create_args, release_is_prerelease
 from release_image_smoke import smoke_caller_credentials
+from release_publish_tool_contract import verify_java_and_jsign
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github/workflows/release.yml"
@@ -405,6 +406,27 @@ class ProvenanceWorkflowTest(unittest.TestCase):
             ]
             with self.assertRaisesRegex(RuntimeError, "prerelease metadata mismatch"):
                 publish_release("v5.0.0-rc.2", "Router RC", "notes.md", ["asset.tgz"])
+
+    def test_jsign_contract_uses_version_command_and_checks_help_flags(self):
+        jsign_jar = ROOT / "scripts/release_publish_tool_contract.py"
+        help_output = "\n".join(("--storetype", "--keystore", "--storepass", "--alias", "--tsaurl", "--tsmode"))
+        with mock.patch("release_publish_tool_contract.subprocess.run") as run:
+            run.side_effect = [
+                subprocess.CompletedProcess(["java", "-version"], 0, stdout="", stderr='openjdk version "21.0.3"'),
+                subprocess.CompletedProcess(["java", "-jar", str(jsign_jar), "--version"], 0, stdout="Jsign 7.6\n", stderr=""),
+                subprocess.CompletedProcess(["java", "-jar", str(jsign_jar), "--help"], 0, stdout=help_output, stderr=""),
+            ]
+            verify_java_and_jsign(["java"], jsign_jar)
+        self.assertEqual(run.call_args_list[1].args[0][-1], "--version")
+        self.assertEqual(run.call_args_list[2].args[0][-1], "--help")
+
+        with mock.patch("release_publish_tool_contract.subprocess.run") as run:
+            run.side_effect = [
+                subprocess.CompletedProcess(["java", "-version"], 0, stdout="", stderr='openjdk version "21.0.3"'),
+                subprocess.CompletedProcess(["java", "-jar", str(jsign_jar), "--version"], 0, stdout="Jsign 7.5\n", stderr=""),
+            ]
+            with self.assertRaisesRegex(RuntimeError, "jsign must be 7.6"):
+                verify_java_and_jsign(["java"], jsign_jar)
 
     def test_release_rerun_never_replaces_existing_image_tags(self):
         steps = self.workflow["jobs"]["publish-release"]["steps"]
