@@ -114,5 +114,5 @@ var usageTokenBreakdownSQL = usageCostComponentsSQL() + "SUM(" + undiscountedUsa
  SUM(CASE WHEN reasoning_tokens IS NOT NULL THEN 1 ELSE 0 END) AS reasoning_reported_request_count,
  SUM(COALESCE(cached_input_tokens,0)) AS cached_input_tokens,
  SUM(CASE WHEN cached_input_tokens IS NOT NULL THEN 1 ELSE 0 END) AS cached_input_reported_request_count,
- SUM(CASE WHEN cached_input_tokens IS NOT NULL THEN CASE WHEN cached_input_tokens < 0 THEN input_tokens WHEN input_tokens >= cached_input_tokens THEN input_tokens - cached_input_tokens ELSE 0 END ELSE 0 END) AS recomputed_input_tokens,
- SUM(CASE WHEN cached_input_tokens IS NOT NULL THEN 1 ELSE 0 END) AS recomputed_input_reported_request_count,`
+ SUM(CASE WHEN cached_input_tokens IS NOT NULL AND input_tokens >= 0 THEN CASE WHEN cached_input_tokens < 0 THEN input_tokens WHEN input_tokens >= cached_input_tokens THEN input_tokens - cached_input_tokens ELSE 0 END ELSE 0 END) AS recomputed_input_tokens,
+ SUM(CASE WHEN cached_input_tokens IS NOT NULL AND input_tokens >= 0 THEN 1 ELSE 0 END) AS recomputed_input_reported_request_count,`

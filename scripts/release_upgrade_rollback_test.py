@@ -4,9 +4,12 @@
 import importlib.util
 import hashlib
 import json
+import os
+import stat
 import subprocess
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 from pathlib import Path
 
@@ -20,6 +23,23 @@ SPEC.loader.exec_module(MODULE)
 
 
 class StrictJSONTests(unittest.TestCase):
+    def test_evidence_directory_is_writable_by_service_user(self):
+        with tempfile.TemporaryDirectory() as raw:
+            evidence = Path(raw) / "evidence"
+            service = SimpleNamespace(pw_uid=1234, pw_gid=5678)
+            with patch.object(MODULE.os, "geteuid", return_value=0), patch.object(MODULE.os, "chown") as chown:
+                self.assertEqual(MODULE.service_owned_directory(evidence, service), evidence)
+            chown.assert_called_once_with(evidence, 1234, 5678)
+            self.assertEqual(stat.S_IMODE(evidence.stat().st_mode), 0o700)
+
+    def test_evidence_directory_rejects_unprivileged_wrong_owner(self):
+        with tempfile.TemporaryDirectory() as raw:
+            evidence = Path(raw) / "evidence"
+            service = SimpleNamespace(pw_uid=os.geteuid() + 1, pw_gid=os.getegid())
+            with patch.object(MODULE.os, "geteuid", return_value=os.geteuid()):
+                with self.assertRaisesRegex(RuntimeError, "root or as the service user"):
+                    MODULE.service_owned_directory(evidence, service)
+
     def test_expected_router_config_schema_includes_offline_markers(self):
         self.assertEqual(MODULE.ROUTER_CONFIG_SCHEMA_VERSION, 20)
 

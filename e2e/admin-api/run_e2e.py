@@ -1155,7 +1155,7 @@ def run_cases(suite: Suite, bins, r1, r2, r3, rf, ops, readonly, writer, caller,
     ok &= suite.record("file-mode write -> 409 config_source_mode_file", "PUT on file-mode router",
                        409, st, latency_ms=ms, note=body.get("error", {}).get("type", ""))
     # malformed body
-    req = urllib.request.Request(r1.base + "/admin/v1/config/groups/agent-default/targets",
+    req = urllib.request.Request(r1.admin_base + "/admin/v1/config/groups/agent-default/targets",
                                  data=b"{not json", method="PUT",
                                  headers={"Content-Type": "application/json", **ops})
     try:

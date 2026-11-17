@@ -21,6 +21,7 @@ def require(condition: bool, message: str) -> None:
 def main() -> int:
     live_c = (ROOT / "scripts/live_cli_c_e2e.sh").read_text(encoding="utf-8")
     compose = (ROOT / "scripts/compose_live_e2e.sh").read_text(encoding="utf-8")
+    admin_e2e = (ROOT / "e2e/admin-api/run_e2e.py").read_text(encoding="utf-8")
 
     require("docker run" in live_c, "C candidate execution must go through docker run")
     require("--network none" in live_c, "C sandbox must disable networking")
@@ -40,6 +41,10 @@ def main() -> int:
     require("find /config -type d -exec chmod 0700" in compose, "compose config directories must remain private")
     require("find /config -type f -exec chmod 0600" in compose, "compose config files must remain non-world-readable")
     require("reset_config_permissions" in compose, "cleanup must restore config ownership for retained/removable workdirs")
+    require('PYTHONPATH="$ROOT/scripts${PYTHONPATH:+:$PYTHONPATH}"' in compose,
+            "Compose config generator must be able to import the caller token helper when run from repository root")
+    require('urllib.request.Request(r1.admin_base + "/admin/v1/config/groups/agent-default/targets"' in admin_e2e,
+            "malformed admin request must use the dedicated admin listener")
     require('env -u ANTHROPIC_API_KEY' in compose, "Claude tool smoke must unset direct Anthropic credentials")
     require('ANTHROPIC_BASE_URL="$BASE_URL"' in compose and 'ANTHROPIC_AUTH_TOKEN="$TOKEN"' in compose, "Claude tool smoke must target the Compose router with its caller token")
     require('cd "$CLAUDE_WORK"' in compose, "Claude tool smoke must be rooted in its disposable work directory")

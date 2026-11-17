@@ -55,6 +55,17 @@ def run_as(user: str, command: list[str], timeout: int = 120, check: bool = True
     return run(["runuser", "--user", user, "--", *command], timeout=timeout, check=check)
 
 
+def service_owned_directory(path: Path, service: pwd.struct_passwd) -> Path:
+    """Create writable evidence storage for the unprivileged smoke process."""
+    path.mkdir(mode=0o700)
+    effective_uid = os.geteuid()
+    if effective_uid == 0:
+        os.chown(path, service.pw_uid, service.pw_gid)
+    elif effective_uid != service.pw_uid:
+        raise RuntimeError("release checks must run as root or as the service user")
+    return path
+
+
 def parse_single_json(output: str) -> dict[str, object]:
     parsed = json.loads(output)
     if not isinstance(parsed, dict):
@@ -205,8 +216,7 @@ def main() -> int:
         service = pwd.getpwnam(args.service_user)
         if os.geteuid() == 0:
             os.chown(work, service.pw_uid, service.pw_gid)
-        evidence = work / "evidence"
-        evidence.mkdir(mode=0o777)
+        evidence = service_owned_directory(work / "evidence", service)
         previous_root = unpack(args.previous_archive, work / "previous")
         candidate_root = unpack(args.candidate_archive, work / "candidate")
         previous_migrate = find_binary(previous_root, "metrum-ai-router-migrate")

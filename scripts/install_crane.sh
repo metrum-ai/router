@@ -11,6 +11,8 @@ case "$(uname -m)" in
 esac
 dest="${1:-${RUNNER_TEMP:-/tmp}/crane}"
 tmp="${RUNNER_TEMP:-/tmp}/crane-${version}-${arch}.tar.gz"
+extract_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/crane-extract.XXXXXX")"
+trap 'rm -rf "$extract_dir"' EXIT
 curl --fail --silent --show-error --location --retry 2 \
   "https://github.com/google/go-containerregistry/releases/download/v${version}/go-containerregistry_Linux_${arch}.tar.gz" \
   --output "$tmp"
@@ -18,7 +20,7 @@ printf '%s  %s\n' "$expected" "$tmp" | sha256sum --check --status || {
   echo 'crane release checksum mismatch' >&2
   exit 1
 }
-tar -xzf "$tmp" -C "$(dirname "$dest")" crane
-mv "$(dirname "$dest")/crane" "$dest"
-chmod 0755 "$dest"
+tar -xzf "$tmp" -C "$extract_dir" crane
+mkdir -p "$(dirname "$dest")"
+install -m 0755 "$extract_dir/crane" "$dest"
 "$dest" version | grep -F "$version"

@@ -207,10 +207,11 @@ only canary groups; config validation rejects real model groups, so decoy keys
 cannot inherit production access. New canary groups must use a targetless
 `static` strategy and explicitly list selected callers. Authenticated use emits
 a metadata-only critical event before dispatch; it contains no token, prompt,
-or user message. Known allowed canary completions return a canned response,
-while unknown/disallowed models and unsupported features retain ordinary
-caller errors. The config-control-plane migration advances schema 17 → 18
-with ID `2026111611`, depending on admin-client migration `2026111610`, to
+or user message. Known allowed canary completions return a canned response.
+Unknown or disallowed model names also receive a successful local sinkhole
+response and do not reach an upstream. Unsupported features still return the
+usual feature validation error. The config-control-plane migration advances
+schema 17 → 18 with ID `2026111611`, depending on admin-client migration `2026111610`, to
 persist honeytoken label and planting time. Database-mode issuance and canary
 group grants use the active canonical config store. See
 [Honeytokens and canary groups](/docs/security-governance/honeytokens) for
@@ -1368,7 +1369,8 @@ account scope; its USD total is estimated from the router model catalog prices.
 The job runs at 06:00 UTC by default, supports bounded restart catch-up with
 `max_catch_up_days`, and waits for provider `data_refreshed_at` watermarks when
 available. Use one Bedrock entry per AWS account and region to avoid counting
-the same CloudWatch metrics more than once.
+the same CloudWatch metrics more than once. Failed or partial windows without a
+successful checkpoint are retried first, within the configured catch-up bound.
 See [Provider usage reconciliation](../security-governance/provider-usage-reconciliation.md)
 for configuration and operating details.
 
