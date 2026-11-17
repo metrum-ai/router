@@ -18,6 +18,7 @@
 - Include firewall decisions and honeytoken/canary use in the opt-in OCSF 1.4.0 security event stream.
 - Rewrite inspected hosted Responses tool items and argument/code events when secret DLP redacts their payloads.
 - Run Harbor task containers as UID/GID 10001 with a passwd entry, owned workspace, and writable verifier directory. Require digest-pinned image references in Kubernetes examples; add an opt-in Kyverno trusted-registry policy example and exact-file KSV-0125 suppressions for public deployment placeholders.
+- Preserve project long-lived-key restrictions when updating project metadata through the admin API.
 
 ### Added
 
