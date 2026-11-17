@@ -32,6 +32,8 @@ Keep the generated `AI-release-review.md` beside the JSON output for maintainer 
 
 The JSON file records the base tag and its commit, the full reviewed commit ID, the provider, model and Codex CLI version, a verdict, the digest, findings and coverage for every changed file. The filename key binds the tag name, base commit and reviewed head. Binary entries contain before/after SHA-256 values. Generated entries identify an allowlisted CI job, which release validation confirms passed on the reviewed head.
 
+For an incremental review, pass the prior artifact with `--prior-artifact`. The reviewer reuses results only for unchanged per-file diff hashes. If a prior finding references any file whose diff changed, the next review receives diffs for every referenced text file, including unchanged companion files. If a referenced file cannot be reviewed as text, the prior finding stays in the report until explicitly resolved.
+
 Before committing, scan both generated outputs and stop if the scan fails:
 
 ```sh
