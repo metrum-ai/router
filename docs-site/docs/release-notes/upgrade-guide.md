@@ -1365,7 +1365,8 @@ account scope; its USD total is estimated from the router model catalog prices.
 The job runs at 06:00 UTC by default, supports bounded restart catch-up with
 `max_catch_up_days`, and waits for provider `data_refreshed_at` watermarks when
 available. Use one Bedrock entry per AWS account and region to avoid counting
-the same CloudWatch metrics more than once.
+the same CloudWatch metrics more than once. Failed or partial windows without a
+successful checkpoint are retried first, within the configured catch-up bound.
 See [Provider usage reconciliation](../security-governance/provider-usage-reconciliation.md)
 for configuration and operating details.
 
