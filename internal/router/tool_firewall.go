@@ -320,18 +320,14 @@ func (s *toolApprovalRuntime) resolve(id, decision string) bool {
 	return true
 }
 
-func (s *toolApprovalRuntime) denyAll() {
+func (s *toolApprovalRuntime) invalidateAll() {
 	if s == nil {
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for _, record := range s.records {
-		if record.decision == "" {
-			record.decision = "deny"
-			record.expires = s.now().Add(time.Minute)
-		}
-	}
+	s.records = map[string]*toolApprovalRecord{}
+	s.byFingerprint = map[string]string{}
 }
 
 func (s *toolApprovalRuntime) setMax(max int) {
@@ -552,7 +548,7 @@ func (s *toolFirewallRuntime) syncPolicyWithApprovals(cfg ToolFirewallConfig, ap
 		s.hasSequenceFingerprint = true
 		s.lastSyncedMode = mode
 		if approvals != nil {
-			approvals.denyAll()
+			approvals.invalidateAll()
 		}
 		return true
 	}

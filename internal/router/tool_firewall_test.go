@@ -386,25 +386,81 @@ func TestToolApprovalPendingCapacityFailsClosed(t *testing.T) {
 	}
 }
 
-func TestToolFirewallPolicyChangeDeniesPendingApprovals(t *testing.T) {
-	oldPolicy := ToolFirewallConfig{Mode: toolFirewallEnforce, URLAllowHosts: []string{"api.example"}}
-	newPolicy := ToolFirewallConfig{Mode: toolFirewallEnforce, URLAllowHosts: []string{"safe.example"}}
+func TestToolFirewallPolicyChangeDeniesOutstandingApprovals(t *testing.T) {
+	for _, initialDecision := range []string{"pending", "release"} {
+		t.Run(initialDecision, func(t *testing.T) {
+			oldPolicy := ToolFirewallConfig{Mode: toolFirewallEnforce, URLAllowHosts: []string{"api.example"}}
+			newPolicy := ToolFirewallConfig{Mode: toolFirewallEnforce, URLAllowHosts: []string{"safe.example"}}
+			runtime := newToolFirewallRuntime()
+			approvals := newToolApprovalRuntime(1)
+			if !runtime.syncPolicyWithApprovals(oldPolicy, approvals) {
+				t.Fatal("initial policy fingerprint was not initialized")
+			}
+			const id = "approval_0123456789abcdef0123456789abcdef"
+			if _, state, _ := approvals.request(id, "fingerprint", time.Minute); state != "pending" {
+				t.Fatalf("initial approval state=%q", state)
+			}
+			if initialDecision == "release" && !approvals.resolve(id, "release") {
+				t.Fatal("approval could not be released before policy change")
+			}
+			if !runtime.syncPolicyWithApprovals(newPolicy, approvals) {
+				t.Fatal("changed policy fingerprint was not detected")
+			}
+			if _, decision := approvals.lookup("fingerprint"); decision != "" {
+				t.Fatalf("stale approval state=%q, want invalidated", decision)
+			}
+			if approvals.resolve(id, "release") {
+				t.Fatal("approval remained resolvable after policy change")
+			}
+			outcome := runtime.checkWithTruncation(newPolicy, "caller", "group", &IRRequest{}, []IRToolCall{{Name: "http_request", Arguments: `{"url":"https://safe.example/send"}`}}, false, false)
+			if outcome.Action != "" {
+				t.Fatalf("new policy unexpectedly blocked an allowed call: %+v", outcome)
+			}
+			disposition := (&Service{toolApprovals: approvals}).resolveToolFirewallDecision(nil, "caller", "fingerprint", "", "", outcome, newPolicy)
+			if disposition.blocked || disposition.pending {
+				t.Fatalf("invalidated approval blocked new-policy call: %+v", disposition)
+			}
+		})
+	}
+}
+
+func TestToolFirewallPolicyChangeReleasedApprovalCannotSuppressNewSequenceHold(t *testing.T) {
+	oldPolicy := ToolFirewallConfig{Mode: toolFirewallEnforce, URLAllowHosts: []string{"old.example"}}
+	newPolicy := ToolFirewallConfig{
+		Mode:      toolFirewallEnforce,
+		Sequences: []ToolFirewallSequenceRule{{FirstTool: "read_customer", ThenTool: "http_request", WithinTurns: 2, Action: "hold"}},
+	}
 	runtime := newToolFirewallRuntime()
-	runtime.syncPolicy(oldPolicy)
 	approvals := newToolApprovalRuntime(1)
+	if !runtime.syncPolicyWithApprovals(oldPolicy, approvals) {
+		t.Fatal("initial policy fingerprint was not initialized")
+	}
 	const id = "approval_0123456789abcdef0123456789abcdef"
-	if _, state, _ := approvals.request(id, "fingerprint", time.Minute); state != "pending" {
+	const fingerprint = "retry-fingerprint"
+	if _, state, _ := approvals.request(id, fingerprint, time.Minute); state != "pending" {
 		t.Fatalf("initial approval state=%q", state)
 	}
-	if !runtime.syncPolicy(newPolicy) {
+	if !approvals.resolve(id, "release") {
+		t.Fatal("approval could not be released before policy change")
+	}
+	if !runtime.syncPolicyWithApprovals(newPolicy, approvals) {
 		t.Fatal("changed policy fingerprint was not detected")
 	}
-	approvals.denyAll()
-	if _, decision := approvals.lookup("fingerprint"); decision != "deny" {
-		t.Fatalf("stale approval state=%q, want deny", decision)
+	req := &IRRequest{Messages: []IRMessage{{Role: "user", Content: "same conversation"}}}
+	if got := runtime.checkWithTruncation(newPolicy, "caller", "group", req, []IRToolCall{{Name: "read_customer", Arguments: `{"id":"account-1"}`}}, false, false); got.Action != "" {
+		t.Fatalf("first sequence step blocked: %+v", got)
 	}
-	if approvals.resolve(id, "release") {
-		t.Fatal("approval remained resolvable after policy change")
+	_, approvalState := approvals.lookup(fingerprint)
+	got := runtime.checkWithTruncation(newPolicy, "caller", "group", req, []IRToolCall{{Name: "http_request", Arguments: `{}`}}, false, approvalState == "release")
+	if got.Action != "hold" || got.RuleCode != "sequence_rule" {
+		t.Fatalf("stale approval bypassed new sequence hold: state=%q outcome=%+v", approvalState, got)
+	}
+	disposition := (&Service{toolApprovals: approvals}).resolveToolFirewallDecision(nil, "caller", fingerprint, "", approvalState, got, newPolicy)
+	if !disposition.pending || disposition.blocked {
+		t.Fatalf("retry did not create a fresh approval under the new policy: %+v", disposition)
+	}
+	if approvalID, decision := approvals.lookup(fingerprint); approvalID == "" || decision != "" {
+		t.Fatalf("new-policy hold approval=(%q,%q), want a pending record", approvalID, decision)
 	}
 }
 
