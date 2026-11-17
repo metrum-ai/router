@@ -64,7 +64,7 @@ services:
       VLLM_CPU_NUM_OF_RESERVED_CPU: ${VLLM_CPU_NUM_OF_RESERVED_CPU:-1}
       VLLM_CPU_KVCACHE_SPACE: ${VLLM_CPU_KVCACHE_SPACE:-4}
     ports:
-      - "${CPU_LISTEN_PORT:-8002}:8000"
+      - "127.0.0.1:${CPU_LISTEN_PORT:-8002}:8000"
     restart: unless-stopped
 
   dc:

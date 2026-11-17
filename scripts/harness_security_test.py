@@ -21,6 +21,7 @@ def require(condition: bool, message: str) -> None:
 def main() -> int:
     live_c = (ROOT / "scripts/live_cli_c_e2e.sh").read_text(encoding="utf-8")
     compose = (ROOT / "scripts/compose_live_e2e.sh").read_text(encoding="utf-8")
+    hierarchy_compose = (ROOT / "deploy/reference/hierarchy/docker-compose.yml").read_text(encoding="utf-8")
 
     require("docker run" in live_c, "C candidate execution must go through docker run")
     require("--network none" in live_c, "C sandbox must disable networking")
@@ -52,6 +53,8 @@ def main() -> int:
     require('grep -qx "codex-tool-ok" "$CODEX_TOOL_WORK/codex_tool_smoke.txt"' in compose, "Codex tool smoke must assert the exact created file")
     require('chmod 0700 "$WORKDIR" "$WORKDIR/config" "$WORKDIR/config/scripts"' in compose, "compose secret directories must be private")
     require("scrub_retained_secrets" in compose, "retained compose workdirs must scrub secret files")
+    require('"127.0.0.1:${CPU_LISTEN_PORT:-8002}:8000"' in hierarchy_compose,
+            "reference CPU inference port must bind to loopback instead of all host interfaces")
 
     print("harness security self-test passed")
     return 0
