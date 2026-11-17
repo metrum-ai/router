@@ -331,8 +331,7 @@ not set explicit bounds. Sequence rules evaluate calls in response order,
 including first and second steps returned together. Schema validation still runs only when the group opts in to
 `streaming.hold_until_validated`.
 Each release is consumed once. Concurrent retries sharing the same approved
-call cannot both proceed; the retry that loses consumption remains held or is
-blocked.
+call cannot both proceed; the retry that loses consumption is blocked.
 Changing the effective firewall policy clears pending and already released approvals. Retries are evaluated under the
 current policy; resolve a new hold, if one is created, then retry the same call.
 
