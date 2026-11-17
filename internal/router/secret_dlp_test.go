@@ -1286,7 +1286,7 @@ func TestSecretDLPRedactsPolicySelectedHostedResponsesCallsThroughHandler(t *tes
 	recorder := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(recorder, req)
 	body := recorder.Body.String()
-	if recorder.Code != http.StatusOK || strings.Contains(body, secret) || strings.Count(body, "[SECRET_GITHUB_") < 2 {
+	if recorder.Code != http.StatusOK || strings.Contains(body, secret) || strings.Count(body, "[SECRET_GITHUB_") < 2 || !strings.Contains(body, `"status":"in_progress"`) || !strings.Contains(body, `"status":"completed"`) || !strings.Contains(body, `"call_mcp"`) || !strings.Contains(body, `"code_1"`) {
 		t.Fatalf("status=%d hosted call payload leaked or was not redacted: %s", recorder.Code, body)
 	}
 }
