@@ -221,6 +221,13 @@ class ReleaseAIReviewTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "sensitive-looking"):
             review.safe_text(f"credential sk-ant-api03-{high_entropy_value}", "rationale")
 
+    def test_diff_secret_patterns_are_rejected_before_codex_invocation(self) -> None:
+        aws_key = "AKIA" + "A" * 16
+        self.assertTrue(review.contains_sensitive_credential(f"AWS_ACCESS_KEY_ID={aws_key}"))
+        entropy_value = "Gh7kL2pQ9wR5tX3zMv8cHs4nB6dK1fT"
+        self.assertTrue(review.contains_sensitive_credential("AWS_SECRET_ACCESS_KEY=" + entropy_value))
+        self.assertFalse(review.contains_sensitive_credential("api_key: token= ordinary review wording"))
+
     def test_model_timeout_fails_without_logging_request(self) -> None:
         with patch.object(review.urllib.request, "urlopen", side_effect=TimeoutError()):
             with self.assertRaisesRegex(review.RequestTimeoutError, "timed out after"):

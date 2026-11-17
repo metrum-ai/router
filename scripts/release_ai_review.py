@@ -74,8 +74,9 @@ REVIEW_OUTPUT_SCHEMA = {
     "additionalProperties": False,
 }
 SENSITIVE_PREFIX = re.compile(r"(?i)\b(?:sk-ant-api\d{2}-|gh[pousr]_|github_pat_)([A-Za-z0-9_-]{24,})")
+SENSITIVE_FIXED_PREFIX = re.compile(r"\b(?:AKIA[0-9A-Z]{16}|AIza[A-Za-z0-9_-]{35}|xox[baprs]-[A-Za-z0-9-]{20,})")
 SENSITIVE_ASSIGNMENT = re.compile(
-    r"(?i)\b(?:api[_ -]?key|token|password)\s*[:=]\s*([A-Za-z0-9_+/=-]{24,})|\bbearer\s+([A-Za-z0-9_+/=-]{24,})"
+    r"(?i)(?<![A-Za-z0-9])(?:api[_ -]?key|secret(?:[_ -]?access[_ -]?key)?|token|password)\s*[:=]\s*([A-Za-z0-9_+/=-]{24,})|(?<![A-Za-z0-9])bearer\s+([A-Za-z0-9_+/=-]{24,})"
 )
 REVIEW_SYSTEM = """You are the independent release reviewer for Metrum AI Router. Review the supplied source diff since the previous production release. Every batch repeats the full changed diffs for CHANGELOG.md and the v5.0.0 upgrade guide, when those files changed in the range. Review only findings supported by files included in this batch; each finding location must refer to a file in this batch. Do not assume omitted source hunks are unchanged. Return only JSON with keys summary and findings. Each finding has severity (blocking or informational), category (exactly one of security, correctness, compatibility, release-integrity), title, rationale, and locations (a non-empty list of objects containing repository-relative file and positive integer line). Block only a concrete security, correctness, compatibility, or release-integrity issue that must be fixed before publish. Do not quote source, prompt text, credentials, tokens, or secret values. Mention only file paths and concise reasoning. A clean review has an empty findings array."""
 
@@ -97,6 +98,8 @@ def _high_entropy_credential(value: str) -> bool:
 
 
 def contains_sensitive_credential(value: str) -> bool:
+    if SENSITIVE_FIXED_PREFIX.search(value):
+        return True
     if any(_high_entropy_credential(match.group(1)) for match in SENSITIVE_PREFIX.finditer(value)):
         return True
     return any(
@@ -839,6 +842,8 @@ def main() -> int:
                 batch_label = f"{batch_index + 1}/{len(batches)}"
                 print(f"AI release review batch {batch_label} started", file=sys.stderr)
                 try:
+                    if contains_sensitive_credential(diff):
+                        raise ValueError("release diff contains sensitive-looking credential material")
                     if provider == "codex":
                         grouped_prompt = (
                             f"Review only the following files in this release group: {', '.join(paths)}. "
