@@ -137,6 +137,17 @@ commit range produces a new model review and digest. Unanswered blockers, a
 missing API credential, a review timeout, or an invalid model response block
 publication.
 
+The review starts with the changed-file list and uses read-only tools to fetch
+only the diffs and documentation it needs. Its tools cannot execute commands
+or modify files, and paths are restricted to the release diff and approved
+documentation. Every changed text file must have its complete diff read before
+the review can pass. Binary files are covered by before-and-after SHA-256
+digests; generated files are covered only when an exact path is mapped to a
+named CI check in the reviewer. The artifact records this per-file coverage.
+The review has bounded turns, input tokens and tool output; reaching any limit
+fails the release closed. Logs contain token counts and file paths, not prompt
+or model response text.
+
 Verify one downloaded package asset and its signature and provenance:
 
 ```sh

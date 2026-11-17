@@ -36,6 +36,7 @@
   API and `routerctl groups` show vectors, membership and exclusion reasons.
 - Added a release checklist and a bounded package upgrade-and-rollback check.
 - Retain AI review findings by exact commit range and artifact digest, scope the review credential to the tag-only review environment, and attest the release manifests and review evidence.
+- Fetch release-review diffs through bounded, read-only model tools; require complete per-file coverage and record binary hashes and named generated-file checks in the review artifact.
 - Add machine-client registration, credential metadata and revocation, effective-grant access review, and expiring and unused-credential warnings. Client credentials are checked against the shared control-plane store on authentication; credential secrets are not stored or returned.
 
 - Add an opt-in CPU-first small-work model group to the hierarchy reference. It

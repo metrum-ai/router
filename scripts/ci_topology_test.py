@@ -349,7 +349,7 @@ def assert_arc_runners() -> None:
         "admin-typecheck.yml": {"admin-typecheck"},
         "agent-tool-compat.yml": {"local-agent-mock"},
         "api-compat-live.yml": {"live-unit"},
-        "ci.yml": {"ci", "k8s-security", "parallel-tools", "tls-acme"},
+        "ci.yml": {"ci", "generated-release-files", "k8s-security", "parallel-tools", "tls-acme"},
         "dco.yml": {"signed-off-commits"},
         "decision-models-smoke.yml": {"decision-models"},
         "docs-qa.yml": {"docs-qa"},
@@ -477,7 +477,10 @@ def assert_small_runner_filters() -> None:
 def assert_consolidated_ci() -> None:
     text = read(WORKFLOWS / "ci.yml")
     lanes = jobs(text)
-    require(set(lanes) == {"router", "other-go", "other", "sbom", "warm", "harbor-task-images", "k8s-security", "parallel-tools", "tls-acme", "admin-authz-advisories", "engine-advisory-gate", "ci"}, "fanout lane inventory drifted")
+    require(set(lanes) == {"generated-release-files", "router", "other-go", "other", "sbom", "warm", "harbor-task-images", "k8s-security", "parallel-tools", "tls-acme", "admin-authz-advisories", "engine-advisory-gate", "ci"}, "fanout lane inventory drifted")
+    generated_files = lanes["generated-release-files"]
+    for marker in ("make admin-openapi-check admin-build", "git diff --exit-code", "git ls-files --others", "name: generated-release-files"):
+        require(marker in generated_files, f"required generated-file CI lane lost {marker}")
     advisory = lanes["admin-authz-advisories"]
     require("runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}" in advisory
             and "GOMAXPROCS: '2'" in advisory and "GOMEMLIMIT: 8GiB" in advisory,
@@ -512,7 +515,9 @@ def assert_consolidated_ci() -> None:
         require("${{ env.COMPAT_CACHE }}" in lanes[name] and "COMPAT_CACHE=$RUNNER_TEMP/router-compat" in lanes[name]
                 and "scripts/ci_tester_pins.py" in lanes[name] and "steps.pins.outputs.openai" in lanes[name]
                 and "steps.pins.outputs.anthropic" in lanes[name], f"{name} missing commit-keyed tester cache")
-    require("actions/setup-node@" not in text, "Node setup returned to lanes that do not need it")
+    require("actions/setup-node@" in lanes["generated-release-files"]
+            and "actions/setup-node@" not in "\n".join(lanes[name] for name in ("router", "other-go", "other", "warm")),
+            "Node setup must stay in the generated-file lane")
     for name in ("router", "other-go", "other", "warm"):
         setup = next((step for step in steps(lanes[name]) if step.startswith("name: Isolate job caches")), None)
         require(setup is not None, f"{name} missing job-local cache setup")
@@ -575,7 +580,7 @@ def assert_consolidated_ci() -> None:
             "rendered-manifest security scan must gate every PR and merge group")
     aggregate = lanes["ci"]
     require("name: ci" in aggregate and "if: always()" in aggregate
-            and "needs: [router, other-go, other, sbom, warm, harbor-task-images, k8s-security, parallel-tools, tls-acme, admin-authz-advisories, engine-advisory-gate]" in aggregate, "required ci aggregator drifted")
+            and "needs: [router, other-go, other, sbom, warm, harbor-task-images, k8s-security, parallel-tools, tls-acme, admin-authz-advisories, engine-advisory-gate, generated-release-files]" in aggregate, "required ci aggregator drifted")
     parallel = lanes["parallel-tools"]
     require("if: github.event_name != 'push'" in parallel
             and "go test ./internal/stream -run '^TestParallelThreeStreamTranslations$'" in parallel
@@ -584,12 +589,13 @@ def assert_consolidated_ci() -> None:
             "parallel tool-call fixtures must run on every PR and merge group")
     shell = aggregate.split("        run: |\n", 1)[1]
     shell = "\n".join(line[10:] for line in shell.splitlines())
-    names = ("ROUTER_RESULT", "OTHER_GO_RESULT", "OTHER_RESULT", "SBOM_RESULT", "WARM_RESULT", "HARBOR_IMAGES_RESULT", "K8S_SECURITY_RESULT", "PARALLEL_TOOLS_RESULT", "TLS_ACME_RESULT", "ADVISORY_RESULT", "ENGINE_ADVISORY_RESULT")
+    names = ("ROUTER_RESULT", "OTHER_GO_RESULT", "OTHER_RESULT", "SBOM_RESULT", "WARM_RESULT", "HARBOR_IMAGES_RESULT", "K8S_SECURITY_RESULT", "PARALLEL_TOOLS_RESULT", "TLS_ACME_RESULT", "ADVISORY_RESULT", "ENGINE_ADVISORY_RESULT", "GENERATED_FILES_RESULT")
     for event in ("pull_request", "merge_group", "workflow_dispatch", "push"):
         expected = {n: ("success" if n in ("ROUTER_RESULT", "OTHER_GO_RESULT", "OTHER_RESULT", "HARBOR_IMAGES_RESULT", "K8S_SECURITY_RESULT", "PARALLEL_TOOLS_RESULT", "TLS_ACME_RESULT")
                          and event != "push" or n == "WARM_RESULT" and event == "push"
                          or n == "SBOM_RESULT" and event in ("merge_group", "workflow_dispatch")
                          or n in ("ADVISORY_RESULT", "ENGINE_ADVISORY_RESULT")
+                         or n == "GENERATED_FILES_RESULT" and event != "push"
                          else "skipped") for n in names}
         for name in names:
             for result in ("success", "failure", "cancelled", "skipped"):

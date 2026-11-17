@@ -24,17 +24,28 @@ from typing import Any
 MODEL = "claude-fable-5-2"
 API_URL = "https://api.anthropic.com/v1/messages"
 API_VERSION = "2023-06-01"
-MAX_DIFF_BYTES = 1_000_000
-INITIAL_DIFF_BYTES = 300_000
 REQUEST_TIMEOUT_SECONDS = 900.0
-MIN_DIFF_BYTES = 32 * 1024
 MAX_OUTPUT_TOKENS = 64_000
-MAX_REVIEW_BATCHES = 32
+MAX_REVIEW_TURNS = 48
+MAX_REVIEW_INPUT_TOKENS = 2_000_000
+MAX_REVIEW_MESSAGE_BYTES = 8_000_000
+MAX_CHANGED_FILE_LIST_BYTES = 2_000_000
+MAX_REVIEW_TOOL_RESULT_BYTES = 8_000_000
+MAX_TOOL_READ_BYTES = 256_000
+MAX_TOOL_START = 5_000_000
 # Generated files are accepted only when a named CI check is explicitly mapped here.
 GENERATED_FILE_VERIFICATION_ALLOWLIST: dict[str, str] = {
-    "docs/specs/admin-v1.openapi.json": "supplemental-checks / generated-release-files",
+    "docs/specs/admin-v1.openapi.json": "ci / generated-release-files",
+    "internal/router/admindist/static/assets/admin-D7T4m6t1.js": "ci / generated-release-files",
+    "internal/router/admindist/static/assets/admin-S7rpXrAb.css": "ci / generated-release-files",
+    "internal/router/admindist/web/package-lock.json": "ci / generated-release-files",
+    "tests/api_compat_ts/package-lock.json": "Supplemental offline checks / api-compat",
+    "tests/agent_compat/package-lock.json": "Agent tool compatibility / local-agent-mock",
+    "docs-site/package-lock.json": "Docs QA / docs-site-build",
+    "examples/fine-tune-qwen3p8-27b/eval/package-lock.json": "Fine-tuning example / offline",
 }
-REVIEW_CONTEXT_PATHS = ("CHANGELOG.md", "docs-site/docs/release-notes/upgrade-guide.md")
+ALLOWED_DOC_ROOTS = ("docs/",)
+ALLOWED_DOC_FILES = frozenset(("RELEASING.md", "CHANGELOG.md", "docs-site/docs/release-notes/upgrade-guide.md"))
 REVIEW_OUTPUT_SCHEMA = {
     "type": "object",
     "properties": {
@@ -74,11 +85,14 @@ SENSITIVE_PREFIX = re.compile(r"(?i)\b(?:sk-ant-api\d{2}-|gh[pousr]_|github_pat_
 SENSITIVE_ASSIGNMENT = re.compile(
     r"(?i)\b(?:api[_ -]?key|token|password)\s*[:=]\s*([A-Za-z0-9_+/=-]{24,})|\bbearer\s+([A-Za-z0-9_+/=-]{24,})"
 )
-REVIEW_SYSTEM = """You are the independent release reviewer for Metrum AI Router. Review the supplied source diff since the previous production release. Every batch repeats the full changed diffs for CHANGELOG.md and the v5.0.0 upgrade guide, when those files changed in the range. Review only findings supported by files included in this batch; each finding location must refer to a file in this batch. Do not assume omitted source hunks are unchanged. Return only JSON with keys summary and findings. Each finding has severity (blocking or informational), category (exactly one of security, correctness, compatibility, release-integrity), title, rationale, and locations (a non-empty list of objects containing repository-relative file and positive integer line). Block only a concrete security, correctness, compatibility, or release-integrity issue that must be fixed before publish. Do not quote source, prompt text, credentials, tokens, or secret values. Mention only file paths and concise reasoning. A clean review has an empty findings array."""
+REVIEW_SYSTEM = """You are the independent release reviewer for Metrum AI Router. Review the changes since the previous production release using only the supplied read-only client tools. The first request contains the complete changed-file list and metadata, but no diff text. Read the diff of every changed non-generated file before returning a verdict. You may read relevant documentation with read_doc. Generated files have named CI verification and must not be read. Each finding must refer to a changed file whose diff you read, with a positive line number. Return only JSON with keys summary and findings. Each finding has severity (blocking or informational), category (exactly one of security, correctness, compatibility, release-integrity), title, rationale, and locations (a non-empty list of objects containing repository-relative file and positive integer line). Block only a concrete security, correctness, compatibility, or release-integrity issue that must be fixed before publish. Do not quote source, prompt text, credentials, tokens, or secret values. Mention only file paths and concise reasoning. A clean review has an empty findings array."""
 
-
-class MaxTokensStopError(RuntimeError):
-    """The provider stopped a valid review response at its output-token limit."""
+REVIEW_TOOLS = [
+    {"name": "list_changed_files", "description": "List changed paths, byte sizes, and added/deleted line counts for the fixed release range.", "input_schema": {"type": "object", "properties": {}, "additionalProperties": False}},
+    {"name": "read_diff", "description": "Read a byte page of one changed file's unified diff. Paths must be in list_changed_files output.", "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "start": {"type": "integer"}, "max_bytes": {"type": "integer"}}, "required": ["path", "start", "max_bytes"], "additionalProperties": False}},
+    {"name": "read_file", "description": "Read a byte page of a changed file at ref base or head.", "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "ref": {"type": "string", "enum": ["base", "head"]}, "start": {"type": "integer"}, "max_bytes": {"type": "integer"}}, "required": ["path", "ref", "start", "max_bytes"], "additionalProperties": False}},
+    {"name": "read_doc", "description": "Read a byte page from RELEASING.md, CHANGELOG.md, the upgrade guide, or docs/.", "input_schema": {"type": "object", "properties": {"path": {"type": "string"}, "start": {"type": "integer"}, "max_bytes": {"type": "integer"}}, "required": ["path", "start", "max_bytes"], "additionalProperties": False}},
+]
 
 
 class RequestTimeoutError(RuntimeError):
@@ -104,128 +118,6 @@ def contains_sensitive_credential(value: str) -> bool:
     )
 
 
-def pack_diff_files(
-    file_diffs: list[tuple[str, str]],
-    *,
-    max_bytes: int = MAX_DIFF_BYTES,
-    max_batches: int = MAX_REVIEW_BATCHES,
-    max_single_file_bytes: int | None = None,
-) -> list[tuple[str, tuple[str, ...]]]:
-    context_diffs = [(path, diff) for path, diff in file_diffs if path in REVIEW_CONTEXT_PATHS]
-    context_paths = tuple(path for path, _ in context_diffs)
-    context_bytes = sum(len(diff.encode("utf-8")) for _, diff in context_diffs)
-    hard_limit = max_single_file_bytes or max_bytes
-    if context_bytes > hard_limit:
-        raise ValueError("release review context exceeds the per-request input limit")
-    remaining_diffs = [(path, diff) for path, diff in file_diffs if path not in REVIEW_CONTEXT_PATHS]
-    source_batches: list[tuple[list[str], list[str]]] = []
-    current_diffs: list[str] = []
-    current_paths: list[str] = []
-    current_bytes = 0
-    for path, diff in remaining_diffs:
-        diff_bytes = len(diff.encode("utf-8"))
-        if context_bytes + diff_bytes > max_bytes:
-            if current_diffs:
-                source_batches.append((current_diffs, current_paths))
-                current_diffs = []
-                current_paths = []
-                current_bytes = 0
-            if max_single_file_bytes is not None and context_bytes + diff_bytes <= hard_limit:
-                source_batches.append(([diff], [path]))
-                continue
-            raise ValueError(f"release diff for {path} exceeds the per-request review input limit")
-        if current_diffs and context_bytes + current_bytes + diff_bytes > max_bytes:
-            source_batches.append((current_diffs, current_paths))
-            current_diffs = []
-            current_paths = []
-            current_bytes = 0
-            if len(source_batches) >= max_batches:
-                raise ValueError("release diff exceeds the maximum number of review batches")
-        current_diffs.append(diff)
-        current_paths.append(path)
-        current_bytes += diff_bytes
-    if current_diffs:
-        source_batches.append((current_diffs, current_paths))
-    if not source_batches and context_diffs:
-        source_batches.append(([], []))
-    batches = [
-        ("".join(diff for _, diff in context_diffs) + "".join(diffs), context_paths + tuple(paths))
-        for diffs, paths in source_batches
-    ]
-    if not batches:
-        raise ValueError("release diff is empty")
-    if len(batches) > max_batches:
-        raise ValueError("release diff exceeds the maximum number of review batches")
-    return batches
-
-
-def git_diff_batches(
-    base: str,
-    head: str,
-    *,
-    max_bytes: int = MAX_DIFF_BYTES,
-    only_paths: set[str] | None = None,
-    max_single_file_bytes: int | None = None,
-) -> list[tuple[str, tuple[str, ...]]]:
-    paths = git_diff_names(base, head)
-    binary_paths = set(git_binary_paths(base, head))
-    if only_paths is not None:
-        paths = [path for path in paths if path in only_paths]
-    paths = [path for path in paths if path not in binary_paths and path not in GENERATED_FILE_VERIFICATION_ALLOWLIST]
-    file_diffs: list[tuple[str, str]] = []
-    for path in paths:
-        result = subprocess.run(
-            ["git", "--literal-pathspecs", "diff", "--no-renames", "--no-ext-diff", "--unified=2", f"{base}..{head}", "--", path],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
-        )
-        if not result.stdout:
-            raise ValueError(f"listed release diff file {path} produced an empty diff")
-        file_diffs.append((path, result.stdout))
-    if not file_diffs:
-        return []
-    return pack_diff_files(
-        file_diffs,
-        max_bytes=max_bytes,
-        max_single_file_bytes=max_single_file_bytes,
-    )
-
-
-def git_binary_paths(base: str, head: str) -> list[str]:
-    result = subprocess.run(
-        ["git", "--literal-pathspecs", "diff", "--no-renames", "--numstat", "-z", f"{base}..{head}"],
-        check=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-    ).stdout
-    binary: list[str] = []
-    for record in result.split(b"\0"):
-        if not record:
-            continue
-        added, deleted, path = record.split(b"\t", 2)
-        if added == b"-" and deleted == b"-":
-            binary.append(os.fsdecode(path))
-    return binary
-
-
-def git_binary_hashes(base: str, head: str, paths: set[str]) -> dict[str, dict[str, str | None]]:
-    result: dict[str, dict[str, str | None]] = {}
-    for path in sorted(paths):
-        hashes: dict[str, str | None] = {}
-        for label, ref in (("before", base), ("after", head)):
-            try:
-                data = subprocess.run(
-                    ["git", "show", f"{ref}:{path}"], check=True,
-                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                ).stdout
-            except subprocess.CalledProcessError:
-                hashes[label] = None
-            else:
-                hashes[label] = hashlib.sha256(data).hexdigest()
-        result[path] = hashes
-    return result
-
-
 def git_diff_names(base: str, head: str) -> list[str]:
     names = subprocess.run(
         ["git", "--literal-pathspecs", "diff", "--no-renames", "--name-only", "-z", f"{base}..{head}"],
@@ -236,56 +128,54 @@ def git_diff_names(base: str, head: str) -> list[str]:
     return [os.fsdecode(path) for path in names if path]
 
 
-def read_streaming_response(
-    response: Any,
-    *,
-    timeout: float,
-    started: float | None = None,
-) -> tuple[str, str, int | None]:
-    if started is None:
-        started = time.monotonic()
+def read_streaming_message(response: Any, *, timeout: float) -> tuple[dict[str, Any], int]:
+    """Read one streamed Messages response, retaining tool blocks without logging content."""
+    started = time.monotonic()
     event_name = ""
     data_lines: list[str] = []
-    text_blocks: dict[int, list[str]] = {}
+    blocks: dict[int, dict[str, Any]] = {}
     stop_reason: str | None = None
-    output_tokens: int | None = None
-    message_stopped = False
+    input_tokens = 0
+    output_tokens = 0
+    stopped = False
 
-    def dispatch_event() -> None:
-        nonlocal event_name, data_lines, stop_reason, output_tokens, message_stopped
+    def dispatch() -> None:
+        nonlocal event_name, data_lines, stop_reason, input_tokens, output_tokens, stopped
         if not data_lines:
             event_name = ""
             return
-        try:
-            payload = json.loads("\n".join(data_lines))
-        except json.JSONDecodeError as exc:
-            raise RuntimeError("AI release review stream contained invalid event JSON") from exc
-        kind = event_name or (payload.get("type") if isinstance(payload, dict) else None)
-        if kind == "content_block_start" and isinstance(payload, dict):
-            block = payload.get("content_block")
-            index = payload.get("index")
-            if isinstance(block, dict) and block.get("type") == "text" and isinstance(index, int):
-                text_blocks.setdefault(index, []).append(str(block.get("text", "")))
-        elif kind == "content_block_delta" and isinstance(payload, dict):
-            index = payload.get("index")
-            delta = payload.get("delta")
-            if isinstance(index, int) and isinstance(delta, dict) and delta.get("type") == "text_delta":
-                text_blocks.setdefault(index, []).append(str(delta.get("text", "")))
-        elif kind == "message_delta" and isinstance(payload, dict):
-            delta = payload.get("delta")
-            if isinstance(delta, dict) and isinstance(delta.get("stop_reason"), str):
-                stop_reason = delta["stop_reason"]
-            usage = payload.get("usage")
-            if isinstance(usage, dict):
-                count = usage.get("output_tokens")
-                if isinstance(count, int) and not isinstance(count, bool) and count >= 0:
-                    output_tokens = count
+        payload = json.loads("\n".join(data_lines))
+        kind = event_name or payload.get("type")
+        index = payload.get("index")
+        if kind == "message_start":
+            usage = payload.get("message", {}).get("usage", {})
+            input_tokens += sum(int(usage.get(field, 0) or 0) for field in (
+                "input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"
+            ))
+        elif kind == "content_block_start" and isinstance(index, int):
+            block = payload.get("content_block") or {}
+            blocks[index] = dict(block)
+        elif kind == "content_block_delta" and isinstance(index, int):
+            delta = payload.get("delta") or {}
+            block = blocks.setdefault(index, {})
+            if delta.get("type") == "text_delta":
+                block["text"] = str(block.get("text", "")) + str(delta.get("text", ""))
+            elif delta.get("type") == "thinking_delta":
+                block["thinking"] = str(block.get("thinking", "")) + str(delta.get("thinking", ""))
+            elif delta.get("type") == "signature_delta":
+                block["signature"] = str(block.get("signature", "")) + str(delta.get("signature", ""))
+            elif delta.get("type") == "input_json_delta":
+                block["partial_json"] = str(block.get("partial_json", "")) + str(delta.get("partial_json", ""))
+        elif kind == "message_delta":
+            delta = payload.get("delta") or {}
+            stop_reason = delta.get("stop_reason", stop_reason)
+            usage = payload.get("usage") or {}
+            output_tokens = int(usage.get("output_tokens", output_tokens) or 0)
         elif kind == "message_stop":
-            message_stopped = True
+            stopped = True
         elif kind == "error":
             raise RuntimeError("AI release review stream returned an error event")
-        event_name = ""
-        data_lines = []
+        event_name, data_lines = "", []
 
     for raw_line in response:
         if time.monotonic() - started >= timeout:
@@ -293,105 +183,287 @@ def read_streaming_response(
         line = raw_line.decode("utf-8") if isinstance(raw_line, bytes) else str(raw_line)
         line = line.rstrip("\r\n")
         if not line:
-            dispatch_event()
+            dispatch()
         elif line.startswith(":"):
             continue
         elif line.startswith("event:"):
             event_name = line[6:].strip()
         elif line.startswith("data:"):
             data_lines.append(line[5:].lstrip())
-    dispatch_event()
-    if not message_stopped or stop_reason is None:
+    dispatch()
+    if not stopped or not stop_reason:
         raise RuntimeError("AI release review stream ended before message_delta/message_stop")
-    final_text = ""
-    if text_blocks:
-        final_index = max(text_blocks)
-        final_text = "".join(text_blocks[final_index]).strip()
-    return final_text, stop_reason, output_tokens
+    content = [blocks[index] for index in sorted(blocks)]
+    for block in content:
+        partial = block.pop("partial_json", None)
+        if partial is not None and stop_reason != "max_tokens":
+            try:
+                block["input"] = json.loads(partial)
+            except json.JSONDecodeError as exc:
+                raise RuntimeError("AI release review tool arguments were invalid JSON") from exc
+    return {"content": content, "stop_reason": stop_reason, "output_tokens": output_tokens}, input_tokens
 
 
-def call_model(
-    api_key: str,
-    diff: str,
-    *,
-    batch_number: int = 1,
-    batch_count: int = 1,
-    timeout: float = REQUEST_TIMEOUT_SECONDS,
-) -> dict[str, Any]:
+def _safe_relative_path(path: object) -> str:
+    if not isinstance(path, str) or not path or path.startswith("/") or "\\" in path or "\0" in path:
+        raise ValueError("tool path is invalid")
+    parts = Path(path).parts
+    if any(part in {"", ".", ".."} for part in parts) or Path(path).as_posix() != path:
+        raise ValueError("tool path is invalid")
+    return path
+
+
+def _git_bytes(args: list[str]) -> bytes:
+    return subprocess.run(["git", *args], check=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL).stdout
+
+
+def changed_file_metadata(base: str, head: str) -> list[dict[str, Any]]:
+    raw = _git_bytes(["--literal-pathspecs", "diff", "--no-renames", "--numstat", "-z", f"{base}..{head}"])
+    metadata: list[dict[str, Any]] = []
+    records = [record for record in raw.split(b"\0") if record]
+    binary_paths = {
+        os.fsdecode(record.split(b"\t", 2)[2])
+        for record in records
+        if record.split(b"\t", 2)[:2] == [b"-", b"-"]
+    }
+    binary_hashes = git_binary_hashes(base, head, binary_paths)
+    for record in records:
+        added, deleted, path_b = record.split(b"\t", 2)
+        path = _safe_relative_path(os.fsdecode(path_b))
+        size = 0
+        for ref in (head, base):
+            try:
+                size = int(_git_bytes(["cat-file", "-s", f"{ref}:{path}"]).strip())
+                break
+            except subprocess.CalledProcessError:
+                continue
+        item = {"path": path, "size_bytes": size,
+                "added_lines": None if added == b"-" else int(added),
+                "deleted_lines": None if deleted == b"-" else int(deleted)}
+        if path in binary_hashes:
+            item.update({"binary": True, "coverage": "binary",
+                         "sha256_before": binary_hashes[path]["before"],
+                         "sha256_after": binary_hashes[path]["after"]})
+        metadata.append(item)
+    return metadata
+
+
+def git_binary_paths(base: str, head: str) -> list[str]:
+    raw = _git_bytes(["--literal-pathspecs", "diff", "--no-renames", "--numstat", "-z", f"{base}..{head}"])
+    binary: list[str] = []
+    for record in raw.split(b"\0"):
+        if not record:
+            continue
+        added, deleted, path = record.split(b"\t", 2)
+        if added == b"-" and deleted == b"-":
+            binary.append(os.fsdecode(path))
+    return binary
+
+
+def git_binary_hashes(base: str, head: str, paths: set[str]) -> dict[str, dict[str, str | None]]:
+    hashes: dict[str, dict[str, str | None]] = {}
+    for path in sorted(paths):
+        pair: dict[str, str | None] = {}
+        for label, ref in (("before", base), ("after", head)):
+            try:
+                data = _git_bytes(["show", f"{ref}:{path}"])
+            except subprocess.CalledProcessError:
+                pair[label] = None
+            else:
+                pair[label] = hashlib.sha256(data).hexdigest()
+        hashes[path] = pair
+    return hashes
+
+
+def _read_range(data: bytes, start: object, max_bytes: object) -> str:
+    if not isinstance(start, int) or isinstance(start, bool) or not 0 <= start <= MAX_TOOL_START:
+        raise ValueError("tool read offset is invalid")
+    if not isinstance(max_bytes, int) or isinstance(max_bytes, bool) or not 1 <= max_bytes <= MAX_TOOL_READ_BYTES:
+        raise ValueError("tool read size is invalid")
+    return data[start:start + max_bytes].decode("utf-8", errors="replace")
+
+
+def execute_client_tool(name: str, args: dict[str, Any], *, base: str, head: str,
+                        changed: dict[str, dict[str, Any]], diff_reads: dict[str, list[tuple[int, int, int]]]) -> str:
+    if name == "list_changed_files":
+        if args:
+            raise ValueError("list_changed_files takes no arguments")
+        return json.dumps(list(changed.values()), ensure_ascii=True)
+    if name == "read_diff":
+        path = _safe_relative_path(args.get("path"))
+        if path not in changed or path in GENERATED_FILE_VERIFICATION_ALLOWLIST or changed[path].get("binary"):
+            raise ValueError("read_diff path is not an eligible changed file")
+        diff = _git_bytes(["--literal-pathspecs", "diff", "--no-renames", "--no-ext-diff", "--unified=2", f"{base}..{head}", "--", path])
+        if not diff:
+            raise ValueError("listed release diff file produced an empty diff")
+        start, max_bytes = args.get("start"), args.get("max_bytes")
+        content = _read_range(diff, start, max_bytes)
+        if not isinstance(start, int) or isinstance(start, bool) or not isinstance(max_bytes, int) or isinstance(max_bytes, bool):
+            raise ValueError("tool read offset or size is invalid")
+        actual_bytes = min(max_bytes, max(0, len(diff) - start))
+        diff_reads.setdefault(path, []).append((start, start + actual_bytes, len(diff)))
+        print(f"AI release review read_diff path={json.dumps(path, ensure_ascii=True)} start={start} bytes={actual_bytes}", file=sys.stderr)
+        return content
+    if name in {"read_file", "read_doc"}:
+        path = _safe_relative_path(args.get("path"))
+        if name == "read_file":
+            if path not in changed or path in GENERATED_FILE_VERIFICATION_ALLOWLIST or changed[path].get("binary"):
+                raise ValueError("read_file path is not an eligible changed file")
+            ref_name = args.get("ref")
+            if ref_name not in {"base", "head"}:
+                raise ValueError("read_file ref must be base or head")
+            ref = base if ref_name == "base" else head
+        else:
+            if path in GENERATED_FILE_VERIFICATION_ALLOWLIST:
+                raise ValueError("read_doc path is generated and covered by its named CI check")
+            if path not in ALLOWED_DOC_FILES and not path.startswith(ALLOWED_DOC_ROOTS):
+                raise ValueError("read_doc path is outside the allowed documentation set")
+            ref = head
+        data = _git_bytes(["show", f"{ref}:{path}"])
+        return _read_range(data, args.get("start"), args.get("max_bytes"))
+    raise ValueError("unknown read-only tool")
+
+
+def log_anthropic_http_error(exc: urllib.error.HTTPError, *, label: str) -> None:
+    try:
+        payload = json.loads(exc.read().decode("utf-8"))
+        error = payload.get("error", {}) if isinstance(payload, dict) else {}
+        error_type = error.get("type", "unknown") if isinstance(error, dict) else "unknown"
+        error_message = error.get("message", "unknown") if isinstance(error, dict) else "unknown"
+        error_type = re.sub(r"[^A-Za-z0-9_.-]", "", str(error_type))[:80] or "unknown"
+        error_message = " ".join(str(error_message).split())[:500] or "unknown"
+    except (UnicodeDecodeError, json.JSONDecodeError, OSError):
+        error_type, error_message = "unknown", "unparseable provider error metadata"
+    print(f"AI release review {label} HTTP {exc.code} error.type={error_type} error.message={error_message}", file=sys.stderr)
+
+
+def _send_streaming_turn(api_key: str, messages: list[dict[str, Any]], *, timeout: float) -> tuple[dict[str, Any], int]:
+    stable_tools = [dict(tool) for tool in REVIEW_TOOLS]
+    stable_tools[-1]["cache_control"] = {"type": "ephemeral"}
     body = json.dumps({
         "model": MODEL,
         "max_tokens": MAX_OUTPUT_TOKENS,
         "stream": True,
-        "output_config": {
-            "effort": "medium",
-            "format": {"type": "json_schema", "schema": REVIEW_OUTPUT_SCHEMA},
-        },
-        "system": REVIEW_SYSTEM,
-        "messages": [{
-            "role": "user",
-            "content": f"Review release diff batch {batch_number} of {batch_count}. Findings must be grounded in this batch.\n\n{diff}",
-        }],
+        "output_config": {"effort": "medium", "format": {"type": "json_schema", "schema": REVIEW_OUTPUT_SCHEMA}},
+        "system": [{"type": "text", "text": REVIEW_SYSTEM, "cache_control": {"type": "ephemeral"}}],
+        "tools": stable_tools,
+        "messages": messages,
     }).encode("utf-8")
-    request = urllib.request.Request(
-        API_URL,
-        data=body,
-        headers={
-            "content-type": "application/json",
-            "anthropic-version": API_VERSION,
-            "x-api-key": api_key,
-        },
-        method="POST",
-    )
-    started = time.monotonic()
+    request = urllib.request.Request(API_URL, data=body, headers={
+        "content-type": "application/json", "anthropic-version": API_VERSION, "x-api-key": api_key,
+    }, method="POST")
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
-            text, stop_reason, output_tokens = read_streaming_response(
-                response, timeout=timeout, started=started
-            )
+            message, input_tokens = read_streaming_message(response, timeout=timeout)
     except urllib.error.HTTPError as exc:
-        try:
-            payload = json.loads(exc.read().decode("utf-8"))
-            error = payload.get("error", {}) if isinstance(payload, dict) else {}
-            error_type = error.get("type", "unknown") if isinstance(error, dict) else "unknown"
-            error_message = error.get("message", "unknown") if isinstance(error, dict) else "unknown"
-            error_type = re.sub(r"[^A-Za-z0-9_.-]", "", str(error_type))[:80] or "unknown"
-            error_message = " ".join(str(error_message).split())[:500] or "unknown"
-        except (UnicodeDecodeError, json.JSONDecodeError, OSError):
-            error_type, error_message = "unknown", "unparseable provider error metadata"
-        print(
-            f"AI release review batch {batch_number}/{batch_count} HTTP {exc.code} error.type={error_type} error.message={error_message}",
-            file=sys.stderr,
-        )
+        log_anthropic_http_error(exc, label="tool-use turn")
         raise RuntimeError(f"AI release review request failed with HTTP status {exc.code}") from exc
     except (urllib.error.URLError, TimeoutError, OSError) as exc:
         if isinstance(exc, TimeoutError) or isinstance(getattr(exc, "reason", None), TimeoutError):
             raise RequestTimeoutError(f"AI release review request timed out after {timeout:g} seconds") from exc
-        # Do not include provider response text, request data, or credentials.
         raise RuntimeError("AI release review request failed") from exc
-    count_label = str(output_tokens) if output_tokens is not None else "unknown"
-    print(
-        f"AI release review batch {batch_number}/{batch_count} usage.output_tokens={count_label}",
-        file=sys.stderr,
-    )
-    if stop_reason != "end_turn":
-        # Stop reasons are bounded provider metadata; never print response/request text.
-        safe_reason = stop_reason if isinstance(stop_reason, str) and re.fullmatch(r"[a-z_]{1,40}", stop_reason) else "unknown"
-        message = f"AI release review response ended with stop_reason={safe_reason}"
-        if safe_reason == "max_tokens":
-            raise MaxTokensStopError(message)
-        raise RuntimeError(message)
-    if not text:
-        raise RuntimeError("AI release review response had no text block (stop_reason=end_turn)")
-    text = text.strip()
-    if text.startswith("```"):
-        text = re.sub(r"^```(?:json)?\s*|\s*```$", "", text, flags=re.DOTALL)
-    try:
-        result = json.loads(text)
-    except json.JSONDecodeError as exc:
-        raise RuntimeError("AI release review final text block was not valid JSON") from exc
-    if not isinstance(result, dict):
-        raise RuntimeError("AI release review final JSON value was not an object")
-    return result
+    output_tokens = message["output_tokens"]
+    print(f"AI release review turn usage.input_tokens={input_tokens} usage.output_tokens={output_tokens}", file=sys.stderr)
+    return message, input_tokens
+
+
+def run_agentic_review(api_key: str, base: str, head: str) -> tuple[dict[str, Any], set[str], int, int]:
+    metadata = changed_file_metadata(base, head)
+    changed = {item["path"]: item for item in metadata}
+    if not changed:
+        raise ValueError("release diff is empty")
+    for item in metadata:
+        check = GENERATED_FILE_VERIFICATION_ALLOWLIST.get(item["path"])
+        if check:
+            item["coverage"] = "generated-and-verified"
+            item["verification_check"] = check
+        elif not item.get("binary"):
+            item["coverage"] = "model-review-required"
+    generated = set(changed) & set(GENERATED_FILE_VERIFICATION_ALLOWLIST)
+    binary = {path for path, item in changed.items() if item.get("binary")}
+    changed_list_json = json.dumps(metadata, ensure_ascii=True)
+    if len(changed_list_json.encode("utf-8")) > MAX_CHANGED_FILE_LIST_BYTES:
+        raise ValueError("release review changed-file list exceeds its byte limit")
+    messages: list[dict[str, Any]] = [{
+        "role": "user",
+        "content": "Review the release range " + base + ".." + head + ". The following is the complete changed-file list and metadata; no diff text has been supplied. Fetch the diffs and documentation you need with the read-only tools. Cover every changed non-generated text file by reading its diff. Binary files are covered by before/after SHA-256 hashes and generated files by their named CI checks; do not read either.\n" + changed_list_json,
+    }]
+    diff_reads: dict[str, list[tuple[int, int, int]]] = {}
+    total_input_tokens = 0
+    total_output_tokens = 0
+    total_tool_result_bytes = 0
+    retrying_max_tokens = False
+    for turn in range(1, MAX_REVIEW_TURNS + 1):
+        if len(json.dumps(messages, ensure_ascii=True).encode("utf-8")) > MAX_REVIEW_MESSAGE_BYTES:
+            raise ValueError("release review conversation exceeds its byte limit")
+        message, input_tokens = _send_streaming_turn(api_key, messages, timeout=REQUEST_TIMEOUT_SECONDS)
+        total_input_tokens += input_tokens
+        total_output_tokens += message["output_tokens"]
+        if total_input_tokens > MAX_REVIEW_INPUT_TOKENS:
+            raise ValueError("release review exceeded the maximum total input-token budget")
+        stop_reason = message["stop_reason"]
+        if stop_reason == "refusal":
+            raise RuntimeError("AI release review was refused")
+        if stop_reason == "max_tokens":
+            if retrying_max_tokens:
+                raise RuntimeError("AI release review repeatedly reached max_tokens")
+            retrying_max_tokens = True
+            print(f"AI release review turn {turn} hit max_tokens; retrying the same request once", file=sys.stderr)
+            continue
+        retrying_max_tokens = False
+        if stop_reason == "tool_use":
+            tool_results = []
+            for block in message["content"]:
+                if block.get("type") != "tool_use":
+                    continue
+                tool_name = block.get("name")
+                tool_id = block.get("id")
+                tool_input = block.get("input")
+                if not isinstance(tool_name, str) or not isinstance(tool_id, str) or not tool_id or not isinstance(tool_input, dict):
+                    raise RuntimeError("AI release review returned an invalid tool call")
+                try:
+                    result = execute_client_tool(tool_name, tool_input,
+                                                 base=base, head=head, changed=changed, diff_reads=diff_reads)
+                except (KeyError, TypeError, ValueError, subprocess.CalledProcessError) as exc:
+                    result = "ERROR: " + str(exc)
+                total_tool_result_bytes += len(result.encode("utf-8"))
+                if total_tool_result_bytes > MAX_REVIEW_TOOL_RESULT_BYTES:
+                    raise ValueError("release review tool results exceed their byte limit")
+                tool_results.append({"type": "tool_result", "tool_use_id": tool_id, "content": result})
+            if not tool_results:
+                raise RuntimeError("AI release review requested tools without a tool call")
+            messages.extend([
+                {"role": "assistant", "content": message["content"]},
+                {"role": "user", "content": tool_results},
+            ])
+            continue
+        if stop_reason != "end_turn":
+            raise RuntimeError("AI release review ended with an unsupported stop reason")
+        text_blocks = [block.get("text", "") for block in message["content"] if block.get("type") == "text"]
+        if not text_blocks or not text_blocks[-1].strip():
+            raise RuntimeError("AI release review response had no final text block")
+        try:
+            verdict = json.loads(text_blocks[-1])
+        except json.JSONDecodeError as exc:
+            raise RuntimeError("AI release review final text block was not valid JSON") from exc
+        covered = set()
+        for path, ranges in diff_reads.items():
+            total = ranges[0][2]
+            intervals = sorted((start, end) for start, end, length in ranges if length == total)
+            cursor = 0
+            for start, end in intervals:
+                if start > cursor:
+                    break
+                cursor = max(cursor, end)
+            if cursor >= total:
+                covered.add(path)
+        uncovered = set(changed) - generated - binary - covered
+        if uncovered:
+            raise ValueError(f"AI release review coverage is incomplete (unread_files={len(uncovered)})")
+        build_artifact(verdict, base, head, allowed_files=covered)
+        print(f"AI release review totals usage.input_tokens={total_input_tokens} usage.output_tokens={total_output_tokens} turns={turn}", file=sys.stderr)
+        return verdict, covered, total_input_tokens, total_output_tokens
+    raise ValueError("AI release review exceeded the maximum turn limit")
 
 
 def safe_text(value: object, field: str) -> str:
@@ -504,10 +576,8 @@ def build_artifact(
             if not valid_hash(sha256_before) or not valid_hash(sha256_after) or (sha256_before is None and sha256_after is None):
                 raise ValueError("AI release review binary coverage has invalid before/after hashes")
             normalized_coverage.append({
-                "file": file_path,
-                "status": status,
-                "sha256_before": sha256_before,
-                "sha256_after": sha256_after,
+                "file": file_path, "status": status,
+                "sha256_before": sha256_before, "sha256_after": sha256_after,
             })
         else:
             raise ValueError("AI release review file coverage has an invalid status")
@@ -626,9 +696,12 @@ def main() -> int:
             except json.JSONDecodeError as exc:
                 raise ValueError("stored AI release review artifact is malformed") from exc
             expected_files = set(git_diff_names(args.base, args.head))
-            binary_paths = set(git_binary_paths(args.base, args.head))
-            binary_hashes = git_binary_hashes(args.base, args.head, binary_paths)
-            artifact = validate_artifact(artifact, args.base, args.head, expected_files, binary_hashes)
+            changed_metadata = changed_file_metadata(args.base, args.head)
+            expected_binary = {
+                item["path"]: {"before": item["sha256_before"], "after": item["sha256_after"]}
+                for item in changed_metadata if item.get("binary")
+            }
+            artifact = validate_artifact(artifact, args.base, args.head, expected_files, expected_binary)
             cache_hit = True
         else:
             api_key = os.environ.get("ANTHROPIC_API_KEY", "")
@@ -636,91 +709,26 @@ def main() -> int:
                 print("AI release review failed: required API credential is unavailable", file=sys.stderr)
                 return 2
             expected_files = set(git_diff_names(args.base, args.head))
-            binary_paths = set(git_binary_paths(args.base, args.head))
-            binary_hashes = git_binary_hashes(args.base, args.head, binary_paths)
-            diff_limit = INITIAL_DIFF_BYTES
-            batches = git_diff_batches(
-                args.base,
-                args.head,
-                max_bytes=diff_limit,
-                max_single_file_bytes=MAX_DIFF_BYTES,
-            )
-            batched_files = {path for _diff, paths in batches for path in paths}
-            generated_paths = expected_files & set(GENERATED_FILE_VERIFICATION_ALLOWLIST)
-            if batched_files != expected_files - binary_paths - generated_paths:
-                raise ValueError("release review batches do not match git diff --name-only")
-            findings_by_id: dict[str, dict[str, Any]] = {}
-            batch_index = 0
-            while batch_index < len(batches):
-                if len(batches) > MAX_REVIEW_BATCHES:
-                    raise ValueError("release diff exceeds the maximum number of review batches")
-                diff, paths = batches[batch_index]
-                batch_label = f"{batch_index + 1}/{len(batches)}"
-                print(f"AI release review batch {batch_label} started", file=sys.stderr)
-                try:
-                    batch_review = call_model(
-                        api_key, diff, batch_number=batch_index + 1, batch_count=len(batches)
-                    )
-                    artifact_batch = build_artifact(batch_review, args.base, args.head, allowed_files=set(paths))
-                except (MaxTokensStopError, RequestTimeoutError) as exc:
-                    failure_kind = "max_tokens" if isinstance(exc, MaxTokensStopError) else "timeout"
-                    if diff_limit <= MIN_DIFF_BYTES:
-                        raise type(exc)(
-                            f"batch {batch_label} reached {failure_kind} at the {MIN_DIFF_BYTES}-byte minimum"
-                        ) from exc
-                    next_limit = max(MIN_DIFF_BYTES, diff_limit // 2)
-                    try:
-                        smaller_batches = git_diff_batches(
-                            args.base,
-                            args.head,
-                            max_bytes=next_limit,
-                            only_paths=set(paths),
-                            max_single_file_bytes=MAX_DIFF_BYTES,
-                        )
-                    except ValueError as split_error:
-                        raise ValueError(f"batch {batch_label} could not be split further: {split_error}") from split_error
-                    if smaller_batches == [(diff, paths)]:
-                        raise type(exc)(
-                            f"batch {batch_label} still reaches {failure_kind} and cannot be split by file"
-                        ) from exc
-                    if len(batches) - 1 + len(smaller_batches) > MAX_REVIEW_BATCHES:
-                        raise ValueError("release diff exceeds the maximum number of review batches after splitting") from exc
-                    batches[batch_index:batch_index + 1] = smaller_batches
-                    diff_limit = next_limit
-                    print(
-                        f"AI release review batch {batch_label} stopped with {failure_kind}; split into {len(smaller_batches)} smaller batch(es) (limit={diff_limit} bytes)",
-                        file=sys.stderr,
-                    )
-                    continue
-                except (RuntimeError, ValueError) as exc:
-                    raise RuntimeError(f"batch {batch_label} failed: {exc}") from exc
-                for finding in artifact_batch["findings"]:
-                    existing = findings_by_id.get(finding["id"])
-                    if existing is None or finding["severity"] == "blocking":
-                        findings_by_id[finding["id"]] = finding
-                print(f"AI release review batch {batch_label} completed", file=sys.stderr)
-                batch_index += 1
-            changed_files = len(expected_files)
-            reviewed_paths = sorted({path for _diff, paths in batches for path in paths})
-            generated_paths = expected_files & set(GENERATED_FILE_VERIFICATION_ALLOWLIST)
+            verdict, reviewed_paths, total_input_tokens, total_output_tokens = run_agentic_review(api_key, args.base, args.head)
+            changed_metadata = changed_file_metadata(args.base, args.head)
+            generated_paths = set(expected_files) & set(GENERATED_FILE_VERIFICATION_ALLOWLIST)
+            binary_metadata = {item["path"]: item for item in changed_metadata if item.get("binary")}
+            binary_paths = set(binary_metadata)
+            generated_paths -= binary_paths
             artifact = build_artifact({
-                "summary": (
-                    f"Reviewed {len(reviewed_paths)} text files across {len(batches)} bounded batches; "
-                    f"recorded {len(binary_paths)} binary file hashes and {len(generated_paths - binary_paths)} generated-file checks "
-                    f"within a {changed_files}-file release range."
-                ),
-                "findings": list(findings_by_id.values()),
+                "summary": safe_text(verdict.get("summary"), "summary"),
+                "findings": verdict.get("findings"),
             }, args.base, args.head, file_coverage=[
-                *({"file": path, "status": "reviewed"} for path in reviewed_paths),
-                *({
-                    "file": path, "status": "binary",
-                    "sha256_before": binary_hashes[path]["before"],
-                    "sha256_after": binary_hashes[path]["after"],
-                } for path in sorted(binary_paths)),
-                *({"file": path, "status": "generated-and-verified", "verification": GENERATED_FILE_VERIFICATION_ALLOWLIST[path]}
-                  for path in sorted(generated_paths - binary_paths)),
+                *({"file": path, "status": "reviewed"} for path in sorted(reviewed_paths)),
+                *({"file": path, "status": "generated-and-verified", "verification": GENERATED_FILE_VERIFICATION_ALLOWLIST[path]} for path in sorted(generated_paths)),
+                *({"file": path, "status": "binary", "sha256_before": binary_metadata[path]["sha256_before"],
+                   "sha256_after": binary_metadata[path]["sha256_after"]} for path in sorted(binary_paths)),
             ])
-            artifact = validate_artifact(artifact, args.base, args.head, expected_files, binary_hashes)
+            expected_binary = {
+                path: {"before": item["sha256_before"], "after": item["sha256_after"]}
+                for path, item in binary_metadata.items()
+            }
+            artifact = validate_artifact(artifact, args.base, args.head, expected_files, expected_binary)
         report, unanswered = evaluate(artifact, acceptances, args.base, args.head)
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(render(report, args.base, args.head, args.tag), encoding="utf-8")

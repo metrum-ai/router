@@ -3,12 +3,15 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import io
 import os
 import subprocess
 import tempfile
+import threading
 import unittest
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from contextlib import redirect_stderr
 from pathlib import Path
 from unittest.mock import call, patch
@@ -37,106 +40,69 @@ def sse_response(events: list[tuple[str, dict[str, object]]]):
     return Response()
 
 
+class FakeMessagesServer:
+    def __init__(self, scripted: list[list[tuple[str, dict[str, object]]]]) -> None:
+        self.scripted = scripted
+        self.requests: list[dict[str, object]] = []
+        owner = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self):
+                size = int(self.headers.get("content-length", "0"))
+                owner.requests.append(json.loads(self.rfile.read(size)))
+                events = owner.scripted.pop(0)
+                response = b"".join(
+                    f"event: {name}\ndata: {json.dumps(payload)}\n\n".encode()
+                    for name, payload in events
+                )
+                self.send_response(200)
+                self.send_header("content-type", "text/event-stream")
+                self.send_header("content-length", str(len(response)))
+                self.end_headers()
+                self.wfile.write(response)
+
+            def log_message(self, *_args):
+                return
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.url = f"http://127.0.0.1:{self.server.server_port}/v1/messages"
+
+    def __enter__(self):
+        self.thread.start()
+        return self
+
+    def __exit__(self, *_args):
+        self.server.shutdown()
+        self.thread.join()
+        self.server.server_close()
+
+
+def tool_turn(name: str, arguments: dict[str, object], *, stop_reason: str = "tool_use"):
+    return [
+        ("message_start", {"type": "message_start", "message": {"usage": {"input_tokens": 13}}}),
+        ("content_block_start", {"type": "content_block_start", "index": 0, "content_block": {"type": "thinking", "thinking": ""}}),
+        ("content_block_delta", {"type": "content_block_delta", "index": 0, "delta": {"type": "thinking_delta", "thinking": "brief reasoning"}}),
+        ("content_block_delta", {"type": "content_block_delta", "index": 0, "delta": {"type": "signature_delta", "signature": "signed-block"}}),
+        ("content_block_start", {"type": "content_block_start", "index": 1, "content_block": {"type": "tool_use", "id": "call-1", "name": name, "input": arguments}}),
+        ("message_delta", {"type": "message_delta", "delta": {"stop_reason": stop_reason}, "usage": {"output_tokens": 7}}),
+        ("message_stop", {"type": "message_stop"}),
+    ]
+
+
+def final_turn(text: str, *, stop_reason: str = "end_turn"):
+    return [
+        ("message_start", {"type": "message_start", "message": {"usage": {
+            "input_tokens": 17, "cache_read_input_tokens": 2, "cache_creation_input_tokens": 3,
+        }}}),
+        ("content_block_start", {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}),
+        ("content_block_delta", {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": text}}),
+        ("message_delta", {"type": "message_delta", "delta": {"stop_reason": stop_reason}, "usage": {"output_tokens": 9}}),
+        ("message_stop", {"type": "message_stop"}),
+    ]
+
+
 class ReleaseAIReviewTest(unittest.TestCase):
-    def test_diff_files_are_packed_under_one_megabyte_and_preserved(self) -> None:
-        file_diffs = [
-            ("a.go", "diff --git a/a.go b/a.go\n" + "a" * 600_000),
-            ("b.go", "diff --git a/b.go b/b.go\n" + "b" * 500_000),
-            ("c.go", "diff --git a/c.go b/c.go\n" + "c" * 100_000),
-        ]
-        batches = review.pack_diff_files(file_diffs)
-        self.assertEqual(len(batches), 2)
-        self.assertEqual([path for _diff, paths in batches for path in paths], ["a.go", "b.go", "c.go"])
-        self.assertTrue(all(len(diff.encode("utf-8")) <= review.MAX_DIFF_BYTES for diff, _paths in batches))
-        self.assertIn("diff --git a/a.go b/a.go", batches[0][0])
-        self.assertIn("diff --git a/b.go b/b.go", batches[1][0])
-        self.assertIn("diff --git a/c.go b/c.go", batches[1][0])
-
-    def test_diff_batcher_fails_closed_for_one_oversized_file_or_too_many_batches(self) -> None:
-        with self.assertRaisesRegex(ValueError, "per-request"):
-            review.pack_diff_files([("large.go", "x" * 11)], max_bytes=10)
-        with self.assertRaisesRegex(ValueError, "per-request"):
-            review.pack_diff_files(
-                [("unlisted-large.bin", "x" * (review.MAX_DIFF_BYTES + 1))],
-                max_bytes=review.INITIAL_DIFF_BYTES,
-                max_single_file_bytes=review.MAX_DIFF_BYTES,
-            )
-        with self.assertRaisesRegex(ValueError, "maximum number"):
-            review.pack_diff_files(
-                [(f"{index}.go", "x" * 60) for index in range(3)],
-                max_bytes=100,
-                max_batches=2,
-            )
-
-    def test_retry_batcher_keeps_a_large_file_atomic_under_the_hard_limit(self) -> None:
-        batches = review.pack_diff_files(
-            [("CHANGELOG.md", "context"), ("generated.js", "x" * 120)],
-            max_bytes=100,
-            max_single_file_bytes=150,
-        )
-        self.assertEqual(batches, [("context" + "x" * 120, ("CHANGELOG.md", "generated.js"))])
-        with self.assertRaisesRegex(ValueError, "per-request"):
-            review.pack_diff_files(
-                [("CHANGELOG.md", "context"), ("generated.js", "x" * 145)],
-                max_bytes=100,
-                max_single_file_bytes=150,
-            )
-
-    def test_release_document_diffs_are_repeated_in_every_batch(self) -> None:
-        upgrade = "docs-site/docs/release-notes/upgrade-guide.md"
-        file_diffs = [
-            ("CHANGELOG.md", "changelog context\n"),
-            (upgrade, "upgrade context\n"),
-            ("first.go", "a" * 60),
-            ("second.go", "b" * 60),
-        ]
-        batches = review.pack_diff_files(file_diffs, max_bytes=100)
-        self.assertEqual(len(batches), 2)
-        self.assertEqual(batches[0][1], ("CHANGELOG.md", upgrade, "first.go"))
-        self.assertEqual(batches[1][1], ("CHANGELOG.md", upgrade, "second.go"))
-        for diff, _paths in batches:
-            self.assertIn("changelog context", diff)
-            self.assertIn("upgrade context", diff)
-        self.assertTrue(all(len(diff.encode("utf-8")) <= 100 for diff, _paths in batches))
-
-    def test_git_diff_batches_reads_and_separates_real_file_diffs(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            subprocess.run(["git", "init", "-q", str(root)], check=True)
-            subprocess.run(["git", "-C", str(root), "config", "user.name", "Release Review Test"], check=True)
-            subprocess.run(["git", "-C", str(root), "config", "user.email", "release-review-test@example.invalid"], check=True)
-            for name in ("first.go", "second.go"):
-                (root / name).write_text("initial\n", encoding="utf-8")
-            subprocess.run(["git", "-C", str(root), "add", "first.go", "second.go"], check=True)
-            subprocess.run(["git", "-C", str(root), "commit", "-qm", "baseline"], check=True)
-            base = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
-            (root / "first.go").write_text("a" * 600_000 + "\n", encoding="utf-8")
-            (root / "second.go").write_text("b" * 600_000 + "\n", encoding="utf-8")
-            subprocess.run(["git", "-C", str(root), "add", "first.go", "second.go"], check=True)
-            subprocess.run(["git", "-C", str(root), "commit", "-qm", "large release diff"], check=True)
-            head = subprocess.check_output(["git", "-C", str(root), "rev-parse", "HEAD"], text=True).strip()
-            original_cwd = Path.cwd()
-            try:
-                os.chdir(root)
-                batches = review.git_diff_batches(base, head)
-            finally:
-                os.chdir(original_cwd)
-        self.assertEqual([paths for _diff, paths in batches], [("first.go",), ("second.go",)])
-        self.assertTrue(all(len(diff.encode("utf-8")) <= review.MAX_DIFF_BYTES for diff, _paths in batches))
-
-    def test_git_diff_batches_uses_literal_paths_and_rejects_empty_file_diff(self) -> None:
-        first = type("Result", (), {"stdout": b"literal[1].go\0"})()
-        second = type("Result", (), {"stdout": ""})()
-        with patch.object(review, "git_binary_paths", return_value=[]), \
-             patch.object(review.subprocess, "run", side_effect=[first, second]) as run:
-            with self.assertRaisesRegex(ValueError, "listed release diff file .* empty diff"):
-                review.git_diff_batches("base", "head")
-        for call_args in run.call_args_list:
-            command = call_args.args[0]
-            self.assertIn("--literal-pathspecs", command)
-            self.assertIn("--no-renames", command)
-        self.assertEqual(run.call_args_list[1].args[0][-1], "literal[1].go")
-
     def test_unanswered_blocker_blocks_and_answered_blocker_is_recorded(self) -> None:
         candidate = {
             "summary": "Release has one issue to resolve.",
@@ -186,7 +152,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
         new_range, _ = review.evaluate(candidate, {}, "v4.8.0", "def5678")
         self.assertNotEqual(baseline["findings"][0]["id"], new_range["findings"][0]["id"])
 
-    def test_batch_finding_must_reference_a_file_in_that_batch(self) -> None:
+    def test_finding_must_reference_a_file_covered_by_the_review(self) -> None:
         candidate = {
             "summary": "One issue.",
             "findings": [{
@@ -224,7 +190,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
     def test_model_timeout_fails_without_logging_request(self) -> None:
         with patch.object(review.urllib.request, "urlopen", side_effect=TimeoutError()):
             with self.assertRaisesRegex(review.RequestTimeoutError, "timed out after"):
-                review.call_model("not-a-real-key", "diff contents", timeout=0.001)
+                review._send_streaming_turn("not-a-real-key", [], timeout=0.001)
 
     def test_model_http_error_reports_status_without_response_body(self) -> None:
         stderr = io.StringIO()
@@ -235,7 +201,7 @@ class ReleaseAIReviewTest(unittest.TestCase):
         )
         with patch.object(review.urllib.request, "urlopen", side_effect=failure), redirect_stderr(stderr):
             with self.assertRaisesRegex(RuntimeError, "HTTP status 400") as raised:
-                review.call_model("test-key", "diff")
+                review._send_streaming_turn("test-key", [], timeout=review.REQUEST_TIMEOUT_SECONDS)
         self.assertNotIn("request is too large", str(raised.exception))
         self.assertIn("error.type=invalid_request_error", stderr.getvalue())
         self.assertIn("error.message=request is too large", stderr.getvalue())
@@ -275,191 +241,17 @@ class ReleaseAIReviewTest(unittest.TestCase):
             }), encoding="utf-8")
             with patch.dict(os.environ, {}, clear=True), \
                  patch.object(review, "git_diff_names", return_value=[]), \
-                 patch.object(review, "git_binary_paths", return_value=[]), \
-                 patch.object(review, "call_model") as call_model, patch("sys.argv", [
+                 patch.object(review, "changed_file_metadata", return_value=[]), \
+                 patch.object(review, "run_agentic_review") as run_review, patch("sys.argv", [
                 "release_ai_review.py", "--base", "v4.8.0", "--head", "abc1234", "--tag", "v5.0.0",
                 "--responses", str(responses), "--artifact-cache", str(cache),
                 "--artifact-output", str(artifact_output), "--output", str(output),
             ]):
                 self.assertEqual(review.main(), 0)
-            call_model.assert_not_called()
+            run_review.assert_not_called()
             self.assertIn("Decision: **PASS**", output.read_text(encoding="utf-8"))
             self.assertIn(artifact["artifact_digest"], output.read_text(encoding="utf-8"))
             self.assertEqual(json.loads(artifact_output.read_text(encoding="utf-8")), artifact)
-
-    def test_streaming_request_accumulates_final_text_block_and_message_delta_stop_reason(self) -> None:
-        response = sse_response([
-            ("content_block_start", {"index": 0, "content_block": {"type": "text", "text": ""}}),
-            ("content_block_delta", {"index": 0, "delta": {"type": "text_delta", "text": "obsolete answer"}}),
-            ("content_block_stop", {"index": 0}),
-            ("content_block_start", {"index": 1, "content_block": {"type": "text", "text": ""}}),
-            ("content_block_delta", {"index": 1, "delta": {"type": "text_delta", "text": '{"summary":"clean",' }}),
-            ("content_block_delta", {"index": 1, "delta": {"type": "text_delta", "text": '"findings":[]}' }}),
-            ("content_block_stop", {"index": 1}),
-            ("message_delta", {"delta": {"stop_reason": "end_turn"}, "usage": {"output_tokens": 4321}}),
-            ("message_stop", {"type": "message_stop"}),
-        ])
-        stderr = io.StringIO()
-        with redirect_stderr(stderr), patch.object(review.urllib.request, "urlopen", return_value=response) as urlopen:
-            parsed = review.call_model("test-key", "diff")
-        request = urlopen.call_args.args[0]
-        payload = json.loads(request.data)
-        self.assertEqual(payload["max_tokens"], 64000)
-        self.assertTrue(payload["stream"])
-        self.assertEqual(urlopen.call_args.kwargs["timeout"], 900)
-        self.assertNotIn("temperature", payload)
-        self.assertNotIn("thinking", payload)
-        self.assertEqual(payload["output_config"], {
-            "effort": "medium",
-            "format": {"type": "json_schema", "schema": review.REVIEW_OUTPUT_SCHEMA},
-        })
-        self.assertIn("batch 1/1 usage.output_tokens=4321", stderr.getvalue())
-        self.assertEqual(review.REVIEW_OUTPUT_SCHEMA["required"], ["summary", "findings"])
-        self.assertFalse(review.REVIEW_OUTPUT_SCHEMA["additionalProperties"])
-        self.assertIn("at most 600", review.REVIEW_OUTPUT_SCHEMA["properties"]["summary"]["description"])
-        finding_schema = review.REVIEW_OUTPUT_SCHEMA["properties"]["findings"]["items"]
-        self.assertIn("Non-empty", finding_schema["properties"]["title"]["description"])
-        line_schema = finding_schema["properties"]["locations"]["items"]["properties"]["line"]
-        self.assertIn("Positive", line_schema["description"])
-        self.assertNotIn("minLength", json.dumps(review.REVIEW_OUTPUT_SCHEMA))
-        self.assertNotIn("maxLength", json.dumps(review.REVIEW_OUTPUT_SCHEMA))
-        self.assertNotIn("minimum", json.dumps(review.REVIEW_OUTPUT_SCHEMA))
-        self.assertEqual(parsed, {"summary": "clean", "findings": []})
-
-    def test_model_reads_max_tokens_stop_reason_from_message_delta(self) -> None:
-        response = sse_response([
-            ("content_block_start", {"index": 0, "content_block": {"type": "text", "text": ""}}),
-            ("content_block_delta", {"index": 0, "delta": {"type": "text_delta", "text": "private partial report"}}),
-            ("message_delta", {"delta": {"stop_reason": "max_tokens"}}),
-            ("message_stop", {"type": "message_stop"}),
-        ])
-        with patch.object(review.urllib.request, "urlopen", return_value=response):
-            with self.assertRaisesRegex(RuntimeError, "stop_reason=max_tokens") as raised:
-                review.call_model("test-key", "diff")
-        self.assertNotIn("private partial report", str(raised.exception))
-
-    def test_model_handles_max_tokens_before_requiring_text_block(self) -> None:
-        response = sse_response([
-            ("message_delta", {"delta": {"stop_reason": "max_tokens"}}),
-            ("message_stop", {"type": "message_stop"}),
-        ])
-        with patch.object(review.urllib.request, "urlopen", return_value=response):
-            with self.assertRaisesRegex(review.MaxTokensStopError, "stop_reason=max_tokens"):
-                review.call_model("test-key", "diff")
-
-    def test_empty_end_turn_reports_safe_stop_reason(self) -> None:
-        response = sse_response([
-            ("message_delta", {"delta": {"stop_reason": "end_turn"}}),
-            ("message_stop", {"type": "message_stop"}),
-        ])
-        with patch.object(review.urllib.request, "urlopen", return_value=response):
-            with self.assertRaisesRegex(RuntimeError, "no text block \\(stop_reason=end_turn\\)"):
-                review.call_model("test-key", "diff")
-
-    def test_refusal_fails_closed_without_splitting_or_retrying(self) -> None:
-        response = sse_response([
-            ("content_block_start", {"index": 0, "content_block": {"type": "text", "text": ""}}),
-            ("content_block_delta", {"index": 0, "delta": {"type": "text_delta", "text": "private refusal text"}}),
-            ("message_delta", {"delta": {"stop_reason": "refusal"}}),
-            ("message_stop", {"type": "message_stop"}),
-        ])
-
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            responses = root / "responses.json"
-            responses.write_text(json.dumps({
-                "schema": "metrum-ai-router-release-review-responses/v1", "acceptances": {},
-            }), encoding="utf-8")
-            args = [
-                "release_ai_review.py", "--base", "v4.8.0", "--head", "abc1234", "--tag", "v5.0.0",
-                "--responses", str(responses), "--artifact-cache", str(root / "cache.json"),
-                "--artifact-output", str(root / "artifact.json"), "--output", str(root / "review.md"),
-            ]
-            stderr = io.StringIO()
-            with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
-                 patch.object(review, "git_diff_names", return_value=["one.go"]), \
-                 patch.object(review, "git_binary_paths", return_value=[]), \
-                 patch.object(review, "git_diff_batches", return_value=[("one diff", ("one.go",))]) as batches, \
-                 patch.object(review.urllib.request, "urlopen", return_value=response) as urlopen, \
-                 patch("sys.argv", args), redirect_stderr(stderr):
-                self.assertEqual(review.main(), 2)
-            batches.assert_called_once_with(
-                "v4.8.0",
-                "abc1234",
-                max_bytes=review.INITIAL_DIFF_BYTES,
-                max_single_file_bytes=review.MAX_DIFF_BYTES,
-            )
-            urlopen.assert_called_once()
-            self.assertIn("stop_reason=refusal", stderr.getvalue())
-            self.assertNotIn("splitting", stderr.getvalue())
-            self.assertNotIn("private refusal text", stderr.getvalue())
-            self.assertFalse((root / "artifact.json").exists())
-
-    def test_uncached_changed_range_calls_model_once(self) -> None:
-        candidate = {"summary": "No blocking findings.", "findings": []}
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            args = [
-                "release_ai_review.py", "--base", "v4.8.0", "--head", "def5678", "--tag", "v5.0.0",
-                "--responses", str(root / "responses.json"), "--artifact-cache", str(root / "cache" / "review.json"),
-                "--artifact-output", str(root / "review-output" / "review.json"),
-                "--output", str(root / "review-output" / "AI-release-review.md"),
-            ]
-            (root / "responses.json").write_text(json.dumps({
-                "schema": "metrum-ai-router-release-review-responses/v1", "acceptances": {},
-            }), encoding="utf-8")
-            with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
-                 patch.object(review, "git_diff_names", return_value=["router.go"]), \
-                 patch.object(review, "git_binary_paths", return_value=[]), \
-                 patch.object(review, "git_diff_batches", return_value=[("changed range diff", ("router.go",))]), \
-                 patch.object(review, "call_model", return_value=candidate) as call_model, \
-                 patch("sys.argv", args):
-                self.assertEqual(review.main(), 0)
-            call_model.assert_called_once_with("test-key", "changed range diff", batch_number=1, batch_count=1)
-
-    def test_uncached_range_reviews_every_bounded_batch(self) -> None:
-        clean_batch = {"summary": "No blocking findings in this batch.", "findings": []}
-        blocking_batch = {
-            "summary": "One release blocker was found in this batch.",
-            "findings": [{
-                "severity": "blocking", "category": "release-integrity", "title": "Missing provenance check",
-                "rationale": "The release workflow does not verify the expected source ref.",
-                "locations": [{"file": "docs/release.md", "line": 7}],
-            }],
-        }
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            args = [
-                "release_ai_review.py", "--base", "v4.8.0", "--head", "def5678", "--tag", "v5.0.0",
-                "--responses", str(root / "responses.json"), "--artifact-cache", str(root / "cache" / "review.json"),
-                "--artifact-output", str(root / "review-output" / "review.json"),
-                "--output", str(root / "review-output" / "AI-release-review.md"),
-            ]
-            (root / "responses.json").write_text(json.dumps({
-                "schema": "metrum-ai-router-release-review-responses/v1", "acceptances": {},
-            }), encoding="utf-8")
-            batches = [("diff batch one", ("router.go",)), ("diff batch two", ("docs/release.md",))]
-            with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
-                 patch.object(review, "git_diff_names", return_value=["router.go", "docs/release.md"]), \
-                 patch.object(review, "git_binary_paths", return_value=[]), \
-                 patch.object(review, "git_diff_batches", return_value=batches), \
-                 patch.object(review, "call_model", side_effect=[clean_batch, blocking_batch]) as call_model, \
-                 patch("sys.argv", args):
-                self.assertEqual(review.main(), 1)
-            self.assertEqual(call_model.call_args_list, [
-                call("test-key", "diff batch one", batch_number=1, batch_count=2),
-                call("test-key", "diff batch two", batch_number=2, batch_count=2),
-            ])
-            artifact = json.loads((root / "review-output" / "review.json").read_text(encoding="utf-8"))
-            self.assertEqual(artifact["summary"],
-                             "Reviewed 2 text files across 2 bounded batches; recorded 0 binary file hashes and 0 generated-file checks within a 2-file release range.")
-            self.assertEqual(artifact["file_coverage"], [
-                {"file": "docs/release.md", "status": "reviewed"},
-                {"file": "router.go", "status": "reviewed"},
-            ])
-            self.assertEqual(len(artifact["findings"]), 1)
-            self.assertEqual(artifact["findings"][0]["severity"], "blocking")
-            self.assertIn("Decision: **BLOCK**", (root / "review-output" / "AI-release-review.md").read_text(encoding="utf-8"))
 
     def test_artifact_requires_explicit_verification_for_generated_coverage(self) -> None:
         candidate = {"summary": "No blockers found.", "findings": []}
@@ -499,72 +291,20 @@ class ReleaseAIReviewTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "coverage does not match the diff"):
             review.validate_artifact(artifact, "v4.8.0", "abc1234", set())
 
-    def test_binary_changes_are_covered_by_before_and_after_sha256(self) -> None:
-        before = "a" * 64
-        after = "b" * 64
-        candidate = {"summary": "Binary assets have recorded content hashes.", "findings": []}
-        artifact = review.build_artifact(candidate, "v4.8.0", "abc1234", file_coverage=[{
-            "file": "assets/logo.png", "status": "binary", "sha256_before": before, "sha256_after": after,
+    def test_binary_artifact_coverage_binds_before_and_after_hashes(self) -> None:
+        before, after = "a" * 64, "b" * 64
+        artifact = review.build_artifact({"summary": "Binary files are hash-covered.", "findings": []},
+                                         "v4.8.0", "abc1234", file_coverage=[{
+            "file": "assets/image.png", "status": "binary",
+            "sha256_before": before, "sha256_after": after,
         }])
-        self.assertEqual(artifact["file_coverage"], [{
-            "file": "assets/logo.png", "status": "binary", "sha256_before": before, "sha256_after": after,
-        }])
-        review.validate_artifact(artifact, "v4.8.0", "abc1234", {"assets/logo.png"}, {
-            "assets/logo.png": {"before": before, "after": after},
+        review.validate_artifact(artifact, "v4.8.0", "abc1234", {"assets/image.png"}, {
+            "assets/image.png": {"before": before, "after": after},
         })
         with self.assertRaisesRegex(ValueError, "binary hashes do not match"):
-            review.validate_artifact(artifact, "v4.8.0", "abc1234", {"assets/logo.png"}, {
-                "assets/logo.png": {"before": before, "after": "c" * 64},
+            review.validate_artifact(artifact, "v4.8.0", "abc1234", {"assets/image.png"}, {
+                "assets/image.png": {"before": before, "after": "c" * 64},
             })
-
-    def test_binary_detection_and_hashing_use_numstat_and_git_objects(self) -> None:
-        numstat = type("Result", (), {"stdout": b"-\t-\tassets/logo.png\0"})()
-        with patch.object(review.subprocess, "run", side_effect=[numstat]) as run:
-            self.assertEqual(review.git_binary_paths("base", "head"), ["assets/logo.png"])
-        self.assertIn("--numstat", run.call_args.args[0])
-        with patch.object(review.subprocess, "run", side_effect=[
-            type("Result", (), {"stdout": b"old binary"})(),
-            type("Result", (), {"stdout": b"new binary"})(),
-        ]):
-            hashes = review.git_binary_hashes("base", "head", {"assets/logo.png"})
-        import hashlib
-        self.assertEqual(hashes["assets/logo.png"], {
-            "before": hashlib.sha256(b"old binary").hexdigest(),
-            "after": hashlib.sha256(b"new binary").hexdigest(),
-        })
-
-    def test_openapi_spec_uses_named_generated_check_instead_of_text_diff(self) -> None:
-        paths = ["docs/specs/admin-v1.openapi.json", "assets/logo.png", "src/change.go"]
-        with patch.object(review, "git_diff_names", return_value=paths), \
-             patch.object(review, "git_binary_paths", return_value=["assets/logo.png"]), \
-             patch.object(review.subprocess, "run", return_value=type("Result", (), {"stdout": "diff --git a/src/change.go b/src/change.go\n+change\n"})()) as run:
-            batches = review.git_diff_batches("base", "head")
-        self.assertEqual(batches[0][1], ("src/change.go",))
-        self.assertTrue(all("admin-v1.openapi.json" not in command.args[0][-1] and "logo.png" not in command.args[0][-1]
-                            for command in run.call_args_list))
-        self.assertEqual(review.GENERATED_FILE_VERIFICATION_ALLOWLIST["docs/specs/admin-v1.openapi.json"],
-                         "supplemental-checks / generated-release-files")
-
-    def test_fresh_batches_must_match_git_diff_name_only_paths(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            responses = root / "responses.json"
-            responses.write_text(json.dumps({
-                "schema": "metrum-ai-router-release-review-responses/v1", "acceptances": {},
-            }), encoding="utf-8")
-            args = [
-                "release_ai_review.py", "--base", "v4.8.0", "--head", "abc1234", "--tag", "v5.0.0",
-                "--responses", str(responses), "--artifact-cache", str(root / "absent-cache.json"),
-                "--artifact-output", str(root / "artifact.json"), "--output", str(root / "review.md"),
-            ]
-            with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
-                 patch.object(review, "git_diff_names", return_value=["one.go", "two.go"]), \
-                 patch.object(review, "git_binary_paths", return_value=[]), \
-                 patch.object(review, "git_diff_batches", return_value=[("one diff", ("one.go",))]), \
-                 patch.object(review, "call_model") as call_model, patch("sys.argv", args):
-                self.assertEqual(review.main(), 2)
-            call_model.assert_not_called()
-            self.assertFalse((root / "artifact.json").exists())
 
     def test_cached_artifact_with_incomplete_file_coverage_fails_closed(self) -> None:
         candidate = {"summary": "No blockers found.", "findings": []}
@@ -585,163 +325,160 @@ class ReleaseAIReviewTest(unittest.TestCase):
                 "--artifact-output", str(root / "artifact.json"), "--output", str(root / "review.md"),
             ]
             with patch.object(review, "git_diff_names", return_value=["one.go", "two.go"]), \
-            patch.object(review, "git_binary_paths", return_value=[]), \
-                 patch.object(review, "call_model") as call_model, patch("sys.argv", args):
+                 patch.object(review, "changed_file_metadata", return_value=[
+                     {"path": "one.go", "size_bytes": 1, "added_lines": 1, "deleted_lines": 0},
+                     {"path": "two.go", "size_bytes": 1, "added_lines": 1, "deleted_lines": 0},
+                 ]), \
+                 patch.object(review, "run_agentic_review") as run_review, patch("sys.argv", args):
                 self.assertEqual(review.main(), 2)
-            call_model.assert_not_called()
+            run_review.assert_not_called()
             self.assertFalse((root / "review.md").exists())
 
-    def test_uncached_review_stops_and_fails_when_batch_two_of_three_fails(self) -> None:
-        clean_batch = {"summary": "No blocking findings in this batch.", "findings": []}
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            args = [
-                "release_ai_review.py", "--base", "v4.8.0", "--head", "def5678", "--tag", "v5.0.0",
-                "--responses", str(root / "responses.json"), "--artifact-cache", str(root / "cache" / "review.json"),
-                "--artifact-output", str(root / "review-output" / "review.json"),
-                "--output", str(root / "review-output" / "AI-release-review.md"),
-            ]
-            (root / "responses.json").write_text(json.dumps({
-                "schema": "metrum-ai-router-release-review-responses/v1", "acceptances": {},
-            }), encoding="utf-8")
-            batches = [
-                ("diff batch one", ("one.go",)),
-                ("diff batch two", ("two.go",)),
-                ("diff batch three", ("three.go",)),
-            ]
-            with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
-                 patch.object(review, "git_diff_names", return_value=["one.go", "two.go", "three.go"]), \
-                 patch.object(review, "git_binary_paths", return_value=[]), \
-                 patch.object(review, "git_diff_batches", return_value=batches), \
-                 patch.object(review, "call_model", side_effect=[clean_batch, RuntimeError("AI release review request failed")]) as call_model, \
-                 patch("sys.argv", args):
-                self.assertEqual(review.main(), 2)
-            self.assertEqual(call_model.call_count, 2)
-            self.assertFalse((root / "review-output" / "review.json").exists())
-            self.assertFalse((root / "review-output" / "AI-release-review.md").exists())
+    def test_agentic_fake_server_reads_diff_then_returns_verdict_and_caches_stable_prefix(self) -> None:
+        verdict = '{"summary":"No blocking issues found.","findings":[]}'
+        changed = [
+            {"path": "src/a.py", "size_bytes": 14, "added_lines": 1, "deleted_lines": 0},
+            {"path": "assets/image.png", "size_bytes": 48, "added_lines": None, "deleted_lines": None,
+             "binary": True, "coverage": "binary", "sha256_before": "a" * 64, "sha256_after": "b" * 64},
+        ]
+        with FakeMessagesServer([
+            tool_turn("read_diff", {"path": "src/a.py", "start": 0, "max_bytes": 256}),
+            final_turn(verdict),
+        ]) as server, \
+             patch.object(review, "API_URL", server.url), \
+             patch.object(review, "changed_file_metadata", return_value=changed), \
+             patch.object(review, "_git_bytes", return_value=b"diff --git a/src/a.py b/src/a.py\n+new\n"):
+            result, covered, input_tokens, output_tokens = review.run_agentic_review("test-key", "base", "head")
+        self.assertEqual(result["summary"], "No blocking issues found.")
+        self.assertEqual(covered, {"src/a.py"})
+        self.assertEqual((input_tokens, output_tokens), (35, 16))
+        first = server.requests[0]
+        self.assertNotIn("diff --git", first["messages"][0]["content"])
+        self.assertIn("src/a.py", first["messages"][0]["content"])
+        self.assertIn("assets/image.png", first["messages"][0]["content"])
+        self.assertEqual(first["system"][0]["cache_control"], {"type": "ephemeral"})
+        self.assertEqual(first["tools"][-1]["cache_control"], {"type": "ephemeral"})
+        self.assertEqual(first["output_config"]["effort"], "medium")
+        self.assertEqual(first["max_tokens"], 64000)
+        self.assertTrue(first["stream"])
+        self.assertNotIn("temperature", first)
+        self.assertNotIn("thinking", first)
+        self.assertEqual(len(server.requests), 2)
+        assistant_blocks = server.requests[1]["messages"][1]["content"]
+        self.assertEqual(assistant_blocks[0]["thinking"], "brief reasoning")
+        self.assertEqual(assistant_blocks[0]["signature"], "signed-block")
 
-    def test_max_tokens_splits_only_the_failed_batch(self) -> None:
-        clean_batch = {"summary": "No blockers found.", "findings": []}
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            args = [
-                "release_ai_review.py", "--base", "v4.8.0", "--head", "def5678", "--tag", "v5.0.0",
-                "--responses", str(root / "responses.json"), "--artifact-cache", str(root / "cache" / "review.json"),
-                "--artifact-output", str(root / "review-output" / "review.json"),
-                "--output", str(root / "review-output" / "AI-release-review.md"),
-            ]
-            (root / "responses.json").write_text(json.dumps({
-                "schema": "metrum-ai-router-release-review-responses/v1", "acceptances": {},
-            }), encoding="utf-8")
-            def batches(_base, _head, *, max_bytes, only_paths=None, max_single_file_bytes=None):
-                if only_paths is None:
-                    self.assertEqual(max_bytes, review.INITIAL_DIFF_BYTES)
-                    return [("passed diff", ("passed.go",)), ("large combined diff", ("two-a.go", "two-b.go"))]
-                self.assertEqual(only_paths, {"two-a.go", "two-b.go"})
-                self.assertEqual(max_bytes, review.INITIAL_DIFF_BYTES // 2)
-                self.assertEqual(max_single_file_bytes, review.MAX_DIFF_BYTES)
-                return [("smaller diff two-a", ("two-a.go",)), ("smaller diff two-b", ("two-b.go",))]
-            with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
-                 patch.object(review, "git_diff_names", return_value=["passed.go", "two-a.go", "two-b.go"]), \
-                 patch.object(review, "git_binary_paths", return_value=[]), \
-                 patch.object(review, "git_diff_batches", side_effect=batches) as git_diff_batches, \
-                 patch.object(review, "call_model", side_effect=[
-                     clean_batch,
-                     review.MaxTokensStopError("AI release review response ended with stop_reason=max_tokens"),
-                     clean_batch,
-                     clean_batch,
-                 ]) as call_model, \
-                 patch("sys.argv", args):
-                self.assertEqual(review.main(), 0)
-            self.assertEqual(git_diff_batches.call_count, 2)
-            self.assertEqual(git_diff_batches.call_args_list[1].kwargs["max_bytes"], review.INITIAL_DIFF_BYTES // 2)
-            self.assertEqual(call_model.call_args_list, [
-                call("test-key", "passed diff", batch_number=1, batch_count=2),
-                call("test-key", "large combined diff", batch_number=2, batch_count=2),
-                call("test-key", "smaller diff two-a", batch_number=2, batch_count=3),
-                call("test-key", "smaller diff two-b", batch_number=3, batch_count=3),
-            ])
-            self.assertIn("Decision: **PASS**", (root / "review-output" / "AI-release-review.md").read_text(encoding="utf-8"))
+    def test_agentic_fake_server_fails_closed_when_changed_file_diff_is_not_read(self) -> None:
+        changed = [{"path": "src/a.py", "size_bytes": 14, "added_lines": 1, "deleted_lines": 0}]
+        with FakeMessagesServer([final_turn('{"summary":"Looks clear.","findings":[]}')]) as server, \
+             patch.object(review, "API_URL", server.url), \
+             patch.object(review, "changed_file_metadata", return_value=changed):
+            with self.assertRaisesRegex(ValueError, "coverage is incomplete"):
+                review.run_agentic_review("test-key", "base", "head")
 
-    def test_request_timeout_splits_only_the_failed_batch(self) -> None:
-        clean_batch = {"summary": "No blockers found.", "findings": []}
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            responses = root / "responses.json"
-            responses.write_text(json.dumps({
-                "schema": "metrum-ai-router-release-review-responses/v1", "acceptances": {},
-            }), encoding="utf-8")
-            args = [
-                "release_ai_review.py", "--base", "v4.8.0", "--head", "def5678", "--tag", "v5.0.0",
-                "--responses", str(responses), "--artifact-cache", str(root / "cache" / "review.json"),
-                "--artifact-output", str(root / "review-output" / "review.json"),
-                "--output", str(root / "review-output" / "AI-release-review.md"),
-            ]
+    def test_agentic_fake_server_fails_closed_at_turn_cap(self) -> None:
+        changed = [{"path": "src/a.py", "size_bytes": 14, "added_lines": 1, "deleted_lines": 0}]
+        with FakeMessagesServer([tool_turn("list_changed_files", {})]) as server, \
+             patch.object(review, "API_URL", server.url), \
+             patch.object(review, "changed_file_metadata", return_value=changed), \
+             patch.object(review, "MAX_REVIEW_TURNS", 1):
+            with self.assertRaisesRegex(ValueError, "maximum turn limit"):
+                review.run_agentic_review("test-key", "base", "head")
 
-            def batches(_base, _head, *, max_bytes, only_paths=None, max_single_file_bytes=None):
-                if only_paths is None:
-                    self.assertEqual(max_bytes, review.INITIAL_DIFF_BYTES)
-                    return [("passed diff", ("passed.go",)), ("slow combined diff", ("two-a.go", "two-b.go"))]
-                self.assertEqual(only_paths, {"two-a.go", "two-b.go"})
-                self.assertEqual(max_bytes, review.INITIAL_DIFF_BYTES // 2)
-                self.assertEqual(max_single_file_bytes, review.MAX_DIFF_BYTES)
-                return [("smaller diff two-a", ("two-a.go",)), ("smaller diff two-b", ("two-b.go",))]
+    def test_agentic_fake_server_refusal_fails_closed(self) -> None:
+        changed = [{"path": "src/a.py", "size_bytes": 14, "added_lines": 1, "deleted_lines": 0}]
+        with FakeMessagesServer([final_turn("private refusal", stop_reason="refusal")]) as server, \
+             patch.object(review, "API_URL", server.url), \
+             patch.object(review, "changed_file_metadata", return_value=changed):
+            with self.assertRaisesRegex(RuntimeError, "refused") as raised:
+                review.run_agentic_review("test-key", "base", "head")
+        self.assertNotIn("private refusal", str(raised.exception))
 
-            with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
-                 patch.object(review, "git_diff_names", return_value=["passed.go", "two-a.go", "two-b.go"]), \
-                 patch.object(review, "git_binary_paths", return_value=[]), \
-                 patch.object(review, "git_diff_batches", side_effect=batches) as build_batches, \
-                 patch.object(review, "call_model", side_effect=[
-                     clean_batch,
-                     review.RequestTimeoutError("AI release review request timed out"),
-                     clean_batch,
-                     clean_batch,
-                 ]) as call_model, \
-                 patch("sys.argv", args):
-                self.assertEqual(review.main(), 0)
-            self.assertEqual(build_batches.call_count, 2)
-            self.assertEqual(call_model.call_args_list, [
-                call("test-key", "passed diff", batch_number=1, batch_count=2),
-                call("test-key", "slow combined diff", batch_number=2, batch_count=2),
-                call("test-key", "smaller diff two-a", batch_number=2, batch_count=3),
-                call("test-key", "smaller diff two-b", batch_number=3, batch_count=3),
-            ])
-            self.assertIn("Decision: **PASS**", (root / "review-output" / "AI-release-review.md").read_text(encoding="utf-8"))
+    def test_agentic_tool_paths_reject_traversal_and_docs_outside_allowlist(self) -> None:
+        changed = {"src/a.py": {"path": "src/a.py"}}
+        reads: dict[str, list[tuple[int, int, int]]] = {}
+        with self.assertRaisesRegex(ValueError, "invalid"):
+            review.execute_client_tool("read_diff", {"path": "../secret", "start": 0, "max_bytes": 10},
+                                       base="base", head="head", changed=changed, diff_reads=reads)
+        with self.assertRaisesRegex(ValueError, "eligible changed file"):
+            review.execute_client_tool("read_diff", {"path": "assets/image.png", "start": 0, "max_bytes": 10},
+                                       base="base", head="head", changed={
+                                           "assets/image.png": {"path": "assets/image.png", "binary": True},
+                                       }, diff_reads=reads)
+        with self.assertRaisesRegex(ValueError, "allowed documentation"):
+            review.execute_client_tool("read_doc", {"path": "secrets.txt", "start": 0, "max_bytes": 10},
+                                       base="base", head="head", changed=changed, diff_reads=reads)
+        with self.assertRaisesRegex(ValueError, "generated and covered"):
+            review.execute_client_tool("read_doc", {"path": "docs/specs/admin-v1.openapi.json", "start": 0, "max_bytes": 10},
+                                       base="base", head="head", changed=changed, diff_reads=reads)
+        with self.assertRaisesRegex(ValueError, "invalid"):
+            review.execute_client_tool("read_doc", {"path": "docs/../secrets.txt", "start": 0, "max_bytes": 10},
+                                       base="base", head="head", changed=changed, diff_reads=reads)
+        fake_changed = [{"path": "src/a.py", "size_bytes": 8, "added_lines": 1, "deleted_lines": 0}]
+        with FakeMessagesServer([
+            tool_turn("read_diff", {"path": "../secret", "start": 0, "max_bytes": 10}),
+            final_turn('{"summary":"No issues.","findings":[]}'),
+        ]) as server, \
+             patch.object(review, "API_URL", server.url), \
+             patch.object(review, "changed_file_metadata", return_value=fake_changed), \
+             patch.object(review, "_git_bytes") as git_bytes:
+            with self.assertRaisesRegex(ValueError, "coverage is incomplete"):
+                review.run_agentic_review("test-key", "base", "head")
+        git_bytes.assert_not_called()
+        self.assertIn("tool path is invalid", server.requests[1]["messages"][2]["content"][0]["content"])
 
-    def test_repeated_max_tokens_at_floor_fails_without_retry_loop(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            responses = root / "responses.json"
-            responses.write_text(json.dumps({
-                "schema": "metrum-ai-router-release-review-responses/v1", "acceptances": {},
-            }), encoding="utf-8")
-            args = [
-                "release_ai_review.py", "--base", "v4.8.0", "--head", "abc1234", "--tag", "v5.0.0",
-                "--responses", str(responses), "--artifact-cache", str(root / "cache.json"),
-                "--artifact-output", str(root / "artifact.json"), "--output", str(root / "review.md"),
-            ]
-            def batches(_base, _head, *, max_bytes, only_paths=None, max_single_file_bytes=None):
-                return [(f"diff limited to {max_bytes}", ("one.go",))]
+    def test_changed_file_list_includes_numstat_and_byte_size(self) -> None:
+        with patch.object(review, "_git_bytes", side_effect=[
+            b"4\t2\tsrc/a.py\0-\t-\tassets/image.png\0",
+            b"old binary",
+            b"new binary",
+            b"23",
+            b"11",
+        ]):
+            metadata = review.changed_file_metadata("base", "head")
+        self.assertEqual(metadata, [
+            {"path": "src/a.py", "size_bytes": 23, "added_lines": 4, "deleted_lines": 2},
+            {"path": "assets/image.png", "size_bytes": 11, "added_lines": None, "deleted_lines": None,
+             "binary": True, "coverage": "binary",
+             "sha256_before": hashlib.sha256(b"old binary").hexdigest(),
+             "sha256_after": hashlib.sha256(b"new binary").hexdigest()},
+        ])
 
-            stderr = io.StringIO()
-            with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test-key"}), \
-                 patch.object(review, "git_diff_names", return_value=["one.go"]), \
-                 patch.object(review, "git_binary_paths", return_value=[]), \
-                 patch.object(review, "git_diff_batches", side_effect=batches) as batch_builder, \
-                 patch.object(review, "call_model", side_effect=review.MaxTokensStopError(
-                     "AI release review response ended with stop_reason=max_tokens"
-                 )) as call_model, \
-                 patch("sys.argv", args), redirect_stderr(stderr):
-                self.assertEqual(review.main(), 2)
-            self.assertEqual(call_model.call_count, 5)
-            self.assertEqual(batch_builder.call_count, 5)
-            self.assertEqual(
-                [entry.kwargs["max_bytes"] for entry in batch_builder.call_args_list],
-                [300_000, 150_000, 75_000, 37_500, 32_768],
-            )
-            self.assertIn("32768-byte minimum", stderr.getvalue())
-            self.assertEqual(stderr.getvalue().count("split into"), 4)
-            self.assertFalse((root / "artifact.json").exists())
+    def test_agentic_input_token_cap_fails_closed(self) -> None:
+        changed = [{"path": "src/a.py", "size_bytes": 14, "added_lines": 1, "deleted_lines": 0}]
+        with FakeMessagesServer([final_turn('{"summary":"Looks clear.","findings":[]}')]) as server, \
+             patch.object(review, "API_URL", server.url), \
+             patch.object(review, "changed_file_metadata", return_value=changed), \
+             patch.object(review, "MAX_REVIEW_INPUT_TOKENS", 0):
+            with self.assertRaisesRegex(ValueError, "input-token budget"):
+                review.run_agentic_review("test-key", "base", "head")
+
+    def test_agentic_max_tokens_retries_same_turn_once(self) -> None:
+        changed = [{"path": "docs/specs/admin-v1.openapi.json", "size_bytes": 14, "added_lines": 1, "deleted_lines": 0}]
+        with FakeMessagesServer([
+            final_turn("", stop_reason="max_tokens"),
+            final_turn('{"summary":"No issues.","findings":[]}'),
+        ]) as server, \
+             patch.object(review, "API_URL", server.url), \
+             patch.object(review, "changed_file_metadata", return_value=changed):
+            result, covered, _, _ = review.run_agentic_review("test-key", "base", "head")
+        self.assertEqual(result["summary"], "No issues.")
+        self.assertEqual(covered, set())
+        self.assertEqual(len(server.requests), 2)
+        self.assertEqual(server.requests[0]["messages"], server.requests[1]["messages"])
+
+    def test_agentic_repeated_max_tokens_fails_closed_after_one_retry(self) -> None:
+        changed = [{"path": "docs/specs/admin-v1.openapi.json", "size_bytes": 14, "added_lines": 1, "deleted_lines": 0}]
+        with FakeMessagesServer([
+            final_turn("", stop_reason="max_tokens"),
+            final_turn("", stop_reason="max_tokens"),
+        ]) as server, \
+             patch.object(review, "API_URL", server.url), \
+             patch.object(review, "changed_file_metadata", return_value=changed):
+            with self.assertRaisesRegex(RuntimeError, "repeatedly reached max_tokens"):
+                review.run_agentic_review("test-key", "base", "head")
+        self.assertEqual(len(server.requests), 2)
+        self.assertEqual(review.MAX_REVIEW_INPUT_TOKENS, 2_000_000)
 
 
 if __name__ == "__main__":
