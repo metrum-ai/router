@@ -39,6 +39,8 @@ func (b *providerSpendBreaker) allow(provider string, cfg ProviderSpendBreakerCo
 	day := now.Format("2006-01-02")
 	h := b.windowLocked(b.hourly, provider, hour, "hour")
 	d := b.windowLocked(b.daily, provider, day, "day")
+	b.updateTripLocked(provider, "hour", &h, cfg.HourlyUSD)
+	b.updateTripLocked(provider, "day", &d, cfg.DailyUSD)
 	b.hourly[provider] = h
 	b.daily[provider] = d
 	return !h.tripped && !d.tripped
@@ -57,16 +59,23 @@ func (b *providerSpendBreaker) add(provider string, cfg ProviderSpendBreakerConf
 	d := b.windowLocked(b.daily, provider, day, "day")
 	h.spent = roundUSD(h.spent + cost)
 	d.spent = roundUSD(d.spent + cost)
-	if cfg.HourlyUSD > 0 && !h.tripped && h.spent >= cfg.HourlyUSD {
-		h.tripped = true
-		b.event(provider, "trip", "hour", cfg.HourlyUSD)
-	}
-	if cfg.DailyUSD > 0 && !d.tripped && d.spent >= cfg.DailyUSD {
-		d.tripped = true
-		b.event(provider, "trip", "day", cfg.DailyUSD)
-	}
+	b.updateTripLocked(provider, "hour", &h, cfg.HourlyUSD)
+	b.updateTripLocked(provider, "day", &d, cfg.DailyUSD)
 	b.hourly[provider] = h
 	b.daily[provider] = d
+}
+
+func (b *providerSpendBreaker) updateTripLocked(provider, label string, window *providerSpendWindow, ceiling float64) {
+	tripped := ceiling > 0 && window.spent >= ceiling
+	if tripped == window.tripped {
+		return
+	}
+	window.tripped = tripped
+	if tripped {
+		b.event(provider, "trip", label, ceiling)
+	} else {
+		b.event(provider, "reset", label, 0)
+	}
 }
 
 func (b *providerSpendBreaker) windowLocked(windows map[string]providerSpendWindow, provider, key, label string) providerSpendWindow {
