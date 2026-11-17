@@ -1157,6 +1157,37 @@ func TestStreamToolCallHoldValidationFailureFailsClosedE2E(t *testing.T) {
 	}
 }
 
+func TestStreamToolCallHoldWaitsForEveryChoiceThroughHandler(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, `data: {"id":"multi","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_a","type":"function","function":{"name":"read_file","arguments":"{\"path\":\"a.txt\"}"}}]},"finish_reason":null},{"index":1,"delta":{"tool_calls":[{"index":0,"id":"call_b","type":"function","function":{"name":"read_file","arguments":"{\"path\":"}}]},"finish_reason":null}]}`+"\n\n")
+		_, _ = io.WriteString(w, `data: {"id":"multi","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"},{"index":1,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\"b.txt\"}"}}]},"finish_reason":null}]}`+"\n\n")
+		_, _ = io.WriteString(w, `data: {"id":"multi","choices":[{"index":1,"delta":{},"finish_reason":"tool_calls"}]}`+"\n\n")
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer upstream.Close()
+	cfg := toolRoutingConfig(t, upstream.URL, t.TempDir(), ToolRoutingConfig{
+		Mode:      "observe",
+		Streaming: ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20},
+	})
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	body := strings.Replace(toolRoutingRequestBody, "%s", "agent-tools", 1)
+	body = strings.Replace(body, `"stream":false`, `"stream":true`, 1)
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	recorder := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(recorder, req)
+	response := recorder.Body.String()
+	firstFinish := strings.Index(response, `"finish_reason":"tool_calls"`)
+	if recorder.Code != http.StatusOK || !strings.Contains(response, `"id":"call_a"`) || !strings.Contains(response, `"id":"call_b"`) || !strings.Contains(response, `a.txt`) || !strings.Contains(response, `b.txt`) || firstFinish < 0 || strings.Index(response, `"id":"call_b"`) > firstFinish {
+		t.Fatalf("multi-choice tool calls were released before all choices completed or lost their fragments: status=%d body=%s", recorder.Code, response)
+	}
+}
+
 func TestStreamToolCallHoldLocalhostContinuationE2E(t *testing.T) {
 	var upstreamRequests atomic.Int32
 	heldToolFrames := make(chan struct{})

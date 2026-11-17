@@ -5,6 +5,10 @@ doc_type: reference
 
 # Upgrade Guide
 
+## Streaming tool calls with multiple choices
+
+When streaming Chat completions with tool-call inspection enabled, tool calls remain held until every choice that contains a tool call has finished. No configuration migration is required.
+
 ## v4.8 to v5.0.0 breaking-change map
 
 Review these changes before a rolling upgrade. Router v5 and v4.8 can read some

@@ -13,20 +13,22 @@ import (
 )
 
 type streamToolCallHold struct {
-	timeout      time.Duration
-	maxBytes     int
-	started      time.Time
-	usedBytes    int
-	budget       stream.LineBufferBudget
-	reserved     int64
-	emitting     int64
-	held         []stream.Event
-	calls        *toolCallAccumulator
-	inspectors   []toolCallInspector
-	indexes      map[int]bool
-	hostedDeltas map[int]string
-	idle         *streamIdleReader
-	baseIdle     time.Duration
+	timeout             time.Duration
+	maxBytes            int
+	started             time.Time
+	usedBytes           int
+	budget              stream.LineBufferBudget
+	reserved            int64
+	emitting            int64
+	held                []stream.Event
+	calls               *toolCallAccumulator
+	inspectors          []toolCallInspector
+	indexes             map[int]bool
+	chatToolChoices     map[int]bool
+	chatFinishedChoices map[int]bool
+	hostedDeltas        map[int]string
+	idle                *streamIdleReader
+	baseIdle            time.Duration
 }
 
 // clearStreamToolCallHold starts a clean per-target attempt and releases any
@@ -285,11 +287,14 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 				if choice == nil {
 					continue
 				}
+				choiceIndex := streamToolIndex(choice["index"])
 				if finish := stringValue(choice["finish_reason"]); finish != "" {
-					terminal, terminalReason = true, finish
+					if h.chatFinishedChoices == nil {
+						h.chatFinishedChoices = make(map[int]bool)
+					}
+					h.chatFinishedChoices[choiceIndex] = true
 				}
 				delta, _ := choice["delta"].(map[string]any)
-				choiceIndex := streamToolIndex(choice["index"])
 				if rawLegacy, exists := delta["function_call"]; exists {
 					legacy, ok := rawLegacy.(map[string]any)
 					if !ok {
@@ -302,6 +307,7 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 					}
 					heldChoices = append(heldChoices, heldChoice)
 					legacyIndex := chatStreamCallIndex(choiceIndex, maxToolCallsPerResponse-1)
+					h.markChatToolChoice(choiceIndex)
 					h.calls.addDelta("openai-chat", legacyIndex, "", stringValue(legacy["name"]), stringValue(legacy["arguments"]))
 					h.indexes[legacyIndex] = true
 					delete(delta, "function_call")
@@ -330,6 +336,7 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 						continue
 					}
 					idx := chatStreamCallIndex(choiceIndex, streamToolIndex(call["index"]))
+					h.markChatToolChoice(choiceIndex)
 					function, _ := call["function"].(map[string]any)
 					if function == nil {
 						function = map[string]any{}
@@ -366,6 +373,18 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 					}
 				}
 			}
+			if len(h.chatToolChoices) > 0 {
+				terminal = true
+				for choiceIndex := range h.chatToolChoices {
+					if !h.chatFinishedChoices[choiceIndex] {
+						terminal = false
+						break
+					}
+				}
+				if terminal {
+					terminalReason = "tool_calls"
+				}
+			}
 		}
 	}
 	if h.calls.truncated() {
@@ -391,6 +410,23 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 		h.usedBytes += frameBytes
 		h.reserved += int64(frameBytes)
 		h.held = append(h.held, event)
+	}
+	if eventType == "" && !terminal && len(h.held) > 0 {
+		if chatPayloadHasFinishReason(payload) && (passThrough.Data != nil || passThrough.Name != "" || passThrough.Type != "") {
+			frameBytes := len(passThrough.Data) + len(passThrough.Name) + 8
+			if frameBytes > h.maxBytes-h.usedBytes {
+				h.reset()
+				return nil, upstreamError{Class: "tool_call_hold_too_large", Message: "tool-call inspection hold exceeded hold_max_bytes", Committed: true, Fallbackable: false}
+			}
+			if h.budget != nil && !h.budget.TryAcquire(int64(frameBytes)) {
+				h.reset()
+				return nil, upstreamError{Class: "upstream_stream_buffer_limit", Message: "process-wide streaming buffer budget exhausted while holding a tool call", Committed: true, Fallbackable: false}
+			}
+			h.usedBytes += frameBytes
+			h.reserved += int64(frameBytes)
+			h.held = append(h.held, passThrough)
+			passThrough = stream.Event{}
+		}
 	}
 	out := make([]stream.Event, 0, len(h.held)+1)
 	if terminal && len(h.held) > 0 {
@@ -693,7 +729,16 @@ func (h *streamToolCallHold) clear() {
 	h.held = nil
 	h.calls = newToolCallAccumulator()
 	h.indexes = map[int]bool{}
+	h.chatToolChoices = nil
+	h.chatFinishedChoices = nil
 	h.hostedDeltas = nil
+}
+
+func (h *streamToolCallHold) markChatToolChoice(index int) {
+	if h.chatToolChoices == nil {
+		h.chatToolChoices = make(map[int]bool)
+	}
+	h.chatToolChoices[index] = true
 }
 
 func chatStreamCallIndex(choiceIndex, callIndex int) int {
@@ -733,4 +778,15 @@ func choicesContainOnlyNonTerminalToolData(payload map[string]any) bool {
 		}
 	}
 	return true
+}
+
+func chatPayloadHasFinishReason(payload map[string]any) bool {
+	choices, _ := payload["choices"].([]any)
+	for _, rawChoice := range choices {
+		choice, _ := rawChoice.(map[string]any)
+		if stringValue(choice["finish_reason"]) != "" {
+			return true
+		}
+	}
+	return false
 }
