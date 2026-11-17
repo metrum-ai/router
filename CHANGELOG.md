@@ -9,6 +9,7 @@
 - Align the release procedure with the committed AI review artifact gate and document the required artifact preparation path.
 - Correct the upgrade guide to describe successful local sinkhole responses for unknown or disallowed honeytoken model names.
 - Align OpenAI and Anthropic compatibility matrix versions with the pinned Python SDK lockfile and regenerate the published matrix page.
+- Read control-plane backup tables from coordinated, repeatable database snapshots so related rows and their audit anchors cannot come from different writes.
 
 - Align the standalone cache isolation guide with v5 caller-scoped response-cache and vLLM prefix-salt behavior; document that SGLang prefix isolation is unsupported.
 - Keep disabled callers with intentionally empty verifiers visible in the admin caller list while rejecting active callers without verifiers.

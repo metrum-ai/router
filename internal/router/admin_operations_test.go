@@ -14,9 +14,11 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -165,6 +167,70 @@ func TestAdminOperationAuthorizationIsResourceScoped(t *testing.T) {
 
 func TestControlPlaneBackupRestoreThroughAdminAPI(t *testing.T) {
 	runControlPlaneBackupRestoreThroughAdminAPI(t)
+}
+
+func TestControlPlaneBackupUsesOneSnapshotPerDatabase(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "snapshot.sqlite") + "?_journal_mode=WAL&_busy_timeout=5000&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
+	db, err := gorm.Open(sqlite.Open(path), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer, err := gorm.Open(sqlite.Open(path), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, handle := range []*gorm.DB{db, writer} {
+		sqlDB, err := handle.DB()
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = sqlDB.Close() })
+	}
+	if err := db.Exec("CREATE TABLE snapshot_first (id INTEGER PRIMARY KEY, value TEXT NOT NULL)").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("CREATE TABLE snapshot_second (id INTEGER PRIMARY KEY, value TEXT NOT NULL)").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO snapshot_first (id,value) VALUES (1,'first')").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO snapshot_second (id,value) VALUES (1,'before')").Error; err != nil {
+		t.Fatal(err)
+	}
+	rowsStarted := make(chan struct{})
+	writerDone := make(chan struct{})
+	writerErr := make(chan error, 1)
+	var once sync.Once
+	if err := db.Callback().Row().After("gorm:row").Register("test:backup_snapshot_interleave", func(tx *gorm.DB) {
+		if tx.Statement.Table == "snapshot_first" {
+			once.Do(func() {
+				close(rowsStarted)
+				<-writerDone
+			})
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		<-rowsStarted
+		writerErr <- writer.Exec("UPDATE snapshot_second SET value='after' WHERE id=1").Error
+		close(writerDone)
+	}()
+	snapshot, err := snapshotControlPlaneDatabase(context.Background(), db, []string{"snapshot_first", "snapshot_second"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := <-writerErr; err != nil {
+		t.Fatal(err)
+	}
+	var got string
+	if err := json.Unmarshal(snapshot.Tables[1].Rows[0]["value"].Value, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got != "before" {
+		t.Fatalf("backup mixed table versions: second value=%q, want snapshot value %q", got, "before")
+	}
 }
 
 func runControlPlaneBackupRestoreThroughAdminAPI(t *testing.T) {
