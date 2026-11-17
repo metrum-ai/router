@@ -481,6 +481,8 @@ def assert_consolidated_ci() -> None:
     generated_files = lanes["generated-release-files"]
     for marker in ("make admin-openapi-check admin-build", "git diff --exit-code", "git ls-files --others", "name: generated-release-files"):
         require(marker in generated_files, f"required generated-file CI lane lost {marker}")
+    require("go test ./internal/router -run '^(TestAdminOpenAPIUpToDate|TestAdminOpenAPISchemaCoverage|TestAdminV1SpecIntegrity)$$' -count=1"
+            in read(ROOT / "Makefile"), "admin OpenAPI check must preserve its end anchor through make expansion")
     advisory = lanes["admin-authz-advisories"]
     require("runs-on: ${{ vars.ROUTER_HEAVY_RUNNER || 'router-arc' }}" in advisory
             and "GOMAXPROCS: '2'" in advisory and "GOMEMLIMIT: 8GiB" in advisory,
