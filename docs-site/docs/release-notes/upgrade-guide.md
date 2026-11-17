@@ -13,6 +13,10 @@ Tool-firewall argument deny rules now include boolean values in their inspected 
 
 When streaming Chat completions with tool-call inspection enabled, tool calls remain held until every choice that contains a tool call has finished. No configuration migration is required.
 
+## Responses stream secret filtering
+
+When secret filtering is enabled, v5.0.0 now inspects and redacts output snapshots in failed and incomplete Responses terminal events. `fail_on_match` rejects those events when a configured secret is found. No configuration migration is required.
+
 ## v4.8 to v5.0.0 breaking-change map
 
 Review these changes before a rolling upgrade. Router v5 and v4.8 can read some
