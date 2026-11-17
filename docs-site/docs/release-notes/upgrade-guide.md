@@ -1404,6 +1404,10 @@ can resume them before their TTL. Actions expire at their configured TTL.
 The OCSF 1.4.0 JSON Lines stream is disabled by default. To enable it, set `server.security.events.enabled`, choose stdout or file output, and optionally configure an HTTPS webhook with `webhook_allow_hosts` and a 32-byte-or-longer secret supplied through the environment. Webhook signatures cover the timestamp, a random nonce, and the exact body; receivers must enforce a timestamp window and reject nonce replay. Detector signals and failures use the configured detector ID and bounded signal metadata; evidence request IDs use the finding UID, capped at 256 characters. Containment events use Account Change Disable/Enable and include the target caller and acting principal. Firewall decisions are included when enabled. Honeytoken and canary Detection Findings use Critical severity and include the caller ID and source IP in OCSF evidence without token material. Database-backed changes to this config require a router restart. See [Security event stream](../security-governance/security-events) for full verification and queue behavior.
 The prompt-injection detector is an optional external example. It is off unless a detector is configured, and it receives no segment text unless its own `include_segments` list explicitly opts in. Prompts and user messages are never sent in v5.0.0.
 
+## Anthropic streamed secret DLP
+
+When secret DLP is enabled, Anthropic text and thinking included in `content_block_start` frames is now inspected with the same rolling detector as later deltas. A credential split between a block start and a delta is redacted before either frame reaches the caller. No configuration change is required.
+
 ## v5.0.0 admin client identities
 
 Registering any credential makes its policy subject managed immediately. Only

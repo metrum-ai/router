@@ -20,6 +20,7 @@
 
 ### Security
 
+- Inspect Anthropic text and thinking carried by streamed block-start events before forwarding them when secret DLP is enabled.
 - Keep independent secret-scanning buffers for each Responses text item and content part so interleaved deltas cannot hide credentials.
 - Mark honeytoken and canary OCSF findings Critical and include the caller ID and source IP for SIEM correlation.
 - Include firewall decisions and honeytoken/canary use in the opt-in OCSF 1.4.0 security event stream.

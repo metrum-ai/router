@@ -135,6 +135,12 @@ func (d *secretStreamDLP) filterEvent(event stream.Event) ([]stream.Event, error
 			return d.filterAnthropicThinkingDelta(event, payload)
 		}
 	}
+	if eventType == "content_block_start" {
+		block, _ := payload["content_block"].(map[string]any)
+		if block != nil && stringValue(block["type"]) == "thinking" {
+			return d.filterAnthropicThinkingStart(event, payload)
+		}
+	}
 	if eventType == "" || eventType == "chat.completion.chunk" {
 		if _, ok := payload["choices"].([]any); ok {
 			return d.filterChatEvent(event, payload)
@@ -168,7 +174,7 @@ func (d *secretStreamDLP) filterEvent(event stream.Event) ([]stream.Event, error
 		event.Data = encoded
 		d.lastEvent = event
 		d.lastKind = kind
-		if safe == "" {
+		if safe == "" && kind != "anthropic_start" {
 			event.Data = nil
 		}
 	}
@@ -264,6 +270,51 @@ func (d *secretStreamDLP) filterAnthropicThinkingDelta(event stream.Event, paylo
 	return []stream.Event{event}, nil
 }
 
+func setAnthropicThinkingText(payload map[string]any, value string) bool {
+	if delta, ok := payload["delta"].(map[string]any); ok {
+		delta["thinking"] = value
+		return true
+	}
+	if block, ok := payload["content_block"].(map[string]any); ok && stringValue(block["type"]) == "thinking" {
+		block["thinking"] = value
+		return true
+	}
+	return false
+}
+
+func (d *secretStreamDLP) filterAnthropicThinkingStart(event stream.Event, payload map[string]any) ([]stream.Event, error) {
+	block, _ := payload["content_block"].(map[string]any)
+	value, ok := block["thinking"].(string)
+	if !ok {
+		return []stream.Event{event}, nil
+	}
+	index, _ := numberAsInt(payload["index"])
+	if d.anthropicThinking == nil {
+		d.anthropicThinking = make(map[int]*secretAnthropicThinkingState)
+	}
+	state := d.anthropicThinking[index]
+	if state == nil {
+		state = &secretAnthropicThinkingState{}
+		d.anthropicThinking[index] = state
+	}
+	before := d.state.result.Replacements
+	safe, pending, err := redactSecretStreamChunk(d.state, state.pending, value, false)
+	if err != nil {
+		return nil, err
+	}
+	if err := d.failIfMatched(before); err != nil {
+		return nil, err
+	}
+	block["thinking"] = safe
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return nil, err
+	}
+	event.Data = encoded
+	state.pending, state.lastEvent = pending, event
+	return []stream.Event{event}, nil
+}
+
 func (d *secretStreamDLP) flushAnthropicThinkingForTerminal(event stream.Event, payload map[string]any, eventType string) ([]stream.Event, bool, error) {
 	if len(d.anthropicThinking) == 0 {
 		return nil, false, nil
@@ -297,8 +348,7 @@ func (d *secretStreamDLP) flushAnthropicThinkingForTerminal(event stream.Event, 
 		if tail != "" {
 			var p map[string]any
 			if json.Unmarshal(state.lastEvent.Data, &p) == nil {
-				if delta, ok := p["delta"].(map[string]any); ok {
-					delta["thinking"] = tail
+				if setAnthropicThinkingText(p, tail) {
 					if b, marshalErr := json.Marshal(p); marshalErr == nil {
 						e := state.lastEvent
 						e.Data = b
@@ -335,8 +385,7 @@ func (d *secretStreamDLP) flushAnthropicThinkingAll(event stream.Event) ([]strea
 		if tail != "" {
 			var p map[string]any
 			if json.Unmarshal(state.lastEvent.Data, &p) == nil {
-				if delta, ok := p["delta"].(map[string]any); ok {
-					delta["thinking"] = tail
+				if setAnthropicThinkingText(p, tail) {
 					if b, marshalErr := json.Marshal(p); marshalErr == nil {
 						e := state.lastEvent
 						e.Data = b
@@ -792,6 +841,12 @@ func secretStreamTextDelta(payload map[string]any, eventType string) (kind, valu
 				return "anthropic_thinking", value, ok
 			}
 		}
+	case "content_block_start":
+		block, _ := payload["content_block"].(map[string]any)
+		if block != nil && stringValue(block["type"]) == "text" {
+			value, ok = block["text"].(string)
+			return "anthropic_start", value, ok
+		}
 	case "", "chat.completion.chunk":
 		choices, _ := payload["choices"].([]any)
 		if len(choices) > 0 {
@@ -817,6 +872,10 @@ func setSecretStreamTextDelta(payload map[string]any, kind, value string) {
 			} else {
 				delta["text"] = value
 			}
+		}
+	case "anthropic_start":
+		if block, ok := payload["content_block"].(map[string]any); ok {
+			block["text"] = value
 		}
 	case "chat":
 		if choices, ok := payload["choices"].([]any); ok && len(choices) > 0 {
