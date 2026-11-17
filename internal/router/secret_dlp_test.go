@@ -1779,6 +1779,117 @@ func TestSecretDLPStreamFailsClosedForUnboundedCustomRules(t *testing.T) {
 	}
 }
 
+func TestSecretDLPChatRefusalDeltaRedactsCredentialSplitAcrossChunks(t *testing.T) {
+	secret := fakeGitHubToken()
+	for _, mode := range []string{"redact_only", "fail_on_match"} {
+		t.Run(mode, func(t *testing.T) {
+			safePrefix := strings.Repeat("safe-", 150)
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				flusher, _ := w.(http.Flusher)
+				writeChunk := func(choices ...map[string]any) {
+					payload := map[string]any{
+						"id": "chat-refusal-secret", "object": "chat.completion.chunk", "created": 1, "model": "default",
+						"choices": make([]any, 0, len(choices)),
+					}
+					for _, choice := range choices {
+						payload["choices"] = append(payload["choices"].([]any), choice)
+					}
+					raw, _ := json.Marshal(payload)
+					_, _ = w.Write(append(append([]byte("data: "), raw...), []byte("\n\n")...))
+					if flusher != nil {
+						flusher.Flush()
+					}
+				}
+				choice := func(index int, refusal string) map[string]any {
+					return map[string]any{"index": index, "delta": map[string]any{"refusal": refusal}, "finish_reason": nil}
+				}
+				writeChunk(
+					choice(0, safePrefix+secret[:len(secret)/2]),
+					choice(1, safePrefix+secret[:len(secret)/2]),
+				)
+				// Reverse choice order to prove buffers are keyed by choice index.
+				writeChunk(
+					choice(1, secret[len(secret)/2:]+" suffix-one"),
+					choice(0, secret[len(secret)/2:]+" suffix-zero"),
+				)
+				// No finish_reason: the decoder must flush safe tails before [DONE].
+				_, _ = w.Write([]byte("data: [DONE]\n\n"))
+			}))
+			defer upstream.Close()
+
+			dir := t.TempDir()
+			cfg := testConfig(t, upstream.URL, "provider-key", dir)
+			group := cfg.Models["default"]
+			group.PIIFilter.Enabled = true
+			group.PIIFilter.SecretsEnabled = true
+			group.PIIFilter.Mode = mode
+			cfg.Models["default"] = group
+			svc, err := New(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer svc.Close()
+
+			req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"default","stream":true,"messages":[{"role":"user","content":"hello"}]}`))
+			req.Header.Set("Authorization", "Bearer "+testToken)
+			response := httptest.NewRecorder()
+			svc.Handler().ServeHTTP(response, req)
+
+			reconstructed := map[int]string{}
+			done := false
+			for _, line := range strings.Split(response.Body.String(), "\n") {
+				data, ok := strings.CutPrefix(strings.TrimSpace(line), "data: ")
+				if !ok {
+					continue
+				}
+				if data == "[DONE]" {
+					done = true
+					continue
+				}
+				var payload map[string]any
+				if json.Unmarshal([]byte(data), &payload) != nil {
+					continue
+				}
+				choices, _ := payload["choices"].([]any)
+				for _, raw := range choices {
+					item, _ := raw.(map[string]any)
+					index, _ := numberAsInt(item["index"])
+					delta, _ := item["delta"].(map[string]any)
+					refusal, _ := delta["refusal"].(string)
+					reconstructed[index] += refusal
+				}
+			}
+			for index, text := range reconstructed {
+				if strings.Contains(text, secret) {
+					t.Fatalf("Chat choice %d refusal stream leaked a reconstructed credential", index)
+				}
+			}
+
+			if mode == "redact_only" {
+				if response.Code != http.StatusOK || reconstructed[0] != safePrefix+"[SECRET_GITHUB_1] suffix-zero" || reconstructed[1] != safePrefix+"[SECRET_GITHUB_1] suffix-one" || !done {
+					t.Fatalf("redact_only refusal reconstruction mismatch: status=%d choice0=%q choice1=%q done=%v", response.Code, reconstructed[0], reconstructed[1], done)
+				}
+				return
+			}
+			if done || strings.Contains(response.Body.String(), "[SECRET_GITHUB_1]") {
+				t.Fatalf("fail_on_match forwarded a refusal or clean terminal: status=%d body=%s", response.Code, response.Body.String())
+			}
+			logData, err := os.ReadFile(cfg.Server.Logging.Path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var record map[string]any
+			if err := json.Unmarshal(bytes.TrimSpace(logData), &record); err != nil {
+				t.Fatalf("decode request log: %v", err)
+			}
+			if record["error_class"] != "secret_dlp_stream_filter_error" || record["status"] != float64(http.StatusBadGateway) {
+				t.Fatalf("fail_on_match did not record an explicit stream failure: %#v", record)
+			}
+		})
+	}
+}
+
 func TestSecretDLPStreamingRedactsCredentialSplitAcrossChunks(t *testing.T) {
 	secret := fakeGitHubToken()
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

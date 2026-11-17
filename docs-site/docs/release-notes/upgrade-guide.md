@@ -25,6 +25,10 @@ split across stream events (for example an added snapshot and the following
 delta). `fail_on_match` blocks the response in those cases and is the mode to
 use when a guarantee is required.
 
+## Chat refusal stream secret filtering
+
+When secret filtering is enabled, streamed Chat `delta.refusal` text now uses the same per-choice rolling inspection as content and reasoning. `redact_only` replaces credentials split across refusal deltas, and `fail_on_match` blocks a matching stream before the credential is forwarded. No configuration migration is required.
+
 ## v4.8 to v5.0.0 breaking-change map
 
 Review these changes before a rolling upgrade. Router v5 and v4.8 can read some
