@@ -129,7 +129,10 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 		idx := streamToolIndex(payload["output_index"])
 		h.calls.addDelta("openai-responses", idx, "", "", "")
 		h.calls.setKind(idx, "custom_tool_call")
-		h.calls.setArguments(idx, stringValue(payload["input"]))
+		if err := h.setResponsesSnapshotArguments(idx, stringValue(payload["input"])); err != nil {
+			h.reset()
+			return nil, err
+		}
 		h.indexes[idx] = true
 		toolEvent = true
 		passThrough = stream.Event{}
@@ -253,6 +256,21 @@ func (h *streamToolCallHold) apply(event stream.Event) ([]stream.Event, error) {
 				idx := streamToolIndex(payload["output_index"])
 				if !h.indexes[idx] {
 					return []stream.Event{event}, nil
+				}
+				if strings.HasPrefix(eventType, "response.mcp_call_arguments.delta") {
+					h.calls.addDelta("openai-responses", idx, "", "", stringValue(payload["delta"]))
+				} else if strings.HasPrefix(eventType, "response.code_interpreter_call_code.delta") {
+					h.calls.addDelta("openai-responses", idx, "", "", stringValue(payload["delta"]))
+				} else if strings.HasSuffix(eventType, ".done") {
+					field := "arguments"
+					if kind == "code_interpreter_call" {
+						field = "code"
+					}
+					h.calls.addDelta("openai-responses", idx, "", "", "")
+					if err := h.setResponsesSnapshotArguments(idx, stringValue(payload[field])); err != nil {
+						h.reset()
+						return nil, err
+					}
 				}
 				toolEvent = true
 				passThrough = stream.Event{}
@@ -525,11 +543,36 @@ func responsesToolItemCall(item map[string]any, index int) (IRToolCall, bool, bo
 	case "local_shell_call":
 		call.Arguments = canonicalToolCallArguments(item["action"])
 	case "web_search_call", "file_search_call", "code_interpreter_call", "image_generation_call", "browser_search_call", "vector_store_search_call", "mcp_call":
-		call.Arguments = canonicalToolCallArguments(item)
+		call.Arguments = canonicalToolCallArguments(responsesHostedToolPayload(item))
 	default:
 		return call, toolBearing, false
 	}
 	return call, true, true
+}
+
+func responsesHostedToolPayload(item map[string]any) any {
+	kind := stringValue(item["type"])
+	fields := map[string][]string{
+		"web_search_call":          {"action", "query", "search_query"},
+		"file_search_call":         {"queries", "query"},
+		"code_interpreter_call":    {"code"},
+		"image_generation_call":    {"prompt", "input"},
+		"browser_search_call":      {"action", "query", "url"},
+		"vector_store_search_call": {"query", "queries"},
+		"mcp_call":                 {"arguments"},
+	}
+	selected := map[string]any{}
+	for _, field := range fields[kind] {
+		if value, ok := item[field]; ok {
+			selected[field] = value
+		}
+	}
+	if len(selected) == 1 {
+		for _, value := range selected {
+			return value
+		}
+	}
+	return selected
 }
 
 func stripResponsesTerminalToolArguments(payload map[string]any) error {

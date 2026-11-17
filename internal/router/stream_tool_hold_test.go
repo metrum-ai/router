@@ -271,31 +271,121 @@ func TestStreamToolCallHoldRedactsResponsesTerminalSnapshot(t *testing.T) {
 }
 
 func TestStreamToolCallHoldRejectsResponsesSnapshotThatChangesInspectedArguments(t *testing.T) {
-	hold := newStreamToolCallHold(ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20}, nil, toolValidationOptions{})
-	hold.inspectors = append(hold.inspectors, streamToolCallInspectorFunc(func(calls []IRToolCall) (toolCallInspectionResult, error) {
-		return toolCallInspectionResult{Action: toolCallInspectionAllow, Calls: calls}, nil
-	}))
-	for _, event := range []stream.Event{
-		{Type: "response.output_item.added", Data: []byte(`{"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","call_id":"call_1","name":"lookup","arguments":""}}`)},
-		{Type: "response.function_call_arguments.delta", Data: []byte(`{"type":"response.function_call_arguments.delta","output_index":0,"delta":"{\"token\":\"ghp_unsafe\"}"}`)},
-		{Type: "response.function_call_arguments.done", Data: []byte(`{"type":"response.function_call_arguments.done","output_index":0,"arguments":"{}"}`)},
+	tests := []struct {
+		name, kind, field, deltaType, delta, snapshotType string
+		snapshot                                          map[string]any
+	}{
+		{name: "function arguments done", kind: "function_call", field: "arguments", deltaType: "response.function_call_arguments.delta", delta: `{"token":"ghp_unsafe"}`, snapshotType: "response.function_call_arguments.done", snapshot: map[string]any{"arguments": "{}"}},
+		{name: "custom input done", kind: "custom_tool_call", field: "input", deltaType: "response.custom_tool_call_input.delta", delta: `{"token":"ghp_unsafe"}`, snapshotType: "response.custom_tool_call_input.done", snapshot: map[string]any{"input": "{}"}},
+		{name: "MCP arguments done", kind: "mcp_call", field: "arguments", deltaType: "response.mcp_call_arguments.delta", delta: `{"token":"ghp_unsafe"}`, snapshotType: "response.mcp_call_arguments.done", snapshot: map[string]any{"arguments": "{}"}},
+		{name: "code interpreter done", kind: "code_interpreter_call", field: "code", deltaType: "response.code_interpreter_call_code.delta", delta: "print('ghp_unsafe')", snapshotType: "response.code_interpreter_call_code.done", snapshot: map[string]any{"code": "print('clean')"}},
+		{name: "item done", kind: "function_call", field: "arguments", deltaType: "response.function_call_arguments.delta", delta: `{"token":"ghp_unsafe"}`, snapshotType: "response.output_item.done", snapshot: map[string]any{"item": map[string]any{"type": "function_call", "call_id": "call_1", "name": "lookup", "arguments": "{}"}}},
+		{name: "response completed", kind: "function_call", field: "arguments", deltaType: "response.function_call_arguments.delta", delta: `{"token":"ghp_unsafe"}`, snapshotType: "response.completed", snapshot: map[string]any{"response": map[string]any{"output": []any{map[string]any{"type": "function_call", "call_id": "call_1", "name": "lookup", "arguments": "{}"}}}}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			hold := newStreamToolCallHold(ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20}, nil, toolValidationOptions{})
+			hold.inspectors = append(hold.inspectors, firewallToolCallInspector{service: hostedToolTestService("lookup"), rc: &requestContext{}, request: &IRRequest{}})
+			hold.inspectors = append(hold.inspectors, streamToolCallInspectorFunc(func(calls []IRToolCall) (toolCallInspectionResult, error) {
+				return toolCallInspectionResult{Action: toolCallInspectionAllow, Calls: calls}, nil
+			}))
+			makeEvent := func(eventType string, payload map[string]any) stream.Event {
+				payload["type"] = eventType
+				data, err := json.Marshal(payload)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return stream.Event{Type: eventType, Data: data}
+			}
+			added := makeEvent("response.output_item.added", map[string]any{"output_index": 0, "item": map[string]any{"type": tc.kind, "call_id": "call_1", "name": "lookup", tc.field: "", "status": "in_progress"}})
+			if got, err := hold.apply(added); err != nil || len(got) != 0 {
+				t.Fatalf("added escaped: events=%v err=%v", got, err)
+			}
+			delta := makeEvent(tc.deltaType, map[string]any{"output_index": 0, "delta": tc.delta})
+			if got, err := hold.apply(delta); err != nil || len(got) != 0 {
+				t.Fatalf("delta escaped: events=%v err=%v", got, err)
+			}
+			tc.snapshot["output_index"] = 0
+			got, err := hold.apply(makeEvent(tc.snapshotType, tc.snapshot))
+			var upstreamErr upstreamError
+			if len(got) != 0 || !errors.As(err, &upstreamErr) || upstreamErr.Class != "tool_call_snapshot_mismatch" {
+				t.Fatalf("snapshot result events=%v err=%v, want tool_call_snapshot_mismatch", got, err)
+			}
+		})
+	}
+}
+
+func hostedToolTestService(tool string) *Service {
+	return &Service{
+		cfg:          &Config{Server: ServerConfig{ToolFirewall: ToolFirewallConfig{Mode: toolFirewallShadow, Deny: []ToolFirewallDenyRule{{Tool: tool}}}}},
+		toolFirewall: newToolFirewallRuntime(),
+	}
+}
+
+func TestStreamToolCallHoldAcceptsHostedPayloadAcrossStatusUpdates(t *testing.T) {
+	for _, tc := range []struct {
+		kind, field, deltaType, doneType, delta string
+	}{
+		{kind: "mcp_call", field: "arguments", deltaType: "response.mcp_call_arguments.delta", doneType: "response.mcp_call_arguments.done", delta: `{"query":"safe"}`},
+		{kind: "code_interpreter_call", field: "code", deltaType: "response.code_interpreter_call_code.delta", doneType: "response.code_interpreter_call_code.done", delta: "print('safe')"},
 	} {
-		if got, err := hold.apply(event); err == nil && len(got) != 0 {
-			t.Fatalf("Responses tool frame escaped before validation: %s", got[0].Data)
-		} else if err != nil {
-			return
+		t.Run(tc.kind, func(t *testing.T) {
+			hold := newStreamToolCallHold(ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20}, nil, toolValidationOptions{})
+			hold.inspectors = append(hold.inspectors, firewallToolCallInspector{service: hostedToolTestService(tc.kind), rc: &requestContext{}, request: &IRRequest{}})
+			added, _ := json.Marshal(map[string]any{"type": "response.output_item.added", "output_index": 0, "item": map[string]any{"type": tc.kind, "id": "item_1", "call_id": "call_1", "name": tc.kind, "status": "in_progress", tc.field: ""}})
+			if got, err := hold.apply(stream.Event{Type: "response.output_item.added", Data: added}); err != nil || len(got) != 0 {
+				t.Fatalf("added escaped: events=%v err=%v", got, err)
+			}
+			delta, _ := json.Marshal(map[string]any{"type": tc.deltaType, "output_index": 0, "delta": tc.delta})
+			if got, err := hold.apply(stream.Event{Type: tc.deltaType, Data: delta}); err != nil || len(got) != 0 {
+				t.Fatalf("delta escaped: events=%v err=%v", got, err)
+			}
+			done, _ := json.Marshal(map[string]any{"type": tc.doneType, "output_index": 0, tc.field: tc.delta})
+			if got, err := hold.apply(stream.Event{Type: tc.doneType, Data: done}); err != nil || len(got) != 0 {
+				t.Fatalf("matching done snapshot rejected: events=%v err=%v", got, err)
+			}
+			item := map[string]any{"type": tc.kind, "id": "item_1", "call_id": "call_1", "name": tc.kind, "status": "completed", tc.field: tc.delta}
+			itemDone, _ := json.Marshal(map[string]any{"type": "response.output_item.done", "output_index": 0, "item": item})
+			if got, err := hold.apply(stream.Event{Type: "response.output_item.done", Data: itemDone}); err != nil || len(got) != 0 {
+				t.Fatalf("status update changed call payload: events=%v err=%v", got, err)
+			}
+			terminal, _ := json.Marshal(map[string]any{"type": "response.completed", "response": map[string]any{"output": []any{item}}})
+			if got, err := hold.apply(stream.Event{Type: "response.completed", Data: terminal}); err != nil || len(got) == 0 {
+				t.Fatalf("matching terminal snapshot rejected: events=%v err=%v", got, err)
+			}
+			hold.releaseEmitted()
+		})
+	}
+}
+
+func TestStreamToolCallHoldRejectsMismatchedSnapshotThroughHandler(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		frames := []string{
+			`event: response.output_item.added` + "\n" + `data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"lookup","arguments":""}}`,
+			`event: response.function_call_arguments.delta` + "\n" + `data: {"type":"response.function_call_arguments.delta","output_index":0,"delta":"{\"token\":\"ghp_unsafe\"}"}`,
+			`event: response.function_call_arguments.done` + "\n" + `data: {"type":"response.function_call_arguments.done","output_index":0,"arguments":"{}"}`,
 		}
+		for _, frame := range frames {
+			_, _ = io.WriteString(w, frame+"\n\n")
+		}
+	}))
+	defer upstream.Close()
+	target := Target{Provider: "native", Model: "responses-model", ToolSupport: ToolSupport{OpenAIResponses: []string{"function", "tool_choice"}}}
+	svc := nativeStreamTestService(t, upstream.URL, "openai-responses", []Target{target}, func(cfg *Config) {
+		group := cfg.Models["native-stream"]
+		group.Strategy = "tool_aware"
+		group.ToolRouting = ToolRoutingConfig{Mode: "observe", Streaming: ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20}}
+		cfg.Models["native-stream"] = group
+	})
+	body := `{"model":"native-stream","stream":true,"input":"lookup","tools":[{"type":"function","name":"lookup","parameters":{"type":"object"}}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	response := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(response, req)
+	if response.Code == http.StatusOK || strings.Contains(response.Body.String(), "ghp_unsafe") || strings.Contains(response.Body.String(), `"arguments"`) {
+		t.Fatalf("mismatched tool snapshot escaped through handler: status=%d body=%s", response.Code, response.Body.String())
 	}
-	terminal := stream.Event{Type: "response.completed", Data: []byte(`{"type":"response.completed","response":{"output":[{"type":"function_call","call_id":"call_1","name":"lookup","arguments":"{}"}]}}`)}
-	got, err := hold.apply(terminal)
-	joined := ""
-	for _, event := range got {
-		joined += string(event.Data)
-	}
-	if err != nil || strings.Contains(joined, "ghp_unsafe") || strings.Contains(joined, `"arguments":"{}"`) {
-		t.Fatalf("mismatched final snapshot released earlier arguments: events=%s err=%v", joined, err)
-	}
-	hold.releaseEmitted()
 }
 
 func TestStreamToolCallHoldStripsFailedResponsesTerminalArguments(t *testing.T) {
