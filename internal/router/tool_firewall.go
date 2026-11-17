@@ -973,7 +973,8 @@ func (s *toolFirewallRuntime) checkSequence(cfg ToolFirewallConfig, key, callerI
 						out = toolFirewallOutcome{Mode: mode, Action: "hold", RuleCode: "sequence_rule"}
 						break
 					}
-					return toolFirewallOutcome{Mode: mode, Action: rule.raw.Action, RuleCode: "sequence_rule"}
+					out = toolFirewallOutcome{Mode: mode, Action: rule.raw.Action, RuleCode: "sequence_rule"}
+					break
 				}
 			}
 		}
