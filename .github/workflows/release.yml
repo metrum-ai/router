@@ -582,4 +582,8 @@ jobs:
           NOTES_FILE="${RUNNER_TEMP}/release-notes.md"
           git tag -l --format='%(contents)' "${VERSION}" > "$NOTES_FILE"
           if [ ! -s "$NOTES_FILE" ]; then printf 'Metrum AI Router %s\n' "${VERSION}" > "$NOTES_FILE"; fi
-          gh release create "${VERSION}" --verify-tag --title "Metrum AI Router ${VERSION}" --notes-file "$NOTES_FILE" "${ASSETS[@]}"
+          python3 scripts/publish_github_release.py \
+            --version "${VERSION}" \
+            --title "Metrum AI Router ${VERSION}" \
+            --notes-file "$NOTES_FILE" \
+            "${ASSETS[@]}"

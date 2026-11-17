@@ -54,8 +54,8 @@ def verify_gh(gh: list[str]) -> None:
         ("api",): (),
         ("release", "list"): ("--repo", "--limit", "--json"),
         ("release", "download"): ("-R", "--pattern", "--dir"),
-        ("release", "view"): (),
-        ("release", "create"): ("--verify-tag", "--title", "--notes-file"),
+        ("release", "view"): ("--json",),
+        ("release", "create"): ("--verify-tag", "--title", "--notes-file", "--prerelease", "--latest"),
         ("attestation", "verify"): ("--repo", "--signer-workflow", "--source-ref"),
     }
     for path, flags in commands.items():
