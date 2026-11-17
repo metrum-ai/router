@@ -176,6 +176,16 @@ class ProvenanceWorkflowTest(unittest.TestCase):
         self.assertIn("make package", all_runs)
         dry_run_steps = jobs["dry-run"]["steps"]
         dry_run_names = [step.get("name") for step in dry_run_steps]
+        advisory_step = next(step for step in dry_run_steps if step.get("name") == "Generate engine advisory snapshot for release packages")
+        self.assertEqual(advisory_step["env"], {"GITHUB_TOKEN": "${{ github.token }}"})
+        self.assertIn("engine_advisory_gate.py --check --snapshot", advisory_step["run"])
+        self.assertIn("ENGINE_ADVISORY_SNAPSHOT=%s", advisory_step["run"])
+        package_build = next(step for step in dry_run_steps if step.get("name") == "Build release packages")
+        self.assertEqual(package_build["run"], "make package")
+        first_inventory = next(step for step in dry_run_steps if step.get("name") == "Record the first build inventory")
+        self.assertIn("--advisories-snapshot", first_inventory["run"])
+        rebuild_inventory = next(step for step in dry_run_steps if step.get("name") == "Record rebuilt inventory and compare packages")
+        self.assertIn("--advisories-snapshot", rebuild_inventory["run"])
         review_step = next(step for step in dry_run_steps if step.get("id") == "review")
         self.assertIn("--committed-artifact-dir docs/release-reviews", review_step["run"])
         preserve = dry_run_names.index("Preserve first build output")
