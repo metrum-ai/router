@@ -167,6 +167,20 @@ func TestToolFirewallSequenceWindow(t *testing.T) {
 	}
 }
 
+func TestToolFirewallSequenceStepsInSameResponse(t *testing.T) {
+	for _, action := range []string{"deny", "hold"} {
+		t.Run(action, func(t *testing.T) {
+			runtime := newToolFirewallRuntime()
+			cfg := ToolFirewallConfig{Mode: toolFirewallEnforce, Sequences: []ToolFirewallSequenceRule{{FirstTool: "read_customer", ThenTool: "http_request", WithinTurns: 2, Action: action}}}
+			req := &IRRequest{Messages: []IRMessage{{Role: "user", Content: "same response"}}}
+			calls := []IRToolCall{{Name: "read_customer", Arguments: `{"id":"account-1"}`}, {Name: "http_request", Arguments: `{"body":"send now"}`}}
+			if got := runtime.check(cfg, "caller", "group", req, calls); got.Action != action || got.RuleCode != "sequence_rule" {
+				t.Fatalf("same-response sequence outcome=%+v, want %s", got, action)
+			}
+		})
+	}
+}
+
 func TestToolFirewallSequenceKeyIgnoresClientIDsAndModelAlias(t *testing.T) {
 	first := &IRRequest{Model: "alias-a", Messages: []IRMessage{{Role: "user", Content: "stable first turn"}}, Metadata: map[string]string{"conversation_id": "client-a"}}
 	second := &IRRequest{Model: "alias-b", Messages: []IRMessage{{Role: "user", Content: "stable first turn"}}, Metadata: map[string]string{"session_id": "client-b"}}
@@ -914,6 +928,66 @@ func TestToolFirewallSequenceE2E(t *testing.T) {
 	second := makeRequest()
 	if second.Code != http.StatusOK || strings.Contains(second.Body.String(), "tool_calls") || !strings.Contains(second.Body.String(), "Tool call blocked") {
 		t.Fatalf("second status=%d body=%s", second.Code, second.Body.String())
+	}
+}
+
+func TestToolFirewallSequenceE2ESameResponse(t *testing.T) {
+	upstream := sequenceUpstream(t, `{"id":"chatcmpl-sequence","choices":[{"message":{"role":"assistant","tool_calls":[{"id":"read","type":"function","function":{"name":"read_customer","arguments":"{\"record\":\"account-7\"}"}},{"id":"send","type":"function","function":{"name":"http_request","arguments":"{\"body\":\"send\"}"}}]},"finish_reason":"tool_calls"}]}`)
+	defer upstream.Close()
+	cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
+	group := cfg.Models["default"]
+	group.Targets[0].ToolSupport = ToolSupport{OpenAIChat: []string{"tools", "tool_choice"}}
+	cfg.Models["default"] = group
+	cfg.Server.ToolFirewall = ToolFirewallConfig{Mode: toolFirewallEnforce, Sequences: []ToolFirewallSequenceRule{{FirstTool: "read_customer", FirstArgsRegex: "account", ThenTool: "http_request", WithinTurns: 3, Action: "deny"}}}
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	body := `{"model":"default","messages":[{"role":"user","content":"read then send"}],"tools":[{"type":"function","function":{"name":"read_customer","parameters":{"type":"object"}}},{"type":"function","function":{"name":"http_request","parameters":{"type":"object"}}}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	rec := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), "tool_calls") || !strings.Contains(rec.Body.String(), "Tool call blocked") {
+		t.Fatalf("same-response sequence escaped: status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestToolFirewallSequenceE2ESameStreamedResponse(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		write := func(v any) {
+			b, _ := json.Marshal(v)
+			_, _ = fmt.Fprintf(w, "data: %s\n\n", b)
+		}
+		for i, call := range []map[string]any{
+			{"id": "read", "type": "function", "function": map[string]any{"name": "read_customer", "arguments": `{"record":"account-7"}`}},
+			{"id": "send", "type": "function", "function": map[string]any{"name": "http_request", "arguments": `{"body":"send"}`}},
+		} {
+			write(map[string]any{"choices": []any{map[string]any{"index": 0, "delta": map[string]any{"tool_calls": []any{map[string]any{"index": i, "id": call["id"], "type": call["type"], "function": call["function"]}}}}}})
+		}
+		write(map[string]any{"choices": []any{map[string]any{"index": 0, "delta": map[string]any{}, "finish_reason": "tool_calls"}}})
+		_, _ = io.WriteString(w, "data: [DONE]\n\n")
+	}))
+	defer upstream.Close()
+	cfg := testConfig(t, upstream.URL, "provider-key", t.TempDir())
+	group := cfg.Models["default"]
+	group.Targets[0].ToolSupport = ToolSupport{OpenAIChat: []string{"tools", "tool_choice"}}
+	cfg.Models["default"] = group
+	cfg.Server.ToolFirewall = ToolFirewallConfig{Mode: toolFirewallEnforce, Sequences: []ToolFirewallSequenceRule{{FirstTool: "read_customer", FirstArgsRegex: "account", ThenTool: "http_request", WithinTurns: 3, Action: "deny"}}}
+	svc, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svc.Close()
+	body := `{"model":"default","stream":true,"messages":[{"role":"user","content":"read then send"}],"tools":[{"type":"function","function":{"name":"read_customer","parameters":{"type":"object"}}},{"type":"function","function":{"name":"http_request","parameters":{"type":"object"}}}]}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(body))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	rec := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Tool call blocked") || strings.Contains(rec.Body.String(), `"id":"send"`) || strings.Contains(rec.Body.String(), `"id":"read"`) {
+		t.Fatalf("same-response streamed sequence escaped: status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

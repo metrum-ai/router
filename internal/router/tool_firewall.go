@@ -946,17 +946,6 @@ func (s *toolFirewallRuntime) checkSequence(cfg ToolFirewallConfig, key, callerI
 		delete(s.conversations, key)
 		entry = nil
 	}
-	firstMatches := map[int]bool{}
-	for _, call := range calls {
-		for i, rule := range rules {
-			if strings.EqualFold(call.Name, rule.raw.FirstTool) && (rule.firstRE == nil || rule.firstRE.MatchString(call.Arguments)) {
-				firstMatches[i] = true
-			}
-		}
-	}
-	if entry == nil && len(firstMatches) == 0 {
-		return toolFirewallOutcome{Mode: mode}
-	}
 	turn := uint64(1)
 	firstTurns := map[int]uint64{}
 	if entry != nil {
@@ -977,9 +966,14 @@ func (s *toolFirewallRuntime) checkSequence(cfg ToolFirewallConfig, key, callerI
 				}
 			}
 		}
+		for i, rule := range rules {
+			if strings.EqualFold(call.Name, rule.raw.FirstTool) && (rule.firstRE == nil || rule.firstRE.MatchString(call.Arguments)) {
+				firstTurns[i] = turn
+			}
+		}
 	}
-	for i := range firstMatches {
-		firstTurns[i] = turn
+	if entry == nil && len(firstTurns) == 0 {
+		return toolFirewallOutcome{Mode: mode}
 	}
 	if entry == nil {
 		perCallerMax := defaultFirewallMaxPerCaller

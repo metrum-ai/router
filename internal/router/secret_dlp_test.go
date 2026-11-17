@@ -1311,6 +1311,42 @@ func TestSecretDLPRedactsEscapedSecretSplitAcrossToolArgumentDeltas(t *testing.T
 	}
 }
 
+func TestSecretDLPRedactsPolicySelectedHostedResponsesCallsThroughHandler(t *testing.T) {
+	secret := fakeGitHubToken()
+	frames := []string{
+		`event: response.output_item.added` + "\n" + `data: {"type":"response.output_item.added","output_index":0,"item":{"type":"mcp_call","id":"mcp_1","call_id":"call_mcp","name":"lookup_secret","arguments":{"api_key":"` + secret + `"},"status":"in_progress"}}`,
+		`event: response.output_item.done` + "\n" + `data: {"type":"response.output_item.done","output_index":0,"item":{"type":"mcp_call","id":"mcp_1","call_id":"call_mcp","name":"lookup_secret","arguments":{"api_key":"` + secret + `"},"status":"completed"}}`,
+		`event: response.output_item.added` + "\n" + `data: {"type":"response.output_item.added","output_index":1,"item":{"type":"code_interpreter_call","id":"code_1","code":"print('` + secret + `')","status":"in_progress"}}`,
+		`event: response.output_item.done` + "\n" + `data: {"type":"response.output_item.done","output_index":1,"item":{"type":"code_interpreter_call","id":"code_1","code":"print('` + secret + `')","status":"completed"}}`,
+		`event: response.completed` + "\n" + `data: {"type":"response.completed","response":{"id":"resp_1","status":"completed","output":[{"type":"mcp_call","id":"mcp_1","call_id":"call_mcp","name":"lookup_secret","arguments":{"api_key":"` + secret + `"},"status":"completed"},{"type":"code_interpreter_call","id":"code_1","code":"print('` + secret + `')","status":"completed"}]}}`,
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		for _, frame := range frames {
+			_, _ = io.WriteString(w, frame+"\n\n")
+		}
+	}))
+	defer upstream.Close()
+	target := Target{Provider: "native", Model: "responses-model", ToolSupport: ToolSupport{OpenAIResponses: []string{"function", "tool_choice"}}}
+	svc := nativeStreamTestService(t, upstream.URL, "openai-responses", []Target{target}, func(cfg *Config) {
+		group := cfg.Models["native-stream"]
+		group.Strategy = "tool_aware"
+		group.ToolRouting = ToolRoutingConfig{Mode: "observe", Streaming: ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20}}
+		group.PIIFilter.Enabled = true
+		group.PIIFilter.SecretsEnabled = true
+		cfg.Models["native-stream"] = group
+		cfg.Server.ToolFirewall = ToolFirewallConfig{Mode: toolFirewallShadow, Deny: []ToolFirewallDenyRule{{Tool: "lookup_secret"}, {Tool: "code_interpreter_call"}}}
+	})
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(`{"model":"native-stream","stream":true,"input":"inspect","tools":[{"type":"function","name":"lookup_secret","parameters":{"type":"object"}}]}`))
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	recorder := httptest.NewRecorder()
+	svc.Handler().ServeHTTP(recorder, req)
+	body := recorder.Body.String()
+	if recorder.Code != http.StatusOK || strings.Contains(body, secret) || strings.Count(body, "[SECRET_GITHUB_") < 2 || !strings.Contains(body, `"status":"in_progress"`) || !strings.Contains(body, `"status":"completed"`) || !strings.Contains(body, `"call_mcp"`) || !strings.Contains(body, `"code_1"`) {
+		t.Fatalf("status=%d hosted call payload leaked or was not redacted: %s", recorder.Code, body)
+	}
+}
+
 func TestSecretDLPStreamFailsClosedForUnboundedCustomRules(t *testing.T) {
 	var calls atomic.Int64
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls.Add(1) }))

@@ -238,6 +238,38 @@ func callerAdminRequest(t *testing.T, mux *http.ServeMux, method, path string, b
 	return rec
 }
 
+func TestCallerAdminListKeepsDisabledCallerWithEmptyVerifierManageable(t *testing.T) {
+	db := callerAdminTestDB(t)
+	if err := db.Exec(`INSERT INTO router_config_callers (config_set_id, caller_id, owner_user, project, environment, status, token_sha256, token_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, "set-1", "retired-key", "alice", "search", "dev", accountStatusDisabled, "", "").Error; err != nil {
+		t.Fatal(err)
+	}
+	mux := callerAdminTestMux(t, db, nil)
+	response := callerAdminRequest(t, mux, http.MethodGet, "/admin/v1/callers", nil, true)
+	if response.Code != http.StatusOK {
+		t.Fatalf("list callers status=%d body=%s, want disabled empty-verifier caller to remain manageable", response.Code, response.Body.String())
+	}
+	var listed callerAdminListResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &listed); err != nil {
+		t.Fatal(err)
+	}
+	var found bool
+	for _, caller := range listed.Callers {
+		if caller.ID == "retired-key" {
+			found = caller.Status == accountStatusDisabled && caller.TokenHash == ""
+		}
+	}
+	if !found {
+		t.Fatalf("disabled empty-verifier caller missing from response: %+v", listed.Callers)
+	}
+	if err := db.Exec(`INSERT INTO router_config_callers (config_set_id, caller_id, owner_user, project, environment, status, token_sha256, token_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, "set-1", "active-without-verifier", "alice", "search", "dev", accountStatusActive, "", "").Error; err != nil {
+		t.Fatal(err)
+	}
+	response = callerAdminRequest(t, mux, http.MethodGet, "/admin/v1/callers", nil, true)
+	if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), "callers-legacy-verifier-present") {
+		t.Fatalf("active caller without verifier status=%d body=%s, want unavailable", response.Code, response.Body.String())
+	}
+}
+
 func TestCallerAdminIssueListRotateRevokeLifecycle(t *testing.T) {
 	db := callerAdminTestDB(t)
 	var mutated []string

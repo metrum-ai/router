@@ -1127,7 +1127,6 @@ def main() -> int:
             }
         if args.committed_artifact_dir:
             artifact, review_head = load_committed_artifact(args.committed_artifact_dir, args.base, base_commit, args.head)
-            verify_generated_file_checks(artifact, review_head)
             cache_hit = True
         elif args.committed_artifact:
             artifact = json.loads(args.committed_artifact.read_text(encoding="utf-8"))
@@ -1303,6 +1302,7 @@ def main() -> int:
                 artifact, args.base, args.head, expected_files, binary_hashes, base_commit,
                 expected_redactions=expected_redactions, expected_diff_hashes=expected_diff_hashes,
             )
+        verify_generated_file_checks(artifact, review_head)
         report, unanswered = evaluate(artifact, acceptances, args.base, review_head)
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(render(report, args.base, review_head, args.tag), encoding="utf-8")

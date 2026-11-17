@@ -1609,31 +1609,21 @@ func applyV5AdminConfig(raw []byte, cfg *Config) error {
 // validateV5AdminConfig rejects removed v4.8 admin settings and reports
 // whether admin.enabled was explicitly set. Omission enables the listener.
 func validateV5AdminConfig(raw []byte) (bool, error) {
-	var root yaml.Node
+	var root map[string]any
 	if err := yaml.Unmarshal(raw, &root); err != nil {
 		return false, err
 	}
-	if root.Kind != yaml.DocumentNode || len(root.Content) == 0 || root.Content[0].Kind != yaml.MappingNode {
+	admin, ok := root["admin"].(map[string]any)
+	if !ok {
 		return false, nil
 	}
-	for i := 0; i+1 < len(root.Content[0].Content); i += 2 {
-		if root.Content[0].Content[i].Value != "admin" || root.Content[0].Content[i+1].Kind != yaml.MappingNode {
-			continue
+	for _, key := range []string{"legacy_routes_on_serving_port", "legacy_sunset"} {
+		if _, exists := admin[key]; exists {
+			return false, fmt.Errorf("config key admin.%s was removed in v5.0.0; remove it from file configuration, or run `metrum-ai-router-migrate --scope router-config --action apply` followed by `metrum-ai-router-migrate --scope router-config --action maintenance --backup-evidence-ref <backup-reference>` for stored configurations; use /admin/v1 on the admin listener", key)
 		}
-		admin := root.Content[0].Content[i+1]
-		enabledSet := false
-		for j := 0; j+1 < len(admin.Content); j += 2 {
-			key := admin.Content[j].Value
-			switch key {
-			case "enabled":
-				enabledSet = true
-			case "legacy_routes_on_serving_port", "legacy_sunset":
-				return false, fmt.Errorf("config key admin.%s was removed in v5.0.0; remove it from file configuration, or run `metrum-ai-router-migrate --scope router-config --action apply` followed by `metrum-ai-router-migrate --scope router-config --action maintenance --backup-evidence-ref <backup-reference>` for stored configurations; use /admin/v1 on the admin listener", key)
-			}
-		}
-		return enabledSet, nil
 	}
-	return false, nil
+	_, enabledSet := admin["enabled"]
+	return enabledSet, nil
 }
 
 func validateRemovedScriptConfig(raw []byte) error {

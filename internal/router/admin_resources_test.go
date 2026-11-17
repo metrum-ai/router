@@ -418,6 +418,61 @@ func TestConfigAdminProjectEnvironmentAndMembershipLifecycle(t *testing.T) {
 	}
 }
 
+func TestProjectUpdatePreservesLongLivedKeyRestriction(t *testing.T) {
+	canonicalYAML := configAdminTestYAML + `
+projects:
+  - id: search
+    name: Search
+    status: active
+    forbid_long_lived_keys: true
+    environments:
+      - id: dev
+        status: active
+users:
+  - id: alice
+    name: Alice
+    type: human
+    status: active
+project_memberships:
+  - user_id: alice
+    project: search
+    role: member
+    status: active
+`
+	db := configAdminTestDBWithYAML(t, canonicalYAML)
+	service := adminOperationsTestService(t, db, "project-key-restriction")
+	if err := service.reloadActiveConfigFromDB(); err != nil {
+		t.Fatalf("load restricted project: %v", err)
+	}
+	handler := adminResourceTestHandlerWithReload(db, service.reloadActiveConfigFromDB)
+	revision, err := currentRevisionForScope(db, "prod")
+	if err != nil {
+		t.Fatal(err)
+	}
+	requestHeaders := adminHeaders("adminkey:ops", adminPermissionProjectsWrite)
+	requestHeaders["If-Match"] = strconv.FormatInt(revision, 10)
+	response := invokeAdminResource(t, handler, http.MethodPut, map[string]any{
+		"name": "Search updated", "status": "active",
+		"environments": []any{map[string]any{"id": "dev", "status": "active"}},
+	}, requestHeaders, func(w http.ResponseWriter, r *http.Request) {
+		r.SetPathValue("project", "search")
+		handler.handlePutProject(w, r)
+	})
+	if response.Code != http.StatusOK {
+		t.Fatalf("project update status=%d body=%s", response.Code, response.Body.String())
+	}
+	if !projectForbidsLongLivedKeys(service.cfg, "search") {
+		t.Fatal("project update removed the long-lived-key restriction from the reloaded config")
+	}
+	request := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"agent-default","messages":[{"role":"user","content":"hello"}]}`))
+	request.Header.Set("Authorization", "Bearer "+configAdminTestToken)
+	served := httptest.NewRecorder()
+	service.Handler().ServeHTTP(served, request)
+	if served.Code != http.StatusForbidden || !strings.Contains(served.Body.String(), "long-lived-key-forbidden") {
+		t.Fatalf("static caller after project update status=%d body=%s, want forbidden", served.Code, served.Body.String())
+	}
+}
+
 func adminResourceTestHandler(db *gorm.DB) *configAdminHandler {
 	return adminResourceTestHandlerWithReload(db, nil)
 }

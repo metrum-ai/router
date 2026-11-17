@@ -22,6 +22,13 @@ import eval_nightly_live as nightly
 
 
 class NightlySafetyTest(unittest.TestCase):
+    def test_router_config_uses_a_salted_verifier_and_structured_token_id(self):
+        token = "rtr_metrum_nightly_project_env_key_secret"
+        caller = nightly.nightly_caller_config(token)
+        self.assertEqual(caller["token_id"], "rtr_metrum_nightly_project_env_key")
+        self.assertRegex(caller["token_hash"], r"pbkdf2-sha3-512:i=20000:[^:]+:[^:]+")
+        self.assertNotIn("token_sha256", caller)
+
     def test_preflight_reservation_is_bounded_and_nonzero(self):
         amount = preflight_upper_bound(nightly.canary.load_probes())
         self.assertGreater(amount, Decimal("0"))

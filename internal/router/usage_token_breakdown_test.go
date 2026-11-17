@@ -68,16 +68,18 @@ func TestBackendCacheHitRateUsesReportedRequests(t *testing.T) {
 
 func TestTokenBreakdownCoverageAndRollups(t *testing.T) {
 	zero, reasoning, cached := 0, 20, 60
+	negativeCached := -1
 	rows := []usageRow{
 		{TS: time.Now(), InputTokens: 100, OutputTokens: 40, ReasoningTokens: &reasoning, CachedInputTokens: &cached},
 		{TS: time.Now(), InputTokens: 100, OutputTokens: 40, ReasoningTokens: &zero, CachedInputTokens: &zero},
 		{TS: time.Now(), InputTokens: 100, OutputTokens: 40},
+		{TS: time.Now(), InputTokens: -2, OutputTokens: 40, CachedInputTokens: &negativeCached},
 	}
 	var total agg
 	for _, row := range rows {
 		total.add(row)
 	}
-	want := UsageTokenBreakdown{CostComponentReportedRequests: 3, ReasoningTokens: 20, ReasoningReportedRequests: 2, CachedInputTokens: 60, CachedInputReportedRequests: 2, RecomputedInputTokens: 140, RecomputedInputReportedRequests: 2}
+	want := UsageTokenBreakdown{CostComponentReportedRequests: 4, ReasoningTokens: 20, ReasoningReportedRequests: 2, CachedInputTokens: 59, CachedInputReportedRequests: 3, RecomputedInputTokens: 140, RecomputedInputReportedRequests: 2}
 	if total.UsageTokenBreakdown != want {
 		t.Fatalf("aggregate=%+v", total.UsageTokenBreakdown)
 	}
@@ -118,7 +120,7 @@ func TestTokenBreakdownCoverageAndRollups(t *testing.T) {
 		}
 		count := 1
 		if present {
-			count = 2
+			count = 3
 		}
 		if len(filtered) != count {
 			t.Fatalf("cache_present=%v rows=%d", present, len(filtered))
