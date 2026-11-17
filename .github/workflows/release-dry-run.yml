@@ -104,9 +104,10 @@ jobs:
       contents: read
     env:
       VERSION: v5.0.0-dry-run
-      CRANE: ${{ runner.temp }}/crane-bin/crane
       IMAGE: ghcr.io/${{ github.repository }}
     steps:
+      - name: Set Crane path outside checkout
+        run: printf 'CRANE=%s\n' "${RUNNER_TEMP}/crane-bin/crane" >> "${GITHUB_ENV}"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main

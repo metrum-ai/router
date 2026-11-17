@@ -509,8 +509,11 @@ class ProvenanceWorkflowTest(unittest.TestCase):
         for source, job_name in ((self.workflow, "publish-release"), (self.dry_run_workflow, "dry-run")):
             with self.subTest(workflow=source.get("name")):
                 job = source["jobs"][job_name]
-                self.assertEqual(job["env"]["CRANE"], "${{ runner.temp }}/crane-bin/crane")
                 steps = job["steps"]
+                self.assertNotIn("CRANE", job.get("env", {}))
+                self.assertEqual(steps[0].get("name"), "Set Crane path outside checkout")
+                self.assertIn("${RUNNER_TEMP}/crane-bin/crane", steps[0]["run"])
+                self.assertIn("${GITHUB_ENV}", steps[0]["run"])
                 cosign = next(step for step in steps if step.get("name") == "Install pinned Cosign")
                 self.assertEqual(cosign["with"]["install-dir"], "${{ runner.temp }}/cosign-bin")
                 envsubst = next(step for step in steps if step.get("name") == "Provide envsubst for Cosign installer")
@@ -524,8 +527,8 @@ class ProvenanceWorkflowTest(unittest.TestCase):
                 self.assertEqual(syft["uses"], "anchore/sbom-action/download-syft@d8a2c0130026bf585de5c176ab8f7ce62d75bf04")
 
                 tool_paths = [
-                    job["env"]["CRANE"], cosign["with"]["install-dir"],
-                    envsubst["run"], fetch_jsign["run"], contract["env"]["JSIGN_JAR"],
+                    steps[0]["run"], cosign["with"]["install-dir"], envsubst["run"],
+                    fetch_jsign["run"], contract["env"]["JSIGN_JAR"],
                     contract["env"]["SYFT_COMMAND"], contract["run"],
                 ]
                 for candidate in source["jobs"].values():
@@ -534,6 +537,14 @@ class ProvenanceWorkflowTest(unittest.TestCase):
                             tool_paths.append(step["run"])
                             self.assertIn('${RUNNER_TEMP}/gh-cli/bin', step["run"])
                 self.assertNotIn("${{ github.workspace }}", "\n".join(tool_paths))
+
+    def test_runner_context_is_not_used_in_workflow_or_job_level_env(self):
+        for source in (self.workflow, self.dry_run_workflow):
+            with self.subTest(workflow=source.get("name")):
+                self.assertNotIn("runner.", str(source.get("env", {})))
+                for job_name, job in source["jobs"].items():
+                    with self.subTest(job=job_name):
+                        self.assertNotIn("runner.", str(job.get("env", {})))
 
     def test_dry_run_checkout_does_not_follow_workflow_dispatch_ref(self):
         doc = copy.deepcopy(self.dry_run_workflow)
