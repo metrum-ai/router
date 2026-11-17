@@ -53,18 +53,21 @@ class ReleasePayloadTest(unittest.TestCase):
             "platforms": platforms,
         }), encoding="utf-8")
         review_artifact = {
-            "schema": "metrum-ai-router-release-review-artifact/v1",
+            "schema": "metrum-ai-router-release-review-artifact/v2",
             "base": "v4.8.0",
             "head": "0123456789abcdef",
+            "provider": "codex",
+            "model": "gpt-6.1-sol",
             "summary": "No findings.",
             "findings": [],
+            "file_coverage": [],
         }
         review_artifact["artifact_digest"] = hashlib.sha256(json.dumps(
             review_artifact, ensure_ascii=True, separators=(",", ":"), sort_keys=True
         ).encode("utf-8")).hexdigest()
         (root / "release-review-artifact.json").write_text(json.dumps(review_artifact), encoding="utf-8")
         (root / "AI-release-review.md").write_text(
-            f"- Review artifact SHA-256: `{review_artifact['artifact_digest']}`\n- Decision: **PASS**\n", encoding="utf-8"
+            f"- Review artifact SHA-256: `{review_artifact['artifact_digest']}`\n- Decision: **PASS**\n- Model: `gpt-6.1-sol`\n", encoding="utf-8"
         )
 
     def test_accepts_complete_release_payload(self) -> None:

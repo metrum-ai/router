@@ -33,23 +33,13 @@ def validate(workflow):
     assert triggers["push"]["tags"] == ["v*"]
     ai_review = jobs["ai-release-review"]
     assert ai_review["timeout-minutes"] >= 20
-    assert ai_review["permissions"] == {"contents": "read"}
-    assert ai_review.get("environment") == "release-review"
-    ai_step = next(step for step in ai_review["steps"] if step.get("name") == "Review release diff and documentation")
+    assert ai_review["permissions"] == {"checks": "read", "contents": "read"}
+    assert ai_review.get("environment") is None
+    ai_step = next(step for step in ai_review["steps"] if step.get("name") == "Validate the committed release review artifact")
     assert ai_step["env"]["REVIEW_BASE"] == "${{ needs.resolve.outputs.previous_tag }}"
-    assert ai_step["env"]["ANTHROPIC_API_KEY"] == "${{ secrets.ANTHROPIC_API_KEY }}"
-    assert "--artifact-cache" in ai_step["run"] and "--artifact-output" in ai_step["run"]
-    restore = next(step for step in ai_review["steps"] if step.get("name") == "Restore review artifact for this commit range")
-    assert restore["uses"] == "actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9"
-    assert restore["with"]["key"] == "${{ steps.review-range.outputs.artifact_name }}"
-    assert restore["with"]["path"] == "${{ runner.temp }}/review-cache/review.json"
-    save = next(step for step in ai_review["steps"] if step.get("name") == "Store review artifact for reruns of this commit range")
-    assert save["uses"] == "actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9"
-    assert save["with"]["key"] == "${{ steps.review-range.outputs.artifact_name }}"
-    assert save.get("if", "").startswith("always() &&")
-    assert any(step.get("name") == "Store review artifact for reruns of this commit range" for step in ai_review["steps"])
-    review_key = next(step["run"] for step in ai_review["steps"] if step.get("name") == "Derive immutable review artifact name")
-    assert "release_review_artifact_key.py" in review_key
+    assert "--committed-artifact-dir docs/release-reviews" in ai_step["run"]
+    assert "ANTHROPIC_API_KEY" not in str(ai_step)
+    assert not any("cache" in step.get("name", "").lower() for step in ai_review["steps"])
     resolve_run = next(step["run"] for step in jobs["resolve"]["steps"] if step.get("name") == "Resolve immutable build metadata")
     assert "select_previous_release.py" in resolve_run and "git describe" not in resolve_run
     upgrade = jobs["upgrade-and-rollback"]
@@ -179,14 +169,8 @@ class ProvenanceWorkflowTest(unittest.TestCase):
         self.assertIn("make package", all_runs)
         dry_run_steps = jobs["dry-run"]["steps"]
         dry_run_names = [step.get("name") for step in dry_run_steps]
-        review_restore = dry_run_steps[dry_run_names.index("Restore review artifact for this commit range")]
-        review_save = dry_run_steps[dry_run_names.index("Store review artifact for reruns of this commit range")]
-        self.assertEqual(review_restore["uses"], "actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9")
-        self.assertEqual(review_restore["with"]["key"], "${{ steps.review-range.outputs.artifact_name }}")
-        self.assertEqual(review_restore["with"]["path"], "${{ runner.temp }}/review-cache/review.json")
-        self.assertEqual(review_save["uses"], "actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9")
-        self.assertEqual(review_save["with"]["key"], "${{ steps.review-range.outputs.artifact_name }}")
-        self.assertTrue(review_save.get("if", "").startswith("always() &&"))
+        review_step = next(step for step in dry_run_steps if step.get("id") == "review")
+        self.assertIn("--committed-artifact-dir docs/release-reviews", review_step["run"])
         preserve = dry_run_names.index("Preserve first build output")
         reset = dry_run_names.index("Reset generated package outputs before clean-cache rebuild")
         rebuild = dry_run_names.index("Rebuild with clean Go caches")
@@ -205,16 +189,18 @@ class ProvenanceWorkflowTest(unittest.TestCase):
         self.assertNotIn("crane push", all_runs)
         self.assertNotIn("cosign", all_runs)
         self.assertNotIn("gh release create", all_runs)
-        self.assertEqual(dry_run.get("environment"), "release-review")
+        self.assertIsNone(dry_run.get("environment"))
+        self.assertEqual(dry_run["permissions"], {"checks": "read", "contents": "read"})
         review_step = next(step for step in dry_run_steps if step.get("id") == "review")
-        self.assertEqual(review_step.get("env"), {"ANTHROPIC_API_KEY": "${{ secrets.ANTHROPIC_API_KEY }}"})
+        self.assertEqual(review_step.get("env"), {"GH_TOKEN": "${{ github.token }}"})
         for step in dry_run_steps:
             if step is not review_step:
                 self.assertNotIn("ANTHROPIC_API_KEY", step.get("env", {}))
-        self.assertIn("release_review_artifact_key.py", all_runs)
+        self.assertNotIn("ANTHROPIC_API_KEY", all_runs)
         for name, job in jobs.items():
             self.assertEqual(job.get("if"), "github.ref == 'refs/heads/main' && inputs.dry_run")
-            self.assertEqual(job.get("permissions"), {"contents": "read"})
+            expected_permissions = {"checks": "read", "contents": "read"} if name == "dry-run" else {"contents": "read"}
+            self.assertEqual(job.get("permissions"), expected_permissions)
             if name != "dry-run":
                 self.assertNotIn("environment", job)
             for step in job.get("steps", []):
