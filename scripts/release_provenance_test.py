@@ -6,13 +6,16 @@
 from __future__ import annotations
 
 import copy
+import json
 import os
 import subprocess
 import sys
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import yaml
+from publish_github_release import publish_release, release_create_args, release_is_prerelease
 from release_image_smoke import smoke_caller_credentials
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -121,7 +124,8 @@ def validate(workflow):
     assert 'ref="${IMAGE}@${digest}"' in steps[sign].get("run", "")
     assert "cosign sign --yes" in steps[sign]["run"] and "cosign verify" in steps[sign]["run"]
     release_command = steps[publish_release]["run"]
-    assert 'gh release create "${VERSION}" --verify-tag' in release_command
+    assert "scripts/publish_github_release.py" in release_command
+    assert 'gh release create "${VERSION}"' not in release_command
     assert not any(token in all_runs for token in ("git tag -a", "git tag -m", "git tag --annotate"))
     assert "git push origin refs/tags" not in all_runs
 
@@ -357,6 +361,7 @@ class ProvenanceWorkflowTest(unittest.TestCase):
         for required in (
             "--signer-workflow", "--source-ref", "--verify-tag", "--notes-file", "--pattern", "--password-stdin",
             "--tarball", "--storetype", "--tsaurl", "--certificate-oidc-issuer",
+            "--prerelease", "--latest",
         ):
             with self.subTest(required=required):
                 self.assertIn(required, contract_source)
@@ -365,6 +370,41 @@ class ProvenanceWorkflowTest(unittest.TestCase):
         self.assertIn('checksum_asset="gh_${version}_checksums.txt"', installer)
         self.assertIn("sha256sum --check", installer)
         self.assertIn('>> "$GITHUB_PATH"', installer)
+
+    def test_release_creation_marks_rc_and_ga_correctly(self):
+        rc_args = release_create_args("v5.0.0-rc.2", "Metrum AI Router v5.0.0-rc.2", "notes.md", ["asset.tgz"])
+        self.assertIn("--prerelease", rc_args)
+        self.assertIn("--latest=false", rc_args)
+        self.assertNotIn("--latest", rc_args)
+
+        ga_args = release_create_args("v5.0.0", "Metrum AI Router v5.0.0", "notes.md", ["asset.tgz"])
+        self.assertNotIn("--prerelease", ga_args)
+        self.assertIn("--latest", ga_args)
+        self.assertNotIn("--latest=false", ga_args)
+
+    def test_release_creation_rejects_non_semver_tags_and_build_metadata_hyphens_are_not_prereleases(self):
+        for invalid in ("5.0.0", "v05.0.0", "v5.0.0-01", "v5.0.0-", "v5.0"):
+            with self.subTest(version=invalid), self.assertRaises(ValueError):
+                release_is_prerelease(invalid)
+        self.assertFalse(release_is_prerelease("v5.0.0+build-foo"))
+
+    def test_release_creation_verifies_published_prerelease_metadata(self):
+        for version, metadata in (("v5.0.0-rc.2", True), ("v5.0.0", False)):
+            with self.subTest(version=version), mock.patch("publish_github_release.subprocess.run") as run:
+                run.side_effect = [
+                    subprocess.CompletedProcess(["gh"], 0),
+                    subprocess.CompletedProcess(["gh"], 0, stdout=json.dumps({"isPrerelease": metadata})),
+                ]
+                publish_release(version, f"Router {version}", "notes.md", ["asset.tgz"])
+                self.assertEqual(run.call_args_list[1].args[0], ["gh", "release", "view", version, "--json", "isPrerelease"])
+
+        with mock.patch("publish_github_release.subprocess.run") as run:
+            run.side_effect = [
+                subprocess.CompletedProcess(["gh"], 0),
+                subprocess.CompletedProcess(["gh"], 0, stdout=json.dumps({"isPrerelease": False})),
+            ]
+            with self.assertRaisesRegex(RuntimeError, "prerelease metadata mismatch"):
+                publish_release("v5.0.0-rc.2", "Router RC", "notes.md", ["asset.tgz"])
 
     def test_release_rerun_never_replaces_existing_image_tags(self):
         steps = self.workflow["jobs"]["publish-release"]["steps"]
