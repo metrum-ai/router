@@ -40,6 +40,8 @@ def main() -> int:
     require("find /config -type d -exec chmod 0700" in compose, "compose config directories must remain private")
     require("find /config -type f -exec chmod 0600" in compose, "compose config files must remain non-world-readable")
     require("reset_config_permissions" in compose, "cleanup must restore config ownership for retained/removable workdirs")
+    require('PYTHONPATH="$ROOT/scripts${PYTHONPATH:+:$PYTHONPATH}"' in compose,
+            "Compose config generator must be able to import the caller token helper when run from repository root")
     require('env -u ANTHROPIC_API_KEY' in compose, "Claude tool smoke must unset direct Anthropic credentials")
     require('ANTHROPIC_BASE_URL="$BASE_URL"' in compose and 'ANTHROPIC_AUTH_TOKEN="$TOKEN"' in compose, "Claude tool smoke must target the Compose router with its caller token")
     require('cd "$CLAUDE_WORK"' in compose, "Claude tool smoke must be rooted in its disposable work directory")

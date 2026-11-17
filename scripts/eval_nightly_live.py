@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import sqlite3
@@ -24,6 +23,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 import direct_provider_canary as canary  # noqa: E402
+from caller_token import verifier  # noqa: E402
 
 
 PINNED_MODEL = "gpt-4o-mini-2024-07-18"
@@ -93,14 +93,24 @@ def router_config(temp: Path, port: int, model: str, token: str) -> Path:
             "pricing_source": "https://platform.openai.com/docs/pricing", "pricing_updated_at": "2026-11-16",
             "request_shape_support": {"supported_inbound_dialects": ["openai-chat"], "validation_status": "passed"},
         }]}},
-        "callers": [{"id": "nightly-eval", "token_sha256": hashlib.sha256(token.encode()).hexdigest(),
-                      "allow": ["nightly-pinned"], "rate": {"rpm": 60, "tpm": 100000, "concurrent": 2},
-                      "quota": {"day": {"requests": 100, "tokens": 500000}, "month": {"tokens": 2000000}},
-                      "key": {"lifetime_tokens": 2000000}}],
+        "callers": [nightly_caller_config(token)],
     }
     path = temp / "config.yaml"
     path.write_text(yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8")
     return path
+
+
+def nightly_caller_config(token: str) -> dict[str, Any]:
+    token_hash, token_id = verifier(token)
+    return {
+        "id": "nightly-eval",
+        "token_hash": token_hash,
+        "token_id": token_id,
+        "allow": ["nightly-pinned"],
+        "rate": {"rpm": 60, "tpm": 100000, "concurrent": 2},
+        "quota": {"day": {"requests": 100, "tokens": 500000}, "month": {"tokens": 2000000}},
+        "key": {"lifetime_tokens": 2000000},
+    }
 
 
 def free_port() -> int:
