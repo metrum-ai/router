@@ -17,6 +17,7 @@ import subprocess
 import sys
 import time
 import tempfile
+import unicodedata
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -1017,16 +1018,91 @@ def verify_generated_file_checks(artifact: dict[str, Any], review_head: str) -> 
             raise ValueError("required generated-file checks have not passed on the reviewed commit")
 
 
-def evaluate(review: dict[str, Any], acceptances: dict[str, Any], base: str, head: str) -> tuple[dict[str, Any], int]:
+def normalized_finding_title(title: str) -> str:
+    return " ".join(unicodedata.normalize("NFKC", title).casefold().split())
+
+
+def git_blob_sha(ref: str, path: str) -> str:
+    blob = read_git_blob(ref, path)
+    result = subprocess.run(
+        ["git", "hash-object", "--stdin"], input=blob, check=True,
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+    )
+    return result.stdout.decode("ascii").strip()
+
+
+def parse_finding_acceptances(raw: Any) -> dict[tuple[str, str, tuple[tuple[str, str], ...]], dict[str, Any]]:
+    """Parse acceptances bound to finding semantics and reviewed Git blob identities."""
+    if raw is None:
+        return {}
+    if not isinstance(raw, list):
+        raise ValueError("finding acceptances must be a list")
+    result: dict[tuple[str, str, tuple[tuple[str, str], ...]], dict[str, Any]] = {}
+    for entry in raw:
+        if not isinstance(entry, dict):
+            raise ValueError("finding acceptance must be an object")
+        category, title = entry.get("category"), entry.get("title")
+        files, blob_shas, response = entry.get("files"), entry.get("git_blob_shas"), entry.get("response")
+        if (
+            not isinstance(category, str) or not category.strip()
+            or not isinstance(title, str) or not title.strip()
+            or not isinstance(files, list) or not files
+            or any(not isinstance(path, str) or not path or path.startswith("/") or ".." in Path(path).parts for path in files)
+            or len(set(files)) != len(files)
+            or not isinstance(blob_shas, dict) or set(blob_shas) != set(files)
+            or any(not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40,64}", sha) for sha in blob_shas.values())
+            or not isinstance(response, str) or not response.strip()
+        ):
+            raise ValueError("finding acceptance requires category, title, unique files, their Git blob SHAs, and a response")
+        key = (category.strip().casefold(), normalized_finding_title(title), tuple(sorted(blob_shas.items())))
+        if key in result:
+            raise ValueError("duplicate finding acceptance identity")
+        result[key] = {
+            "category": category,
+            "title": title,
+            "files": sorted(files),
+            "response": safe_text(response, "finding acceptance"),
+        }
+    return result
+
+
+def evaluate(
+    review: dict[str, Any], acceptances: dict[str, Any], base: str, head: str,
+    finding_acceptances: dict[tuple[str, str, tuple[tuple[str, str], ...]], dict[str, Any]] | None = None,
+) -> tuple[dict[str, Any], int]:
     artifact = review if review.get("schema") == "metrum-ai-router-release-review-artifact/v3" else build_artifact(review, base, head)
     digest = artifact["artifact_digest"]
     raw_acceptance = acceptances.get(digest, "")
-    acceptance = safe_text(raw_acceptance, "artifact acceptance") if raw_acceptance else ""
-    unanswered = sum(1 for item in artifact["findings"] if item["severity"] == "blocking" and not acceptance)
-    findings = [{
-        **item,
-        "maintainer_response": acceptance if item["severity"] == "blocking" else "",
-    } for item in artifact["findings"]]
+    artifact_acceptance = safe_text(raw_acceptance, "artifact acceptance") if raw_acceptance else ""
+    finding_acceptances = finding_acceptances or {}
+    findings = []
+    unanswered = 0
+    matched_acceptances: set[tuple[str, str, tuple[tuple[str, str], ...]]] = set()
+    blob_cache: dict[str, str] = {}
+    for item in artifact["findings"]:
+        file_blobs = []
+        for path in sorted(set(item["files"])):
+            if path not in blob_cache:
+                try:
+                    blob_cache[path] = git_blob_sha(head, path)
+                except subprocess.CalledProcessError:
+                    blob_cache[path] = ""
+            file_blobs.append((path, blob_cache[path]))
+        stable_key = (
+            item["category"].strip().casefold(),
+            normalized_finding_title(item["title"]),
+            tuple(file_blobs),
+        )
+        accepted = finding_acceptances.get(stable_key)
+        response = (accepted["response"] if accepted else "") or artifact_acceptance
+        if accepted:
+            matched_acceptances.add(stable_key)
+        if item["severity"] == "blocking" and not response:
+            unanswered += 1
+        findings.append({**item, "maintainer_response": response})
+    unmatched_acceptances = [
+        entry for key, entry in finding_acceptances.items() if key not in matched_acceptances
+    ]
     return {
         "summary": artifact["summary"],
         "findings": findings,
@@ -1036,6 +1112,7 @@ def evaluate(review: dict[str, Any], acceptances: dict[str, Any], base: str, hea
         "codex_cli_version": artifact.get("codex_cli_version"),
         "base_commit": artifact.get("base_commit"),
         "file_coverage": artifact["file_coverage"],
+        "unmatched_finding_acceptances": unmatched_acceptances,
         "decision": "pass" if unanswered == 0 else "block",
     }, unanswered
 
@@ -1074,8 +1151,18 @@ def render(report: dict[str, Any], base: str, head: str, tag: str) -> str:
             "",
             "Files: " + (", ".join(f"`{path}`" for path in item["files"]) or "none specified"),
         ])
-        if item["severity"] == "blocking":
+        if item["maintainer_response"]:
             lines.extend(["", "Maintainer response: " + (item["maintainer_response"] or "**not answered**")])
+        elif item["severity"] == "blocking":
+            lines.extend(["", "Maintainer response: **not answered**"])
+        lines.append("")
+    if report["unmatched_finding_acceptances"]:
+        lines.extend(["## Unmatched maintainer finding acceptances", ""])
+        for item in report["unmatched_finding_acceptances"]:
+            lines.append(
+                f"- `{item['category']}` / {item['title']} — "
+                + ", ".join(f"`{path}`" for path in item["files"])
+            )
         lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
@@ -1105,6 +1192,7 @@ def main() -> int:
         acceptances = response_data.get("acceptances", {})
         if not isinstance(acceptances, dict):
             raise ValueError("maintainer artifact acceptances must be an object")
+        finding_acceptances = parse_finding_acceptances(response_data.get("finding_acceptances"))
         base_commit = args.base_commit or resolve_git_commit(args.base)
         if resolve_git_commit(args.base) != base_commit:
             raise ValueError("base tag commit does not match the requested base commit")
@@ -1303,7 +1391,7 @@ def main() -> int:
                 expected_redactions=expected_redactions, expected_diff_hashes=expected_diff_hashes,
             )
         verify_generated_file_checks(artifact, review_head)
-        report, unanswered = evaluate(artifact, acceptances, args.base, review_head)
+        report, unanswered = evaluate(artifact, acceptances, args.base, review_head, finding_acceptances)
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(render(report, args.base, review_head, args.tag), encoding="utf-8")
         args.artifact_output.parent.mkdir(parents=True, exist_ok=True)
