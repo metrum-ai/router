@@ -5,6 +5,7 @@
 ### Fixed
 
 - Align the standalone cache isolation guide with v5 caller-scoped response-cache and vLLM prefix-salt behavior; document that SGLang prefix isolation is unsupported.
+- Correct the upgrade guide to describe successful local sinkhole responses for unknown or disallowed honeytoken model names.
 
 ### Security
 
