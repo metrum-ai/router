@@ -473,6 +473,7 @@ ci-python: secret-contract capability-smoke-contracts
 	python3 scripts/test_check_release_environment.py
 	python3 scripts/test_check_release_payload.py
 	python3 scripts/test_release_ai_review.py
+	python3 scripts/install_crane_test.py
 	python3 scripts/select_previous_release_test.py
 	python3 scripts/test_sign_release_windows_packages.py
 	PYTHONPATH=scripts python3 -m unittest scripts/release_image_oci_layout_test.py -q
