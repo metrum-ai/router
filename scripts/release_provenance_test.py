@@ -6,17 +6,22 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
+import tempfile
 import unittest
 from unittest import mock
 from pathlib import Path
+from zipfile import ZipFile
 
 import yaml
 from publish_github_release import publish_release, release_create_args, release_is_prerelease
 from release_image_smoke import smoke_caller_credentials
+from release_publish_tool_contract import verify_java_and_jsign
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github/workflows/release.yml"
@@ -219,7 +224,9 @@ def validate_publish_tool_contract(workflow, job_name):
     java_setup = next(step for step in steps if step.get("name") == "Set up pinned Java for jsign")
     assert java_setup.get("with", {}).get("java-version") == "21"
     jsign_fetch = next(step for step in steps if step.get("name") == "Fetch pinned jsign (checksum-verified)")
-    assert "6cf58aa080e7ff82656f320cff8d4a3bff30408df8766806dcba3740dd839fa5" in jsign_fetch.get("run", "")
+    assert "from release_publish_tool_contract import JSIGN_SHA256" in jsign_fetch.get("run", "")
+    assert "sha256sum -c -" in jsign_fetch.get("run", "")
+    assert not re.search(r"\b[0-9a-f]{64}\b", jsign_fetch.get("run", ""))
     if job_name == "publish-release":
         assert names.index("Publish tool contract") < names.index("Verify release environment protection before publish")
     else:
@@ -370,6 +377,9 @@ class ProvenanceWorkflowTest(unittest.TestCase):
         self.assertIn('checksum_asset="gh_${version}_checksums.txt"', installer)
         self.assertIn("sha256sum --check", installer)
         self.assertIn('>> "$GITHUB_PATH"', installer)
+        self.assertEqual(contract_source.count("JSIGN_SHA256 = "), 1)
+        self.assertIn("hashlib.sha256(jsign_jar.read_bytes()).hexdigest()", contract_source)
+        self.assertIn('archive.read("META-INF/MANIFEST.MF")', contract_source)
 
     def test_release_creation_marks_rc_and_ga_correctly(self):
         rc_args = release_create_args("v5.0.0-rc.2", "Metrum AI Router v5.0.0-rc.2", "notes.md", ["asset.tgz"])
@@ -405,6 +415,37 @@ class ProvenanceWorkflowTest(unittest.TestCase):
             ]
             with self.assertRaisesRegex(RuntimeError, "prerelease metadata mismatch"):
                 publish_release("v5.0.0-rc.2", "Router RC", "notes.md", ["asset.tgz"])
+
+    def test_jsign_contract_checks_pinned_jar_manifest_and_help_without_help_version(self):
+        help_output = "\n".join(("--storetype", "--keystore", "--storepass", "--alias", "--tsaurl", "--tsmode"))
+        with tempfile.TemporaryDirectory(dir=ROOT) as temporary:
+            jsign_jar = Path(temporary) / "jsign.jar"
+            with ZipFile(jsign_jar, "w") as archive:
+                archive.writestr("META-INF/MANIFEST.MF", "Manifest-Version: 1.0\r\nImplementation-Version: 7.6\r\n\r\n")
+            expected_sha256 = hashlib.sha256(jsign_jar.read_bytes()).hexdigest()
+            with mock.patch("release_publish_tool_contract.JSIGN_SHA256", expected_sha256), mock.patch("release_publish_tool_contract.subprocess.run") as run:
+                run.side_effect = [
+                    subprocess.CompletedProcess(["java", "-version"], 0, stdout="", stderr='openjdk version "21.0.3"'),
+                    subprocess.CompletedProcess(["java", "-jar", str(jsign_jar), "--help"], 0, stdout=help_output, stderr=""),
+                ]
+                verify_java_and_jsign(["java"], jsign_jar)
+            self.assertEqual(run.call_args_list[1].args[0][-1], "--help")
+            self.assertNotIn("7.6", help_output)
+            self.assertTrue(all("--version" not in call.args[0] for call in run.call_args_list))
+
+            with mock.patch("release_publish_tool_contract.JSIGN_SHA256", "0" * 64), mock.patch("release_publish_tool_contract.subprocess.run") as run:
+                run.return_value = subprocess.CompletedProcess(["java", "-version"], 0, stdout="", stderr='openjdk version "21.0.3"')
+                with self.assertRaisesRegex(RuntimeError, "SHA-256 mismatch"):
+                    verify_java_and_jsign(["java"], jsign_jar)
+
+            wrong_version_jar = Path(temporary) / "wrong-version.jar"
+            with ZipFile(wrong_version_jar, "w") as archive:
+                archive.writestr("META-INF/MANIFEST.MF", "Manifest-Version: 1.0\r\nImplementation-Version: 7.5\r\n\r\n")
+            wrong_version_sha256 = hashlib.sha256(wrong_version_jar.read_bytes()).hexdigest()
+            with mock.patch("release_publish_tool_contract.JSIGN_SHA256", wrong_version_sha256), mock.patch("release_publish_tool_contract.subprocess.run") as run:
+                run.return_value = subprocess.CompletedProcess(["java", "-version"], 0, stdout="", stderr='openjdk version "21.0.3"')
+                with self.assertRaisesRegex(RuntimeError, "manifest must declare Implementation-Version: 7.6"):
+                    verify_java_and_jsign(["java"], wrong_version_jar)
 
     def test_release_rerun_never_replaces_existing_image_tags(self):
         steps = self.workflow["jobs"]["publish-release"]["steps"]
