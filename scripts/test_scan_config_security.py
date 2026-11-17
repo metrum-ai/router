@@ -28,6 +28,8 @@ def test_harbor_task_images_run_as_fixed_non_root_user():
     synthetic = (ROOT / "scripts/harbor_e2e/generate_tasks.py").read_text(encoding="utf-8")
     assert "useradd --uid 10001" in synthetic
     assert "ENV HOME=/home/harbor" in synthetic
+    assert "FROM node:22.19.0-bookworm-slim" in synthetic
+    assert "--engine-strict" in synthetic
     assert "install -d -o 10001 -g 10001 /app /logs/agent /logs/verifier /run/harbor-e2e" in synthetic
     assert "COPY --chown=10001:10001 workspace/ /app/" in synthetic
     assert "USER 10001:10001" in synthetic
