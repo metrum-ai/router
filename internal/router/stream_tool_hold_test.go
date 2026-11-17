@@ -455,6 +455,63 @@ func TestStreamToolCallHoldInspectsCustomAndLocalShellCalls(t *testing.T) {
 	}
 }
 
+func TestStreamToolCallHoldRewritesHostedResponsesRedactions(t *testing.T) {
+	secret := fakeGitHubToken()
+	for _, tc := range []struct {
+		kind, name, field, deltaType, doneType string
+	}{
+		{kind: "mcp_call", name: "lookup", field: "arguments", deltaType: "response.mcp_call_arguments.delta", doneType: "response.mcp_call_arguments.done"},
+		{kind: "code_interpreter_call", name: "code_interpreter_call", field: "code", deltaType: "response.code_interpreter_call_code.delta", doneType: "response.code_interpreter_call_code.done"},
+	} {
+		t.Run(tc.kind, func(t *testing.T) {
+			toolFirewall := ToolFirewallConfig{Mode: toolFirewallShadow, Deny: []ToolFirewallDenyRule{{Tool: tc.name}}}
+			svc := &Service{cfg: &Config{Server: ServerConfig{ToolFirewall: toolFirewall}}, toolFirewall: &toolFirewallRuntime{}}
+			rules, err := compilePIIRules(builtinSecretRules())
+			if err != nil {
+				t.Fatal(err)
+			}
+			state := &piiRedactionState{rules: rules, limit: 200, result: &piiFilterResult{RuleCounts: map[string]int{}}, placeholderFor: map[string]string{}}
+			hold := newStreamToolCallHold(ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20}, nil, toolValidationOptions{})
+			hold.inspectors = append(hold.inspectors, firewallToolCallInspector{service: svc, rc: &requestContext{}, request: &IRRequest{}}, secretDLPToolCallInspector{dlp: &secretStreamDLP{state: state}})
+			item := map[string]any{"type": tc.kind, "id": "item_1", "call_id": "call_1", "name": tc.name, "status": "in_progress", tc.field: secret}
+			added, _ := json.Marshal(map[string]any{"type": "response.output_item.added", "output_index": 0, "item": item})
+			if got, err := hold.apply(stream.Event{Type: "response.output_item.added", Data: added}); err != nil || len(got) != 0 {
+				t.Fatalf("hosted call escaped before inspection: events=%v err=%v", got, err)
+			}
+			delta, _ := json.Marshal(map[string]any{"type": tc.deltaType, "output_index": 0, "delta": secret})
+			if got, err := hold.apply(stream.Event{Type: tc.deltaType, Data: delta}); err != nil || len(got) != 0 {
+				t.Fatalf("hosted argument delta escaped: events=%v err=%v", got, err)
+			}
+			doneField := map[string]any{"arguments": secret}
+			if tc.kind == "code_interpreter_call" {
+				doneField = map[string]any{"code": secret}
+			}
+			doneArguments, _ := json.Marshal(map[string]any{"type": tc.doneType, "output_index": 0, "arguments": doneField["arguments"], "code": doneField["code"]})
+			if got, err := hold.apply(stream.Event{Type: tc.doneType, Data: doneArguments}); err != nil || len(got) != 0 {
+				t.Fatalf("hosted argument snapshot escaped: events=%v err=%v", got, err)
+			}
+			item["status"] = "completed"
+			done, _ := json.Marshal(map[string]any{"type": "response.output_item.done", "output_index": 0, "item": item})
+			if got, err := hold.apply(stream.Event{Type: "response.output_item.done", Data: done}); err != nil || len(got) != 0 {
+				t.Fatalf("hosted item snapshot escaped: events=%v err=%v", got, err)
+			}
+			terminal, _ := json.Marshal(map[string]any{"type": "response.completed", "response": map[string]any{"output": []any{item}}})
+			got, err := hold.apply(stream.Event{Type: "response.completed", Data: terminal})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var output strings.Builder
+			for _, event := range got {
+				output.Write(event.Data)
+			}
+			if strings.Contains(output.String(), secret) || !strings.Contains(output.String(), "[SECRET_GITHUB_1]") {
+				t.Fatalf("hosted Responses redaction left original arguments: %s", output.String())
+			}
+			hold.releaseEmitted()
+		})
+	}
+}
+
 func TestStreamToolCallHoldDoesNotReleaseAnthropicCallAfterNonToolStop(t *testing.T) {
 	hold := newStreamToolCallHold(ToolRoutingStreamingConfig{HoldUntilValidated: true, HoldTimeoutMS: 1000, HoldMaxBytes: 1 << 20}, nil, toolValidationOptions{})
 	start := stream.Event{Type: "content_block_start", Data: []byte(`{"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"call_1","name":"lookup","input":{}}}`)}
