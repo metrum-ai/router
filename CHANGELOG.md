@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+
+- Align the release procedure with the committed AI review artifact gate and document the required artifact preparation path.
+
 ### Security
 
 - Mark honeytoken and canary OCSF findings Critical and include the caller ID and source IP for SIEM correlation.
