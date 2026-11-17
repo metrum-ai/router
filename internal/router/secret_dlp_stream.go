@@ -282,6 +282,23 @@ func setAnthropicThinkingText(payload map[string]any, value string) bool {
 	return false
 }
 
+func flushAnthropicThinkingEvent(event stream.Event, payload map[string]any, value string) (stream.Event, error) {
+	if stringValue(payload["type"]) == "content_block_start" {
+		delete(payload, "content_block")
+		payload["type"] = "content_block_delta"
+		payload["delta"] = map[string]any{"type": "thinking_delta", "thinking": value}
+		event.Type, event.Name = "content_block_delta", "content_block_delta"
+	} else if !setAnthropicThinkingText(payload, value) {
+		return event, fmt.Errorf("unable to flush Anthropic thinking text")
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return event, err
+	}
+	event.Data = encoded
+	return event, nil
+}
+
 func (d *secretStreamDLP) filterAnthropicThinkingStart(event stream.Event, payload map[string]any) ([]stream.Event, error) {
 	block, _ := payload["content_block"].(map[string]any)
 	value, ok := block["thinking"].(string)
@@ -348,12 +365,8 @@ func (d *secretStreamDLP) flushAnthropicThinkingForTerminal(event stream.Event, 
 		if tail != "" {
 			var p map[string]any
 			if json.Unmarshal(state.lastEvent.Data, &p) == nil {
-				if setAnthropicThinkingText(p, tail) {
-					if b, marshalErr := json.Marshal(p); marshalErr == nil {
-						e := state.lastEvent
-						e.Data = b
-						out = append(out, e)
-					}
+				if e, marshalErr := flushAnthropicThinkingEvent(state.lastEvent, p, tail); marshalErr == nil {
+					out = append(out, e)
 				}
 			}
 		}
@@ -385,12 +398,8 @@ func (d *secretStreamDLP) flushAnthropicThinkingAll(event stream.Event) ([]strea
 		if tail != "" {
 			var p map[string]any
 			if json.Unmarshal(state.lastEvent.Data, &p) == nil {
-				if setAnthropicThinkingText(p, tail) {
-					if b, marshalErr := json.Marshal(p); marshalErr == nil {
-						e := state.lastEvent
-						e.Data = b
-						out = append(out, e)
-					}
+				if e, marshalErr := flushAnthropicThinkingEvent(state.lastEvent, p, tail); marshalErr == nil {
+					out = append(out, e)
 				}
 			}
 		}
@@ -793,7 +802,8 @@ func (d *secretStreamDLP) flushBefore(event stream.Event, payload map[string]any
 		}
 		var previous map[string]any
 		if json.Unmarshal(d.lastEvent.Data, &previous) == nil {
-			setSecretStreamTextDelta(previous, d.lastKind, tail)
+			flushed := d.lastEvent
+			flushSecretStreamTextEvent(&flushed, previous, d.lastKind, tail)
 			if _, ok := previous["sequence_number"]; ok && payload != nil {
 				if sequence, ok := numberAsInt(payload["sequence_number"]); ok {
 					previous["sequence_number"] = sequence + d.sequenceAdd
@@ -804,7 +814,6 @@ func (d *secretStreamDLP) flushBefore(event stream.Event, payload map[string]any
 			if err != nil {
 				return nil, err
 			}
-			flushed := d.lastEvent
 			flushed.Data = encoded
 			out = append(out, flushed)
 		}
@@ -886,6 +895,17 @@ func setSecretStreamTextDelta(payload map[string]any, kind, value string) {
 			}
 		}
 	}
+}
+
+func flushSecretStreamTextEvent(event *stream.Event, payload map[string]any, kind, value string) {
+	if kind == "anthropic_start" {
+		delete(payload, "content_block")
+		payload["type"] = "content_block_delta"
+		payload["delta"] = map[string]any{"type": "text_delta", "text": value}
+		event.Type, event.Name = "content_block_delta", "content_block_delta"
+		return
+	}
+	setSecretStreamTextDelta(payload, kind, value)
 }
 
 func secretStreamChatTerminal(payload map[string]any) bool {
