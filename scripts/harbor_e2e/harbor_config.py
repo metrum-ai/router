@@ -15,6 +15,16 @@ from pathlib import Path
 
 GPT_MODEL = "gpt-4.1-mini"
 CLAUDE_MODEL = "claude-haiku-4-5-20251001"
+ROUTER_TOKEN_CONTAINER_PATH = "/run/harbor-e2e/router-token"
+
+
+def router_token_bind_mount(source: Path) -> dict[str, str | bool]:
+    return {
+        "type": "bind",
+        "source": str(source),
+        "target": ROUTER_TOKEN_CONTAINER_PATH,
+        "read_only": True,
+    }
 
 
 def caller_tokens() -> dict[tuple[str, str], str]:
