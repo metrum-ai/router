@@ -427,6 +427,121 @@ func TestToolFirewallConcurrentRetriesConsumeApprovalOnce(t *testing.T) {
 	}
 }
 
+func TestToolFirewallSequenceHoldPersistsAfterApprovalConsumption(t *testing.T) {
+	policy := ToolFirewallConfig{
+		Mode:              toolFirewallEnforce,
+		ApprovalTimeoutMS: 1000,
+		Sequences:         []ToolFirewallSequenceRule{{FirstTool: "read_customer", FirstArgsRegex: "account", ThenTool: "http_request", WithinTurns: 10, Action: "hold"}},
+	}
+	runtime := newToolFirewallRuntime()
+	approvals := newToolApprovalRuntime(2)
+	service := &Service{toolFirewall: runtime, toolApprovals: approvals}
+	request := &IRRequest{Messages: []IRMessage{{Role: "user", Content: "conversation seed"}}}
+	callerID := "caller"
+	first := []IRToolCall{{Name: "read_customer", Arguments: `{"record":"account-1"}`}}
+	second := []IRToolCall{{Name: "http_request", Arguments: `{"body":"send"}`}}
+	if outcome := runtime.check(policy, callerID, "group", request, first); outcome.Action != "" {
+		t.Fatalf("first sequence step blocked: %+v", outcome)
+	}
+	fingerprint, ok := toolCallApprovalFingerprint(callerID, second)
+	if !ok {
+		t.Fatal("tool call fingerprint failed")
+	}
+	if outcome := runtime.check(policy, callerID, "group", request, second); outcome.Action != "hold" {
+		t.Fatalf("sequence did not hold second step: %+v", outcome)
+	}
+	if _, state, created := approvals.request("approval_0123456789abcdef0123456789abcdef", fingerprint, time.Minute); state != "pending" || !created {
+		t.Fatalf("approval request=(%q,%v)", state, created)
+	}
+	if !approvals.resolve("approval_0123456789abcdef0123456789abcdef", "release") {
+		t.Fatal("approval release failed")
+	}
+	start := make(chan struct{})
+	results := make(chan toolFirewallDisposition, 2)
+	var retries sync.WaitGroup
+	for retry := 0; retry < 2; retry++ {
+		retries.Add(1)
+		go func() {
+			defer retries.Done()
+			<-start
+			approvalID, approvalState := approvals.lookup(fingerprint)
+			outcome := runtime.checkWithTruncation(policy, callerID, "group", request, second, false, approvalState == "release")
+			results <- service.resolveToolFirewallDecision(nil, callerID, fingerprint, approvalID, approvalState, outcome, policy)
+		}()
+	}
+	close(start)
+	retries.Wait()
+	close(results)
+	proceeded := 0
+	for disposition := range results {
+		if !disposition.blocked && !disposition.pending {
+			proceeded++
+		}
+	}
+	if proceeded != 1 {
+		t.Fatalf("%d concurrent retries proceeded, want exactly one", proceeded)
+	}
+	approvalID, approvalState := approvals.lookup(fingerprint)
+	retryOutcome := runtime.checkWithTruncation(policy, callerID, "group", request, second, false, approvalState == "release")
+	if retryOutcome.Action != "hold" {
+		t.Fatalf("later unapproved retry escaped the preserved sequence hold: %+v", retryOutcome)
+	}
+	disposition := service.resolveToolFirewallDecision(nil, callerID, fingerprint, approvalID, approvalState, retryOutcome, policy)
+	if !disposition.pending || disposition.blocked || disposition.approvalID == "" {
+		t.Fatalf("later retry did not require a fresh approval: %+v", disposition)
+	}
+}
+
+func TestToolFirewallSequenceHoldSlidesWindowAfterPendingApprovalPruned(t *testing.T) {
+	now := time.Unix(300, 0).UTC()
+	policy := ToolFirewallConfig{
+		Mode:              toolFirewallEnforce,
+		ApprovalTimeoutMS: 10,
+		Sequences:         []ToolFirewallSequenceRule{{FirstTool: "read_customer", FirstArgsRegex: "account", ThenTool: "http_request", WithinTurns: 1, Action: "hold"}},
+	}
+	runtime := newToolFirewallRuntime()
+	approvals := newToolApprovalRuntime(2)
+	approvals.now = func() time.Time { return now }
+	service := &Service{toolFirewall: runtime, toolApprovals: approvals}
+	request := &IRRequest{Messages: []IRMessage{{Role: "user", Content: "conversation seed"}}}
+	const callerID = "caller"
+	first := []IRToolCall{{Name: "read_customer", Arguments: `{"record":"account-1"}`}}
+	then := []IRToolCall{{Name: "http_request", Arguments: `{"body":"send"}`}}
+	if outcome := runtime.check(policy, callerID, "group", request, first); outcome.Action != "" {
+		t.Fatalf("first sequence step blocked: %+v", outcome)
+	}
+	fingerprint, ok := toolCallApprovalFingerprint(callerID, then)
+	if !ok {
+		t.Fatal("tool call fingerprint failed")
+	}
+	checkRetry := func(label string) toolFirewallDisposition {
+		t.Helper()
+		approvalID, approvalState := approvals.lookup(fingerprint)
+		outcome := runtime.checkWithTruncation(policy, callerID, "group", request, then, false, approvalState == "release")
+		if outcome.Action != "hold" {
+			t.Fatalf("%s escaped sequence hold: %+v (approval state %q)", label, outcome, approvalState)
+		}
+		return service.resolveToolFirewallDecision(nil, callerID, fingerprint, approvalID, approvalState, outcome, policy)
+	}
+
+	if disposition := checkRetry("initial then-tool call"); !disposition.pending {
+		t.Fatalf("initial hold did not create a pending approval: %+v", disposition)
+	}
+	now = now.Add(20 * time.Millisecond)
+	if disposition := checkRetry("expired pending approval"); !disposition.blocked || disposition.pending {
+		t.Fatalf("expired approval was not blocked: %+v", disposition)
+	}
+	now = now.Add(2 * time.Minute)
+	if _, state := approvals.lookup(fingerprint); state != "" {
+		t.Fatalf("expired approval was not pruned: state=%q", state)
+	}
+	for retry := 1; retry <= 3; retry++ {
+		if disposition := checkRetry(fmt.Sprintf("retry after pruning %d", retry)); !disposition.pending {
+			t.Fatalf("retry %d did not remain held for a fresh approval: %+v", retry, disposition)
+		}
+	}
+}
+
 func TestToolFirewallPolicyChangeDeniesOutstandingApprovals(t *testing.T) {
 	for _, initialDecision := range []string{"pending", "release"} {
 		t.Run(initialDecision, func(t *testing.T) {
@@ -1100,6 +1215,7 @@ func TestToolFirewallApprovalHoldE2E(t *testing.T) {
 					chatToolCallBodyNamed(t, "read_customer", `{"record":"account-7"}`),
 					chatToolCallBodyNamed(t, "http_request", `{"body":"send"}`),
 					chatToolCallBodyNamed(t, "http_request", `{"body":"send"}`),
+					chatToolCallBodyNamed(t, "http_request", `{"body":"send"}`),
 					`{"id":"chatcmpl-final","choices":[{"message":{"role":"assistant","content":"continued safely"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12}}`,
 				)
 				defer upstream.Close()
@@ -1221,6 +1337,10 @@ func TestToolFirewallApprovalHoldE2E(t *testing.T) {
 				if decision == "release" {
 					if !thirdHasCall || strings.Contains(third.Body.String(), "Tool call blocked") {
 						t.Fatalf("approved retry did not return the tool call: %s", third.Body.String())
+					}
+					fourth := makeRequest()
+					if fourth.Code != http.StatusOK || !strings.Contains(fourth.Body.String(), "approval_pending") || strings.Contains(fourth.Body.String(), "tool_calls") || strings.Contains(fourth.Body.String(), "function_call") || strings.Contains(fourth.Body.String(), `"type":"tool_use"`) {
+						t.Fatalf("later retry escaped the consumed approval: status=%d body=%s", fourth.Code, fourth.Body.String())
 					}
 					continuation := `{"model":"default","messages":[{"role":"user","content":"conversation seed"},{"role":"assistant","tool_calls":[{"id":"call-http","type":"function","function":{"name":"http_request","arguments":"{\"body\":\"send\"}"}}]},{"role":"tool","tool_call_id":"call-http","content":"200 OK"}]}`
 					if client == "responses" {

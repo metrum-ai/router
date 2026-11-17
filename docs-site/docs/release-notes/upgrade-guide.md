@@ -9,6 +9,8 @@ doc_type: reference
 
 Tool-firewall argument deny rules now include boolean values in their inspected arguments. Existing rules that match `true` or `false` values may now deny calls that previously passed. No configuration migration is required.
 
+Tool-firewall sequence holds remain active across retries. Each repeated retry must consume a fresh approval before the router forwards its tool call. No configuration migration is required.
+
 ## Streaming tool calls with multiple choices
 
 When streaming Chat completions with tool-call inspection enabled, tool calls remain held until every choice that contains a tool call has finished. No configuration migration is required.
@@ -333,6 +335,10 @@ including first and second steps returned together. Schema validation still runs
 Each release is consumed once. Concurrent retries sharing the same approved
 call cannot both proceed; the retry that loses consumption remains held or is
 blocked.
+For hold sequence rules, the `within_turns` window slides forward on every
+matching then-tool call while the sequence remains held, including retries
+while an approval is pending or expired. Each forwarded retry still requires a
+freshly consumed release.
 Changing the effective firewall policy clears pending and already released approvals. Retries are evaluated under the
 current policy; resolve a new hold, if one is created, then retry the same call.
 
