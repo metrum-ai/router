@@ -799,6 +799,7 @@ func (h *configAdminHandler) handlePutProvider(w http.ResponseWriter, r *http.Re
 		if existing, found := cfg.Provider[name]; found {
 			provider.TrafficShape = existing.TrafficShape
 			provider.SpendBreaker = existing.SpendBreaker
+			provider.PropagateTrace = existing.PropagateTrace
 		}
 		cfg.Provider[name] = provider
 		return nil
