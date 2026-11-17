@@ -465,7 +465,7 @@ func (h *callerAdminHandler) handleList(w http.ResponseWriter, r *http.Request) 
 			continue
 		}
 		tokenHash := strings.TrimSpace(row.TokenVerifier)
-		if !isCallerTokenHashValue(tokenHash) {
+		if !isCallerTokenHashValue(tokenHash) && !(row.Status == accountStatusDisabled && tokenHash == "") {
 			writeCallerAdminError(w, http.StatusServiceUnavailable, "callers-legacy-verifier-present")
 			return
 		}

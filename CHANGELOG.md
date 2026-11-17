@@ -11,6 +11,7 @@
 - Align OpenAI and Anthropic compatibility matrix versions with the pinned Python SDK lockfile and regenerate the published matrix page.
 
 - Align the standalone cache isolation guide with v5 caller-scoped response-cache and vLLM prefix-salt behavior; document that SGLang prefix isolation is unsupported.
+- Keep disabled callers with intentionally empty verifiers visible in the admin caller list while rejecting active callers without verifiers.
 
 ### Security
 
