@@ -5,6 +5,10 @@ doc_type: reference
 
 # Upgrade Guide
 
+## Boolean tool-firewall argument matching
+
+Tool-firewall argument deny rules now include boolean values in their inspected arguments. Existing rules that match `true` or `false` values may now deny calls that previously passed. No configuration migration is required.
+
 ## v4.8 to v5.0.0 breaking-change map
 
 Review these changes before a rolling upgrade. Router v5 and v4.8 can read some
