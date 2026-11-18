@@ -9,7 +9,7 @@
 #   TypeScript native compiler binary were removed: with the current grype
 #   database none of those IDs match the shipped tsc binary any longer.
 #
-# Remaining exception: the TypeScript 7 native compiler binary
+# The TypeScript exception covers the TypeScript 7 native compiler binary
 # (@typescript/typescript-<os>-<arch>/lib/tsc), a build-time-only
 # devDependency of internal/router/admindist/web that is never shipped in the
 # router binary or image. typescript 7.0.2, the latest stable release
@@ -27,3 +27,23 @@ ignore:
       version: v0.38.0
       type: go-module
       location: "**/node_modules/@typescript/typescript-*/lib/tsc"
+
+  # Owner: release/compliance.
+  # Reason: picomatch is build-time tooling for the docs site and admin UI.
+  # It never ships in the router binary or packaged admin bundle. Its extglob
+  # patterns come from our own build configuration, not from users.
+  # Expiry: when a patched picomatch release exists; bump and remove.
+  # Grype attributes node_modules/picomatch to package-lock.json on a clean
+  # checkout and to the package manifest when dependencies are installed.
+  - vulnerability: GHSA-fc5q-39xc-vjpf
+    package:
+      name: picomatch
+      version: "2.3.2"
+      type: npm
+      location: "/docs-site/{package-lock.json,node_modules/picomatch/package.json}"
+  - vulnerability: GHSA-fc5q-39xc-vjpf
+    package:
+      name: picomatch
+      version: "4.0.7"
+      type: npm
+      location: "/internal/router/admindist/web/{package-lock.json,node_modules/picomatch/package.json}"
