@@ -6,6 +6,8 @@
 
 ### Fixed
 
+- Fix audit retention pruning moving its checkpoint backwards under concurrent replicas.
+
 - Fix security console resume instructions failing with HTTP 428. Routerctl now discovers the current configuration ETag for guarded mutations, and copied HTTP instructions fetch and send `If-Match`.
 
 - Use the public, revision- and checksum-pinned ProtectAI DeBERTa-v3-base prompt-injection classifier in the reference detector example so setup requires no model-host access grant.
