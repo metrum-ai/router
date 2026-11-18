@@ -15,7 +15,7 @@ RT-ADMIN-013,NOT-SELECTED,v5.0.0-rc.3,02aeae9ba70bb87d71a239b2d4b1bfd52d5f821a,,
 RT-ADMIN-014,NOT-SELECTED,v5.0.0-rc.3,02aeae9ba70bb87d71a239b2d4b1bfd52d5f821a,,,,Extended case outside this core run.,
 RT-ADMIN-015,NOT-SELECTED,v5.0.0-rc.3,02aeae9ba70bb87d71a239b2d4b1bfd52d5f821a,,,,Extended case outside this core run.,
 RT-ADMIN-016,NOT-SELECTED,v5.0.0-rc.3,02aeae9ba70bb87d71a239b2d4b1bfd52d5f821a,,,,Extended case outside this core run.,
-RT-ADMIN-017,FAIL,v5.0.0-rc.3,02aeae9ba70bb87d71a239b2d4b1bfd52d5f821a,git:02aeae9ba70bb87d71a239b2d4b1bfd52d5f821a,v5.0.0-rc.3-rt-admin-017,go test ./internal/router -run ^TestCertResourceMatrix$ -v -count=1 (certification harness),Initial harness failed allowed requests (503 on writes; 403 on project reads). Diagnostic with initialized service and documented project budget grants passed 17 allowed and 34 denied requests. Initial failure retained; product causality unproven.,internal-evidence
+RT-ADMIN-017,PASS,v5.0.0-rc.3,02aeae9ba70bb87d71a239b2d4b1bfd52d5f821a,git:02aeae9ba70bb87d71a239b2d4b1bfd52d5f821a,v5.0.0-rc.3-rt-admin-017-clean,go test ./internal/router -run ^TestCertResourceMatrix$ -v -count=1 (certification harness),Initial INVALID-RUN: uninitialized service and missing project budget grant. Clean rerun: 17 allowed; 34 denied with unchanged revision and configuration digest.,internal-evidence
 RT-ADMIN-018,NOT-SELECTED,v5.0.0-rc.3,02aeae9ba70bb87d71a239b2d4b1bfd52d5f821a,,,,Extended case outside this core run.,
 RT-ADMIN-019,NOT-SELECTED,v5.0.0-rc.3,02aeae9ba70bb87d71a239b2d4b1bfd52d5f821a,,,,Extended case outside this core run.,
 RT-ADMIN-020,NOT-SELECTED,v5.0.0-rc.3,02aeae9ba70bb87d71a239b2d4b1bfd52d5f821a,,,,Extended case outside this core run.,
