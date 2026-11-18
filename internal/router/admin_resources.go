@@ -937,8 +937,8 @@ func writeAdminConfigRevision(db *gorm.DB, runtimeScope, actor string, expected 
 		return adminConfigWriteResult{}, configAdminError(http.StatusConflict, "config_source_mode_file", "configuration writes require database mode")
 	}
 	var result adminConfigWriteResult
-	err := withSQLiteBusyRetry(func() error {
-		return db.Transaction(func(tx *gorm.DB) error {
+	err := withPostgresSerializationRetry(db, func() error {
+		return auditTransaction(db, func(tx *gorm.DB) error {
 			if err := lockConfigRuntimeTx(tx, runtimeScope); err != nil {
 				return err
 			}

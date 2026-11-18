@@ -160,11 +160,10 @@ func insertAdminCredentialEventTx(tx *gorm.DB, event AdminCredentialEvent) error
 	event.ClientID = adminAuditFieldValue(event.ClientID)
 	event.Actor = adminAuditFieldValue(event.Actor)
 	event.Lifecycle = adminAuditFieldValue(event.Lifecycle)
-	unlock, err := lockAdminAuditChain(tx, "credential", string(AdminDomainCredential))
-	if err != nil {
+	if err := lockAdminAuditChain(tx, "credential", string(AdminDomainCredential)); err != nil {
 		return fmt.Errorf("lock credential audit chain: %w", err)
 	}
-	defer unlock()
+
 	event.At = normalizeAdminAuditAppendTime(tx, "credential", string(AdminDomainCredential), adminCredentialEventsTable, "", event.EventID, event.At)
 	if event.Outcome == "failure" && !adminCredentialFailureWithinCap(tx, event) {
 		// Drop the record but keep the change path working: the cap exists so a varied key ID

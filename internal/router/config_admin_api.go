@@ -1050,7 +1050,7 @@ func importConfigSetForAPI(db *gorm.DB, runtimeScope, name string, yamlBytes []b
 		return "", configAdminError(422, "config-invalid", "the document fails validation: "+truncateSafeDetail(err.Error()))
 	}
 	var setID string
-	err = db.Transaction(func(tx *gorm.DB) error {
+	err = auditTransaction(db, func(tx *gorm.DB) error {
 		if err := ensureConfigAdminWriteSchema(tx); err != nil {
 			return err
 		}
@@ -1251,7 +1251,7 @@ func (h *configAdminHandler) handleSetActivation(w http.ResponseWriter, r *http.
 // runtime update and records the set_activate/set_rollback event.
 func activateConfigSetForAPI(db *gorm.DB, runtimeScope, setID, action, actor, reason string, expected *int64, audit AdminAuditMeta, now time.Time) (int64, error) {
 	var revision int64
-	err := db.Transaction(func(tx *gorm.DB) error {
+	err := auditTransaction(db, func(tx *gorm.DB) error {
 		if err := lockConfigRuntimeTx(tx, runtimeScope); err != nil {
 			return err
 		}

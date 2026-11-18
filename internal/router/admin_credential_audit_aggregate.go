@@ -139,8 +139,8 @@ func (s *Service) flushAdminCredentialAuditCounters(ctx context.Context, all boo
 		return q.Error
 	}
 	for _, id := range ids {
-		err := withSQLiteBusyRetry(func() error {
-			return db.Transaction(func(tx *gorm.DB) error {
+		err := withPostgresSerializationRetry(db, func() error {
+			return auditTransaction(db, func(tx *gorm.DB) error {
 				var row adminCredentialAuditCounter
 				res := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("bucket_id = ?", id).First(&row)
 				if errors.Is(res.Error, gorm.ErrRecordNotFound) {

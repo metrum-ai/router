@@ -267,11 +267,10 @@ func insertChainedConfigChangeEventTx(tx *gorm.DB, e chainedConfigChangeEvent) e
 		return fmt.Errorf("config change event requires a transaction")
 	}
 	e.AuthzDomain = adminAuditFieldValue(e.AuthzDomain)
-	unlock, err := lockAdminAuditChain(tx, "control", e.AuthzDomain)
-	if err != nil {
+	if err := lockAdminAuditChain(tx, "control", e.AuthzDomain); err != nil {
 		return fmt.Errorf("lock config audit chain: %w", err)
 	}
-	defer unlock()
+
 	at, parseErr := time.Parse(time.RFC3339Nano, e.At)
 	if parseErr != nil {
 		return fmt.Errorf("parse config audit timestamp: %w", parseErr)
@@ -680,8 +679,8 @@ func WriteGroupTargets(db *gorm.DB, runtimeScope string, req GroupTargetsWriteRe
 	// timeout; retry the whole transaction, which re-reads all state and
 	// keeps If-Match and idempotency semantics. PostgreSQL relies on the
 	// guarded runtime update and sees no busy errors.
-	err := withSQLiteBusyRetry(func() error {
-		return db.Transaction(func(tx *gorm.DB) error {
+	err := withPostgresSerializationRetry(db, func() error {
+		return auditTransaction(db, func(tx *gorm.DB) error {
 			if err := lockConfigRuntimeTx(tx, runtimeScope); err != nil {
 				return err
 			}
@@ -1066,7 +1065,7 @@ func RollbackGroup(db *gorm.DB, runtimeScope, group, fromSetID, reason, actor st
 		return nil, errors.New("config actor is required")
 	}
 	var result *GroupTargetsWriteResult
-	err := db.Transaction(func(tx *gorm.DB) error {
+	err := auditTransaction(db, func(tx *gorm.DB) error {
 		if err := lockConfigRuntimeTx(tx, runtimeScope); err != nil {
 			return err
 		}

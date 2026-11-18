@@ -189,8 +189,8 @@ func StartGroupShadow(db *gorm.DB, runtimeScope, group string, req ShadowStartRe
 		return nil, errors.New("config actor is required")
 	}
 	var result *ShadowRun
-	err := withSQLiteBusyRetry(func() error {
-		return db.Transaction(func(tx *gorm.DB) error {
+	err := withPostgresSerializationRetry(db, func() error {
+		return auditTransaction(db, func(tx *gorm.DB) error {
 			if err := lockConfigRuntimeTx(tx, runtimeScope); err != nil {
 				return err
 			}
@@ -287,8 +287,8 @@ func StopGroupShadow(db *gorm.DB, runtimeScope, group, actor, reason string, aud
 		return nil, configAdminError(409, "config_source_mode_file", "shadow runs require database mode (server.config_source.mode: database)")
 	}
 	var result *ShadowRun
-	err := withSQLiteBusyRetry(func() error {
-		return db.Transaction(func(tx *gorm.DB) error {
+	err := withPostgresSerializationRetry(db, func() error {
+		return auditTransaction(db, func(tx *gorm.DB) error {
 			if err := lockConfigRuntimeTx(tx, runtimeScope); err != nil {
 				return err
 			}

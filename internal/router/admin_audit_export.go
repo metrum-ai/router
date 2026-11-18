@@ -15,7 +15,6 @@ import (
 	"net/http"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"gorm.io/gorm"
@@ -151,69 +150,20 @@ func adminAuditChainHash(previous string, row adminAuditExportRow) (string, erro
 	return hex.EncodeToString(sum[:]), nil
 }
 
-var adminAuditDBLocks sync.Map
-
-type adminAuditTxLock struct {
-	mu   *sync.Mutex
-	once sync.Once
-}
-
-func (l *adminAuditTxLock) release() {
-	if l != nil {
-		l.once.Do(l.mu.Unlock)
-	}
-}
-
-type adminAuditLockedConnPool struct {
-	gorm.ConnPool
-	lock *adminAuditTxLock
-}
-
-func (p *adminAuditLockedConnPool) Commit() error {
-	err := p.ConnPool.(gorm.TxCommitter).Commit()
-	p.lock.release()
-	return err
-}
-
-func (p *adminAuditLockedConnPool) Rollback() error {
-	err := p.ConnPool.(gorm.TxCommitter).Rollback()
-	p.lock.release()
-	return err
-}
-
-func lockAdminAuditChain(tx *gorm.DB, source, domain string) (func(), error) {
+// SQLite's writer reservation and PostgreSQL's advisory lock both last until
+// the enclosing transaction commits or rolls back.
+func lockAdminAuditChain(tx *gorm.DB, source, domain string) error {
 	if tx == nil {
-		return nil, fmt.Errorf("audit chain requires transaction")
+		return fmt.Errorf("audit chain requires transaction")
 	}
-	if tx.Dialector.Name() == "postgres" {
-		return func() {}, tx.Exec(`SELECT pg_advisory_xact_lock(hashtext(?))`, "router-admin-audit:"+source+":"+domain).Error
+	switch tx.Dialector.Name() {
+	case "postgres":
+		return tx.Exec(`SELECT pg_advisory_xact_lock(hashtext(?))`, "router-admin-audit:"+source+":"+domain).Error
+	case "sqlite":
+		return execWithAuditAnchors(tx, `INSERT INTO `+adminAuditChainAnchorsTable+` (source,domain,start_hash,head_hash,updated_at) VALUES (?,?, '', '', ?) ON CONFLICT(source,domain) DO NOTHING`, source, domain, time.Now().UTC().Format(time.RFC3339Nano))
+	default:
+		return nil
 	}
-	if tx.Dialector.Name() != "sqlite" {
-		return func() {}, nil
-	}
-	if _, alreadyLocked := tx.Statement.ConnPool.(*adminAuditLockedConnPool); alreadyLocked {
-		return func() {}, nil
-	}
-	pool := tx.Config.ConnPool
-	lock, _ := adminAuditDBLocks.LoadOrStore(pool, &sync.Mutex{})
-	mu := lock.(*sync.Mutex)
-	mu.Lock()
-	state := &adminAuditTxLock{mu: mu}
-	// The anchor write acquires SQLite's database writer lock before reading the
-	// head. This also orders distinct sql.DB handles opened on the same file.
-	if err := ensureAdminAuditChainAnchors(tx); err != nil {
-		mu.Unlock()
-		return nil, err
-	}
-	if err := tx.Exec(`INSERT INTO `+adminAuditChainAnchorsTable+` (source,domain,start_hash,head_hash,updated_at) VALUES (?,?, '', '', ?) ON CONFLICT(source,domain) DO NOTHING`, source, domain, time.Now().UTC().Format(time.RFC3339Nano)).Error; err != nil {
-		state.release()
-		return nil, err
-	}
-	if _, ok := tx.Statement.ConnPool.(gorm.TxCommitter); ok {
-		tx.Statement.ConnPool = &adminAuditLockedConnPool{ConnPool: tx.Statement.ConnPool, lock: state}
-		return func() {}, nil
-	}
-	return state.release, nil
 }
 
 const adminAuditChainAnchorsTable = "router_admin_audit_chain_anchors"
@@ -712,17 +662,10 @@ func (h *adminAuditExportRequest) delete(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	var deleted adminAuditExportRecord
-	err := h.DB.WithContext(r.Context()).Transaction(func(tx *gorm.DB) error {
-		unlock, err := lockAdminAuditChain(tx, "usage", meta.Domain)
-		if err != nil {
+	err := auditTransaction(h.DB.WithContext(r.Context()), func(tx *gorm.DB) error {
+		if err := lockAdminAuditChain(tx, "usage", meta.Domain); err != nil {
 			return err
 		}
-		locked := true
-		defer func() {
-			if locked {
-				unlock()
-			}
-		}()
 		if err := tx.Where("event_id = ? AND domain = ?", eventID, meta.Domain).First(&deleted).Error; err != nil {
 			return err
 		}
@@ -758,8 +701,6 @@ func (h *adminAuditExportRequest) delete(w http.ResponseWriter, r *http.Request)
 				return err
 			}
 		}
-		unlock()
-		locked = false
 		record := auditRecordFromMeta(meta, "")
 		record.Domain = AdminGlobalDomain
 		record.Action = "delete"

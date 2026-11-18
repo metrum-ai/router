@@ -148,7 +148,7 @@ func consumeOfflineConfigMaintenance(configDB, usageDB *gorm.DB) error {
 		return nil
 	}
 	if usageDB == nil {
-		return configDB.Transaction(func(tx *gorm.DB) error {
+		return auditTransaction(configDB, func(tx *gorm.DB) error {
 			for _, marker := range markers {
 				if _, err := time.Parse(time.RFC3339Nano, marker.At); err != nil {
 					return fmt.Errorf("offline marker %d has invalid time", marker.ID)
@@ -171,11 +171,10 @@ func consumeOfflineConfigMaintenance(configDB, usageDB *gorm.DB) error {
 				eventID := fmt.Sprintf("offline-config-%s-%d", marker.Scope, marker.ID)
 				requestID := fmt.Sprintf("offline-config-%s-marker-%d", marker.Scope, marker.ID)
 				detail := fmt.Sprintf("command=%s revision=%d actor=%s", marker.Command, marker.Revision, marker.Actor)
-				unlock, err := lockAdminAuditChain(tx, "control", string(AdminGlobalDomain))
-				if err != nil {
+				if err := lockAdminAuditChain(tx, "control", string(AdminGlobalDomain)); err != nil {
 					return err
 				}
-				defer unlock()
+
 				var existing int64
 				if err := tx.Model(&adminAuditControlExportRecord{}).Where("event_id = ?", eventID).Count(&existing).Error; err != nil {
 					return err
@@ -199,7 +198,7 @@ func consumeOfflineConfigMaintenance(configDB, usageDB *gorm.DB) error {
 			return tx.Where("id IN ?", ids).Delete(&offlineMaintenanceRecord{}).Error
 		})
 	}
-	if err := usageDB.Transaction(func(tx *gorm.DB) error {
+	if err := auditTransaction(usageDB, func(tx *gorm.DB) error {
 		for _, marker := range markers {
 			if _, err := time.Parse(time.RFC3339Nano, marker.At); err != nil {
 				return fmt.Errorf("offline marker %d has invalid time", marker.ID)
@@ -245,7 +244,7 @@ func consumeOfflineUsageMaintenance(usageDB *gorm.DB) error {
 	if len(markers) == 0 {
 		return nil
 	}
-	return usageDB.Transaction(func(tx *gorm.DB) error {
+	return auditTransaction(usageDB, func(tx *gorm.DB) error {
 		for _, marker := range markers {
 			if _, err := time.Parse(time.RFC3339Nano, marker.At); err != nil {
 				return fmt.Errorf("offline usage marker %d has invalid time", marker.ID)

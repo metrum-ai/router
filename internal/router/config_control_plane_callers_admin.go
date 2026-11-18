@@ -154,7 +154,7 @@ func (h *callerAdminHandler) handleContainment(w http.ResponseWriter, r *http.Re
 		return
 	}
 	source := "containment"
-	err = h.deps.DB.WithContext(r.Context()).Transaction(func(tx *gorm.DB) error {
+	err = auditTransaction(h.deps.DB.WithContext(r.Context()), func(tx *gorm.DB) error {
 		var rows []callerRow
 		if err := tx.Where("config_set_id = ? AND caller_id = ?", set.ID, req.CallerID).Limit(1).Find(&rows).Error; err != nil {
 			return err
@@ -579,7 +579,7 @@ func (h *callerAdminHandler) handleIssue(w http.ResponseWriter, r *http.Request)
 		HoneytokenLabel:     honeytokenLabel(caller),
 		HoneytokenPlantedAt: honeytokenPlantedAt(caller),
 	}
-	err = h.deps.DB.Transaction(func(tx *gorm.DB) error {
+	err = auditTransaction(h.deps.DB, func(tx *gorm.DB) error {
 		if err := ensureConfigControlPlaneRuntimeTables(tx); err != nil {
 			return err
 		}
@@ -763,7 +763,7 @@ func (h *callerAdminHandler) handleRotate(w http.ResponseWriter, r *http.Request
 	}
 	// Persist only the new hash and public token identifier; the raw token
 	// never touches the database or logs.
-	err = h.deps.DB.Transaction(func(tx *gorm.DB) error {
+	err = auditTransaction(h.deps.DB, func(tx *gorm.DB) error {
 		if err := ensureConfigControlPlaneRuntimeTables(tx); err != nil {
 			return err
 		}
@@ -829,7 +829,7 @@ func (h *callerAdminHandler) handleRevoke(w http.ResponseWriter, r *http.Request
 		writeCallerAdminError(w, http.StatusServiceUnavailable, "callers-config-set-unavailable")
 		return
 	}
-	err = h.deps.DB.Transaction(func(tx *gorm.DB) error {
+	err = auditTransaction(h.deps.DB, func(tx *gorm.DB) error {
 		if err := ensureConfigControlPlaneRuntimeTables(tx); err != nil {
 			return err
 		}

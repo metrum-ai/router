@@ -50,7 +50,7 @@ func (s *adminEmergencyActivationStore) Deactivate(ctx context.Context, id, reas
 		return zero, errAdminEmergencyInvalid
 	}
 	var stopped adminEmergencyDeactivation
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := auditTransaction(s.db.WithContext(ctx), func(tx *gorm.DB) error {
 		var row adminEmergencyActivationRow
 		query := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("credential_id = ? AND deactivated_at_ms = 0", id).Limit(1).Find(&row)
 		if query.Error != nil {
