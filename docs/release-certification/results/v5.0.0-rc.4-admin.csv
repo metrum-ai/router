@@ -1,0 +1,22 @@
+id,status,version,commit,target_digest,run_id,command,observed,evidence
+RT-ADMIN-001,PASS,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,git:7c606d45c61bb93e259b7f2da85bc8f537c85491,v5.0.0-rc.4-rt-admin-001,go test ./internal/router -run ^TestControlPlaneBackupRestoreThroughAdminAPI$ -count=50 -v (sequential and concurrent audit writer); go test ./internal/router -run ^TestConcurrentAdminRetention$,"50/50 sequential and 50/50 parallel backup/restores retained the committed marker and verified the audit export. Two-pool retention passed on SQLite and PostgreSQL: four deletes, expected checkpoint, surviving chain verified.",internal-evidence
+RT-ADMIN-002,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-ADMIN-003,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-ADMIN-004,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-ADMIN-005,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-ADMIN-006,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-ADMIN-007,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-ADMIN-008,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-ADMIN-009,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-ADMIN-010,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-ADMIN-011,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-ADMIN-012,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-ADMIN-013,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-ADMIN-014,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-ADMIN-015,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-ADMIN-016,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-ADMIN-017,PASS,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,git:7c606d45c61bb93e259b7f2da85bc8f537c85491,v5.0.0-rc.4-rt-admin-017,go test ./internal/router -run ^TestCertResourceMatrix$ -v -count=1 (certification harness),17 allowed calls succeeded; all 34 missing-grant and cross-domain calls returned 403 with unchanged revision and configuration digest.,internal-evidence
+RT-ADMIN-018,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-ADMIN-019,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-ADMIN-020,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-ADMIN-021,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,

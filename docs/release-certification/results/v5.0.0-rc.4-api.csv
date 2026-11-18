@@ -1,0 +1,30 @@
+id,status,version,commit,target_digest,run_id,command,observed,evidence
+RT-API-001,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-API-002,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-API-003,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-API-004,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-API-005,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-API-006,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-API-007,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-API-008,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-API-009,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-API-010,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-API-011,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-API-012,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-API-013,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-API-014,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-API-015,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-API-016,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-API-017,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-API-018,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-API-019,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-API-020,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-API-021,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-API-022,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-API-023,NOT-SELECTED,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,,,,Extended case outside this core run.,
+RT-API-024,PASS,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,sha256:d596cdd1bc144669d4c8d07ad8f762c028329f31859c7c34aa956f068445a611,v5.0.0-rc.4-rt-api-024,pytest tests/test_chat_smoke.py::test_chat_tools_tool_choice_and_sse_usage (published binary),"Pinned Chat tool choice, upstream path and terminal SSE usage assertions passed.",internal-evidence
+RT-API-025,PASS,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,sha256:d596cdd1bc144669d4c8d07ad8f762c028329f31859c7c34aa956f068445a611,v5.0.0-rc.4-rt-api-025,pytest tests/test_responses_smoke.py::test_responses_tool_and_sse_terminal_usage (published binary),"Pinned Responses function call, upstream path, tool choice and terminal usage assertions passed.",internal-evidence
+RT-API-026,PASS,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,sha256:d596cdd1bc144669d4c8d07ad8f762c028329f31859c7c34aa956f068445a611,v5.0.0-rc.4-rt-api-026,pytest tests/test_anthropic_smoke.py::test_anthropic_messages_tool_choice_and_sse_usage (published binary),Pinned Messages assertions passed on /anthropic/v1/messages and /v1/messages.,internal-evidence
+RT-API-027,PASS,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,sha256:d596cdd1bc144669d4c8d07ad8f762c028329f31859c7c34aa956f068445a611,v5.0.0-rc.4-rt-api-027,pytest tests/test_http_smoke.py::test_models_are_caller_filtered (published binary),Both callers received 200; the restricted caller saw only chat.,internal-evidence
+RT-API-028,PASS,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,sha256:d596cdd1bc144669d4c8d07ad8f762c028329f31859c7c34aa956f068445a611,v5.0.0-rc.4-rt-api-028,"POST /v1/embeddings; compare dimensions, model and usage","HTTP 200; three expected coordinates, embed-model-1 and four prompt and total tokens.",internal-evidence
+RT-API-029,PASS,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,sha256:d596cdd1bc144669d4c8d07ad8f762c028329f31859c7c34aa956f068445a611,v5.0.0-rc.4-rt-api-029,POST /v1/messages/count_tokens; query request_usage,"HTTP 200; 12345 input tokens; one count_tokens row with zero total tokens, cost and billed cost.",internal-evidence
