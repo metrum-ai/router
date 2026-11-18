@@ -494,7 +494,7 @@ run_migrations() {
     fi
   done
   # verify-serving refuses to pass while a bound data job is still pending; the
-  # documented order resumes the job at checkpoint 0 first (DOCKER_COMPOSE_INSTALL.md).
+  # documented order resumes the job at checkpoint 0 first (BINARY_INSTALL.md).
   log "migrate resume historical-usage-validation-v1"
   if ! migrate --action=resume --job=historical-usage-validation-v1 --checkpoint-ordinal=0 \
       --driver=sqlite --db="$db" --json >/dev/null; then

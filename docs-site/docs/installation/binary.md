@@ -5,6 +5,8 @@ doc_type: howto
 
 # Binary Install
 
+The repository's Dockerfile and deploy/ Compose files are unsupported examples; they are not built, tested or published by releases.
+
 The binary package is for teams that already operate Linux services with their own process supervisor, database, log pipeline, and TLS proxy.
 
 For package selection and architecture guidance, start with [Deployment Artifacts](./deployment-artifacts). For package inspection and security checks, see [Package Validation And Security Checks](./package-validation).

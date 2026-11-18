@@ -21,7 +21,7 @@ not belong in public manifests or package documentation.
 ## Prerequisites
 
 - A Kubernetes cluster with an ingress controller and TLS automation or a separate TLS termination plan.
-- A private registry image pinned by digest, such as `registry.example.com/metrum-ai-router:<version>-linux-amd64@sha256:<digest>`. Replace both placeholders with the published release tag and its registry-reported digest.
+- A private registry image pinned by digest, such as `registry.example.com/metrum-ai-router:<version>-linux-amd64@sha256:<digest>`. Replace both placeholders with your image version and its registry-reported digest.
 - A fresh `ReadWriteOnce` PVC for the default SQLite bootstrap, or an explicit PostgreSQL deployment design for multi-replica/external database use.
 - Provider credentials stored in a Kubernetes Secret or external secret manager.
 - A router config reviewed for the deployment's model groups, callers, admin auth, and reporting settings.
@@ -33,22 +33,9 @@ release activation.
 
 ## Image And Architecture
 
-Release Docker packages include per-architecture image tarballs:
+No prebuilt router container image is published. Kubernetes deployments must supply and validate their own image and registry provenance; image construction and Docker/Compose installation are unsupported. For the supported release artifact, use the [binary install guide](./binary).
 
-| Node architecture | Package image tag example |
-|---|---|
-| `amd64` / `x86_64` | `<version>-linux-amd64` |
-| `arm64` / Graviton | `<version>-linux-arm64` |
-
-For private clusters, load the image tar into nodes or push it to a private registry:
-
-```bash
-docker load -i images/metrum-ai-router-<version>-linux-amd64.tar
-docker tag metrum-ai-router:<version>-linux-amd64 registry.example.com/metrum-ai-router:<version>-linux-amd64
-docker push registry.example.com/metrum-ai-router:<version>-linux-amd64
-```
-
-Use the registry-reported digest in every workload image reference; do not deploy a mutable tag alone. The generic manifests use placeholder tag and digest values. Replace them with the exact published image reference before applying. Third-party serving images are pinned by digest in their manifests. For an optional cluster-wide guard, adapt the [trusted-registry policy example](https://github.com/metrum-ai/router/blob/main/deploy/kubernetes/trusted-registry-policy.example.yaml) to your approved registry hosts and images, then install it through your cluster's policy process. The example is not installed by this project. Trivy cannot infer whether deployment-specific registries are trusted; the repository therefore suppresses KSV-0125 only for exact rendered examples, with an explanation for each output.
+Use the registry-reported digest in every workload image reference; do not deploy a mutable tag alone. The generic manifests use placeholder tag and digest values. Replace them with the exact operator-owned image reference before applying. Third-party serving images are pinned by digest in their manifests. For an optional cluster-wide guard, adapt the [trusted-registry policy example](https://github.com/metrum-ai/router/blob/main/deploy/kubernetes/trusted-registry-policy.example.yaml) to your approved registry hosts and images, then install it through your cluster's policy process. The example is not installed by this project. Trivy cannot infer whether deployment-specific registries are trusted; the repository therefore suppresses KSV-0125 only for exact rendered examples, with an explanation for each output.
 
 Mixed-architecture clusters need separate per-architecture tags or a registry-managed multi-architecture manifest. Do not use a per-architecture tarball as if it were a multi-architecture image.
 

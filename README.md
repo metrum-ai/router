@@ -143,7 +143,7 @@ first local trial.
 
 For packaged installs, use the public [installation
 guide](docs-site/docs/installation/index.md). The documented deployment modes
-are Linux binary, Docker Compose, and Kubernetes. See [Architecture, Platforms,
+are Linux binary and Kubernetes. See [Architecture, Platforms,
 And Limitations](docs-site/docs/reference/architecture-limitations.md) for the
 operator-owned boundaries and explicit non-goals.
 
@@ -678,8 +678,6 @@ make build        # build Docusaurus docs, then local router/tool binaries with 
 make build-go-only # local router/tool binaries without rebuilding docs
 make package      # linux amd64 and linux arm64 tarballs
 make package-all  # same as package
-make package-docker # linux amd64 and linux arm64 Docker packages
-make package-docker-all # same as package-docker
 ```
 
 Release package targets require a clean git tree and reject `-dirty` versions. Use `ALLOW_DIRTY_PACKAGE=1` only for local development artifacts that will not be shipped. Package tar creation runs with `COPYFILE_DISABLE=1`, and package validation rejects macOS AppleDouble metadata, unexpected package files, missing package-safe docs, internal/private markers, raw secrets, local state, and wrong binary architecture.
@@ -697,7 +695,6 @@ config/config.dev.example.yaml
 config/env.example.json
 docs/PACKAGE_README.md
 docs/BINARY_INSTALL.md
-docs/DOCKER_COMPOSE_INSTALL.md
 docs/KUBERNETES_INSTALL.md
 docs/PACKAGE_VALIDATION.md
 docs/solution-brief.md
@@ -709,8 +706,8 @@ MODEL_LICENSES.md
 caddy/Caddyfile
 ```
 `metrum-ai-routerctl` provides customer-local safe config, caller-token-file,
-model, and aggregate-usage operations and is included in Docker images.
-The default deployment is SQLite state with one Router container and one
+model, and aggregate-usage operations.
+The default deployment is SQLite state with one Router process and one
 replica; it neither provisions nor binds RDS.
 Packages ship canonical `metrum-ai-router*` binaries only; older CLI names are
 source-only exit-2 notices under `cmd/` and are not packaged.
@@ -730,25 +727,6 @@ troubleshooting, evaluation, reference, and release/upgrade guidance.
 
 Internal operator and maintainer docs live under `docs/`. Use [docs/DOCS_MAINTENANCE.md](docs/DOCS_MAINTENANCE.md) to decide which internal runbook owns each public section and which verification commands to run. Behavior changes affecting routing, auth, models, CLI/API usage, telemetry, deployment, licensing, security, or production operations normally require both public Docusaurus updates and matching internal/operator doc updates.
 
-Docker packages contain prebuilt image tarballs plus compose deployment assets:
-
-```text
-images/metrum-ai-router-<version>-linux-<arch>.tar
-compose/docker-compose.yml
-compose/docker-compose.postgres-localhost.yml
-compose/Caddyfile.compose
-compose/.env
-compose/.env.example
-config/config.example.yaml
-config/config.dev.example.yaml
-config/env.example.json
-docs/PACKAGE_README.md
-docs/BINARY_INSTALL.md
-docs/DOCKER_COMPOSE_INSTALL.md
-docs/KUBERNETES_INSTALL.md
-docs/PACKAGE_VALIDATION.md
-docs/solution-brief.md
-```
 
 
 ```bash
@@ -757,7 +735,7 @@ bin/metrum-ai-router --config config/config.yaml
 
 See `docs/DEPLOYMENT.md` for binary deployment guidance with Caddy TLS termination.
 
-For Docker Compose deployments on AWS/EC2-style hosts, use `make package-docker` and follow `docs/DOCKER_DEPLOYMENT.md`. Docker packages include prebuilt image tarballs for linux/amd64 and linux/arm64, `docker-compose.yml`, an optional localhost-only Postgres override, Caddy config, router config templates, and docs; the target host does not need this source tree or a registry pull. Upgrades of an existing Compose install use `scripts/compose_package_upgrade.py` as documented in that runbook; do not unpack with a handwritten remote glob-move. A deliberate empty Compose Postgres usage store (keep config and caller keys; discard usage after restic) uses `scripts/compose_clean_cutover.py`.
+Docker and Compose installations are unsupported. Use [binary installation](docs/BINARY_INSTALL.md).
 
 ## Run From Source
 
@@ -1200,7 +1178,7 @@ curl http://127.0.0.1:8080/version
 
 ## Usage Reports
 
-Usage is written to both JSONL and a GORM-backed relational database. SQLite is the default for local and new generic Docker Compose/Kubernetes installations; it is created with private `0600` file modes, including sidecars when present. The generic container path is one writer using `/app/state/usage.sqlite`; PostgreSQL is an explicit multi-replica or externally managed database choice. The schema is scalar and relational only: no JSONB, JSON, array, or packed multi-value DB columns.
+Usage is written to both JSONL and a GORM-backed relational database. SQLite is the default for local and single-writer installations; it is created with private `0600` file modes, including sidecars when present. The generic container path is one writer using `/app/state/usage.sqlite`; PostgreSQL is an explicit multi-replica or externally managed database choice. The schema is scalar and relational only: no JSONB, JSON, array, or packed multi-value DB columns.
 
 When license enforcement is enabled, request logs and `request_usage` store only safe scalar license metadata such as status, reason, license ID, customer ID, SKU, key ID, expiry, and grace-active flag. They do not store the license payload, detached signature, public/private key bytes, or signing material.
 
@@ -1291,18 +1269,6 @@ Generate a report for an explicit period and import existing JSONL first. Import
   --out usage-2026-06-14.md
 ```
 
-Generate a report from the default Docker Compose SQLite deployment:
-
-```bash
-docker compose run --rm --no-deps --entrypoint /app/bin/metrum-ai-router-usage-report router \
-  --driver sqlite \
-  --db /app/state/usage.sqlite \
-  --since 24h \
-  --out /app/logs/usage-24h.md
-```
-
-For an explicitly configured PostgreSQL deployment, substitute `--driver postgres --dsn "$ROUTER_USAGE_DB_DSN"`.
-
 Generate a report for one benchmark or case study by caller project/environment:
 
 ```bash
@@ -1345,8 +1311,6 @@ make build-all  # build docs, then linux amd64 and linux arm64 binaries under di
 make package    # build linux amd64 and linux arm64 tarballs
 make package-all # same as package
 make docker-image # build one metrum-ai-router image for GOOS/GOARCH with docker buildx
-make package-docker # build linux amd64 and linux arm64 Docker packages
-make package-docker-all # same as package-docker
 make e2e-mock   # local mock Claude/Codex C harness
 make e2e-live-c # live OpenRouter :nitro C-generation e2e through Claude Code and Codex
 make e2e-live-full # live provider HTTP cache checks plus live CLI C e2e

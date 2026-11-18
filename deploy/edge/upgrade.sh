@@ -88,7 +88,7 @@ snapshot() {
   cp "$EDGE_CONFIG" "$backup/config.yaml"
   cp "$EDGE_ENV_FILE" "$backup/env"
   log "config and secret environment snapshotted to $backup"
-  log "for the usage database, stop the router and follow the offline copy rules in docs/DOCKER_COMPOSE_INSTALL.md"
+  log "for the usage database, stop the router and follow the offline copy rules in docs/BINARY_INSTALL.md"
 }
 
 STOPPED=0

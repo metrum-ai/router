@@ -19,7 +19,6 @@ import validate_package_contents
 PACKAGE_DOCS = [
     "PACKAGE_README.md",
     "BINARY_INSTALL.md",
-    "DOCKER_COMPOSE_INSTALL.md",
     "KUBERNETES_INSTALL.md",
     "PACKAGE_VALIDATION.md",
     "solution-brief.md",
@@ -60,12 +59,6 @@ def assert_offline_package_documentation_contract() -> None:
         for package_file in validate_package_contents.BINARY_PACKAGE_FILES:
             if package_file not in section:
                 raise AssertionError(f"{path}: binary package manifest omits {package_file}")
-
-    package_readme = (repository / "docs/PACKAGE_README.md").read_text(encoding="utf-8")
-    docker_section = markdown_section(package_readme, "What Is Included")
-    docker_start = docker_section.find("Docker Compose packages include:")
-    if docker_start == -1:
-        raise AssertionError("docs/PACKAGE_README.md: missing Docker Compose package manifest")
 
     dockerfile = (repository / "Dockerfile").read_text(encoding="utf-8")
     docker_build_steps = (

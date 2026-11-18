@@ -1,6 +1,6 @@
 # Metrum AI Router Deployment
 
-Source-only operator runbook. Do not add this file to `scripts/package_docs_allowlist.txt`; package-safe external bootstrap deployment guidance belongs in `docs/PACKAGE_README.md`, `docs/BINARY_INSTALL.md`, `docs/DOCKER_COMPOSE_INSTALL.md`, and the router-served Docusaurus installation docs.
+Source-only operator runbook. Do not add this file to `scripts/package_docs_allowlist.txt`; package-safe external bootstrap deployment guidance belongs in `docs/PACKAGE_README.md`, `docs/BINARY_INSTALL.md`, and the router-served Docusaurus installation docs.
 
 This project is packaged as a binary distribution. A deployment host does not need the Go toolchain, Node.js, Docusaurus, or source tree. Release binaries embed the customer-facing Docusaurus documentation and serve it under `/docs/`; browser requests to `/` redirect there.
 
@@ -27,7 +27,6 @@ config/config.dev.example.yaml
 config/env.example.json
 docs/PACKAGE_README.md
 docs/BINARY_INSTALL.md
-docs/DOCKER_COMPOSE_INSTALL.md
 docs/KUBERNETES_INSTALL.md
 docs/PACKAGE_VALIDATION.md
 docs/solution-brief.md

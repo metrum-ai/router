@@ -14,16 +14,6 @@ metrum-ai-router-<version>-linux-<arch>/
   docs/
 ```
 
-Expected Docker Compose package layout:
-
-```text
-metrum-ai-router-<version>-docker-linux-<arch>/
-  compose/
-  config/
-  images/
-  docs/
-```
-
 Package docs are copied only from `scripts/package_docs_allowlist.txt` during
 release creation. In a delivered package, the offline docs should include the
 bootstrap set, the package-safe solution brief, and `LICENSE.md`. The license
@@ -42,14 +32,7 @@ Do not confuse these files with a leftover runtime `license.json`. That file is
 inert in 3.0.0+ (never read) and must not be added to a release package or
 treated as software license text.
 
-For a Docker package, load the saved image and version-check all operational binaries, including the non-serving migration runner:
-
-```bash
-docker run --rm --entrypoint /app/bin/metrum-ai-router metrum-ai-router:<version>-linux-<arch> --version
-docker run --rm --entrypoint /app/bin/metrum-ai-router-token-gen metrum-ai-router:<version>-linux-<arch> --version
-docker run --rm --entrypoint /app/bin/metrum-ai-router-usage-report metrum-ai-router:<version>-linux-<arch> --version
-docker run --rm --entrypoint /app/bin/metrum-ai-router-migrate metrum-ai-router:<version>-linux-<arch> --version
-```
+Version-check the packaged binaries before operation, including `bin/metrum-ai-router-migrate --version`.
 
 Before a `deployment-job` serving startup, use the canonical `DATA_MIGRATIONS.md` procedure: `plan`, approved backup, `apply`, all release-defined data jobs until each safe state is `validated`, `verify-serving`, then final read-only `status`. `verify-serving` runs schema postconditions and fails unless the ledger is current/compatible and every bound data job is validated. New generic packages use `--driver=sqlite --db=/app/state/usage.sqlite`; PostgreSQL is an explicit deployment substitution using `--driver=postgres --dsn-env=ROUTER_USAGE_DB_DSN`, never a literal DSN. A successful ordinal `0` is not completion evidence.
 
