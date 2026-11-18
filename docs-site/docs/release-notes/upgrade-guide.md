@@ -5,6 +5,22 @@ doc_type: reference
 
 # Upgrade Guide
 
+## v5.0.0 - 2026-11-18
+
+This guide covers the v5.0.0 GA release dated 2026-11-18. Read the
+[release notes](/docs/release-notes) and the breaking-change map below before upgrading.
+
+No prebuilt container image is published for v5.0.0. Use a release archive, or
+build an image from the Dockerfile at the v5.0.0 tag. Deployment manifests must
+use your own image reference and build digest; do not expect a published router
+image tag or image provenance asset. Release archives retain signatures,
+provenance attestations, and SPDX SBOMs.
+
+At eight concurrent clients, median plain-path completion overhead increased
+from 1.475 ms in v4.8.0 to 3.035 ms in rc.3. This remains an accepted v5.0.0
+limitation; [#1193](https://github.com/metrum-ai/router/issues/1193) tracks the
+latency follow-up for v5.1.0. Measure latency with your workload before rollout.
+
 ## Security console resume instructions
 
 Routerctl now reads the current configuration ETag before revision-guarded admin mutations, including `release`. Automatic discovery requires `config:read` permission as well as the mutation permission. Policy mutations discover their separate policy revision from `/admin/v1/policy-sets?limit=1`, requiring policy read permission. An explicit `--if-match` remains authoritative. Concurrent changes still return HTTP 412 without an automatic retry. The security console’s copied HTTP instructions include the status GET and `If-Match` header. No configuration or database migration is required.
@@ -1345,12 +1361,16 @@ database snapshot.
 
 ## Docker Compose Upgrade
 
-```bash
-docker load -i images/metrum-ai-router-<version>-linux-<arch>.tar
+For v5.0.0, build the router image from the release-tagged Dockerfile and make
+it available to the deployment host. Use your existing reviewed Compose
+configuration; the release archive does not include a prebuilt image. Set its
+router service image to your build reference and digest before starting it.
 
-cd compose
+From your Compose deployment directory:
+
+```bash
 cp .env .env.backup
-# Pin the image tag env var to the exact loaded tag (metrum-ai-router:<tag>).
+# Pin the image reference to your own build, not a published router image.
 # Compose reads METRUM_AI_ROUTER_VERSION. Rename a legacy SMART_LLMROUTER_VERSION
 # line if your .env still has one (the package upgrade script does this for you).
 docker compose config >/dev/null
@@ -1381,10 +1401,7 @@ docker compose run --rm --no-deps --entrypoint /app/bin/metrum-ai-routerctl rout
 
 ## Kubernetes Upgrade
 
-Update the Deployment/Job image to `…/metrum-ai-router:<version>-linux-<arch>`
-(or the digest from the release inventory). Migration Jobs must use
-`/app/bin/metrum-ai-router-migrate`. Confirm the service account, mounts, and
-license/config secrets still match the signed intent.
+For v5.0.0, update the Deployment/Job image to your own build from the release-tagged Dockerfile, pinned by digest. There is no router image digest in the release inventory. Migration Jobs must use `/app/bin/metrum-ai-router-migrate`. Confirm the service account, mounts, and configuration secrets match your reviewed deployment.
 
 ## Rollback
 
