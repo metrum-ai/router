@@ -5,54 +5,38 @@ doc_type: howto
 
 # Docker Compose Install
 
-The Docker Compose package is the usual customer-managed installation path. It includes a prebuilt router image tarball, Compose files, and example runtime configuration. The target host needs Docker Engine and Docker Compose, but it does not need language runtimes, documentation tooling, compilers, or package-build tooling.
+From v5.0.0-rc.4 onward, no prebuilt image is published. Use the release archives for a binary installation, or build the tagged source for Docker Compose.
 
-For package selection and architecture guidance, start with [Deployment Artifacts](./deployment-artifacts). For package inspection and security checks, see [Package Validation And Security Checks](./package-validation).
+## Build your own container image
 
-## Package Layout
-
-A release package follows this shape:
-
-```text
-metrum-ai-router-<version>-docker-linux-<arch>/
-  compose/
-    docker-compose.yml
-    docker-compose.postgres-localhost.yml
-    Caddyfile.compose
-    .env
-    .env.example
-  config/
-    config.example.yaml
-    env.example.json
-  images/
-    metrum-ai-router-<version>-linux-<arch>.tar
-  docs/
-```
-
-The saved image includes the non-serving `router-migrate` command. Before configuring a service, version-check it with the same safe entrypoint pattern used below.
-
-The shipped Compose file bind-mounts `./config`, `./state`, and `./logs` relative to the `compose/` directory. Prepare those runtime directories from the package templates before starting the service.
-
-Use `docker-linux-amd64` for x86_64 hosts and `docker-linux-arm64` for ARM64 hosts. Release validation checks that the package has exactly one image tar for the selected architecture, required compose/config/docs files, required router binaries in the saved image layers, and no AppleDouble metadata, deployment-private notes, raw secrets, or local state files.
+Choose the release tag and Linux architecture used by your deployment (`amd64` or `arm64`). Build on a host with Docker and BuildKit. The tag below matches the image reference in `deploy/docker-compose.yml`.
 
 ```bash
-cd metrum-ai-router-<version>-docker-linux-<arch>
-docker load -i images/metrum-ai-router-<version>-linux-<arch>.tar
-
-cd compose
-mkdir -p config state logs
-cp ../config/config.example.yaml config/config.yaml
-cp ../config/env.example.json config/env.json
+tag=v5.0.0-rc.4
+arch=amd64
+git clone --branch "$tag" --depth 1 https://github.com/metrum-ai/router.git router
+cd router
+export METRUM_AI_ROUTER_VERSION="$tag-linux-$arch"
+docker build --platform "linux/$arch" \
+  --build-arg VERSION="$tag" --build-arg COMMIT="$(git rev-parse HEAD)" \
+  --build-arg BUILD_DATE="$(git show -s --format=%cI HEAD)" \
+  -t "metrum-ai-router:$METRUM_AI_ROUTER_VERSION" .
+mkdir -p ../compose/{config,state,logs}
+cp deploy/docker-compose*.yml deploy/Caddyfile.compose ../compose/
+cp config.example.yaml ../compose/config/config.yaml
+cp env.example.json ../compose/config/env.json
+cd ../compose
+printf 'METRUM_AI_ROUTER_VERSION=%s\n' "$METRUM_AI_ROUTER_VERSION" > .env
 ```
 
-Review `.env` or copy `.env.example` to `.env` if needed. New SQLite installs require only `METRUM_AI_ROUTER_VERSION`, pinned to the exact package image tag; never use `latest`. The base profile has no database credential or TCP database egress.
+Use a new deployment directory for these commands. Compose mounts its local config, state and log directories. The default profile uses SQLite.
 
 Generate at least one caller token and replace the placeholder caller hashes in `config/config.yaml` before first startup:
 
 ```bash
 docker run --rm \
   --entrypoint /app/bin/metrum-ai-router-token-gen \
-  metrum-ai-router:<version>-linux-<arch> \
+  "metrum-ai-router:${METRUM_AI_ROUTER_VERSION}" \
   generate \
   --owner-user example-admin \
   --project example-project \
@@ -162,7 +146,7 @@ curl -fsS "$ROUTER_BASE_URL/v1/chat/completions" \
 
 ## Upgrade And Rollback
 
-Before an upgrade, back up `compose/.env`, `compose/config/`, `compose/state/`, Postgres data, logs needed by the retention policy, and the previous package artifact. Load the new image tar, update `METRUM_AI_ROUTER_VERSION` to the packaged image tag (the package upgrade script migrates a legacy `SMART_LLMROUTER_VERSION` line automatically), review config template changes, run `docker compose config`, then recreate the router service.
+Before an upgrade, back up `compose/.env`, `compose/config/`, `compose/state/`, Postgres data, logs needed by the retention policy, and the previous local image. Build the new release tag, update `METRUM_AI_ROUTER_VERSION` to the new local image tag, review config template changes, run `docker compose config`, then recreate the router service.
 
 After restart, repeat `/readyz`, `/docs/`, `/v1/models`, one caller smoke, and an admin report smoke when reports are enabled.
 

@@ -16,7 +16,6 @@ from pathlib import Path
 
 GH_MINIMUM = (2, 104, 0)
 COSIGN_VERSION = "v3.1.4"
-CRANE_VERSION = "0.22.1"
 SYFT_VERSION = "1.57.1"
 JSIGN_SHA256 = "6cf58aa080e7ff82656f320cff8d4a3bff30408df8766806dcba3740dd839fa5"
 
@@ -64,32 +63,13 @@ def verify_gh(gh: list[str]) -> None:
         require_help(gh, list(path), flags)
 
 
-def verify_crane(crane: list[str]) -> None:
-    output = capture([*crane, "version"])
-    if CRANE_VERSION not in output:
-        raise RuntimeError(f"crane must be {CRANE_VERSION}; got {output.splitlines()[0] if output else 'no version output'}")
-    checks = {
-        ("auth", "login"): ("--username", "--password-stdin"),
-        ("mutate",): ("--append", "--platform", "--entrypoint", "--cmd", "--user", "--workdir", "--exposed-ports", "--set-platform", "--label", "--output"),
-        ("digest",): ("--tarball",),
-        ("manifest",): (),
-        ("push",): (),
-        ("index", "append"): ("-m", "--manifest", "-t", "--tag"),
-    }
-    for path, flags in checks.items():
-        require_help(crane, list(path), flags)
-
-
 def verify_cosign(cosign: list[str]) -> None:
     output = capture([*cosign, "version"])
     if COSIGN_VERSION not in output:
         raise RuntimeError(f"cosign must be {COSIGN_VERSION}; got {output.splitlines()[0] if output else 'no version output'}")
     checks = {
-        ("attach", "sbom"): ("--sbom",),
         ("sign-blob",): ("--yes", "--bundle"),
         ("verify-blob",): ("--bundle", "--certificate-identity", "--certificate-oidc-issuer"),
-        ("sign",): ("--yes",),
-        ("verify",): ("--certificate-identity", "--certificate-oidc-issuer"),
     }
     for path, flags in checks.items():
         require_help(cosign, list(path), flags)
@@ -143,7 +123,6 @@ def verify_host_commands() -> None:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gh", required=True, type=Path)
-    parser.add_argument("--crane", required=True, type=Path)
     parser.add_argument("--cosign", default="cosign")
     parser.add_argument("--syft", required=True, help="Syft executable or command")
     parser.add_argument("--java", default="java")
@@ -151,7 +130,6 @@ def main() -> int:
     args = parser.parse_args()
     try:
         verify_gh([str(args.gh)])
-        verify_crane([str(args.crane)])
         verify_cosign(shlex.split(args.cosign))
         verify_syft(shlex.split(args.syft))
         verify_java_and_jsign(shlex.split(args.java), args.jsign_jar)

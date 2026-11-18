@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Release packages no longer include a prebuilt container image; build it from the Dockerfile.
+
 ### Fixed
 
 - Fix security console resume instructions failing with HTTP 428. Routerctl now discovers the current configuration ETag for guarded mutations, and copied HTTP instructions fetch and send `If-Match`.

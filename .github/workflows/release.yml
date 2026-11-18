@@ -286,25 +286,19 @@ jobs:
       contents: write
       deployments: read
       id-token: write
-      packages: write
     env:
       GH_TOKEN: ${{ github.token }}
       VERSION: ${{ needs.resolve.outputs.tag }}
       COMMIT: ${{ needs.resolve.outputs.commit }}
       BUILD_DATE: ${{ needs.resolve.outputs.build_date }}
       SOURCE_DATE_EPOCH: ${{ needs.resolve.outputs.source_date_epoch }}
-      IMAGE: ghcr.io/${{ github.repository }}
     steps:
-      - name: Set Crane path outside checkout
-        run: printf 'CRANE=%s\n' "${RUNNER_TEMP}/crane-bin/crane" >> "${GITHUB_ENV}"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve.outputs.commit }}
           fetch-depth: 0
       - name: Install pinned GitHub CLI
         run: bash scripts/install_github_cli.sh "${RUNNER_TEMP}/gh-cli/bin"
-      - name: Install pinned Crane
-        run: bash scripts/install_crane.sh "${CRANE}"
       - name: Provide envsubst for Cosign installer
         run: |
           set -euo pipefail
@@ -347,7 +341,7 @@ jobs:
         env:
           JSIGN_JAR: ${{ runner.temp }}/signing/jsign.jar
           SYFT_COMMAND: ${{ steps.syft.outputs.cmd }}
-        run: python3 scripts/release_publish_tool_contract.py --gh "${RUNNER_TEMP}/gh-cli/bin/gh" --crane "${CRANE}" --syft "${SYFT_COMMAND}" --jsign-jar "${JSIGN_JAR}"
+        run: python3 scripts/release_publish_tool_contract.py --gh "${RUNNER_TEMP}/gh-cli/bin/gh" --syft "${SYFT_COMMAND}" --jsign-jar "${JSIGN_JAR}"
       - name: Verify release environment protection before publish
         run: |
           set -euo pipefail
@@ -402,119 +396,18 @@ jobs:
         env:
           SYFT_COMMAND: ${{ steps.syft.outputs.cmd }}
         run: python3 scripts/generate_release_spdx.py --dist-dir dist --version "${VERSION}" --output-dir dist --syft "${SYFT_COMMAND}" --artifact-set binary
-      - name: Authenticate Crane to the release registry
-        env:
-          REGISTRY_TOKEN: ${{ github.token }}
-        run: printf '%s' "${REGISTRY_TOKEN}" | "${CRANE}" auth login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
-      - id: image-digest
-        name: Assemble and publish multi-architecture image from release packages
-        run: |
-          set -euo pipefail
-          base="$(python3 scripts/release_image_layer.py --print-base-image)"
-          test "$(sed -n 's/^FROM \(.*\)$/\1/p' Dockerfile | tail -1)" = "$base"
-          for arch in amd64 arm64; do
-            package="dist/metrum-ai-router-${VERSION}-linux-${arch}.tar.gz"
-            layer="${RUNNER_TEMP}/router-${arch}-layer.tar.gz"
-            image_tar="${RUNNER_TEMP}/router-${arch}-image.tar"
-            python3 scripts/release_image_layer.py --package "$package" --output "$layer" --epoch "${SOURCE_DATE_EPOCH}" > "${RUNNER_TEMP}/router-${arch}-binary-sha256.txt"
-            "${CRANE}" mutate "$base" --append "$layer" --platform "linux/${arch}" \
-              --entrypoint=/app/bin/metrum-ai-router \
-              --cmd=--config,/app/config/config.yaml --user=65532:65532 --workdir=/app \
-              --exposed-ports=8080/tcp --set-platform="linux/${arch}" \
-              --label="org.opencontainers.image.title=Metrum AI Router" \
-              --label="org.opencontainers.image.version=${VERSION}" \
-              --label="org.opencontainers.image.revision=${COMMIT}" \
-              --label="org.opencontainers.image.created=${BUILD_DATE}" \
-              --label="org.opencontainers.image.licenses=Apache-2.0" --output "$image_tar"
-            ref="${IMAGE}:${VERSION}-linux-${arch}"
-            expected_digest="$("${CRANE}" digest --tarball "$image_tar")"
-            if "${CRANE}" manifest "$ref" >/dev/null 2>&1; then
-              existing_digest="$("${CRANE}" digest "$ref")"
-              if [ "$existing_digest" != "$expected_digest" ]; then
-                echo "existing immutable image ref does not match rebuilt package: $ref" >&2
-                exit 1
-              fi
-            else
-              "${CRANE}" push "$image_tar" "$ref"
-            fi
-            digest="$("${CRANE}" digest "$ref")"
-            test "$digest" = "$expected_digest"
-            printf '%s\n' "$digest" > "${RUNNER_TEMP}/router-${arch}-digest.txt"
-            printf '%s=%s\n' "$arch" "$digest" >> "${GITHUB_OUTPUT}"
-          done
-          amd64="${IMAGE}:${VERSION}-linux-amd64@$(cat "${RUNNER_TEMP}/router-amd64-digest.txt")"
-          arm64="${IMAGE}:${VERSION}-linux-arm64@$(cat "${RUNNER_TEMP}/router-arm64-digest.txt")"
-          index_ref="${IMAGE}:${VERSION}"
-          if "${CRANE}" manifest "$index_ref" >/dev/null 2>&1; then
-            "${CRANE}" manifest "$index_ref" | python3 -c 'import json,sys; expected=set(sys.argv[1:]); found={item["digest"] for item in json.load(sys.stdin).get("manifests",[])}; sys.exit(0 if expected == found else 1)' \
-              "$(cat "${RUNNER_TEMP}/router-amd64-digest.txt")" \
-              "$(cat "${RUNNER_TEMP}/router-arm64-digest.txt")" || {
-                echo "existing immutable image index does not match the rebuilt images" >&2
-                exit 1
-              }
-          else
-            "${CRANE}" index append -m "$amd64" -m "$arm64" -t "$index_ref"
-          fi
-          index_digest="$("${CRANE}" digest "$index_ref")"
-          printf 'digest=%s\n' "$index_digest" >> "${GITHUB_OUTPUT}"
-          printf '%s\n' "$index_digest" > "${RUNNER_TEMP}/router-index-digest.txt"
-          python3 - <<'PYMANIFEST'
-          import hashlib, json, os
-          from pathlib import Path
-          version=os.environ['VERSION']; image=os.environ['IMAGE']
-          root=Path(os.environ['RUNNER_TEMP']); dist=Path('dist')
-          arches={}
-          for arch in ('amd64','arm64'):
-              package=dist/f'metrum-ai-router-{version}-linux-{arch}.tar.gz'
-              binary_sha={}
-              for line in (root/f'router-{arch}-binary-sha256.txt').read_text().splitlines():
-                  digest,name=line.split('  ',1); binary_sha[name]=digest
-              arches[arch]={'ref':f'{image}:{version}-linux-{arch}','digest':(root/f'router-{arch}-digest.txt').read_text().strip(),'package_sha256':hashlib.sha256(package.read_bytes()).hexdigest(),'binaries':binary_sha}
-          manifest={'schema':'metrum-ai-router.release-image/v1','version':version,'base':__import__('subprocess').check_output(['python3','scripts/release_image_layer.py','--print-base-image'],text=True).strip(),'index':{'ref':f'{image}:{version}','digest':(root/'router-index-digest.txt').read_text().strip()},'platforms':arches}
-          (dist/'release-images.json').write_text(json.dumps(manifest,sort_keys=True,indent=2)+'\n')
-          PYMANIFEST
-      - name: Smoke the Crane-built image without a daemon
-        run: python3 scripts/release_image_smoke.py --crane "${CRANE}" --image "${IMAGE}:${VERSION}-linux-amd64" --version "${VERSION}"
-      - name: Verify image binaries match release packages byte for byte
-        run: |
-          set -euo pipefail
-          for arch in amd64 arm64; do
-            python3 scripts/verify_release_image_binaries.py --crane "${CRANE}" \
-              --image "${IMAGE}:${VERSION}-linux-${arch}" \
-              --package "dist/metrum-ai-router-${VERSION}-linux-${arch}.tar.gz"
-          done
-      - name: Generate image SPDX SBOMs and attach them
-        env:
-          SYFT_COMMAND: ${{ steps.syft.outputs.cmd }}
-        run: |
-          set -euo pipefail
-          for arch in amd64 arm64; do
-            digest="$(cat "${RUNNER_TEMP}/router-${arch}-digest.txt")"
-            ref="${IMAGE}@${digest}"
-            sbom="dist/metrum-ai-router-${VERSION}-linux-${arch}-image.spdx.json"
-            "${SYFT_COMMAND}" "$ref" -o spdx-json > "$sbom"
-            cosign attach sbom --sbom "$sbom" "$ref"
-          done
       - name: Sign and verify SPDX SBOM assets
         run: |
           set -euo pipefail
           identity="https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/${VERSION}"
           shopt -s nullglob
           sboms=(dist/*.spdx.json)
-          test "${#sboms[@]}" -eq 6
+          test "${#sboms[@]}" -eq 4
           for sbom in "${sboms[@]}"; do
             cosign sign-blob --yes --bundle "${sbom}.sigstore.json" "${sbom}" >/dev/null
             cosign verify-blob --bundle "${sbom}.sigstore.json" \
               --certificate-identity "${identity}" \
               --certificate-oidc-issuer https://token.actions.githubusercontent.com "${sbom}" >/dev/null
-          done
-      - name: Sign images keylessly
-        run: |
-          set -euo pipefail
-          for digest in "$(cat "${RUNNER_TEMP}/router-amd64-digest.txt")" "$(cat "${RUNNER_TEMP}/router-arm64-digest.txt")" "$(cat "${RUNNER_TEMP}/router-index-digest.txt")"; do
-            ref="${IMAGE}@${digest}"
-            cosign sign --yes "$ref"
-            cosign verify "$ref" --certificate-identity "https://github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml@refs/tags/${VERSION}" --certificate-oidc-issuer https://token.actions.githubusercontent.com >/dev/null
           done
       - name: Sign release archives with Cosign
         run: |
@@ -536,27 +429,8 @@ jobs:
             dist/upgrade-rollback-results.json
             dist/SHA256SUMS
             dist/release-artifacts.json
-            dist/release-images.json
             dist/AI-release-review.md
             dist/release-review-artifact.json
-      - name: Attest OCI image index
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-name: ${{ env.IMAGE }}
-          subject-digest: ${{ steps.image-digest.outputs.digest }}
-          push-to-registry: true
-      - name: Attest linux/amd64 image
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-name: ${{ env.IMAGE }}
-          subject-digest: ${{ steps.image-digest.outputs.amd64 }}
-          push-to-registry: true
-      - name: Attest linux/arm64 image
-        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
-        with:
-          subject-name: ${{ env.IMAGE }}
-          subject-digest: ${{ steps.image-digest.outputs.arm64 }}
-          push-to-registry: true
       - name: Verify attestations and require complete payload
         run: |
           set -euo pipefail
@@ -565,15 +439,7 @@ jobs:
               --signer-workflow "github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml" \
               --source-ref "refs/tags/${VERSION}" >/dev/null
           done
-          for arch in amd64 arm64; do
-            gh attestation verify "oci://${IMAGE}@$(cat "${RUNNER_TEMP}/router-${arch}-digest.txt")" --repo "${GITHUB_REPOSITORY}" \
-              --signer-workflow "github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml" \
-              --source-ref "refs/tags/${VERSION}" >/dev/null
-          done
-          gh attestation verify "oci://${IMAGE}@$(cat "${RUNNER_TEMP}/router-index-digest.txt")" --repo "${GITHUB_REPOSITORY}" \
-            --signer-workflow "github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml" \
-            --source-ref "refs/tags/${VERSION}" >/dev/null
-          for asset in dist/release-images.json dist/AI-release-review.md dist/release-review-artifact.json; do
+          for asset in dist/AI-release-review.md dist/release-review-artifact.json; do
             gh attestation verify "${asset}" --repo "${GITHUB_REPOSITORY}" \
               --signer-workflow "github.com/${GITHUB_REPOSITORY}/.github/workflows/release.yml" \
               --source-ref "refs/tags/${VERSION}" >/dev/null
@@ -586,7 +452,6 @@ jobs:
             dist/metrum-ai-router-*
             dist/SHA256SUMS
             dist/release-artifacts.json
-            dist/release-images.json
             dist/release-review-artifact.json
             dist/upgrade-rollback-results.json
             dist/AI-release-review.md
@@ -595,8 +460,8 @@ jobs:
       - name: Confirm payload and publish immutable release
         run: |
           set -euo pipefail
-          mapfile -t ASSETS < <(find dist -maxdepth 1 -type f             \( -name 'metrum-ai-router-*' -o -name upgrade-rollback-results.json -o -name AI-release-review.md -o -name release-review-artifact.json -o -name SHA256SUMS -o -name release-artifacts.json -o -name release-images.json \) | sort)
-          test "${#ASSETS[@]}" -eq 26
+          mapfile -t ASSETS < <(find dist -maxdepth 1 -type f             \( -name 'metrum-ai-router-*' -o -name upgrade-rollback-results.json -o -name AI-release-review.md -o -name release-review-artifact.json -o -name SHA256SUMS -o -name release-artifacts.json \) | sort)
+          test "${#ASSETS[@]}" -eq 21
           if gh release view "${VERSION}" >/dev/null 2>&1; then echo "GitHub Release ${VERSION} already exists; releases are immutable" >&2; exit 1; fi
           NOTES_FILE="${RUNNER_TEMP}/release-notes.md"
           git tag -l --format='%(contents)' "${VERSION}" > "$NOTES_FILE"

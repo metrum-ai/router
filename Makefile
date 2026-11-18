@@ -65,8 +65,7 @@ DOCKER ?= docker
 
 DOCKER_BUILDX ?= $(DOCKER) buildx
 DOCKER_PLATFORM ?= linux/$(GOARCH)
-# Unqualified local tag used by make docker / docker save. Published images are
-# also tagged as ghcr.io/metrum-ai/router (same IMAGE_TAG suffix).
+# Local image tag for Docker builds, Compose and offline exports.
 IMAGE_NAME ?= metrum-ai-router
 IMAGE_TAG ?= $(VERSION)-$(GOOS)-$(GOARCH)
 DOCS_SITE_DIR ?= docs-site
@@ -473,14 +472,11 @@ ci-python: secret-contract capability-smoke-contracts
 	python3 scripts/test_check_release_environment.py
 	python3 scripts/test_check_release_payload.py
 	python3 scripts/test_release_ai_review.py
-	python3 scripts/install_crane_test.py
 	python3 scripts/select_previous_release_test.py
 	python3 scripts/test_sign_release_windows_packages.py
-	PYTHONPATH=scripts python3 -m unittest scripts/release_image_oci_layout_test.py -q
 	python3 scripts/check_release_dry_run_test.py
 	python3 scripts/hierarchy_release_gate_test.py
 	uv run --with pyyaml python scripts/release_provenance_test.py
-	PYTHONPATH=scripts python3 -m unittest scripts/release_image_layer_test.py scripts/release_image_binary_test.py -q
 	python3 scripts/ci_topology_test.py
 	uv run --with pyyaml python -m unittest scripts/engine_advisory_gate_test.py -q
 	python3 scripts/harbor_promotion_test.py
@@ -533,7 +529,6 @@ test-fast: secret-contract capability-smoke-contracts
 	python3 scripts/test_release_ai_review.py
 	python3 scripts/select_previous_release_test.py
 	python3 scripts/test_sign_release_windows_packages.py
-	PYTHONPATH=scripts python3 -m unittest scripts/release_image_layer_test.py scripts/release_image_binary_test.py scripts/release_image_oci_layout_test.py -q
 	python3 scripts/check_release_dry_run_test.py
 	python3 scripts/ci_topology_test.py
 	python3 scripts/harbor_promotion_test.py

@@ -12,7 +12,7 @@ import re
 import sys
 from pathlib import Path
 
-from stage_release_payload import ARCHIVE_PATTERNS, payload_names
+from stage_release_payload import ARCHIVE_PATTERNS, archive_sbom_names, payload_names
 
 
 ARCHIVES = set(ARCHIVE_PATTERNS)
@@ -30,15 +30,10 @@ def sha256_file(path: Path) -> str:
 def validate(dist: Path, version: str) -> list[str]:
     errors: list[str] = []
     expected_archives = {item.format(version=version) for item in ARCHIVES}
-    expected_sboms = {name.removesuffix(".tar.gz").removesuffix(".zip") + ".spdx.json" for name in expected_archives}
-    expected_sboms |= {
-        f"metrum-ai-router-{version}-linux-amd64-image.spdx.json",
-        f"metrum-ai-router-{version}-linux-arm64-image.spdx.json",
-    }
+    expected_sboms = archive_sbom_names(version)
     expected_bundles = {name + ".sigstore.json" for name in expected_archives | expected_sboms}
-    expected_names = expected_archives | expected_sboms | expected_bundles | {
-        "SHA256SUMS", "release-artifacts.json", "release-images.json", "release-review-artifact.json",
-        "upgrade-rollback-results.json", "AI-release-review.md"
+    expected_names = set(payload_names(version)) | expected_sboms | expected_bundles | {
+        "release-review-artifact.json", "AI-release-review.md",
     }
     if not dist.is_dir():
         return ["release payload directory is missing"]
@@ -92,33 +87,6 @@ def validate(dist: Path, version: str) -> list[str]:
             errors.append("upgrade and rollback evidence has an unknown schema")
     except (OSError, json.JSONDecodeError, AttributeError):
         errors.append("upgrade and rollback evidence is missing or malformed")
-    try:
-        images = json.loads((dist / "release-images.json").read_text(encoding="utf-8"))
-        if images.get("schema") != "metrum-ai-router.release-image/v1":
-            errors.append("release image manifest has an unknown schema")
-        if images.get("version") != version:
-            errors.append("release image manifest version does not match the release")
-        if not re.fullmatch(r"[^\s@]+@sha256:[0-9a-f]{64}", images.get("base", "")):
-            errors.append("release image base is not digest pinned")
-        platforms = images.get("platforms", {})
-        if set(platforms) != {"amd64", "arm64"}:
-            errors.append("release image manifest must include amd64 and arm64")
-        for arch, item in platforms.items():
-            if not re.fullmatch(r"sha256:[0-9a-f]{64}", item.get("digest", "")):
-                errors.append(f"invalid {arch} image digest")
-            if not re.fullmatch(r"[0-9a-f]{64}", item.get("package_sha256", "")):
-                errors.append(f"invalid {arch} release package digest")
-            if set(item.get("binaries", {})) != {
-                "metrum-ai-router", "metrum-ai-router-token-gen", "metrum-ai-router-usage-report",
-                "metrum-ai-router-migrate", "metrum-ai-routerctl",
-            }:
-                errors.append(f"{arch} image manifest does not cover each release binary")
-            elif any(not re.fullmatch(r"[0-9a-f]{64}", digest) for digest in item["binaries"].values()):
-                errors.append(f"invalid binary checksum in {arch} image manifest")
-        if not re.fullmatch(r"sha256:[0-9a-f]{64}", images.get("index", {}).get("digest", "")):
-            errors.append("invalid multi-architecture image index digest")
-    except (OSError, json.JSONDecodeError, AttributeError, TypeError):
-        errors.append("release image manifest is missing or malformed")
     review_artifact_digest = None
     try:
         review_artifact = json.loads((dist / "release-review-artifact.json").read_text(encoding="utf-8"))
@@ -271,7 +239,7 @@ def main() -> int:
     if errors:
         print("release payload check failed: " + "; ".join(errors), file=sys.stderr)
         return 1
-    print("release payload passed its unsigned check" if args.stage == "unsigned" else "release payload has four binary packages, signed archive and image SPDX SBOMs, checksums, manifests and digest-bound AI review")
+    print("release payload passed its unsigned check" if args.stage == "unsigned" else "release payload has four binary packages, signed archive SPDX SBOMs, checksums, manifests and digest-bound AI review")
     return 0
 
 

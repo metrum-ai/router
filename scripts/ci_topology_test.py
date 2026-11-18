@@ -118,8 +118,8 @@ def assert_make_tiers() -> None:
     require("harbor-adapter-test" in fast, "test-fast dropped the stdlib Harbor contract")
     require("scripts/router_test_time_guard_test.py" in fast, "test-fast dropped the time-guard regression")
     require("scripts/release_provenance_test.py" in fast, "test-fast dropped the release provenance contract")
-    require("release_image_layer_test.py" in fast and "release_image_binary_test.py" in fast,
-            "test-fast dropped release image reproducibility and byte-identity tests")
+    require("check_release_dry_run_test.py" in fast and "test_check_release_payload.py" in python_lane,
+            "CI must cover the release rehearsal and exact archive payload")
     require("api-compat-mock" not in fast, "test-fast regained api-compat-mock")
     require("harbor-local" not in fast, "test-fast regained harbor-local")
     require("capability-smoke-unit" not in fast.splitlines()[0], "test-fast repeats focused Go tests")
@@ -620,13 +620,13 @@ def main() -> int:
         )
         require(bool(inventory_calls) and all("--advisories-snapshot" in call for call in inventory_calls),
                 f"every binary inventory validation in {workflow_name} must require the advisory snapshot")
-    require("environment: release" in release, "release image publication must be protected by the release environment")
+    require("environment: release" in release, "archive publication must be protected by the release environment")
     require("ROUTER_DOCKER_RUNNER" not in release and "docker-runner-preflight" not in release,
-            "release image publication must not require a Docker runner")
-    require("index append" in release and "mutate \"$base\" --append \"$layer\"" in release and "release_image_layer.py" in release,
-            "release images must be assembled daemonlessly from binary packages")
-    require("packages: write" in release and "cosign sign --yes" in release,
-            "protected release job must push and sign OCI images")
+            "archive publication must not require a Docker runner")
+    require("packages: write" not in release and "push-to-registry:" not in release,
+            "archive publication must not request registry writes")
+    require("cosign sign-blob" in release and "cosign verify-blob" in release,
+            "protected archive publication must sign and verify blobs")
     script = ROOT / "scripts" / "ci_lrp_synthetic.sh"
     syntax = subprocess.run(["bash", "-n", str(script)], text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     require(syntax.returncode == 0, f"LRP CI script failed bash -n:\n{syntax.stderr}")
