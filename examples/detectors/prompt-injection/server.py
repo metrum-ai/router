@@ -18,12 +18,12 @@ MAX_REQUEST_BYTES = 64 * 1024
 MAX_SEGMENT_BYTES = 8 * 1024
 MAX_SEGMENT_BYTES_TOTAL = 48 * 1024
 MAX_SEGMENTS = 16
-MODEL_REVISION = "d7c8842daf06de3179cc3aca76b7b3a057acc5e7"
-MODEL_WEIGHTS_SHA256 = "5f81f709c58b8e8a51d99e8382a152583e17847db3082922bcaf7a7ee80e91d0"
+MODEL_REVISION = "90c9989b1a342275dd0d1a95aad283c04e075671"
+MODEL_WEIGHTS_SHA256 = "6521cb8d0ac08148c81464899c424e6148fcc62befa371089fa4061d8b6e0424"
 MAX_MODEL_TOKENS = 512
 TOKEN_OVERLAP = 64
 REQUEST_TIMEOUT_SECONDS = 4.0
-MODEL_ID = "protectai/deberta-v3-small-prompt-injection-v2"
+MODEL_ID = "protectai/deberta-v3-base-prompt-injection-v2"
 ALLOWED_EVENT_FIELDS = {
     "schema_version", "request_id", "caller_id", "kind", "observed_at",
     "source_ip", "key_id", "tiny_request", "denied_group", "tokens", "segments",
@@ -235,6 +235,7 @@ def load_classifier():
     model_path = snapshot_download(
         repo_id=MODEL_ID,
         revision=MODEL_REVISION,
+        token=False,  # This public reference model requires no account or access grant.
         allow_patterns=[
             "added_tokens.json",
             "config.json",
