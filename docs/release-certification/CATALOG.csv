@@ -6,290 +6,229 @@ RT-PKG-004,PKG,core,1178,Read the immutable flag and asset digest inventory from
 RT-UPG-001,UPG,core,1178,"Install verified v4.7.1 as the service user, seed state, back up, migrate to the candidate, strictly parse each -json result, verify serving, restore, and serve again with v4.7.1.",none,false,false
 RT-UPG-002,UPG,core,1178,"Install verified v4.8.0 as the service user, seed state, back up, migrate to the candidate, strictly parse each -json result, verify serving, restore, and serve again with v4.8.0.",none,false,false
 RT-ADMIN-001,ADMIN,core,821,"Repeat control-plane backup and restore with known committed audit writes 50 times, then repeat under parallel writers. Export audit rows and verify committed rows are present and the chain verifies in each snapshot.",none,false,false
-RT-API-001,API,core,441,Run the fine-tuning example with training outcomes enabled. Call the documented training-outcomes endpoint with valid scope and a populated fixture. Require the documented success response with outcomes; record HTTP 503 as a failure.,none,false,false
-RT-DOCS-001,DOCS,core,1178,PLAN.md and CATALOG.csv merged; every v5.0.0 issue maps to cases.,none,false,false
-RT-DOCS-002,DOCS,core,1178,"The v5.0.0 release candidate has a results file per area, with every core case run.",none,false,false
+RT-API-001,API,extended,441,Run the fine-tuning example with training outcomes enabled. Call the documented training-outcomes endpoint with valid scope and a populated fixture. Require the documented success response with outcomes; record HTTP 503 as a failure.,none,false,false
 RT-UPG-003,UPG,core,1178,"The upgrade cases pass from v4.7.1 and v4.8.0, including rollback.",none,false,false
-RT-SEC-001,SEC,core,1059,A fresh `trivy config` run reports no DS-0002 findings and no unexplained KSV-0125 findings.,none,false,false
-RT-SEC-002,SEC,core,1059,Harbor task CI and the rendered Kubernetes security checks pass.,none,false,false
-RT-SEC-003,SEC,core,1058,A fresh `trivy fs` (or `osv-scanner`) run on the repo reports none of the CVEs above.,none,false,false
-RT-SEC-004,SEC,core,1058,CI is green; the example's eval scripts still run their tests.,none,false,false
+RT-SEC-001,SEC,extended,1059,A fresh `trivy config` run reports no DS-0002 findings and no unexplained KSV-0125 findings.,none,false,false
+RT-SEC-002,SEC,extended,1059,Harbor task CI and the rendered Kubernetes security checks pass.,none,false,false
+RT-SEC-003,SEC,extended,1058,A fresh `trivy fs` (or `osv-scanner`) run on the repo reports none of the CVEs above.,none,false,false
+RT-SEC-004,SEC,extended,1058,CI is green; the example's eval scripts still run their tests.,none,false,false
 RT-CFG-001,CFG,core,935,A config with `strategy: script` fails at load with the migration message.,internal/router/config_test.go::TestRemovedScriptConfigFailsAtLoadWithMigration,false,false
 RT-CFG-002,CFG,core,935,The ported examples pass the routing tests the TypeScript versions passed.,examples/typescript-request-shape/test_request_shape_policy.py::test_http_route_endpoint_returns_policy_decision | examples/typescript-pii-policy/test_pii_policy.py::test_pii_routes_only_to_sensitive_targets_and_fallbacks,false,false
 RT-CFG-003,CFG,core,935,`go.mod` no longer lists goja or esbuild.,none,false,false
 RT-UPG-004,UPG,core,935,The upgrade test (#934) covers a config with `strategy: script`.,none,false,false
-RT-DOCS-003,DOCS,core,935,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-005,SEC,core,935,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-004,DOCS,core,935,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
+RT-SEC-005,SEC,extended,935,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
 RT-UPG-005,UPG,core,934,The upgrade test fails on the affected release binary for the #896 defect class and passes on the fix.,scripts/release_upgrade_rollback_test.py::test_v48_baseline_must_reproduce_json_regression,false,false
-RT-DOCS-005,DOCS,core,934,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-006,SEC,core,934,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-006,DOCS,core,934,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-SEC-007,SEC,core,933,A synthetic out-of-band usage gap raises an event in `report` mode.,internal/router/provider_usage_reconciliation_test.go::TestProviderUsageGapReachesSecurityEventStream,false,false
-RT-SEC-008,SEC,core,933,"Admin-scoped credentials never appear in logs, events or the usage DB.",none,false,false
-RT-DOCS-007,DOCS,core,933,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-009,SEC,core,933,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-008,DOCS,core,933,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-SEC-010,SEC,core,932,Passes the #928 contract test as an external detector.,internal/router/external_detector_test.go::TestExternalDetectorContract,false,false
-RT-DOCS-009,DOCS,core,932,Docs show how to deploy it and its latency cost.,none,false,false
-RT-DOCS-010,DOCS,core,932,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-011,SEC,core,932,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-011,DOCS,core,932,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-SEC-012,SEC,core,930,The job runs on PRs touching `deploy/**` and weekly.,none,false,false
-RT-SEC-013,SEC,core,930,"Current pins pass, each fixed or annotated.",none,false,false
-RT-DOCS-012,DOCS,core,930,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-014,SEC,core,930,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-013,DOCS,core,930,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-API-002,API,core,929,"Hold, release and timeout paths covered by end-to-end tests with a tool-using client continuation.",internal/router/stream_tool_hold_test.go::TestStreamToolCallHoldLocalhostContinuationE2E,false,false
-RT-API-003,API,core,929,Memory stays within `hold_max_bytes` per stream under load.,none,false,false
-RT-DOCS-014,DOCS,core,929,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-015,SEC,core,929,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-015,DOCS,core,929,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-SEC-016,SEC,core,928,The example service runs end to end in `report` and `enforce` modes and passes the contract test.,internal/router/external_detector_test.go::TestExternalDetectorContract,false,false
-RT-SEC-017,SEC,core,928,No detector or plugin setting loads operator code into the router process; the docs state the out-of-process boundary.,none,false,false
-RT-SEC-018,SEC,core,928,Timeout and error paths follow `on_error` and never block serving.,none,false,false
-RT-SEC-019,SEC,core,928,Queue overflow increments the drop counter; serving latency is unchanged.,none,false,false
-RT-DOCS-016,DOCS,core,928,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-020,SEC,core,928,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-017,DOCS,core,928,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-DOCS-018,DOCS,core,927,Docs published and linked; every setting they name exists in the release; `routerctl doctor --security` checks the guide's items.,none,false,false
-RT-DOCS-019,DOCS,core,927,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-021,SEC,core,927,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-020,DOCS,core,927,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-PERF-001,PERF,core,926,Many concurrent large lines stay under the budget with no out-of-memory; existing per-line limits behave as before.,none,false,false
-RT-DOCS-021,DOCS,core,926,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-022,SEC,core,926,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-022,DOCS,core,926,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-API-004,API,core,924,"Both cases covered end to end, including a weighted group of one reasoning-capable and one non-reasoning target.",none,false,false
-RT-API-005,API,core,924,The compatibility docs state which field is required for a target to count as reasoning-capable.,none,false,false
-RT-DOCS-023,DOCS,core,924,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-023,SEC,core,924,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-024,DOCS,core,924,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-API-006,API,core,923,"End-to-end tests for `temperature` and `top_p` with a refusing first target, streaming and non-streaming, in failover and weighted groups.",none,false,false
-RT-API-007,API,core,923,The attempt record shows the dropped field or the refusal reason; docs state the behaviour.,none,false,false
-RT-DOCS-025,DOCS,core,923,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-024,SEC,core,923,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-026,DOCS,core,923,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
+RT-SEC-006,SEC,extended,934,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-SEC-007,SEC,extended,933,A synthetic out-of-band usage gap raises an event in `report` mode.,internal/router/provider_usage_reconciliation_test.go::TestProviderUsageGapReachesSecurityEventStream,false,false
+RT-SEC-008,SEC,extended,933,"Admin-scoped credentials never appear in logs, events or the usage DB.",none,false,false
+RT-SEC-009,SEC,extended,933,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-SEC-010,SEC,extended,932,Passes the #928 contract test as an external detector.,internal/router/external_detector_test.go::TestExternalDetectorContract,false,false
+RT-SEC-011,SEC,extended,932,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-SEC-012,SEC,extended,930,The job runs on PRs touching `deploy/**` and weekly.,none,false,false
+RT-SEC-013,SEC,extended,930,"Current pins pass, each fixed or annotated.",none,false,false
+RT-SEC-014,SEC,extended,930,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-API-002,API,extended,929,"Hold, release and timeout paths covered by end-to-end tests with a tool-using client continuation.",internal/router/stream_tool_hold_test.go::TestStreamToolCallHoldLocalhostContinuationE2E,false,false
+RT-API-003,API,extended,929,Memory stays within `hold_max_bytes` per stream under load.,none,false,false
+RT-SEC-015,SEC,extended,929,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-SEC-016,SEC,extended,928,The example service runs end to end in `report` and `enforce` modes and passes the contract test.,internal/router/external_detector_test.go::TestExternalDetectorContract,false,false
+RT-SEC-017,SEC,extended,928,No detector or plugin setting loads operator code into the router process; the docs state the out-of-process boundary.,none,false,false
+RT-SEC-018,SEC,extended,928,Timeout and error paths follow `on_error` and never block serving.,none,false,false
+RT-SEC-019,SEC,extended,928,Queue overflow increments the drop counter; serving latency is unchanged.,none,false,false
+RT-SEC-020,SEC,extended,928,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-SEC-021,SEC,extended,927,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-PERF-001,PERF,extended,926,Many concurrent large lines stay under the budget with no out-of-memory; existing per-line limits behave as before.,none,false,false
+RT-SEC-022,SEC,extended,926,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-API-004,API,extended,924,"Both cases covered end to end, including a weighted group of one reasoning-capable and one non-reasoning target.",none,false,false
+RT-API-005,API,extended,924,The compatibility docs state which field is required for a target to count as reasoning-capable.,none,false,false
+RT-SEC-023,SEC,extended,924,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-API-006,API,extended,923,"End-to-end tests for `temperature` and `top_p` with a refusing first target, streaming and non-streaming, in failover and weighted groups.",none,false,false
+RT-API-007,API,extended,923,The attempt record shows the dropped field or the refusal reason; docs state the behaviour.,none,false,false
+RT-SEC-024,SEC,extended,923,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
 RT-UPG-006,UPG,core,896,Each `-json` command's stdout parses as JSON with library logging at debug level.,none,false,false
 RT-UPG-007,UPG,core,896,The upgrade test (#934) parses these outputs strictly.,scripts/release_upgrade_rollback_test.py::test_rejects_sql_prefix | scripts/release_upgrade_rollback_test.py::test_rejects_multiple_documents,false,false
-RT-DOCS-027,DOCS,core,896,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-025,SEC,core,896,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-028,DOCS,core,896,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-ADMIN-002,ADMIN,core,895,"Contain and release round trip from the UI, authorized by Casbin.",none,false,false
-RT-ADMIN-003,ADMIN,core,895,The bundle exports without prompt text or secrets.,none,false,false
-RT-DOCS-029,DOCS,core,895,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-026,SEC,core,895,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-030,DOCS,core,895,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
+RT-SEC-025,SEC,extended,896,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-ADMIN-002,ADMIN,extended,895,"Contain and release round trip from the UI, authorized by Casbin.",none,false,false
+RT-ADMIN-003,ADMIN,extended,895,The bundle exports without prompt text or secrets.,none,false,false
+RT-SEC-026,SEC,extended,895,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
 RT-CLI-001,CLI,core,894,Each check passes and fails on a fixture config.,none,false,false
 RT-CLI-002,CLI,core,894,JSON output and `--fail-on` work in CI; the reference configs pass.,cmd/metrum-ai-routerctl/security_doctor_test.go::TestSecurityDoctorReferenceConfigs | cmd/metrum-ai-routerctl/security_doctor_test.go::TestSecurityDoctorCommandJSONAndThreshold,false,false
-RT-DOCS-031,DOCS,core,894,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-027,SEC,core,894,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-032,DOCS,core,894,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
+RT-SEC-027,SEC,extended,894,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
 RT-PKG-005,PKG,core,893,SBOM and attestations are attached to the release and verify.,none,false,false
 RT-PKG-006,PKG,core,893,The clean rebuild reproduces the release binaries.,none,false,false
 RT-PKG-007,PKG,core,893,`routerctl verify` accepts the released binary and rejects a modified one.,internal/releaseverify/verify_test.go::TestVerifyAcceptsSignedLinuxReleaseBinary | internal/releaseverify/verify_test.go::TestVerifyRejectsModifiedLocalBinary,false,false
 RT-PKG-008,PKG,core,893,The release cannot publish without the maintainer approval and the attached AI review.,none,false,false
-RT-DOCS-033,DOCS,core,893,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-028,SEC,core,893,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-034,DOCS,core,893,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-SEC-029,SEC,core,892,"The two-tenant test passes, including the no-caller case.",internal/router/tenant_cache_isolation_e2e_test.go::TestTenantCacheIsolationEndToEnd,false,false
-RT-SEC-030,SEC,core,892,The salt reaches vLLM on the pinned version.,none,false,false
-RT-DOCS-035,DOCS,core,892,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-031,SEC,core,892,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-036,DOCS,core,892,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-SEC-032,SEC,core,891,Deny and sequence rules block and allow as configured.,internal/router/tool_firewall_test.go::TestToolFirewallSequenceE2E,false,false
-RT-SEC-033,SEC,core,891,"Approval hold release, deny and timeout paths work with at least two agent clients.",none,false,false
-RT-SEC-034,SEC,core,891,URL allow lists are enforced through `validateEgressURL`.,none,false,false
-RT-DOCS-037,DOCS,core,891,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-035,SEC,core,891,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-038,DOCS,core,891,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-SEC-036,SEC,core,890,"Each secret type is redacted or blocked as configured, including one split across stream chunks; benign fixtures pass unchanged.",internal/router/secret_dlp_test.go::TestSecretDLPRequestAndUnaryResponseE2E | internal/router/secret_dlp_test.go::TestSecretDLPStreamingRedactsCredentialSplitAcrossChunks,false,false
-RT-SEC-037,SEC,core,890,Added latency is measured and published.,none,false,false
-RT-SEC-038,SEC,core,890,A fuzz target for the matcher runs in the nightly fuzz job.,none,false,false
-RT-DOCS-039,DOCS,core,890,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-039,SEC,core,890,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-040,DOCS,core,890,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-SEC-040,SEC,core,889,"The breaker trips at each ceiling, fails over or stops as configured, and resets.",internal/router/provider_spend_breaker_e2e_test.go::TestProviderSpendBreakerFailoverLocalhostE2E | internal/router/provider_spend_breaker_e2e_test.go::TestProviderSpendBreakerStopLocalhostE2E,false,false
-RT-SEC-041,SEC,core,889,"Provider keys are absent from logs, events and the usage DB.",none,false,false
-RT-DOCS-041,DOCS,core,889,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-042,SEC,core,889,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-042,DOCS,core,889,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-SEC-043,SEC,core,888,The checksum is validated; a malformed token is rejected before lookup.,none,false,false
-RT-SEC-044,SEC,core,888,Self-revocation works and is audited; existing tokens still authenticate.,internal/router/leaked_key_revoke_e2e_test.go::TestLeakedKeySelfRevocationLocalhostE2E,false,false
-RT-SEC-045,SEC,core,888,Weak and development keys warn by default and fail with `enforce`.,none,false,false
-RT-DOCS-043,DOCS,core,888,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-046,SEC,core,888,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-044,DOCS,core,888,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-SEC-047,SEC,core,887,"Exchange, expiry, scope enforcement and spend cap tested; an invalid or wrong-audience identity is rejected.",internal/router/token_exchange_test.go::TestMissionTokenEndToEndUsageAndScopes,false,false
-RT-SEC-048,SEC,core,887,Usage rows carry task id and owner.,internal/router/token_exchange_test.go::TestMissionTokenEndToEndUsageAndScopes,false,false
-RT-DOCS-045,DOCS,core,887,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-049,SEC,core,887,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-046,DOCS,core,887,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-SEC-050,SEC,core,886,`report` logs a mismatch without blocking; `enforce` rejects it.,internal/router/caller_binding_test.go::TestCallerBindingEnforceEndToEndReportContinues,false,false
-RT-SEC-051,SEC,core,886,A missing or non-matching client certificate is rejected in `enforce`.,internal/router/caller_binding_test.go::TestCallerBindingMTLSRealTLSHandshakes,false,false
-RT-SEC-052,SEC,core,886,`enforce` binding on a listener without client-certificate TLS fails at config load.,none,false,false
-RT-DOCS-047,DOCS,core,886,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-053,SEC,core,886,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-048,DOCS,core,886,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-SEC-054,SEC,core,885,"Each event type is emitted with its required fields, checked in tests against the pinned OCSF version, and never carries prompt text or secrets.",none,false,false
-RT-SEC-055,SEC,core,885,The example Sigma rules match the synthetic traces.,internal/router/security_event_stream_test.go::TestSecuritySigmaRulesMatchSyntheticTraces,false,false
-RT-DOCS-049,DOCS,core,885,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-056,SEC,core,885,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-050,DOCS,core,885,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-SEC-057,SEC,core,884,Honeytoken use raises a critical event and never reaches an upstream.,internal/router/honeytoken_test.go::TestDatabaseModeHoneytokenSinkholeEndToEnd,false,false
-RT-SEC-058,SEC,core,884,Canary groups are visible only to the configured callers; a call raises an event.,none,false,false
-RT-DOCS-051,DOCS,core,884,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-059,SEC,core,884,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-052,DOCS,core,884,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-SEC-060,SEC,core,883,A suspended key is refused at once on the node that applied it; resume restores it.,internal/router/containment_test.go::TestCallerContainmentAdminV1EndToEnd,false,false
-RT-SEC-061,SEC,core,883,The containment role cannot grant; actions appear in the audit log.,none,false,false
-RT-SEC-062,SEC,core,883,"The webhook rejects bad signatures, stale timestamps and replayed nonces.",none,false,false
-RT-DOCS-053,DOCS,core,883,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-063,SEC,core,883,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-054,DOCS,core,883,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-SEC-064,SEC,core,882,Throttle and suspend apply and expire; the cap holds; emergency keys are never actioned.,internal/router/automatic_containment_test.go::TestAutoContainmentEndToEndAppliesAfterCompletedRequest,false,false
-RT-SEC-065,SEC,core,882,An action reaches a second Postgres replica within 5 s at p50.,internal/router/automatic_containment_postgres_test.go::TestAutomaticContainmentPostgresNotifiesBetweenServicesAndPersistsOnRestart,false,true
-RT-SEC-066,SEC,core,882,State survives restart on SQLite and Postgres.,none,false,true
-RT-DOCS-055,DOCS,core,882,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-067,SEC,core,882,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-056,DOCS,core,882,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-SEC-068,SEC,core,881,A synthetic trace for each rule triggers it; a benign traffic sample triggers nothing at the defaults.,none,false,false
-RT-SEC-069,SEC,core,881,"Events never contain prompt text, tokens or secrets.",none,false,false
-RT-DOCS-057,DOCS,core,881,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-070,SEC,core,881,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-058,DOCS,core,881,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-SEC-071,SEC,core,856,A fixed-before-locked advisory passes with evidence recorded; an affecting or malformed one blocks.,none,false,false
-RT-SEC-072,SEC,core,856,An API outage fails the gate.,none,false,false
-RT-DOCS-059,DOCS,core,856,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-073,SEC,core,856,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-060,DOCS,core,856,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-ADMIN-004,ADMIN,core,825,An unauthorized OS user cannot connect; `routerctl` connects with a socket option.,internal/router/admin_unix_socket_permissions_linux_test.go::TestAdminUnixSocketModeBlocksOtherUID,false,false
-RT-DOCS-061,DOCS,core,825,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-074,SEC,core,825,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-062,DOCS,core,825,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
+RT-SEC-028,SEC,extended,893,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-SEC-029,SEC,extended,892,"The two-tenant test passes, including the no-caller case.",internal/router/tenant_cache_isolation_e2e_test.go::TestTenantCacheIsolationEndToEnd,false,false
+RT-SEC-030,SEC,extended,892,The salt reaches vLLM on the pinned version.,none,false,false
+RT-SEC-031,SEC,extended,892,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-SEC-032,SEC,extended,891,Deny and sequence rules block and allow as configured.,internal/router/tool_firewall_test.go::TestToolFirewallSequenceE2E,false,false
+RT-SEC-033,SEC,extended,891,"Approval hold release, deny and timeout paths work with at least two agent clients.",none,false,false
+RT-SEC-034,SEC,extended,891,URL allow lists are enforced through `validateEgressURL`.,none,false,false
+RT-SEC-035,SEC,extended,891,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-SEC-036,SEC,extended,890,"Each secret type is redacted or blocked as configured, including one split across stream chunks; benign fixtures pass unchanged.",internal/router/secret_dlp_test.go::TestSecretDLPRequestAndUnaryResponseE2E | internal/router/secret_dlp_test.go::TestSecretDLPStreamingRedactsCredentialSplitAcrossChunks,false,false
+RT-SEC-037,SEC,extended,890,Added latency is measured and published.,none,false,false
+RT-SEC-038,SEC,extended,890,A fuzz target for the matcher runs in the nightly fuzz job.,none,false,false
+RT-SEC-039,SEC,extended,890,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-SEC-040,SEC,extended,889,"The breaker trips at each ceiling, fails over or stops as configured, and resets.",internal/router/provider_spend_breaker_e2e_test.go::TestProviderSpendBreakerFailoverLocalhostE2E | internal/router/provider_spend_breaker_e2e_test.go::TestProviderSpendBreakerStopLocalhostE2E,false,false
+RT-SEC-041,SEC,extended,889,"Provider keys are absent from logs, events and the usage DB.",none,false,false
+RT-SEC-042,SEC,extended,889,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-SEC-043,SEC,extended,888,The checksum is validated; a malformed token is rejected before lookup.,none,false,false
+RT-SEC-044,SEC,extended,888,Self-revocation works and is audited; existing tokens still authenticate.,internal/router/leaked_key_revoke_e2e_test.go::TestLeakedKeySelfRevocationLocalhostE2E,false,false
+RT-SEC-045,SEC,extended,888,Weak and development keys warn by default and fail with `enforce`.,none,false,false
+RT-SEC-046,SEC,extended,888,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-SEC-047,SEC,extended,887,"Exchange, expiry, scope enforcement and spend cap tested; an invalid or wrong-audience identity is rejected.",internal/router/token_exchange_test.go::TestMissionTokenEndToEndUsageAndScopes,false,false
+RT-SEC-048,SEC,extended,887,Usage rows carry task id and owner.,internal/router/token_exchange_test.go::TestMissionTokenEndToEndUsageAndScopes,false,false
+RT-SEC-049,SEC,extended,887,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-SEC-050,SEC,extended,886,`report` logs a mismatch without blocking; `enforce` rejects it.,internal/router/caller_binding_test.go::TestCallerBindingEnforceEndToEndReportContinues,false,false
+RT-SEC-051,SEC,extended,886,A missing or non-matching client certificate is rejected in `enforce`.,internal/router/caller_binding_test.go::TestCallerBindingMTLSRealTLSHandshakes,false,false
+RT-SEC-052,SEC,extended,886,`enforce` binding on a listener without client-certificate TLS fails at config load.,none,false,false
+RT-SEC-053,SEC,extended,886,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-SEC-054,SEC,extended,885,"Each event type is emitted with its required fields, checked in tests against the pinned OCSF version, and never carries prompt text or secrets.",none,false,false
+RT-SEC-055,SEC,extended,885,The example Sigma rules match the synthetic traces.,internal/router/security_event_stream_test.go::TestSecuritySigmaRulesMatchSyntheticTraces,false,false
+RT-SEC-056,SEC,extended,885,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-SEC-057,SEC,extended,884,Honeytoken use raises a critical event and never reaches an upstream.,internal/router/honeytoken_test.go::TestDatabaseModeHoneytokenSinkholeEndToEnd,false,false
+RT-SEC-058,SEC,extended,884,Canary groups are visible only to the configured callers; a call raises an event.,none,false,false
+RT-SEC-059,SEC,extended,884,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-SEC-060,SEC,extended,883,A suspended key is refused at once on the node that applied it; resume restores it.,internal/router/containment_test.go::TestCallerContainmentAdminV1EndToEnd,false,false
+RT-SEC-061,SEC,extended,883,The containment role cannot grant; actions appear in the audit log.,none,false,false
+RT-SEC-062,SEC,extended,883,"The webhook rejects bad signatures, stale timestamps and replayed nonces.",none,false,false
+RT-SEC-063,SEC,extended,883,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-SEC-064,SEC,extended,882,Throttle and suspend apply and expire; the cap holds; emergency keys are never actioned.,internal/router/automatic_containment_test.go::TestAutoContainmentEndToEndAppliesAfterCompletedRequest,false,false
+RT-SEC-065,SEC,extended,882,An action reaches a second Postgres replica within 5 s at p50.,internal/router/automatic_containment_postgres_test.go::TestAutomaticContainmentPostgresNotifiesBetweenServicesAndPersistsOnRestart,false,true
+RT-SEC-066,SEC,extended,882,State survives restart on SQLite and Postgres.,none,false,true
+RT-SEC-067,SEC,extended,882,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-SEC-068,SEC,extended,881,A synthetic trace for each rule triggers it; a benign traffic sample triggers nothing at the defaults.,none,false,false
+RT-SEC-069,SEC,extended,881,"Events never contain prompt text, tokens or secrets.",none,false,false
+RT-SEC-070,SEC,extended,881,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-SEC-071,SEC,extended,856,A fixed-before-locked advisory passes with evidence recorded; an affecting or malformed one blocks.,none,false,false
+RT-SEC-072,SEC,extended,856,An API outage fails the gate.,none,false,false
+RT-SEC-073,SEC,extended,856,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-ADMIN-004,ADMIN,extended,825,An unauthorized OS user cannot connect; `routerctl` connects with a socket option.,internal/router/admin_unix_socket_permissions_linux_test.go::TestAdminUnixSocketModeBlocksOtherUID,false,false
+RT-SEC-074,SEC,extended,825,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
 RT-CLI-003,CLI,core,824,Each online command works against `/admin/v1`; none calls a legacy route.,cmd/metrum-ai-routerctl/admin_v1_parity_test.go::TestOnlineCommandsUseAdminV1WithoutDatabaseCredentials,false,false
-RT-DOCS-063,DOCS,core,824,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-075,SEC,core,824,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-064,DOCS,core,824,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-ADMIN-005,ADMIN,core,823,Legacy routes return 404 on the serving port; the reports UI is unaffected.,none,false,false
-RT-ADMIN-006,ADMIN,core,823,A fresh install starts the admin listener on loopback and rejects unauthenticated calls.,none,false,false
-RT-ADMIN-007,ADMIN,core,823,The upgrade test covers a config with no `admin:` block and one with leftover legacy settings.,none,false,false
-RT-DOCS-065,DOCS,core,823,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-076,SEC,core,823,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-066,DOCS,core,823,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
+RT-SEC-075,SEC,extended,824,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-ADMIN-005,ADMIN,extended,823,Legacy routes return 404 on the serving port; the reports UI is unaffected.,none,false,false
+RT-ADMIN-006,ADMIN,extended,823,A fresh install starts the admin listener on loopback and rejects unauthenticated calls.,none,false,false
+RT-ADMIN-007,ADMIN,extended,823,The upgrade test covers a config with no `admin:` block and one with leftover legacy settings.,none,false,false
+RT-SEC-076,SEC,extended,823,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
 RT-CFG-004,CFG,core,822,A generated config inventory is compared with the API schema in CI.,internal/router/config_apply_mode_test.go::TestConfigApplyModesInventory,false,false
 RT-CFG-005,CFG,core,822,Offline commands refuse to run while a live writer holds the lock; the change is audited at next start.,cmd/metrum-ai-routerctl/main_test.go::TestRouterctlOfflineImportAndActivateRefuseLiveWriter | internal/router/config_apply_mode_test.go::TestOfflineProvenanceConsumedAtStartup,false,false
-RT-DOCS-067,DOCS,core,822,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-077,SEC,core,822,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-068,DOCS,core,822,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-ADMIN-008,ADMIN,core,821,The export chain verifies; deletion needs the privilege; retention tested with a fake clock.,internal/router/admin_audit_export_test.go::TestAdminAuditExportPagesVerifyAsOneChainAndFilterDomain | internal/router/admin_audit_export_test.go::TestAdminAuditRetentionUsesInjectedClock,false,false
-RT-ADMIN-009,ADMIN,core,821,Simulation cannot widen the caller's authority or reveal another domain's policy.,internal/router/admin_policy_http_test.go::TestPolicySimulationMountedUsesCallerDomain,false,false
-RT-DOCS-069,DOCS,core,821,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-078,SEC,core,821,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-070,DOCS,core,821,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-ADMIN-010,ADMIN,core,820,Operation states are observable with a structured result.,none,false,false
-RT-ADMIN-011,ADMIN,core,820,Migration status matches the migrate CLI before and after an upgrade; no API route changes the schema; the Kubernetes Job example runs in the upgrade test (#934).,none,false,false
-RT-ADMIN-012,ADMIN,core,820,Restoring into a clean replica gives identical revisions and an unbroken audit chain.,internal/router/admin_operations_test.go::TestControlPlaneBackupRestoreThroughAdminAPI,false,false
-RT-ADMIN-013,ADMIN,core,820,One failed bulk member rolls back the batch.,internal/router/admin_audit_test.go::TestAdminBulkTargetsCommitOnceAndRollbackOnInvalidMember,false,false
-RT-DOCS-071,DOCS,core,820,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-079,SEC,core,820,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-072,DOCS,core,820,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-ADMIN-014,ADMIN,core,819,An inference caller token never authenticates to the admin plane.,none,false,false
-RT-ADMIN-015,ADMIN,core,819,A disabled client's credentials all fail within the bound; the export matches the enforcer's grants.,internal/router/admin_contract_clients_test.go::TestAdminClientDisableRejectsRealJWTAndMTLSAtListener,false,false
-RT-ADMIN-016,ADMIN,core,819,Expiring and unused credentials appear as metrics and events.,none,false,false
-RT-DOCS-073,DOCS,core,819,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-080,SEC,core,819,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-074,DOCS,core,819,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-ADMIN-017,ADMIN,core,818,"Every resource route has allow, deny and cross-domain authorization tests.",none,false,false
-RT-ADMIN-018,ADMIN,core,818,Provider secrets are never returned; invalid dialect or capability is rejected.,none,false,false
-RT-ADMIN-019,ADMIN,core,818,A quota change reaches serving within the freshness bound; over-budget spend is enforced and thresholds fire.,none,false,false
-RT-ADMIN-020,ADMIN,core,818,Shortening retention without the destructive permission returns 403.,none,false,false
-RT-DOCS-075,DOCS,core,818,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-081,SEC,core,818,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-076,DOCS,core,818,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-ADMIN-021,ADMIN,core,808,Compare the admin control-plane roadmap to the published admin API route inventory.,none,false,false
-RT-API-008,API,core,802,The suite passes on 2.x.,none,false,false
-RT-DOCS-077,DOCS,core,802,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-082,SEC,core,802,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-078,DOCS,core,802,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
+RT-SEC-077,SEC,extended,822,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-ADMIN-008,ADMIN,extended,821,The export chain verifies; deletion needs the privilege; retention tested with a fake clock.,internal/router/admin_audit_export_test.go::TestAdminAuditExportPagesVerifyAsOneChainAndFilterDomain | internal/router/admin_audit_export_test.go::TestAdminAuditRetentionUsesInjectedClock,false,false
+RT-ADMIN-009,ADMIN,extended,821,Simulation cannot widen the caller's authority or reveal another domain's policy.,internal/router/admin_policy_http_test.go::TestPolicySimulationMountedUsesCallerDomain,false,false
+RT-SEC-078,SEC,extended,821,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-ADMIN-010,ADMIN,extended,820,Operation states are observable with a structured result.,none,false,false
+RT-ADMIN-011,ADMIN,extended,820,Migration status matches the migrate CLI before and after an upgrade; no API route changes the schema; the Kubernetes Job example runs in the upgrade test (#934).,none,false,false
+RT-ADMIN-012,ADMIN,extended,820,Restoring into a clean replica gives identical revisions and an unbroken audit chain.,internal/router/admin_operations_test.go::TestControlPlaneBackupRestoreThroughAdminAPI,false,false
+RT-ADMIN-013,ADMIN,extended,820,One failed bulk member rolls back the batch.,internal/router/admin_audit_test.go::TestAdminBulkTargetsCommitOnceAndRollbackOnInvalidMember,false,false
+RT-SEC-079,SEC,extended,820,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-ADMIN-014,ADMIN,extended,819,An inference caller token never authenticates to the admin plane.,none,false,false
+RT-ADMIN-015,ADMIN,extended,819,A disabled client's credentials all fail within the bound; the export matches the enforcer's grants.,internal/router/admin_contract_clients_test.go::TestAdminClientDisableRejectsRealJWTAndMTLSAtListener,false,false
+RT-ADMIN-016,ADMIN,extended,819,Expiring and unused credentials appear as metrics and events.,none,false,false
+RT-SEC-080,SEC,extended,819,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-ADMIN-017,ADMIN,core,818,"Exercise the admin permission matrix through /admin/v1 for every resource route: allowed grant, missing grant and cross-domain identity. Verify denied writes leave resources unchanged.",internal/router/admin_contract_mount_test.go::TestAdminV1RouteConformance | internal/router/admin_contract_mount_test.go::TestAdminV1ResourceRoutesDenyTheirSpecificCasbinObjects | internal/router/admin_contract_mount_test.go::TestAdminV1CrossDomainDenied,false,false
+RT-ADMIN-018,ADMIN,extended,818,Provider secrets are never returned; invalid dialect or capability is rejected.,none,false,false
+RT-ADMIN-019,ADMIN,extended,818,A quota change reaches serving within the freshness bound; over-budget spend is enforced and thresholds fire.,none,false,false
+RT-ADMIN-020,ADMIN,extended,818,Shortening retention without the destructive permission returns 403.,none,false,false
+RT-SEC-081,SEC,extended,818,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-ADMIN-021,ADMIN,extended,808,Compare the admin control-plane roadmap to the published admin API route inventory.,none,false,false
+RT-API-008,API,extended,802,The suite passes on 2.x.,none,false,false
+RT-SEC-082,SEC,extended,802,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
 RT-PERF-002,PERF,extended,785,"The tier's `compose.yaml` runs unmodified on a MI350P machine, every slot healthy.",none,true,false
 RT-PERF-003,PERF,extended,785,`harness/functional_smoke.py` passes on that box and is committed under `results/<date>-<commit>/`.,none,true,false
 RT-PERF-004,PERF,extended,785,`harness/concurrency_sweep.py` completes at 1/8/32 workers and the tier README carries the measured p95 and sustained concurrency next to the arithmetic.,none,true,false
-RT-DOCS-079,DOCS,extended,785,"The README's ""not validated on MI350P hardware"" limit is replaced by the measured result, or narrowed to whatever remains true.",none,false,false
-RT-API-009,API,core,769,The release run attaches its report; the new cells produce ingestible reports; monthly cost stays within the approved ceiling.,none,false,false
-RT-DOCS-080,DOCS,core,769,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-083,SEC,core,769,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-081,DOCS,core,769,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
+RT-API-009,API,extended,769,The release run attaches its report; the new cells produce ingestible reports; monthly cost stays within the approved ceiling.,none,false,false
+RT-SEC-083,SEC,extended,769,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
 RT-PERF-005,PERF,extended,762,Nightly reports and the rolling aggregate published; existing offline gates unchanged.,none,false,false
-RT-DOCS-082,DOCS,extended,762,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
 RT-SEC-084,SEC,extended,762,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-083,DOCS,extended,762,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-DB-001,DB,core,757,"Columns, migration, reports and retention tested.",none,false,false
-RT-DB-002,DB,core,757,Seed ingestion labelled and linked to its evidence.,none,false,false
-RT-DOCS-084,DOCS,core,757,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-085,SEC,core,757,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-085,DOCS,core,757,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-API-010,API,core,635,Valid thinking and redacted thinking round-trip through unary and streaming tool continuations.,none,false,false
-RT-API-011,API,core,635,Invalid state fails deterministically before dispatch.,none,false,false
-RT-API-012,API,core,635,"One real-provider check, routed and direct.",none,false,false
-RT-DOCS-086,DOCS,core,635,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-086,SEC,core,635,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-087,DOCS,core,635,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-API-013,API,core,492,"Direct and depth 1, 2 and 3 paths keep the trace; malformed and untrusted input starts a new trace.",none,false,false
-RT-DOCS-088,DOCS,core,492,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-087,SEC,core,492,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-089,DOCS,core,492,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-API-014,API,core,442,"A three-level hierarchy: org budget enforced, team overspend refused, inheritance and override rules hold.",internal/router/hierarchy_test.go::TestHierarchyThreeRoutersInheritPolicyAndEnforceParentBudget,false,false
-RT-API-015,API,core,442,Parent-unreachable behaviour follows the configured TTL.,internal/router/hierarchy_test.go::TestHierarchyChildServesFromCacheWhileParentPolicyIsDown | internal/router/hierarchy_test.go::TestHierarchyParentTimeoutFailsInferenceClosed,false,false
-RT-DOCS-090,DOCS,core,442,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-088,SEC,core,442,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-091,DOCS,core,442,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-API-016,API,core,441,Capture to export to gate to shadow to promote to rollback tested end to end with an external training step.,internal/router/governed_finetune_workflow_e2e_test.go::TestGovernedFineTuneCaptureExportExternalGateShadowPromoteRollbackE2E,false,false
-RT-API-017,API,core,441,Retention and deletion verified; nothing is captured without opt-in.,none,false,false
-RT-DOCS-092,DOCS,core,441,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-089,SEC,core,441,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-093,DOCS,core,441,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-API-018,API,core,440,Changing thresholds or loading a new report updates membership safely.,none,false,false
-RT-API-019,API,core,440,Vectors trace back to a reproducible eval run.,none,false,false
-RT-DOCS-094,DOCS,core,440,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-090,SEC,core,440,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-095,DOCS,core,440,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-PERF-006,PERF,core,439,"The CPU tier serves in the reference config; the share of traffic, quality and latency are measured on one case study.",none,false,false
-RT-PERF-007,PERF,core,439,The sizing table is published.,none,false,false
-RT-DOCS-096,DOCS,core,439,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-091,SEC,core,439,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-097,DOCS,core,439,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-PERF-008,PERF,core,438,"Metering fields in usage rows and reports, tested.",none,false,false
-RT-PERF-009,PERF,core,438,"One long-context agent workload measured before and after (cache hit rate, TTFT, cost); the KV-cache cost example is updated.",none,false,false
-RT-DOCS-098,DOCS,core,438,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-092,SEC,core,438,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-099,DOCS,core,438,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-API-020,API,core,437,"Denied tool, masked secret, approval timeout and limit-exceeded paths covered end to end.",none,false,false
-RT-API-021,API,core,437,Tested with two agent clients (Claude Code and one SDK); the others documented.,none,false,false
-RT-API-022,API,core,437,A governance example in `examples/`.,none,false,false
-RT-DOCS-100,DOCS,core,437,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-093,SEC,core,437,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-101,DOCS,core,437,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-DOCS-102,DOCS,extended,425,Inspect the implementation PR and its CI for this acceptance criterion: Code merged to `main` with unit tests and positive and negative e2e tests (including failure and timeout paths).,none,false,false
+RT-DB-001,DB,extended,757,"Columns, migration, reports and retention tested.",none,false,false
+RT-DB-002,DB,extended,757,Seed ingestion labelled and linked to its evidence.,none,false,false
+RT-SEC-085,SEC,extended,757,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-API-010,API,extended,635,Valid thinking and redacted thinking round-trip through unary and streaming tool continuations.,none,false,false
+RT-API-011,API,extended,635,Invalid state fails deterministically before dispatch.,none,false,false
+RT-API-012,API,extended,635,"One real-provider check, routed and direct.",none,false,false
+RT-SEC-086,SEC,extended,635,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-API-013,API,extended,492,"Direct and depth 1, 2 and 3 paths keep the trace; malformed and untrusted input starts a new trace.",none,false,false
+RT-SEC-087,SEC,extended,492,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-API-014,API,extended,442,"A three-level hierarchy: org budget enforced, team overspend refused, inheritance and override rules hold.",internal/router/hierarchy_test.go::TestHierarchyThreeRoutersInheritPolicyAndEnforceParentBudget,false,false
+RT-API-015,API,extended,442,Parent-unreachable behaviour follows the configured TTL.,internal/router/hierarchy_test.go::TestHierarchyChildServesFromCacheWhileParentPolicyIsDown | internal/router/hierarchy_test.go::TestHierarchyParentTimeoutFailsInferenceClosed,false,false
+RT-SEC-088,SEC,extended,442,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-API-016,API,extended,441,Capture to export to gate to shadow to promote to rollback tested end to end with an external training step.,internal/router/governed_finetune_workflow_e2e_test.go::TestGovernedFineTuneCaptureExportExternalGateShadowPromoteRollbackE2E,false,false
+RT-API-017,API,extended,441,Retention and deletion verified; nothing is captured without opt-in.,none,false,false
+RT-SEC-089,SEC,extended,441,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-API-018,API,extended,440,Changing thresholds or loading a new report updates membership safely.,none,false,false
+RT-API-019,API,extended,440,Vectors trace back to a reproducible eval run.,none,false,false
+RT-SEC-090,SEC,extended,440,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-PERF-006,PERF,extended,439,"The CPU tier serves in the reference config; the share of traffic, quality and latency are measured on one case study.",none,false,false
+RT-PERF-007,PERF,extended,439,The sizing table is published.,none,false,false
+RT-SEC-091,SEC,extended,439,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-PERF-008,PERF,extended,438,"Metering fields in usage rows and reports, tested.",none,false,false
+RT-PERF-009,PERF,extended,438,"One long-context agent workload measured before and after (cache hit rate, TTFT, cost); the KV-cache cost example is updated.",none,false,false
+RT-SEC-092,SEC,extended,438,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-API-020,API,extended,437,"Denied tool, masked secret, approval timeout and limit-exceeded paths covered end to end.",none,false,false
+RT-API-021,API,extended,437,Tested with two agent clients (Claude Code and one SDK); the others documented.,none,false,false
+RT-API-022,API,extended,437,A governance example in `examples/`.,none,false,false
+RT-SEC-093,SEC,extended,437,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
 RT-PERF-010,PERF,extended,425,The listed certification cases are in `docs/certification/CATALOG.csv` and pass in the certification harness (#934).,none,false,false
-RT-DOCS-103,DOCS,extended,425,"Docs, `CHANGELOG.md` and, for any config or behaviour change, the v5.0.0 upgrade guide are updated.",none,false,false
 RT-PERF-011,PERF,extended,425,Request-path changes attach the local-router plus tool-using-client continuation evidence required by `AGENTS.md`.,none,false,false
-RT-DOCS-104,DOCS,core,421,Review roadmap items and match each shipped feature to its release evidence.,none,false,false
-RT-SEC-094,SEC,core,413,"`govulncheck`, grype and osv-scanner report no GO-2026-5932 finding for the shipped binaries and images.",none,false,false
-RT-SEC-095,SEC,core,413,The router's dependency graph contains no `x/crypto/openpgp` package (checked in CI).,none,false,false
-RT-DOCS-105,DOCS,core,413,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-096,SEC,core,413,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-106,DOCS,core,413,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
+RT-SEC-094,SEC,extended,413,"`govulncheck`, grype and osv-scanner report no GO-2026-5932 finding for the shipped binaries and images.",none,false,false
+RT-SEC-095,SEC,extended,413,The router's dependency graph contains no `x/crypto/openpgp` package (checked in CI).,none,false,false
+RT-SEC-096,SEC,extended,413,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
 RT-PERF-012,PERF,extended,287,Results published; the d3 docs quote only measured savings.,none,false,false
-RT-DOCS-107,DOCS,extended,287,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
 RT-SEC-097,SEC,extended,287,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-108,DOCS,extended,287,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
 RT-UPG-008,UPG,core,281,Legacy configs fail with the migration message; salted hashes work; the upgrade test applies the migration.,internal/router/config_test.go::TestLoadConfigRejectsRemovedCallerTokenSHA256 | scripts/release_upgrade_rollback_test.py::test_v48_legacy_caller_config_migrates_with_real_commands,false,false
-RT-DOCS-109,DOCS,core,281,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-098,SEC,core,281,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-110,DOCS,core,281,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-SEC-099,SEC,core,276,`grype --fail-on high` passes with a fresh DB and no unexplained exceptions.,none,false,false
-RT-DOCS-111,DOCS,core,276,"Inspect the implementation PR and its CI for this acceptance criterion: Merged to `main` with unit tests and positive and negative end-to-end tests, including failure and timeout paths.",none,false,false
-RT-SEC-100,SEC,core,276,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-DOCS-112,DOCS,core,276,Docs and `CHANGELOG.md` updated; any config or behaviour change is in the v5.0.0 upgrade guide.,none,false,false
-RT-API-023,API,core,271,Audit closure evidence for each API compatibility follow-up against the compatibility manifests.,none,false,false
+RT-SEC-098,SEC,extended,281,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-SEC-099,SEC,extended,276,`grype --fail-on high` passes with a fresh DB and no unexplained exceptions.,none,false,false
+RT-SEC-100,SEC,extended,276,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
+RT-API-023,API,extended,271,Audit closure evidence for each API compatibility follow-up against the compatibility manifests.,none,false,false
+RT-SEC-101,SEC,core,881,Route a benign workload at default incident thresholds. Verify that no incident opens.,none,false,false
+RT-SEC-102,SEC,core,881,Route the documented synthetic incident fixture. Verify its rule opens an incident for the fixture caller.,none,false,false
+RT-SEC-103,SEC,core,882,Serve traffic for an exempt emergency identity during a containment decision. Verify the identity retains access.,none,false,false
+RT-SEC-104,SEC,core,882,Submit the threshold fixture through serving and verify the configured containment action affects subsequent requests.,internal/router/automatic_containment_test.go::TestAutoContainmentEndToEndAppliesAfterCompletedRequest,false,false
+RT-SEC-105,SEC,core,883,Suspend and resume a fixture key through the authorized admin handler. Verify serving resumes and both actions are audited.,internal/router/containment_test.go::TestCallerContainmentAdminV1EndToEnd,false,false
+RT-SEC-106,SEC,core,883,Submit the existing invalid-signature webhook fixture to the containment handler. Verify rejection and unchanged key state.,none,false,false
+RT-SEC-107,SEC,core,884,Call an ordinary group as its authorized caller and verify upstream dispatch without a canary alert.,none,false,false
+RT-SEC-108,SEC,core,884,Send a request with the planted honeytoken. Verify a critical event and zero upstream calls.,internal/router/honeytoken_test.go::TestDatabaseModeHoneytokenSinkholeEndToEnd,false,false
+RT-SEC-109,SEC,core,885,Generate a security event through a real request and validate its exported OCSF class and required fields.,none,false,false
+RT-SEC-110,SEC,core,885,Generate a denied request containing a synthetic privacy marker. Verify the exported event omits the marker and credentials.,none,false,false
+RT-SEC-111,SEC,core,886,Call the serving handler from the configured binding with the matching client certificate. Verify dispatch.,none,false,false
+RT-SEC-112,SEC,core,886,Call the same handler with the nonmatching fixture certificate. Verify refusal before dispatch.,internal/router/caller_binding_test.go::TestCallerBindingMTLSRealTLSHandshakes,false,false
+RT-SEC-113,SEC,core,887,Exchange the valid identity fixture and use its mission token on the allowed group. Check task and owner in usage.,internal/router/token_exchange_test.go::TestMissionTokenEndToEndUsageAndScopes,false,false
+RT-SEC-114,SEC,core,887,Send the wrong-audience fixture to the exchange handler. Verify rejection and no token issuance.,none,false,false
+RT-SEC-115,SEC,core,888,Authenticate a request with the valid existing fixture token. Verify normal serving.,none,false,false
+RT-SEC-116,SEC,core,888,Revoke a synthetic credential through the self-revocation endpoint. Verify the next inference request is rejected and revocation is audited.,internal/router/leaked_key_revoke_e2e_test.go::TestLeakedKeySelfRevocationLocalhostE2E,false,false
+RT-SEC-117,SEC,core,889,Send a request below the configured provider ceiling. Verify normal dispatch and accounting.,none,false,false
+RT-SEC-118,SEC,core,889,Use the published breaker fixture to reach the configured ceiling. Verify subsequent requests follow the configured stop or failover action.,internal/router/provider_spend_breaker_e2e_test.go::TestProviderSpendBreakerFailoverLocalhostE2E | internal/router/provider_spend_breaker_e2e_test.go::TestProviderSpendBreakerStopLocalhostE2E,false,false
+RT-SEC-119,SEC,core,890,Send the benign DLP fixture through the serving handler and verify unchanged content.,none,false,false
+RT-SEC-120,SEC,core,890,Send the synthetic split-secret fixture through the streaming handler and verify configured redaction or refusal.,internal/router/secret_dlp_test.go::TestSecretDLPRequestAndUnaryResponseE2E | internal/router/secret_dlp_test.go::TestSecretDLPStreamingRedactsCredentialSplitAcrossChunks,false,false
+RT-SEC-121,SEC,core,891,Request a permitted tool sequence through inference and complete its tool continuation.,none,false,false
+RT-SEC-122,SEC,core,891,Use the denied tool-sequence fixture through the same handler. Verify the policy decision prevents release of the disallowed call.,internal/router/tool_firewall_test.go::TestToolFirewallSequenceE2E,false,false
+RT-SEC-123,SEC,core,892,Repeat a cacheable request under the same tenant identity and verify the expected reuse.,none,false,false
+RT-SEC-124,SEC,core,892,Repeat the request through serving under the other tenant and no-caller fixture. Verify no cross-tenant cache hit.,internal/router/tenant_cache_isolation_e2e_test.go::TestTenantCacheIsolationEndToEnd,false,false
+RT-SEC-125,SEC,core,895,Use the authorized console identity to contain and release a fixture key. Verify the audit records.,none,false,false
+RT-SEC-126,SEC,core,895,Use a read-only console identity on the containment handler. Verify refusal and unchanged key state.,none,false,false
+RT-SEC-127,SEC,core,928,Send a benign request through serving with the configured external detector. Verify its decision permits the request.,none,false,false
+RT-SEC-128,SEC,core,928,Use the matched fixture in enforce mode and verify the handler applies the external detector decision.,internal/router/external_detector_test.go::TestExternalDetectorContract,false,false
+RT-SEC-129,SEC,core,932,Send the reference classifier benign fixture through the configured router detector and verify dispatch.,none,false,false
+RT-SEC-130,SEC,core,932,Send its documented positive detection fixture through the same router. Verify the configured enforcement decision.,none,false,false
+RT-SEC-131,SEC,core,929,Pass the permitted streamed tool-call fixture through the handler and complete the released call.,none,false,false
+RT-SEC-132,SEC,core,929,Exercise the timeout fixture through the streaming handler and verify held content follows the timeout policy.,none,false,false
+RT-SEC-133,SEC,core,933,Generate in-band usage through serving and reconcile an equal provider total. Verify no gap event.,none,false,false
+RT-SEC-134,SEC,core,933,Generate in-band usage through serving and reconcile the synthetic excess provider total. Verify a report-mode gap event.,internal/router/provider_usage_reconciliation_test.go::TestProviderUsageGapReachesSecurityEventStream,false,false
+RT-SEC-135,SEC,core,437,Call an allowed MCP tool with its configured identity and verify the audited call completes.,none,false,false
+RT-SEC-136,SEC,core,437,Call a disallowed MCP tool as the same identity. Verify refusal before downstream execution.,none,false,false
+RT-SEC-137,SEC,core,442,Send an in-budget request through the three-level hierarchy and verify inherited policy allows it.,none,false,false
+RT-SEC-138,SEC,core,442,Repeat the documented over-budget fixture through the child. Verify parent enforcement and refusal.,none,false,false
+RT-SEC-139,SEC,core,441,Send a synthetic trace with capture consent enabled and verify scoped export contains it.,none,false,false
+RT-SEC-140,SEC,core,441,Send a trace without capture consent. Verify the scoped export omits it.,none,false,false
+RT-API-024,API,core,271,Run the Chat compatibility smoke against /v1/chat/completions on the published router. Compare response and upstream observations with the pinned harness assertions.,tests/api_compat/tests/test_chat_smoke.py::test_chat_tools_tool_choice_and_sse_usage,false,false
+RT-API-025,API,core,271,Run the Responses compatibility smoke against /v1/responses on the published router. Compare response and upstream observations with the pinned harness assertions.,tests/api_compat/tests/test_responses_smoke.py::test_responses_tool_and_sse_terminal_usage,false,false
+RT-API-026,API,core,271,Run the Messages compatibility smoke against /v1/messages on the published router. Compare response and upstream observations with the pinned harness assertions.,tests/api_compat/tests/test_anthropic_smoke.py::test_anthropic_messages_tool_choice_and_sse_usage,false,false
+RT-API-027,API,core,271,Run the Model discovery compatibility smoke against /v1/models on the published router. Compare response and upstream observations with the pinned harness assertions.,tests/api_compat/tests/test_http_smoke.py::test_models_are_caller_filtered,false,false
+RT-API-028,API,core,271,"Send a supported input to /v1/embeddings on the published router and verify response dimensions, model identity and usage.",none,false,false
+RT-API-029,API,core,271,Exercise /v1/messages/count_tokens with the Messages fixture and verify token count and unbilled usage.,internal/router/count_tokens_test.go::TestCountTokensProxyUnbilled,false,false
+RT-PERF-013,PERF,core,934,Use the prior production performance gate configuration and workload on the published candidate. Compare the config digest with the baseline and apply every preregistered threshold to the measured results. Retain both digests and the gate report.,none,false,false
+RT-DOCS-113,DOCS,extended,276|281|287|413|421|425|437|438|439|440|441|442|492|635|757|762|769|785|802|818|819|820|821|822|823|824|825|856|881|882|883|884|885|886|887|888|889|890|891|892|893|894|895|896|923|924|926|927|928|929|930|932|933|934|935|1178,Build the versioned site with the docs-qa workflow docs-site-build job. Require a successful build at the target commit.,none,false,false
+RT-DOCS-114,DOCS,extended,276|281|287|413|421|425|437|438|439|440|441|442|492|635|757|762|769|785|802|818|819|820|821|822|823|824|825|856|881|882|883|884|885|886|887|888|889|890|891|892|893|894|895|896|923|924|926|927|928|929|930|932|933|934|935|1178,"Run make docs-qa and build the Docusaurus site with onBrokenLinks and onBrokenMarkdownLinks set to throw. Require all sidebar paths, anchors and internal links to resolve.",none,false,false
+RT-DOCS-115,DOCS,extended,276|281|287|413|421|425|437|438|439|440|441|442|492|635|757|762|769|785|802|818|819|820|821|822|823|824|825|856|881|882|883|884|885|886|887|888|889|890|891|892|893|894|895|896|923|924|926|927|928|929|930|932|933|934|935|1178,"Extract public operator config key paths from the release schema and versioned configuration reference. Normalize list indices and dynamic map keys, take both set differences, and require both to be empty.",none,false,false
+RT-DOCS-116,DOCS,extended,276|281|287|413|421|425|437|438|439|440|441|442|492|635|757|762|769|785|802|818|819|820|821|822|823|824|825|856|881|882|883|884|885|886|887|888|889|890|891|892|893|894|895|896|923|924|926|927|928|929|930|932|933|934|935|1178,Enumerate public subcommand and flag pairs from the released CLI command registrations and help. Parse the versioned CLI reference into the same pairs. Require both set differences to be empty.,none,false,false

@@ -12,3 +12,7 @@ Certify the bytes that operators install. Record the tag, full source commit, re
 5. Preserve each failed run and its original expectations, fixtures, thresholds and gate configuration. Track fixes separately and rerun on a new candidate. Before GA compare source, asset and image digests with the candidate evidence. Carry forward only results whose tested inputs are identical. Repeat publication metadata checks on the final release and rerun affected cases for any changed inputs. A release with outstanding core failures or unrun core cases lacks certification.
 
 The CSV header is the first record in each CSV file. The catalog uses stable IDs within each area. A value of `none` calls for direct execution or evidence inspection. Each result refers to a single candidate and run.
+
+Core cases are mandatory GA gates. The catalog selects upgrade, CLI, configuration and packaging checks, paired real-handler security scenarios, the admin permission matrix and concurrent audit export, endpoint-family smoke tests and the performance gate. Every other case is extended. Shared documentation checks list their source issues separated by a vertical bar. Review each issue's acceptance evidence alongside the four shared documentation checks.
+
+For GA, create an annotated tag whose message carries the v5.0.0 section of CHANGELOG.md. Verify the published release body against that section. Preserve the release-note failure on rc.3 in its original results.
