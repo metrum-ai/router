@@ -4,6 +4,7 @@
 import importlib.util
 import hashlib
 import json
+import json
 import os
 import stat
 import subprocess
@@ -169,6 +170,20 @@ esac
         self.assertIn("apply_scope usage ROUTER_USAGE_DB_DSN", command[-1])
         self.assertIn("apply_scope router-config ROUTER_CONFIG_DB_DSN", command[-1])
         self.assertIn(str(workspace / "metrum-ai-router-migrate"), command[-1])
+
+    def test_script_upgrade_applies_only_to_pre_v5_baselines(self):
+        for version, expected in [("v4.7.1", True), ("v4.8.0", True), ("v5.0.0", False), ("v10.0.0", False)]:
+            with self.subTest(version=version):
+                self.assertEqual(MODULE.needs_script_upgrade(version), expected)
+
+    def test_external_policy_result_requires_a_single_recorded_pass(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory) / "candidate-smoke.json"
+            for values, expected in [([True], True), ([False], False), ([], False), ([True, False], False)]:
+                with self.subTest(values=values):
+                    checks = [{"check": "external-policy-served", "passed": value} for value in values]
+                    report.write_text(json.dumps({"checks": checks}), encoding="utf-8")
+                    self.assertEqual(MODULE.external_policy_served(report), expected)
 
     def test_script_migration_requires_specific_startup_rejection(self):
         import local_launch_path_smoke as launch
