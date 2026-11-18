@@ -8,6 +8,8 @@
 
 - Fix security console resume instructions failing with HTTP 428. Routerctl now discovers the current configuration ETag for guarded mutations, and copied HTTP instructions fetch and send `If-Match`.
 
+- Use the public, revision- and checksum-pinned ProtectAI DeBERTa-v3-base prompt-injection classifier in the reference detector example so setup requires no model-host access grant.
+
 - Fix admin operations failing with database busy under concurrent audit writes on SQLite.
 
 - Require each retry to consume a released tool-firewall approval before forwarding a held call; concurrent retries cannot reuse one release.
