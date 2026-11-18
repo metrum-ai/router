@@ -1509,8 +1509,9 @@ the database to stop. A v4.8 replica does not honor the runtime lock, so upgrade
 Stored admin audit chains use migration `2026111628`: usage schema 24 follows
 offline-operation markers in schema 23 (migration `2026111627`), and router-config schema 20
 follows offline-operation markers in schema 19. Apply both scopes with the non-serving migration job before
-serving. Retention prunes expired rows, including delete markers, and advances the checkpoint so
-the remaining audit chain can be verified offline.
+serving. Direct API deletion of deletion markers is refused. Retention can prune expired
+rows, including deletion markers, and advances the checkpoint so the remaining audit
+chain can be verified offline.
 
 Authentication audit counters use migration `2026111629`: router-config schema 21
 and usage schema 25 each add a bounded durable counter table for file-backed and

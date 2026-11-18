@@ -16,7 +16,7 @@ Metrum AI Router is delivered as release artifacts. Deployment hosts do not need
 | Docker Compose | The platform team builds a Linux container image from the release tag. | Dockerfile, Compose files and config templates in the source checkout. |
 | Kubernetes manifests or Helm | The platform team operates Kubernetes and supplies reviewed manifests. | Obtained as a reviewed deployment artifact when needed; see [Deploy To Kubernetes](./kubernetes). |
 
-Use `linux-amd64` / `linux-arm64` for x86_64 / ARM64 Linux hosts, and `windows-amd64` / `windows-arm64` for x86_64 / ARM64 Windows hosts. Windows binary archives are named `metrum-ai-router-<version>-windows-<arch>.zip`; Linux archives remain `metrum-ai-router-<version>-linux-<arch>.tar.gz`. From rc.4 onward, build your own Linux container image from the release tag’s Dockerfile.
+Use `linux-amd64` / `linux-arm64` for x86_64 / ARM64 Linux hosts, and `windows-amd64` / `windows-arm64` for x86_64 / ARM64 Windows hosts. Windows binary archives are named `metrum-ai-router-<version>-windows-<arch>.zip`; Linux archives remain `metrum-ai-router-<version>-linux-<arch>.tar.gz`. For v5.0.0, build your own Linux container image from the release tag’s Dockerfile.
 
 ## Embedded Docs And Admin Assets
 

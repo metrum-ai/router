@@ -5,20 +5,20 @@ doc_type: howto
 
 # Docker Compose Install
 
-From v5.0.0-rc.4 onward, no prebuilt image is published. Use the release archives for a binary installation, or build the tagged source for Docker Compose.
+For v5.0.0, no prebuilt image is published. Use the release archives for a binary installation, or build the tagged source for Docker Compose.
 
 ## Build your own container image
 
 Choose the release tag and Linux architecture used by your deployment (`amd64` or `arm64`). Build on a host with Docker and BuildKit. The tag below matches the image reference in `deploy/docker-compose.yml`.
 
 ```bash
-tag=v5.0.0-rc.4
+RELEASE_TAG=v5.0.0
 arch=amd64
-git clone --branch "$tag" --depth 1 https://github.com/metrum-ai/router.git router
+git clone --branch "$RELEASE_TAG" --depth 1 https://github.com/metrum-ai/router.git router
 cd router
-export METRUM_AI_ROUTER_VERSION="$tag-linux-$arch"
+export METRUM_AI_ROUTER_VERSION="${RELEASE_TAG}-linux-${arch}"
 docker build --platform "linux/$arch" \
-  --build-arg VERSION="$tag" --build-arg COMMIT="$(git rev-parse HEAD)" \
+  --build-arg VERSION="$RELEASE_TAG" --build-arg COMMIT="$(git rev-parse HEAD)" \
   --build-arg BUILD_DATE="$(git show -s --format=%cI HEAD)" \
   -t "metrum-ai-router:$METRUM_AI_ROUTER_VERSION" .
 mkdir -p ../compose/{config,state,logs}
@@ -46,7 +46,7 @@ docker run --rm \
 
 Save the printed raw token for the caller through an approved secret channel. In `config/config.yaml`, add or verify the referenced `users`, `projects`, and `project_memberships` entries, then replace the placeholder `callers:` entries with the generated caller YAML. A fresh template with `REPLACE_WITH_TOKEN_HASH_OF_*` values is intentionally not startable.
 
-The packaged production example binds to `127.0.0.1:8080`, enables security reports and stops each provider at a configured hourly ceiling of USD 1. Review the ceilings for your workload. Replace each caller credential block with its generated production ID, verifier, format, entropy and actual UTC issuance date. Run `metrum-ai-routerctl doctor --security --config config/config.yaml --fail-on warn` after provisioning. Use `config/config.dev.example.yaml` only for local development. With Caddy in a separate container, configure Router TLS on the private network listener using a certificate valid for the service name `router`. Change the packaged Caddy upstream to `reverse_proxy https://router:8080` and install the issuing CA in the Caddy container’s trust store.
+The packaged production example binds to `127.0.0.1:8080`, enables security reports and stops each provider at a configured hourly ceiling of USD 1. Review the ceilings for your workload. Replace each caller credential block with its generated production ID, verifier, format, entropy and actual UTC issuance date. Run `docker compose run --rm --no-deps --entrypoint /app/bin/metrum-ai-routerctl router doctor --security --config /app/config/config.yaml --fail-on warn` after provisioning. Use `config/config.dev.example.yaml` only for local development. With Caddy in a separate container, configure Router TLS on the private network listener using a certificate valid for the service name `router`. Change the packaged Caddy upstream to `reverse_proxy https://router:8080` and install the issuing CA in the Caddy container’s trust store.
 
 Edit `config/config.yaml` for durable container paths before startup:
 
@@ -86,7 +86,7 @@ Then set ownership and permissions for the container runtime user. The image bui
 
 ```bash
 sudo chown -R 65532:65532 config state logs
-chmod 0400 config/env.json
+sudo chmod 0400 config/env.json
 ```
 
 ## Run The Migration Gate, Then Start And Validate
@@ -102,7 +102,7 @@ docker compose run --rm --no-deps --entrypoint /app/bin/metrum-ai-router-migrate
 docker compose run --rm --no-deps --entrypoint /app/bin/metrum-ai-router-migrate router --action=status --driver=sqlite --db=/app/state/usage.sqlite --json
 ```
 
-`verify-serving` runs schema postconditions and fails unless the ledger is current/compatible and every bound data job is validated. It is the machine gate immediately before final read-only `status`; ordinal `0` alone does not prove completion. PostgreSQL uses the explicit override and `--driver postgres --dsn "$ROUTER_USAGE_DB_DSN"` instead.
+`verify-serving` runs schema postconditions and fails unless the ledger is current/compatible and every bound data job is validated. It is the machine gate immediately before final read-only `status`; ordinal `0` alone does not prove completion. PostgreSQL uses the explicit override and `--driver postgres --dsn-env ROUTER_USAGE_DB_DSN` instead.
 
 ```bash
 docker compose config >/dev/null
