@@ -693,6 +693,7 @@ bin/metrum-ai-router-usage-report
 bin/metrum-ai-router-migrate
 bin/metrum-ai-routerctl
 config/config.example.yaml
+config/config.dev.example.yaml
 config/env.example.json
 docs/PACKAGE_README.md
 docs/BINARY_INSTALL.md
@@ -739,6 +740,7 @@ compose/Caddyfile.compose
 compose/.env
 compose/.env.example
 config/config.example.yaml
+config/config.dev.example.yaml
 config/env.example.json
 docs/PACKAGE_README.md
 docs/BINARY_INSTALL.md
@@ -766,7 +768,7 @@ cp config.example.yaml config.yaml
 go run ./cmd/metrum-ai-router-token-gen generate \
   --owner-user alice \
   --project example-project \
-  --env dev \
+  --env prod \
   --allow <allowed-model-group>[,<allowed-model-group>...]
 ```
 

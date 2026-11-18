@@ -370,8 +370,15 @@ func TestCallerBindingExampleConfigAuthenticatesMatchingRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := replaceExampleCallerTokenHashes(t, string(raw))
-	text = strings.Replace(text, "token_id: rtr_metrum_standard_example-project_dev_kreplace", "token_id: rtr_example_standard", 1)
+	issued, err := GenerateCallerToken(TokenGenerateOptions{OwnerUser: "standard", Project: "example-project", Environment: "prod", Allow: []string{"default"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := strings.NewReplacer(
+		"REPLACE_WITH_TOKEN_HASH_OF_STANDARD_ROUTER_TOKEN", issued.TokenHash,
+		"rtr_metrum_standard_example-project_prod_kreplace", issued.TokenID,
+	).Replace(string(raw))
+	text = replaceExampleCallerTokenHashes(t, text)
 	commentedBinding := "  # binding:\n  #   mode: enforce\n  #   allowed_cidrs: [10.42.0.0/16]\n  #   allowed_asns: [64500]\n  #   mtls_spiffe_id: spiffe://corp/ns/agents/sa/build-agent"
 	activeBinding := "  binding:\n    mode: enforce\n    allowed_cidrs: [10.42.0.0/16]\n    allowed_asns: [64500]"
 	if !strings.Contains(text, commentedBinding) {
@@ -390,13 +397,13 @@ func TestCallerBindingExampleConfigAuthenticatesMatchingRequest(t *testing.T) {
 
 	var exampleCaller *CallerConfig
 	for i := range cfg.Callers {
-		if cfg.Callers[i].ID == "standard-dev" {
+		if cfg.Callers[i].ID == "standard-prod" {
 			exampleCaller = &cfg.Callers[i]
 			break
 		}
 	}
 	if exampleCaller == nil {
-		t.Fatal("config.example.yaml is missing standard-dev caller")
+		t.Fatal("config.example.yaml is missing standard-prod caller")
 	}
 	if len(cfg.Server.ClientIP.ASNPrefixes) != 1 || cfg.Server.ClientIP.ASNPrefixes[0] != (ASNPrefixConfig{CIDR: "10.42.0.0/16", ASN: 64500}) {
 		t.Fatalf("example ASN map = %#v, want 10.42.0.0/16 mapped to ASN 64500", cfg.Server.ClientIP.ASNPrefixes)
@@ -426,7 +433,7 @@ func TestCallerBindingExampleConfigAuthenticatesMatchingRequest(t *testing.T) {
 
 	request := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"default","messages":[{"role":"user","content":"hello"}]}`))
 	request.RemoteAddr = "10.42.0.10:443"
-	request.Header.Set("Authorization", "Bearer rtr_example_standard_test")
+	request.Header.Set("Authorization", "Bearer "+issued.Token)
 	response := httptest.NewRecorder()
 	svc.Handler().ServeHTTP(response, request)
 	if response.Code != http.StatusOK {

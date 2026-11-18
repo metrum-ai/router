@@ -884,6 +884,7 @@ package-one-no-docs: capability-smoke-unit
 		CGO_ENABLED=0 GOOS="$${GOOS}" GOARCH="$${GOARCH}" go build -trimpath -buildvcs=false -ldflags "$(BUILD_LDFLAGS)" -o "$$pkg_dir/bin/$$bin$$bin_suffix" "./cmd/$$bin"; \
 	done; \
 	cp config.example.yaml "$$pkg_dir/config/config.example.yaml"; \
+	cp config.minimal.example.yaml "$$pkg_dir/config/config.dev.example.yaml"; \
 	if [ -n "$${ENGINE_ADVISORY_SNAPSHOT:-}" ]; then \
 		if [ ! -s "$${ENGINE_ADVISORY_SNAPSHOT}" ]; then echo "engine advisory snapshot missing: $${ENGINE_ADVISORY_SNAPSHOT}" >&2; exit 2; fi; \
 		cp "$${ENGINE_ADVISORY_SNAPSHOT}" "$$pkg_dir/bin/engine-advisories.json"; \
@@ -944,6 +945,7 @@ package-docker-one-no-docs: capability-smoke-unit
 	cp deploy/compose.env.example "$${docker_pkg_dir}/compose/.env.example"; \
 	sed "s/^METRUM_AI_ROUTER_VERSION=.*/METRUM_AI_ROUTER_VERSION=$${VERSION}-$${GOOS}-$${GOARCH}/" deploy/compose.env.example > "$${docker_pkg_dir}/compose/.env"; \
 	cp config.example.yaml "$${docker_pkg_dir}/config/config.example.yaml"; \
+	cp config.minimal.example.yaml "$${docker_pkg_dir}/config/config.dev.example.yaml"; \
 	cp env.example.json "$${docker_pkg_dir}/config/env.example.json"; \
 	for legal in LICENSE NOTICE THIRD_PARTY_NOTICES.md MODEL_LICENSES.md; do \
 		cp "$$legal" "$${docker_pkg_dir}/$$legal"; \

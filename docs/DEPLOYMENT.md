@@ -23,6 +23,7 @@ bin/metrum-ai-router-migrate
 bin/metrum-ai-routerctl
 bin/engine-advisories.json (release-built archives)
 config/config.example.yaml
+config/config.dev.example.yaml
 config/env.example.json
 docs/PACKAGE_README.md
 docs/BINARY_INSTALL.md

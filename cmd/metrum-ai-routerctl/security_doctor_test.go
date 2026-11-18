@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/metrum-ai/router/internal/router"
+	"golang.org/x/crypto/bcrypt"
 	"gopkg.in/yaml.v3"
 )
 
@@ -287,8 +288,59 @@ func TestSecurityDoctorReferenceConfigs(t *testing.T) {
 		t.Fatal("could not locate reference config fixtures")
 	}
 	repo := filepath.Clean(filepath.Join(filepath.Dir(source), "../.."))
+	raw, err := os.ReadFile(filepath.Join(repo, "config.example.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(raw)
+	for _, principal := range []struct{ owner, project string }{
+		{"standard", "example-project"}, {"coding", "example-project"},
+		{"metrics-admin", "observability"}, {"content-admin", "compliance"},
+	} {
+		issued, err := router.GenerateCallerToken(router.TokenGenerateOptions{OwnerUser: principal.owner, Project: principal.project, Environment: "prod", Allow: []string{"default"}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		label := strings.ToUpper(strings.ReplaceAll(principal.owner, "-", "_"))
+		text = strings.ReplaceAll(text, "REPLACE_WITH_TOKEN_HASH_OF_"+label+"_ROUTER_TOKEN", issued.TokenHash)
+		text = strings.ReplaceAll(text, "REPLACE_WITH_"+label+"_ISSUED_AT", issued.Caller.TokenIssuedAt)
+		text = strings.ReplaceAll(text, "rtr_metrum_"+principal.owner+"_"+principal.project+"_prod_kreplace", issued.TokenID)
+	}
+	t.Setenv("ROUTER_ID_TRANSFORM_KEY", strings.Repeat("ab", 64))
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte("test fixture"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("LOCAL_PI_ADMIN_PASSWORD_HASH", string(passwordHash))
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte(text), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var stdout, stderr bytes.Buffer
+	if code := securityDoctorCommand([]string{"--security", "--config", path, "--format", "json", "--fail-on", "warn"}, &stdout, &stderr); code != 0 {
+		t.Fatalf("production reference exit %d: %s %s", code, stderr.String(), stdout.String())
+	}
+
+	// The packaged development profile may report its deliberately unfinished setup.
+	dev, err := os.ReadFile(filepath.Join(repo, "config.minimal.example.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg router.Config
+	if err := yaml.Unmarshal(dev, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	developmentWarnings := map[string]bool{"serving-tls": true, "provider-spend-ceiling": true, "security-reports": true, "metrics-auth-config": true}
+	for _, f := range securityDoctorConfigFindings(&cfg) {
+		if f.Status == "fail" || (f.Status == "warn" && !developmentWarnings[f.Check]) {
+			t.Errorf("development profile: %s: %s", f.Check, f.Detail)
+		}
+	}
+}
+
+func TestSecurityDoctorDeploymentTemplateDiagnostics(t *testing.T) {
+	repo := filepath.Join("..", "..")
 	paths := []string{
-		"config.example.yaml",
 		"deploy/edge/config.template.yaml",
 		"deploy/reference/amd-mi350p-datacenter/config.yaml",
 		"deploy/reference/amd-strix-halo-edge/config.yaml",

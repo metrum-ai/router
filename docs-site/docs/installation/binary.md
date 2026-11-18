@@ -109,6 +109,8 @@ bin/metrum-ai-router-token-gen generate \
 
 Save the printed raw token for the caller through an approved secret channel. In `config/config.yaml`, add or verify the referenced `users`, `projects`, and `project_memberships` entries, then replace the placeholder caller token hashes with the generated `callers:` entry. Populate `config/env.json` or the service environment with provider credentials before startup.
 
+The packaged production example binds to `127.0.0.1:8080`, enables security reports and stops each provider at a configured hourly ceiling of USD 1. Review the ceilings for your workload. Replace each caller credential block with its generated production ID, verifier, format, entropy and actual UTC issuance date. Run `metrum-ai-routerctl doctor --security --config config/config.yaml --fail-on warn` after provisioning. Use `config/config.dev.example.yaml` only for local development.
+
 Edit runtime paths in `config/config.yaml` for the binary host layout before installing the file:
 
 ```yaml

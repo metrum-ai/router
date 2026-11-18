@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Harden the packaged production reference configuration and ship the local development profile separately as `config/config.dev.example.yaml`.
+
 - Require each retry to consume a released tool-firewall approval before forwarding a held call; concurrent retries cannot reuse one release.
 - Keep sequence holds active across retries so every forwarded retry consumes a fresh approval.
 - Include boolean values when matching tool-firewall argument deny rules.
