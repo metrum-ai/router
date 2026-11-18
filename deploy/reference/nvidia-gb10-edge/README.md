@@ -58,7 +58,7 @@ cd deploy/reference/nvidia-gb10-edge
 mkdir -p state logs config
 cp config.yaml config/config.yaml
 # The runtime image runs as uid/gid 65532, so the directories it writes must
-# belong to that identity (see DOCKER_COMPOSE_INSTALL.md).
+# belong to that identity (see BINARY_INSTALL.md).
 sudo chown -R 65532:65532 config state logs
 
 export ROUTER_IMAGE=metrum-ai-router:<version>-linux-arm64   # required, never latest
@@ -97,7 +97,7 @@ chmod 0600 state/demo.token
 
 Serving binaries do not apply application DDL, so the reviewed migration job runs
 next, while the router is stopped
-(see [DOCKER_COMPOSE_INSTALL.md](../../../docs/DOCKER_COMPOSE_INSTALL.md)).
+(see [BINARY_INSTALL.md](../../../docs/BINARY_INSTALL.md)).
 `verify-serving` refuses to pass while a bound data job is pending, so the job is
 resumed at checkpoint 0 first:
 

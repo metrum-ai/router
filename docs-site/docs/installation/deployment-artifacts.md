@@ -13,10 +13,9 @@ Metrum AI Router is delivered as release artifacts. Deployment hosts do not need
 |---|---|---|
 | Linux binary package (`.tar.gz`) | The platform team manages the service supervisor, TLS proxy, database, and filesystem layout on Linux. | Router binaries, config templates, Caddy example, package-safe bootstrap docs. |
 | Windows binary package (`.zip`) | The platform team manages process supervision, TLS proxy, database, and filesystem layout on Windows. | Same package layout as Linux, with Windows `.exe` binaries, config templates, Caddy example, package-safe bootstrap docs, and legal files. |
-| Docker Compose | The platform team builds a Linux container image from the release tag. | Dockerfile, Compose files and config templates in the source checkout. |
 | Kubernetes manifests or Helm | The platform team operates Kubernetes and supplies reviewed manifests. | Obtained as a reviewed deployment artifact when needed; see [Deploy To Kubernetes](./kubernetes). |
 
-Use `linux-amd64` / `linux-arm64` for x86_64 / ARM64 Linux hosts, and `windows-amd64` / `windows-arm64` for x86_64 / ARM64 Windows hosts. Windows binary archives are named `metrum-ai-router-<version>-windows-<arch>.zip`; Linux archives remain `metrum-ai-router-<version>-linux-<arch>.tar.gz`. From rc.4 onward, build your own Linux container image from the release tag’s Dockerfile.
+Use `linux-amd64` / `linux-arm64` for x86_64 / ARM64 Linux hosts, and `windows-amd64` / `windows-arm64` for x86_64 / ARM64 Windows hosts. Windows binary archives are named `metrum-ai-router-<version>-windows-<arch>.zip`; Linux archives remain `metrum-ai-router-<version>-linux-<arch>.tar.gz`. No prebuilt container image is published. Docker and Compose installs are unsupported; use the binary install guide.
 
 ## Embedded Docs And Admin Assets
 
@@ -41,13 +40,11 @@ Use the embedded `/docs/` site for the full product guide after the router start
 - Match the artifact architecture to the host CPU.
 - Choose a Linux or Windows binary install when the deployment already has a process supervisor, database, and TLS proxy; Windows packages do not install a service, and Caddy is not bundled as a service.
 - Windows binaries are unsigned by default. Verify the release provenance and checksums before use; see [Binary Install](./binary) for SmartScreen guidance. Authenticode signing is a separate opt-in, not a default guarantee.
-- Choose Docker Compose when a locally built image and Compose-managed services fit the operating model.
 - Use Kubernetes only with reviewed deployment manifests and the canonical Kubernetes install guide.
 - Confirm `/readyz`, `/docs/`, `/v1/models`, and one caller smoke before sending production traffic.
 
 Next steps:
 
 - [Install From Linux Or Windows Binaries](./binary)
-- [Run With Docker Compose](./docker-compose)
 - [Deploy To Kubernetes](./kubernetes)
 - [Package Validation And Security Checks](./package-validation)

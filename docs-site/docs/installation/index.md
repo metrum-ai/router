@@ -12,7 +12,6 @@ back up, upgrade, and troubleshoot.
 | Shape | Best fit | State boundary | Canonical guide |
 |---|---|---|---|
 | Linux binary | Existing process supervision and reverse proxy | Host files plus SQLite or PostgreSQL | [Binary](/docs/installation/binary) |
-| Docker Compose | One-host container deployment | Bind-mounted config/state plus SQLite by default | [Docker Compose](/docs/installation/docker-compose) |
 | Kubernetes | Cluster-owned ingress, Secrets, and storage | One-writer SQLite PVC or explicit PostgreSQL design | [Kubernetes](/docs/installation/kubernetes) |
 
 Release packages support Linux `amd64` and `arm64`. Use immutable versioned
@@ -26,11 +25,9 @@ package.
 flowchart LR
   Local[Local quickstart clone]
   Bin[Linux binary package]
-  Compose[Docker Compose package]
   K8s[Kubernetes]
   Local --- Bin
-  Local --- Compose
-  Compose --- K8s
+  Bin --- K8s
 ```
 
 ## Required Inputs
@@ -49,7 +46,7 @@ keys, full production configs, or customer data.
 
 1. Verify the package checksum, architecture, notices, and expected contents.
 2. Back up any existing config, state, and usage database.
-3. Install the immutable binary or image and protected runtime files.
+3. Install the immutable binary and protected runtime files.
 4. Run the release's non-serving database migration gate when required.
 5. Start one router writer when using SQLite.
 6. Verify `/healthz`, `/readyz`, `/version`, `/docs/`, authenticated

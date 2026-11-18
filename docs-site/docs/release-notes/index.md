@@ -34,7 +34,7 @@ v5.0.0 is a security release. Review the [v4.8 to v5.0.0 upgrade guide](/docs/re
 - Add opt-in latest posture summary reporting through the authenticated admin security reports surface. Usage migration 2026111602 adds a singleton summary table at usage schema version 17.
 - Record UTC issuance timestamps for generated and rotated caller keys; the security self-test warns when age is unknown and fails keys older than 90 days.
 - Reject Responses tool snapshots that do not match the accumulated arguments inspected from streamed deltas.
-- Route every config, usage, and credential audit writer through append-only chained inserts; serialize SQLite chain appends, backfill legacy chains in bounded batches, protect deletion markers from deletion/pruning, export complete fields, and verify ordered export pages offline. The checkpoint remains in the database and is not externally signed in v5.0.0.
+- Route every config, usage, and credential audit writer through append-only chained inserts; serialize SQLite chain appends, backfill legacy chains in bounded batches, protect deletion markers from direct API deletion while allowing retention to prune expired markers and advance the chain checkpoint, export complete fields, and verify ordered export pages offline. The checkpoint remains in the database and is not externally signed in v5.0.0.
 - Add the versioned external detector contract and bounded asynchronous detector queue. Operator detector code runs in separate services; see the detector security guide.
 - Reject userinfo in external-policy and detector URLs, including redirect targets.
 - Add a Security Console to admin reports with detector and authentication risk ranking, a timeline of detector/auth/containment events, scoped serving-port containment with CSRF and audit, admin-only release instructions, and time-filtered JSON/Markdown incident bundles.
@@ -165,7 +165,7 @@ Migration entries below retain their scope, maintenance requirements, and rollba
 ### Known issues
 
 - At eight concurrent clients, median plain-path completion overhead increased from 1.475 ms in v4.8.0 to 3.035 ms in rc.3. This remains an accepted v5.0.0 limitation; [#1193](https://github.com/metrum-ai/router/issues/1193) tracks the latency follow-up for v5.1.0.
-- No prebuilt container image is published. Download a release archive, or build an image from the Dockerfile at the v5.0.0 tag and use the digest of your own build.
+- No prebuilt container image is published. Use a binary release archive; Docker and Compose installs are unsupported.
 
 Release notes help customer operators decide whether to deploy, how to validate the release, and how to roll back if needed. Each packaged router build also displays its router version and build timestamp on every docs page.
 

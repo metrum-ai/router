@@ -1,5 +1,7 @@
 # Binary Package Quick Install
 
+The repository's Dockerfile and deploy/ Compose files are unsupported examples; they are not built, tested or published by releases.
+
 This is the offline bootstrap path for a Linux binary package. After startup, use the embedded `/docs/` site as the primary administrator reference.
 
 ## Prerequisites
@@ -8,7 +10,6 @@ This is the offline bootstrap path for a Linux binary package. After startup, us
 - A service supervisor such as systemd, runit, or an equivalent platform supervisor.
 - A TLS reverse proxy such as Caddy, nginx, or a managed load balancer.
 - Deployment-owned config, secret, state, log, and usage database locations.
-- An operator-generated `license.json` and paired verification public key.
 
 ## Bootstrap
 
@@ -26,7 +27,6 @@ The packaged production example binds to `127.0.0.1:8080`, enables security repo
 Edit `config/config.yaml` for the deployment:
 
 - set `server.listen`;
-- set `server.license.path` and `server.license.state_path`;
 - set `state_path`;
 - configure `server.usage_db`;
 - configure providers, model groups, and caller access;
@@ -87,6 +87,6 @@ curl -fsS "$ROUTER_BASE_URL/v1/chat/completions" \
 
 ## Upgrade And Rollback
 
-Before upgrading, back up `config.yaml`, `env.json`, `license.json`, license state, router state, usage database data, and logs according to the deployment policy. Install the new package beside the old one, run `bin/metrum-ai-router --version`, review config changes, then restart the supervised service.
+Before upgrading, back up `config.yaml`, `env.json`, router state, usage database data, and logs according to the deployment policy. Install the new package beside the old one, run `bin/metrum-ai-router --version`, review config changes, then restart the supervised service.
 
 Package rollback never runs a reverse migration. For a `restore-required` release contract, restore the approved pre-migration database snapshot before deploying the earlier package; otherwise preserve the usage database and restore only approved package/config inputs. Rerun migration verify/status, `/readyz`, `/docs/`, `/v1/models`, and one caller smoke.

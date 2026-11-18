@@ -10,11 +10,9 @@ doc_type: reference
 This guide covers the v5.0.0 GA release dated 2026-11-18. Read the
 [release notes](/docs/release-notes) and the breaking-change map below before upgrading.
 
-No prebuilt container image is published for v5.0.0. Use a release archive, or
-build an image from the Dockerfile at the v5.0.0 tag. Deployment manifests must
-use your own image reference and build digest; do not expect a published router
-image tag or image provenance asset. Release archives retain signatures,
-provenance attestations, and SPDX SBOMs.
+No prebuilt container image is published for v5.0.0. Docker and Compose installs
+are unsupported. Use the [binary install guide](/docs/installation/binary).
+Release archives retain signatures, provenance attestations, and SPDX SBOMs.
 
 At eight concurrent clients, median plain-path completion overhead increased
 from 1.475 ms in v4.8.0 to 3.035 ms in rc.3. This remains an accepted v5.0.0
@@ -1162,8 +1160,7 @@ Test a held database lock locally and verify inference does not wait for it.
 
 ### Packages, local setup and security exceptions
 
-Windows amd64/arm64 ZIP packages join Linux tarballs. Compose upgrades use
-`METRUM_AI_ROUTER_VERSION`, not the old `SMART_LLMROUTER_VERSION` variable.
+Windows amd64/arm64 ZIP packages join Linux tarballs.
 Fresh default/local groups use Fireworks DeepSeek Flash 1017 70% / Luna 30%
 for eligible Chat, with Responses on Luna. Existing local config and callers
 are preserved; explicit regeneration requires `--force` and creates a backup.
@@ -1254,8 +1251,8 @@ v4.1.0 adds opt-in `server.responses.model_identity: requested_group`, which
 reports the requested router group as the caller-facing `model` and redacts
 upstream provider and model names from errors. The default (`upstream`) keeps
 v4.0.2 behavior. Release binaries are built with Go 1.26.9. The GitHub Release
-no longer attaches Docker packages; build them from the tag with
-`make package-docker`. No usage-database migration. v4.0.2 ignores
+no longer attaches Docker packages. Docker/Compose installation is unsupported;
+use the [binary install guide](/docs/installation/binary). No usage-database migration. v4.0.2 ignores
 `model_identity`, so a rollback returns callers to upstream model names.
 
 ## Concurrent rewrite-mode stability (v4.0.2)
@@ -1285,8 +1282,7 @@ v4.0.0 removes the Fleet lifecycle subsystem. These names are gone, not renamed:
 - `metrum-ai-router-fleet-sign`
 - packaged rename stubs for those CLIs
 
-Self-managed installs use the binary, Docker Compose, or Kubernetes manifests
-with `metrum-ai-routerctl`. Delete systemd units, Compose services, Kubernetes
+Self-managed installs use binary packages with `metrum-ai-routerctl`. Delete systemd units, Compose services, Kubernetes
 Jobs, and CI steps that invoke Fleet CLIs before cutover.
 
 `server.license` is rejected at startup. Remove the block. Do not mount
@@ -1345,7 +1341,7 @@ must use `metrum-ai-router`.
 
 For a package whose release contract includes a migration, stop or drain the serving router and follow the packaged `docs/DATA_MIGRATIONS.md` runbook: `metrum-ai-router-migrate plan → approved backup → apply → all required data jobs validated → verify → status → serve`. `deployment-job` never applies application schema at startup; it validates the ledger and fails closed until the contract is current, compatible, and every required bound data job is validated—including the post-apply, pre-resume pending state. PostgreSQL production uses this non-serving job, not `auto-safe`; SQLite requires exclusive downtime, SQLite-safe backup and integrity verification, and free-space checks. Checkpoint ordinal `0` is not completion evidence.
 
-Use `--dsn-env=ROUTER_USAGE_DB_DSN` for PostgreSQL and the documented non-serving container `--entrypoint` for Compose. Do not put a database connection string in commands, tickets, screenshots, or logs.
+Use `--dsn-env=ROUTER_USAGE_DB_DSN` for PostgreSQL and the packaged non-serving migration binary. Do not put a database connection string in commands, tickets, screenshots, or logs.
 
 The admin migration report reads the existing ledger without changing it. Run
 migration plans and upgrades through `metrum-ai-router-migrate` on the host or
@@ -1358,35 +1354,6 @@ unlabelled rows. Plan and verify this migration through the same non-serving
 gate; do not hand-add or backfill location claims. Package rollback follows
 the migration contract and may require restoring the approved pre-migration
 database snapshot.
-
-## Docker Compose Upgrade
-
-For v5.0.0, build the router image from the release-tagged Dockerfile and make
-it available to the deployment host. Use your existing reviewed Compose
-configuration; the release archive does not include a prebuilt image. Set its
-router service image to your build reference and digest before starting it.
-
-From your Compose deployment directory:
-
-```bash
-cp .env .env.backup
-# Pin the image reference to your own build, not a published router image.
-# Compose reads METRUM_AI_ROUTER_VERSION. Rename a legacy SMART_LLMROUTER_VERSION
-# line if your .env still has one (the package upgrade script does this for you).
-docker compose config >/dev/null
-docker compose up -d
-docker compose ps
-```
-
-Validate:
-
-```bash
-export ROUTER_BASE_URL="https://<router-host>"
-curl -fsS "$ROUTER_BASE_URL/readyz"
-curl -fsS "$ROUTER_BASE_URL/version"
-curl -fsS "$ROUTER_BASE_URL/docs/" | head
-docker compose run --rm --no-deps --entrypoint /app/bin/metrum-ai-routerctl router version
-```
 
 ## Binary Host Upgrade
 
@@ -1401,7 +1368,7 @@ docker compose run --rm --no-deps --entrypoint /app/bin/metrum-ai-routerctl rout
 
 ## Kubernetes Upgrade
 
-For v5.0.0, update the Deployment/Job image to your own build from the release-tagged Dockerfile, pinned by digest. There is no router image digest in the release inventory. Migration Jobs must use `/app/bin/metrum-ai-router-migrate`. Confirm the service account, mounts, and configuration secrets match your reviewed deployment.
+Kubernetes deployments own image construction, validation and registry provenance. Releases publish no router image or image digest; Docker/Compose installation is unsupported. Use the [binary install guide](/docs/installation/binary) for the supported release artifact. Migration Jobs must use `/app/bin/metrum-ai-router-migrate`. Confirm the service account, mounts, and configuration secrets match your reviewed deployment.
 
 ## Rollback
 
@@ -1509,8 +1476,9 @@ the database to stop. A v4.8 replica does not honor the runtime lock, so upgrade
 Stored admin audit chains use migration `2026111628`: usage schema 24 follows
 offline-operation markers in schema 23 (migration `2026111627`), and router-config schema 20
 follows offline-operation markers in schema 19. Apply both scopes with the non-serving migration job before
-serving. Retention prunes expired rows, including delete markers, and advances the checkpoint so
-the remaining audit chain can be verified offline.
+serving. Direct API deletion of deletion markers is refused. Retention can prune expired
+rows, including deletion markers, and advances the checkpoint so the remaining audit
+chain can be verified offline.
 
 Authentication audit counters use migration `2026111629`: router-config schema 21
 and usage schema 25 each add a bounded durable counter table for file-backed and

@@ -1,11 +1,10 @@
-# Package-safe offline bootstrap docs copied into binary and Docker release
+# Package-safe offline bootstrap docs copied into binary release
 # packages. Full customer/admin docs are embedded in the router binary and
 # served from /docs/ after startup. Internal source-checkout runbooks must stay
 # out of this allowlist unless they are rewritten and reviewed as package-safe
 # bootstrap material.
 docs/PACKAGE_README.md
 docs/BINARY_INSTALL.md
-docs/DOCKER_COMPOSE_INSTALL.md
 docs/KUBERNETES_INSTALL.md
 docs/PACKAGE_VALIDATION.md
 docs/DATA_MIGRATIONS.md

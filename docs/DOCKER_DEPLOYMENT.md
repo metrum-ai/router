@@ -1,6 +1,9 @@
 # Docker Compose Deployment
 
-Source-only operator runbook. Do not add this file to `scripts/package_docs_allowlist.txt`; package-safe external bootstrap deployment guidance belongs in `docs/DOCKER_COMPOSE_INSTALL.md` and the router-served Docusaurus installation docs.
+This is an unsupported source example retained for removal in v5.1.0. Releases do not build, test or publish Docker/Compose installs. Use [binary installation](BINARY_INSTALL.md).
+
+
+Source-only operator runbook. Do not add this file to `scripts/package_docs_allowlist.txt`; package-safe external bootstrap deployment guidance belongs in `docs/BINARY_INSTALL.md` and the router-served Docusaurus installation docs.
 
 Docker packages are intended for AWS EC2 or similar hosts where the source tree is not present and no image registry is required. The router image embeds the customer-facing Docusaurus documentation and serves it under `/docs/`; browser requests to `/` redirect there.
 
@@ -60,7 +63,6 @@ config/config.example.yaml
 config/env.example.json
 docs/PACKAGE_README.md
 docs/BINARY_INSTALL.md
-docs/DOCKER_COMPOSE_INSTALL.md
 docs/KUBERNETES_INSTALL.md
 docs/PACKAGE_VALIDATION.md
 docs/solution-brief.md

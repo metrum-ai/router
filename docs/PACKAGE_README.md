@@ -24,33 +24,7 @@ Binary packages include:
 - `MODEL_LICENSES.md`
 - `docs/`
 
-From v5.0.0-rc.4 onward, releases publish binary archives and no prebuilt container image. To produce an offline Docker Compose package, check out the release tag and run `make package-docker` on your build host. These locally built packages include:
-
-- `compose/docker-compose.yml`
-- `compose/docker-compose.postgres-localhost.yml`
-- `compose/Caddyfile.compose`
-- `compose/.env.example`
-- `compose/.env`
-- `config/config.example.yaml`
-- `config/config.dev.example.yaml`
-- `config/env.example.json`
-- `images/metrum-ai-router-<version>-linux-<arch>.tar`
-- `docs/`
-- `LICENSE`
-- `NOTICE`
-- `THIRD_PARTY_NOTICES.md`
-- `MODEL_LICENSES.md`
-
-The saved Docker image includes only the canonical runtime CLIs:
-`/app/bin/metrum-ai-router`, `/app/bin/metrum-ai-router-token-gen`,
-`/app/bin/metrum-ai-router-usage-report`, `/app/bin/metrum-ai-router-migrate`,
-and customer-local `/app/bin/metrum-ai-routerctl`. Rename stubs are excluded.
-Version-check the runtime with
-`docker run --rm --entrypoint /app/bin/metrum-ai-routerctl
-metrum-ai-router:<version>-linux-<arch> version`.
-
-Docker and Compose packages use SQLite state with one Router container and one
-replica by default; they neither provision nor bind RDS.
+No prebuilt container image is published. Docker and Compose installs are unsupported; use the binary package.
 
 Choose `linux-amd64` for x86_64 hosts and `linux-arm64` for ARM64 hosts.
 
@@ -59,7 +33,6 @@ Choose `linux-amd64` for x86_64 hosts and `linux-arm64` for ARM64 hosts.
 Use the quick-start document that matches the package:
 
 - `BINARY_INSTALL.md` for Linux binary packages.
-- `DOCKER_COMPOSE_INSTALL.md` for Docker Compose packages.
 - `KUBERNETES_INSTALL.md` for Kubernetes deployment planning.
 - `PACKAGE_VALIDATION.md` for package-content and runtime-health checks.
 - `LICENSE.md` for the Apache License 2.0 terms covering all first-party
