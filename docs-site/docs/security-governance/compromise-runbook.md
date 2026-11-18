@@ -43,6 +43,11 @@ Rotate provider keys before reopening affected traffic. Rotate caller keys befor
 
 ## 4. Review and recover
 
+The security console offers suspend only. After review, use its copied `routerctl release --caller-id '<caller-id>' --reason 'operator-reviewed'` command on a trusted admin workstation. Set `ROUTER_URL` to the admin listener and provide the admin credential through `ROUTER_ADMIN_KEY` or a protected key file. Routerctl reads the current ETag from `GET /admin/v1/config/status` and sends it as `If-Match`. The credential needs `config:read` and containment permission. Explicit `--if-match` values are preserved. A concurrent change returns HTTP 412 and requires another review before retrying.
+
+The copied HTTP alternative uses `ROUTER_ADMIN_URL` and `ROUTER_ADMIN_TOKEN`: GET the status ETag, then POST `{"caller_id":"<caller-id>","action":"resume","reason":"operator-reviewed"}` to `/admin/v1/containment` with that `If-Match` header. Resume does not use a browser CSRF token, containment ID, or TTL. Check the resume audit record and restored inference before declaring recovery.
+
+
 - Review provider billing and access activity, admin audit records, security events, and safe request evidence for the exposure window.
 - Check for unauthorized configuration, policy, certificate, detector, or webhook changes.
 - Restore only reviewed config and required routes. Re-enable a suspended caller only after the owner confirms rotation and access scope.

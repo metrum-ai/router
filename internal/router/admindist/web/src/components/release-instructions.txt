@@ -1,0 +1,16 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+
+routerctl release --caller-id __CALLER__ --reason 'operator-reviewed'
+
+# HTTP equivalent
+ETAG=$(curl --fail --silent --show-error --dump-header - --output /dev/null \
+  -H "Authorization: Bearer $ROUTER_ADMIN_TOKEN" \
+  "$ROUTER_ADMIN_URL/admin/v1/config/status" |
+  awk 'tolower($1) == "etag:" { sub("\r$", "", $2); print $2 }')
+test -n "$ETAG" &&
+curl --fail --silent --show-error -X POST "$ROUTER_ADMIN_URL/admin/v1/containment" \
+  -H "Authorization: Bearer $ROUTER_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "If-Match: $ETAG" \
+  --data __BODY__

@@ -779,6 +779,17 @@ func TestHoneytokenIssueUsesDatabaseCallerAPI(t *testing.T) {
 	}
 	const token = "rtr_metrum_security_decoys_prod_honeytoken_dbsecret"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == "/admin/v1/config/status" {
+			if r.Header.Get("Authorization") != "Bearer admin-test" {
+				t.Error("missing discovery authorization")
+			}
+			w.Header().Set("ETag", `"rev-4"`)
+			w.Write([]byte(`{"revision":4}`))
+			return
+		}
+		if r.Header.Get("If-Match") != `"rev-4"` {
+			t.Error("missing discovered revision")
+		}
 		if r.Method != http.MethodPost || r.URL.Path != "/admin/v1/callers/issue" {
 			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
 		}

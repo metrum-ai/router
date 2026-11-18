@@ -962,6 +962,7 @@ func (h *configAdminHandler) handleConfigStatus(w http.ResponseWriter, r *http.R
 		revision, err := currentRevisionForScope(h.deps.DB, h.deps.RuntimeScope)
 		if err == nil {
 			status["revision"] = revision
+			adminSetETagHeader(w, AdminETagForRevision(revision))
 			status["replica"].(map[string]any)["current"] = revision == loadedRevision
 		}
 		var runtimeRows []configControlPlaneRuntimeRow

@@ -5,6 +5,10 @@ doc_type: reference
 
 # Upgrade Guide
 
+## Security console resume instructions
+
+Routerctl now reads the current configuration ETag before revision-guarded admin mutations, including `release`. Automatic discovery requires `config:read` permission as well as the mutation permission. Policy mutations discover their separate policy revision from `/admin/v1/policy-sets?limit=1`, requiring policy read permission. An explicit `--if-match` remains authoritative. Concurrent changes still return HTTP 412 without an automatic retry. The security console’s copied HTTP instructions include the status GET and `If-Match` header. No configuration or database migration is required.
+
 ## Boolean tool-firewall argument matching
 
 Tool-firewall argument deny rules now include boolean values in their inspected arguments. Existing rules that match `true` or `false` values may now deny calls that previously passed. No configuration migration is required.

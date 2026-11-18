@@ -50,6 +50,8 @@ test("Security Console contains through its serving-port route and displays admi
   await page.getByRole("button", { name: "Contain", exact: true }).click();
   await expect(actionStatus).toContainText("contained and audited");
   await expect(console).toContainText("routerctl release --caller-id 'caller-a'");
+  await expect(console).toContainText("$ROUTER_ADMIN_URL/admin/v1/config/status");
+  await expect(console).toContainText("If-Match: $ETAG");
   await expect(console.getByRole("button", { name: "Copy release instructions" })).toBeVisible();
   expect(actions).toEqual([{ caller_id: "caller-a", action: "suspend", reason: "incident-42" }]);
 });
