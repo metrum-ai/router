@@ -11,6 +11,11 @@ from pathlib import Path
 
 from check_release_payload import ARCHIVES, validate, validate_unsigned
 from release_image_layer import BASE_IMAGE, BINARIES
+from stage_release_payload import payload_names, stage
+
+
+ROOT = Path(__file__).resolve().parents[1]
+REAL_UPGRADE_REPORT = ROOT / "scripts/testdata/upgrade-rollback-results-real-v4.8.0.json"
 
 
 class ReleasePayloadTest(unittest.TestCase):
@@ -132,11 +137,9 @@ class ReleasePayloadTest(unittest.TestCase):
         (root / "release-artifacts.json").write_text(json.dumps({
             "artifact_set": "binary", "artifacts": [{"filename": name} for name in sorted(archives)],
         }), encoding="utf-8")
-        (root / "upgrade-rollback-results.json").write_text(json.dumps({
-            "schema": "router.release-upgrade-rollback/v1",
-            "candidate_version": version,
-            "checks": [{"check": "candidate-serving-smoke", "passed": True}],
-        }), encoding="utf-8")
+        report = json.loads(REAL_UPGRADE_REPORT.read_text(encoding="utf-8"))
+        report["candidate_version"] = version
+        (root / "upgrade-rollback-results.json").write_text(json.dumps(report), encoding="utf-8")
 
     def test_unsigned_stage_accepts_exact_payload_and_rejects_extra_file(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -146,6 +149,43 @@ class ReleasePayloadTest(unittest.TestCase):
             (root / "engine-advisories.json").write_text("{}\n", encoding="utf-8")
             errors = validate_unsigned(root, "v5.0.0-rc.3")
             self.assertTrue(any("unexpected unsigned release assets: engine-advisories.json" in error for error in errors), errors)
+
+    def test_shared_stager_excludes_pkg_and_stages_same_unsigned_payload(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "dist"
+            destination = root / "unsigned-payload"
+            source.mkdir()
+            self.make_unsigned_payload(source, "v5.0.0-dry-run")
+            (source / "pkg").mkdir()
+            (source / "engine-advisories.json").write_text("{}\n", encoding="utf-8")
+            names = stage(source, destination, "v5.0.0-dry-run")
+            self.assertEqual(set(names), set(payload_names("v5.0.0-dry-run")))
+            self.assertEqual({path.name for path in destination.iterdir()}, set(names))
+            self.assertEqual(validate_unsigned(destination, "v5.0.0-dry-run"), [])
+
+    def test_stager_binary_upload_uses_same_canonical_list_without_upgrade_report(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "dist"
+            destination = root / "release-binaries"
+            source.mkdir()
+            self.make_unsigned_payload(source, "v5.0.0-rc.3")
+            names = stage(source, destination, "v5.0.0-rc.3", include_upgrade_results=False)
+            self.assertNotIn("upgrade-rollback-results.json", names)
+            self.assertEqual({path.name for path in destination.iterdir()}, set(names))
+
+    def test_unsigned_report_rejects_failed_candidate_check(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.make_unsigned_payload(root, "v5.0.0-dry-run")
+            report_path = root / "upgrade-rollback-results.json"
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            candidate_check = next(item for item in report["checks"] if item["check"] == "candidate-resume")
+            candidate_check["compatible"] = False
+            report_path.write_text(json.dumps(report), encoding="utf-8")
+            errors = validate_unsigned(root, "v5.0.0-dry-run")
+            self.assertTrue(any("incomplete or contains a failed check" in error for error in errors), errors)
 
 
 if __name__ == "__main__":

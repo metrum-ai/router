@@ -12,13 +12,10 @@ import re
 import sys
 from pathlib import Path
 
+from stage_release_payload import ARCHIVE_PATTERNS, payload_names
 
-ARCHIVES = {
-    "metrum-ai-router-{version}-linux-amd64.tar.gz",
-    "metrum-ai-router-{version}-linux-arm64.tar.gz",
-    "metrum-ai-router-{version}-windows-amd64.zip",
-    "metrum-ai-router-{version}-windows-arm64.zip",
-}
+
+ARCHIVES = set(ARCHIVE_PATTERNS)
 PASS = re.compile(r"^\- Decision: \*\*PASS\*\*$", re.MULTILINE)
 
 
@@ -162,10 +159,8 @@ def validate(dist: Path, version: str) -> list[str]:
 def validate_unsigned(dist: Path, version: str) -> list[str]:
     """Require the complete pre-sign payload and reject every extra entry."""
     errors: list[str] = []
+    expected_names = set(payload_names(version))
     expected_archives = {item.format(version=version) for item in ARCHIVES}
-    expected_names = expected_archives | {
-        "SHA256SUMS", "release-artifacts.json", "upgrade-rollback-results.json"
-    }
     if not dist.is_dir():
         return ["release payload directory is missing"]
     entries = list(dist.iterdir())
@@ -210,12 +205,45 @@ def validate_unsigned(dist: Path, version: str) -> list[str]:
         if rollback.get("schema") != "router.release-upgrade-rollback/v1":
             errors.append("upgrade and rollback evidence has an unknown schema")
         checks = rollback.get("checks")
-        failed_check = not isinstance(checks, list) or not checks or any(
-            not isinstance(item, dict) or item.get("passed") is not True for item in checks
+        failed_check = (
+            not isinstance(checks, list)
+            or not checks
+            or not re.fullmatch(r"[0-9a-f]{40}", str(rollback.get("candidate_commit", "")))
+            or not isinstance(rollback.get("previous_version"), str)
         )
+        if isinstance(checks, list):
+            check_names = {
+                item.get("check") for item in checks if isinstance(item, dict)
+            }
+            required_checks = {
+                "previous-release-json", "previous-serving-smoke",
+                "kubernetes-migration-job-plan", "kubernetes-migration-job-apply",
+                "candidate-resume",
+                "candidate-verify-serving", "candidate-serving-smoke", "rollback-serving-smoke",
+            }
+            schema_checks = {
+                name for name in check_names
+                if isinstance(name, str) and re.fullmatch(r"kubernetes-migration-job-router-config-schema-\d+", name)
+            }
+            if not required_checks.issubset(check_names) or len(schema_checks) != 1:
+                failed_check = True
+            for item in checks:
+                if not isinstance(item, dict) or not isinstance(item.get("check"), str) or not item["check"]:
+                    failed_check = True
+                    break
+                # v4.8.0 is the known previous-release JSON regression that this
+                # report records explicitly; all candidate/rollback gates must pass.
+                if item["check"] == "previous-release-json":
+                    expected_baseline_result = rollback.get("previous_version") == "v4.8.0"
+                    if item.get("strict_json") is not (not expected_baseline_result):
+                        failed_check = True
+                elif any(key in item and item[key] is not True for key in ("passed", "compatible", "strict_json")):
+                    failed_check = True
+                if "scope_count" in item and (type(item["scope_count"]) is not int or item["scope_count"] < 1):
+                    failed_check = True
         if rollback.get("candidate_version") != version or failed_check:
             errors.append("upgrade and rollback evidence is incomplete or contains a failed check")
-    except (OSError, json.JSONDecodeError, AttributeError):
+    except (OSError, json.JSONDecodeError, AttributeError, TypeError):
         errors.append("upgrade and rollback evidence is missing or malformed")
     return errors
 

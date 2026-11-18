@@ -252,8 +252,10 @@ jobs:
             --candidate-commit "${COMMIT}" --service-user "${service_user}" \
             --report "${RUNNER_TEMP}/upgrade-rollback-results.json"
           cp "${RUNNER_TEMP}/upgrade-rollback-results.json" dist/upgrade-rollback-results.json
+      - name: Stage exact unsigned release payload
+        run: python3 scripts/stage_release_payload.py --source dist --destination "${RUNNER_TEMP}/unsigned-payload" --version "${VERSION}"
       - name: Validate exact unsigned release payload
-        run: python3 scripts/check_release_payload.py --stage unsigned --dist-dir dist --version "${VERSION}"
+        run: python3 scripts/check_release_payload.py --stage unsigned --dist-dir "${RUNNER_TEMP}/unsigned-payload" --version "${VERSION}"
       - name: Review the previous production release through main
         id: review
         env:

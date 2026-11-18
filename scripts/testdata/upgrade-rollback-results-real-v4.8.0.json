@@ -1,0 +1,54 @@
+{
+  "candidate_commit": "427f4ec707c30f3b3fdb5ea8e70f45a7a3bb44bb",
+  "candidate_version": "v5.0.0-dry-run",
+  "checks": [
+    {
+      "check": "previous-release-json",
+      "strict_json": false
+    },
+    {
+      "check": "previous-serving-smoke",
+      "passed": true
+    },
+    {
+      "check": "kubernetes-migration-job-plan",
+      "compatible": true,
+      "scope_count": 2,
+      "strict_json": true
+    },
+    {
+      "check": "kubernetes-migration-job-apply",
+      "compatible": true,
+      "scope_count": 4,
+      "strict_json": true
+    },
+    {
+      "check": "kubernetes-migration-job-router-config-schema-21",
+      "passed": true
+    },
+    {
+      "check": "candidate-resume",
+      "compatible": true,
+      "strict_json": true
+    },
+    {
+      "check": "candidate-verify-serving",
+      "compatible": true,
+      "strict_json": true
+    },
+    {
+      "check": "candidate-serving-smoke",
+      "passed": true
+    },
+    {
+      "check": "rollback-serving-smoke",
+      "passed": true
+    }
+  ],
+  "generated_at": "2026-11-18T00:48:16.406070Z",
+  "previous_version": "v4.8.0",
+  "rollback_downtime_seconds": 1.007,
+  "schema": "router.release-upgrade-rollback/v1",
+  "total_upgrade_rollback_seconds": 9.683,
+  "upgrade_downtime_seconds": 2.927
+}
