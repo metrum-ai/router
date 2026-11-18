@@ -159,3 +159,25 @@ func TestHierarchyAuditSchema22SQLiteUpgradeDownAndRowRoundTrip(t *testing.T) {
 		t.Fatalf("after down: %+v err=%v", afterDown, err)
 	}
 }
+
+func TestHierarchyAuditPostgresIndexOrder(t *testing.T) {
+	db, cleanup, _ := configAdminPostgresTestDB(t)
+	defer cleanup()
+	if err := db.Exec("CREATE TABLE request_usage (span_id TEXT)").Error; err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if err := db.Transaction(applyHierarchyAuditMigration); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := db.Exec("DROP INDEX " + usageHierarchyAuditIndexName).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("CREATE INDEX " + usageHierarchyAuditIndexName + " ON request_usage (organization_id, span_id, team_id)").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Transaction(applyHierarchyAuditMigration); err == nil {
+		t.Fatal("migration accepted an unexpected key order")
+	}
+}

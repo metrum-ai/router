@@ -5,6 +5,7 @@ package router
 
 import (
 	"fmt"
+	"slices"
 
 	"gorm.io/gorm"
 )
@@ -59,14 +60,25 @@ func verifyHierarchyAuditMigration(db *gorm.DB) error {
 			return fmt.Errorf("hierarchy audit column %s is missing", field)
 		}
 	}
+	want := []string{"organization_id", "team_id", "span_id"}
+	if db.Dialector.Name() == "postgres" {
+		// PostgreSQL's GORM GetIndexes query does not order columns by index position.
+		index, err := inspectUsagePostgresIndex(db, "request_usage", usageHierarchyAuditIndexName)
+		if err != nil {
+			return err
+		}
+		if !slices.Equal(index.Keys, want) || index.AttributeCount != len(want) {
+			return fmt.Errorf("hierarchy audit index has unexpected columns")
+		}
+		return nil
+	}
 	indexes, err := db.Migrator().GetIndexes(&usageRecord{})
 	if err != nil {
 		return fmt.Errorf("inspect hierarchy audit index: %w", err)
 	}
 	for _, index := range indexes {
 		if index.Name() == usageHierarchyAuditIndexName {
-			columns := index.Columns()
-			if len(columns) == 3 && columns[0] == "organization_id" && columns[1] == "team_id" && columns[2] == "span_id" {
+			if slices.Equal(index.Columns(), want) {
 				return nil
 			}
 			return fmt.Errorf("hierarchy audit index has unexpected columns")
