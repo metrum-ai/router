@@ -185,6 +185,12 @@ def validate_unsigned_payload_gate(workflow, job_name):
     assert gate_name in names
     gate = steps[names.index(gate_name)]
     assert "check_release_payload.py --stage unsigned" in gate.get("run", "")
+    stage_name = "Stage exact unsigned release payload"
+    assert stage_name in names
+    stage = steps[names.index(stage_name)]
+    assert "scripts/stage_release_payload.py" in stage.get("run", "")
+    assert '--destination "${RUNNER_TEMP}/unsigned-payload"' in stage.get("run", "")
+    assert '"${RUNNER_TEMP}/unsigned-payload"' in gate.get("run", "")
     if job_name == "publish-release":
         gate_index = names.index(gate_name)
         downloads = {
@@ -301,6 +307,12 @@ class ProvenanceWorkflowTest(unittest.TestCase):
         validate_publish_tool_contract(self.workflow, "publish-release")
         validate_advisory_snapshot_staging(self.workflow)
         validate_unsigned_payload_gate(self.workflow, "publish-release")
+        package_steps = self.workflow["jobs"]["package-binaries"]["steps"]
+        stage = next(step for step in package_steps if step.get("name") == "Stage exact binary release payload")
+        assert "scripts/stage_release_payload.py" in stage.get("run", "")
+        assert "--without-upgrade-results" in stage["run"]
+        binary_upload = next(step for step in package_steps if step.get("with", {}).get("name") == "release-binaries")
+        assert "${{ runner.temp }}/release-binaries" == binary_upload["with"]["path"]
 
     def test_release_job_requires_environment_protection(self):
         doc = copy.deepcopy(self.workflow)

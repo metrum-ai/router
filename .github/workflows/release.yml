@@ -104,14 +104,12 @@ jobs:
         run: make package
       - name: Validate binary inventory and checksums
         run: python3 scripts/release_artifact_inventory.py --dist-dir dist --version "${VERSION}" --commit "${COMMIT}" --build-date "${BUILD_DATE}" --set binary --advisories-snapshot
+      - name: Stage exact binary release payload
+        run: python3 scripts/stage_release_payload.py --source dist --destination "${RUNNER_TEMP}/release-binaries" --version "${VERSION}" --without-upgrade-results
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-binaries
-          path: |
-            dist/metrum-ai-router-*.tar.gz
-            dist/metrum-ai-router-*.zip
-            dist/SHA256SUMS
-            dist/release-artifacts.json
+          path: ${{ runner.temp }}/release-binaries
           if-no-files-found: error
           retention-days: 7
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -372,8 +370,10 @@ jobs:
         with:
           name: release-upgrade-rollback
           path: dist
+      - name: Stage exact unsigned release payload
+        run: python3 scripts/stage_release_payload.py --source dist --destination "${RUNNER_TEMP}/unsigned-payload" --version "${VERSION}"
       - name: Validate exact unsigned release payload
-        run: python3 scripts/check_release_payload.py --stage unsigned --dist-dir dist --version "${VERSION}"
+        run: python3 scripts/check_release_payload.py --stage unsigned --dist-dir "${RUNNER_TEMP}/unsigned-payload" --version "${VERSION}"
       - name: Sign Windows release packages after reproducibility comparison
         env:
           JSIGN_JAR: ${{ runner.temp }}/signing/jsign.jar
