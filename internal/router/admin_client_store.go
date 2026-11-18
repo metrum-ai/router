@@ -136,7 +136,7 @@ func (s *adminClientStore) create(ctx context.Context, client adminClient, audit
 		return errAdminClientInvalidRequest
 	}
 	now := s.now().UTC()
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return auditTransaction(s.db.WithContext(ctx), func(tx *gorm.DB) error {
 		var count int64
 		if err := tx.Raw("SELECT COUNT(*) FROM " + adminClientTable + " WHERE status='active'").Scan(&count).Error; err != nil {
 			return err
@@ -199,7 +199,7 @@ func (s *adminClientStore) setStatus(ctx context.Context, id, status string, aud
 	if status != "active" && status != "disabled" && status != "deleted" {
 		return errAdminClientInvalidRequest
 	}
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return auditTransaction(s.db.WithContext(ctx), func(tx *gorm.DB) error {
 		var current string
 		if err := tx.Raw("SELECT status FROM "+adminClientTable+" WHERE id=?", id).Row().Scan(&current); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
@@ -234,7 +234,7 @@ func (s *adminClientStore) update(ctx context.Context, id, name string, audit ..
 	if strings.TrimSpace(name) == "" || len(name) > 128 {
 		return errAdminClientInvalidRequest
 	}
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return auditTransaction(s.db.WithContext(ctx), func(tx *gorm.DB) error {
 		result := tx.Exec("UPDATE "+adminClientTable+" SET name=?,updated_at=? WHERE id=? AND status='active'", strings.TrimSpace(name), s.now().UTC(), id)
 		if result.Error != nil {
 			return result.Error
@@ -255,7 +255,7 @@ func (s *adminClientStore) revokeCredential(ctx context.Context, clientID, crede
 	if s == nil || s.db == nil {
 		return errors.New("admin client store unavailable")
 	}
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return auditTransaction(s.db.WithContext(ctx), func(tx *gorm.DB) error {
 		var subject string
 		if err := tx.Raw("SELECT subject FROM "+adminClientCredentialTable+" WHERE client_id=? AND id=? AND status='active'", clientID, credentialID).Row().Scan(&subject); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
@@ -286,7 +286,7 @@ func (s *adminClientStore) emitDueExpiryWarnings(ctx context.Context, before tim
 	}
 	now := s.now().UTC()
 	cutoff := now.Add(before)
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return auditTransaction(s.db.WithContext(ctx), func(tx *gorm.DB) error {
 		var rows []struct {
 			ID        string
 			ClientID  string
@@ -338,7 +338,7 @@ func (s *adminClientStore) emitUnusedWarnings(ctx context.Context) error {
 		return errors.New("admin client store unavailable")
 	}
 	now := s.now().UTC()
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return auditTransaction(s.db.WithContext(ctx), func(tx *gorm.DB) error {
 		var rows []struct{ ID, ClientID, Kind, Subject string }
 		if err := tx.Raw("SELECT x.id,x.client_id,x.kind,x.subject FROM "+adminClientCredentialTable+" x JOIN "+adminClientTable+" c ON c.id=x.client_id WHERE x.status='active' AND c.status='active' AND x.expires_at>? AND x.created_at<? AND x.last_used_at IS NULL AND x.unused_warning_emitted_at IS NULL ORDER BY x.client_id,x.id LIMIT ?", now, now.Add(-24*time.Hour), adminClientMaxClients*adminClientMaxCredentials).Scan(&rows).Error; err != nil {
 			return err
@@ -370,7 +370,7 @@ func (s *adminClientStore) registerCredentialWithAudit(ctx context.Context, clie
 	if !validAdminClientID(clientID) || !validAdminClientCredential(credential, s.now()) {
 		return errAdminClientInvalidRequest
 	}
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return auditTransaction(s.db.WithContext(ctx), func(tx *gorm.DB) error {
 		var exists int
 		if err := tx.Raw("SELECT COUNT(*) FROM "+adminClientTable+" WHERE id=? AND status='active'", clientID).Scan(&exists).Error; err != nil {
 			return err

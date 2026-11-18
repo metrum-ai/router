@@ -544,7 +544,7 @@ func (s *usageStore) purgeExpiredContentCaptures(now time.Time, actorCallerID, a
 	record := *audit
 	record.ReasonCode = defaultString(record.ReasonCode, "retention_purge")
 	record.Detail = fmt.Sprintf("purged %d captures", len(rows))
-	err := s.db.Transaction(func(tx *gorm.DB) error {
+	err := auditTransaction(s.db, func(tx *gorm.DB) error {
 		if err := insertAdminAuditUsageTx(tx, record); err != nil {
 			return err
 		}
@@ -608,7 +608,7 @@ func (s *usageStore) deleteContentCapturesByRequestID(requestID, actorCallerID, 
 	record := *audit
 	record.ReasonCode = defaultString(record.ReasonCode, "request_delete")
 	record.Detail = "deleted captures for " + requestID
-	err := s.db.Transaction(func(tx *gorm.DB) error {
+	err := auditTransaction(s.db, func(tx *gorm.DB) error {
 		if err := insertAdminAuditUsageTx(tx, record); err != nil {
 			return err
 		}
@@ -627,7 +627,7 @@ func (s *usageStore) CreateTrainingOutcomeAudited(capture contentCaptureRecord, 
 		return fmt.Errorf("content store is disabled")
 	}
 	record.ReasonCode = defaultString(record.ReasonCode, "training_label")
-	return s.db.Transaction(func(tx *gorm.DB) error {
+	return auditTransaction(s.db, func(tx *gorm.DB) error {
 		if err := insertAdminAuditUsageTx(tx, record); err != nil {
 			return err
 		}

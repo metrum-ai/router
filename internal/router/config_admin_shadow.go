@@ -189,8 +189,8 @@ func StartGroupShadow(db *gorm.DB, runtimeScope, group string, req ShadowStartRe
 		return nil, errors.New("config actor is required")
 	}
 	var result *ShadowRun
-	err := withSQLiteBusyRetry(func() error {
-		return db.Transaction(func(tx *gorm.DB) error {
+	err := retryAuditedTxConflict(db, func() error {
+		return auditTransaction(db, func(tx *gorm.DB) error {
 			if err := lockConfigRuntimeTx(tx, runtimeScope); err != nil {
 				return err
 			}
@@ -287,8 +287,8 @@ func StopGroupShadow(db *gorm.DB, runtimeScope, group, actor, reason string, aud
 		return nil, configAdminError(409, "config_source_mode_file", "shadow runs require database mode (server.config_source.mode: database)")
 	}
 	var result *ShadowRun
-	err := withSQLiteBusyRetry(func() error {
-		return db.Transaction(func(tx *gorm.DB) error {
+	err := retryAuditedTxConflict(db, func() error {
+		return auditTransaction(db, func(tx *gorm.DB) error {
 			if err := lockConfigRuntimeTx(tx, runtimeScope); err != nil {
 				return err
 			}
@@ -529,7 +529,7 @@ func recordShadowObservation(db *gorm.DB, runID string, failed bool, latencyMS f
 	if failed {
 		errFlag = 1
 	}
-	_ = withSQLiteBusyRetry(func() error {
+	_ = retryTransientTx(func() error {
 		return db.Transaction(func(tx *gorm.DB) error {
 			if err := tx.Exec(
 				`UPDATE router_config_shadow_runs SET requests = requests + 1, errors = errors + ?, latency_ms_total = latency_ms_total + ?, prompt_tokens = prompt_tokens + ?, completion_tokens = completion_tokens + ?, cost_usd = cost_usd + ? WHERE run_id = ? AND status = ?`,

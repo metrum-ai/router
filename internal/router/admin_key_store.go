@@ -113,7 +113,7 @@ func (s *adminKeyStore) issueIdempotent(ctx context.Context, idempotencyKey, req
 		return adminKeySecret{}, err
 	}
 	out := adminKeySecret{ID: id, Subject: "adminkey:" + id, Generation: 1, ExpiresAt: req.ExpiresAt.UTC()}
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err = auditTransaction(s.db.WithContext(ctx), func(tx *gorm.DB) error {
 		if idempotencyKey != "" {
 			var existing []struct {
 				RequestHash string
@@ -159,7 +159,7 @@ func (s *adminKeyStore) rotate(ctx context.Context, id string, req adminKeyRotat
 	}
 	now := s.now().UTC()
 	var out adminKeySecret
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := auditTransaction(s.db.WithContext(ctx), func(tx *gorm.DB) error {
 		var meta []struct {
 			Subject   string
 			Status    string
@@ -220,7 +220,7 @@ func (s *adminKeyStore) rotate(ctx context.Context, id string, req adminKeyRotat
 
 func (s *adminKeyStore) revoke(ctx context.Context, id string) error {
 	now := s.now().UTC()
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return auditTransaction(s.db.WithContext(ctx), func(tx *gorm.DB) error {
 		result := tx.Exec("UPDATE "+adminKeyMetadataTable+
 			" SET status = 'revoked', revoked_at = ?, revision = revision + 1 WHERE id = ? AND revoked_at IS NULL", now, id)
 		if result.Error != nil {

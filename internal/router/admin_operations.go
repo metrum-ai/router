@@ -320,25 +320,25 @@ func restoreControlPlaneBackupWithAudit(ctx context.Context, configDB, usageDB *
 		return errors.New("both control-plane stores are required")
 	}
 	if err := validateControlPlaneBackup(bundle); err != nil {
-		if auditErr := recordOperationAudit(usageDB, audit, "failed", "invalid_backup"); auditErr != nil {
+		if auditErr := recordOperationAudit(ctx, usageDB, audit, "failed", "invalid_backup"); auditErr != nil {
 			return errors.New("restore failed and its audit record could not be written")
 		}
 		return err
 	}
 	if err := checkBackupTargetClean(configDB, bundle.Config); err != nil {
-		if auditErr := recordOperationAudit(usageDB, audit, "failed", "restore_target_not_clean"); auditErr != nil {
+		if auditErr := recordOperationAudit(ctx, usageDB, audit, "failed", "restore_target_not_clean"); auditErr != nil {
 			return errors.New("restore failed and its audit record could not be written")
 		}
 		return err
 	}
 	if err := checkBackupTargetClean(usageDB, bundle.Usage); err != nil {
-		if auditErr := recordOperationAudit(usageDB, audit, "failed", "restore_target_not_clean"); auditErr != nil {
+		if auditErr := recordOperationAudit(ctx, usageDB, audit, "failed", "restore_target_not_clean"); auditErr != nil {
 			return errors.New("restore failed and its audit record could not be written")
 		}
 		return err
 	}
 	if err := restoreBackupDatabase(ctx, configDB, bundle.Config, controlPlaneConfigBackupTables, false); err != nil {
-		if auditErr := recordOperationAudit(usageDB, audit, "failed", "restore_failed"); auditErr != nil {
+		if auditErr := recordOperationAudit(ctx, usageDB, audit, "failed", "restore_failed"); auditErr != nil {
 			return errors.New("restore failed and its audit record could not be written")
 		}
 		return err
@@ -351,7 +351,7 @@ func restoreControlPlaneBackupWithAudit(ctx context.Context, configDB, usageDB *
 		if cleanupErr := restoreBackupDatabase(cleanupCtx, configDB, bundle.Config, controlPlaneConfigBackupTables, true); cleanupErr != nil {
 			return fmt.Errorf("usage restore failed (%v) and config cleanup failed: %w", err, cleanupErr)
 		}
-		if auditErr := recordOperationAudit(usageDB, audit, "failed", "restore_failed"); auditErr != nil {
+		if auditErr := recordOperationAudit(ctx, usageDB, audit, "failed", "restore_failed"); auditErr != nil {
 			return errors.New("restore failed and its audit record could not be written")
 		}
 		return err
@@ -414,7 +414,7 @@ func restoreBackupDatabaseWithAudit(ctx context.Context, db *gorm.DB, backup con
 			tables[left], tables[right] = tables[right], tables[left]
 		}
 	}
-	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return auditTransaction(db.WithContext(ctx), func(tx *gorm.DB) error {
 		if clear {
 			for _, table := range tables {
 				if allowed[table.Name] {
@@ -489,15 +489,22 @@ func restoreBackupDatabaseWithAudit(ctx context.Context, db *gorm.DB, backup con
 	})
 }
 
-func recordOperationAudit(db *gorm.DB, record *AdminAuditRecord, outcome, reason string) error {
+func recordOperationAudit(ctx context.Context, db *gorm.DB, record *AdminAuditRecord, outcome, reason string) error {
 	if record == nil {
 		return nil
 	}
 	copy := *record
+	if db.Dialector.Name() == "sqlite" {
+		// Record the final outcome even when the operation exceeded its deadline.
+		db = db.WithContext(context.WithoutCancel(ctx))
+		if copy.EventID == "" {
+			copy.EventID = newConfigChangeEventID()
+		}
+	}
 	copy.At = time.Now().UTC()
 	copy.Outcome = outcome
 	copy.ReasonCode = reason
-	return db.Transaction(func(tx *gorm.DB) error { return insertAdminAuditUsageTx(tx, copy) })
+	return auditTransaction(db, func(tx *gorm.DB) error { return insertAdminAuditUsageTx(tx, copy) })
 }
 
 func validSQLIdentifier(value string) bool {

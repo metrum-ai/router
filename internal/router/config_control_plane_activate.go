@@ -66,7 +66,7 @@ func activateConfigSetWithAction(db *gorm.DB, runtimeScope, configSetID, actor, 
 
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 
-	err := db.Transaction(func(tx *gorm.DB) error {
+	err := auditTransaction(db, func(tx *gorm.DB) error {
 		if err := ensureConfigControlPlaneRuntimeTables(tx); err != nil {
 			return err
 		}

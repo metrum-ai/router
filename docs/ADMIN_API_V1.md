@@ -394,7 +394,7 @@ configuration and policy revisions plus the corresponding audit records; verify
 its SHA-256 digest before restore. The operation store is bounded to 500 rows
 and seven days, with a 64 MiB aggregate result cap. Backup and restore start
 routes return `202 Accepted`, a `Location` header, and `Retry-After`; poll that
-URL for completion. The worker timeout is two minutes, while a status read marks
+URL for completion. On SQLite, audited mutations wait for the writer and retry transient lock conflicts. A backup becomes downloadable only after its audit entry commits. The worker timeout is two minutes, while a status read marks
 work stale only after five minutes, preserving a late worker success. Restore
 replaces two independent databases sequentially, so it is not an atomic
 cross-database transaction. If usage restore fails after config restore, the

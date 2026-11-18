@@ -74,7 +74,7 @@ func (s *Service) finishMCPToolAudit(id string, started time.Time, status string
 	if latency < 0 {
 		latency = 0
 	}
-	return s.usage.db.Transaction(func(tx *gorm.DB) error {
+	return auditTransaction(s.usage.db, func(tx *gorm.DB) error {
 		var row mcpToolAuditEventRecord
 		if err := tx.Where("id = ?", id).First(&row).Error; err != nil {
 			return fmt.Errorf("read MCP audit start: %w", err)

@@ -183,7 +183,7 @@ func (s *Service) adminV1HandlerSet(registry *AdminV1Registry) map[string]http.H
 			if err != nil {
 				outcome, reason = "failed", "backup_failed"
 			}
-			if auditErr := recordOperationAudit(s.usageDBHandle(), audit, outcome, reason); auditErr != nil {
+			if auditErr := recordOperationAudit(ctx, s.usageDBHandle(), audit, outcome, reason); auditErr != nil {
 				return nil, errors.New("backup audit could not be recorded")
 			}
 			return bundle, err
@@ -192,7 +192,7 @@ func (s *Service) adminV1HandlerSet(registry *AdminV1Registry) map[string]http.H
 			var bundle controlPlaneBackupBundle
 			if err := json.Unmarshal(raw, &bundle); err != nil {
 				audit := s.adminOperationAudit(meta, adminAuditHash(raw))
-				if auditErr := recordOperationAudit(s.usageDBHandle(), audit, "failed", "invalid_backup"); auditErr != nil {
+				if auditErr := recordOperationAudit(ctx, s.usageDBHandle(), audit, "failed", "invalid_backup"); auditErr != nil {
 					return nil, errors.New("restore audit could not be recorded")
 				}
 				return nil, errors.New("invalid backup bundle")
@@ -202,7 +202,7 @@ func (s *Service) adminV1HandlerSet(registry *AdminV1Registry) map[string]http.H
 				return nil, err
 			}
 			if err := s.reloadActiveConfigFromDB(); err != nil {
-				if auditErr := recordOperationAudit(s.usageDBHandle(), audit, "failed", "reload_failed"); auditErr != nil {
+				if auditErr := recordOperationAudit(ctx, s.usageDBHandle(), audit, "failed", "reload_failed"); auditErr != nil {
 					return nil, errors.New("restored configuration reload and audit both failed")
 				}
 				return nil, errors.New("restored configuration could not be loaded")
@@ -456,8 +456,8 @@ func (s *Service) writeAdminCredentialEvent(ctx context.Context, event AdminCred
 		event.At = time.Now().UTC()
 	}
 	if s.configControlPlane != nil {
-		return withSQLiteBusyRetry(func() error {
-			return s.configControlPlane.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		return retryAuditedTxConflict(s.configControlPlane, func() error {
+			return auditTransaction(s.configControlPlane.WithContext(ctx), func(tx *gorm.DB) error {
 				return insertAdminCredentialEventTx(tx, event)
 			})
 		})
@@ -468,8 +468,8 @@ func (s *Service) writeAdminCredentialEvent(ctx context.Context, event AdminCred
 	if event.Count <= 0 {
 		event.Count = 1
 	}
-	return withSQLiteBusyRetry(func() error {
-		return s.usage.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return retryAuditedTxConflict(s.usage.db, func() error {
+		return auditTransaction(s.usage.db.WithContext(ctx), func(tx *gorm.DB) error {
 			return insertAdminAuditUsageTx(tx, AdminAuditRecord{
 				At: event.At, PrincipalSubject: event.Subject, PrincipalKind: event.Kind,
 				CredentialID: event.CredentialID, Issuer: event.Issuer, RequestID: event.RequestID, Domain: AdminGlobalDomain,

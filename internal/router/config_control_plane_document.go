@@ -135,7 +135,7 @@ func ImportCanonicalYAML(db *gorm.DB, runtimeScope, name string, yamlBytes []byt
 	configSetID := newConfigSetID()
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 
-	err = db.Transaction(func(tx *gorm.DB) error {
+	err = auditTransaction(db, func(tx *gorm.DB) error {
 		// Insert the configuration set as draft + valid.
 		if err := tx.Exec(
 			`INSERT INTO router_config_sets (id, runtime_scope, name, status, validation_status, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,

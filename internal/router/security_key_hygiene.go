@@ -30,7 +30,7 @@ func (s *Service) handleLeakedKeySelfRevoke(w http.ResponseWriter, r *http.Reque
 	}
 	controlDB := s.configControlPlane.WithContext(r.Context())
 	now := time.Now().UTC()
-	err := controlDB.Transaction(func(tx *gorm.DB) error {
+	err := auditTransaction(controlDB, func(tx *gorm.DB) error {
 		var existing int64
 		if err := tx.Model(&revokedCallerTokenRow{}).Where("token_hash = ?", verifier).Count(&existing).Error; err != nil {
 			return err

@@ -65,7 +65,7 @@ func (s *usageStore) withPolicyMutation(ctx context.Context, actor Principal, de
 		return 0, ErrAuthorizationUnavailable
 	}
 	var revision int64
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := auditTransaction(s.db.WithContext(ctx), func(tx *gorm.DB) error {
 		var runtime policyMutationRevision
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&runtime, 1).Error; err != nil {
 			return ErrAuthorizationUnavailable

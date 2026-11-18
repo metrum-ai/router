@@ -278,7 +278,7 @@ func (u *usageStore) applyAutomaticContainment(row automaticContainmentActionRec
 		return false, errors.New("automatic containment storage unavailable")
 	}
 	created := false
-	err := u.db.Transaction(func(tx *gorm.DB) error {
+	err := auditTransaction(u.db, func(tx *gorm.DB) error {
 		var guard automaticContainmentGuardRecord
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&guard, 1).Error; err != nil {
 			return err
@@ -333,7 +333,7 @@ func (u *usageStore) rollbackAutomaticContainment(row automaticContainmentAction
 	if u == nil || u.db == nil {
 		return errors.New("automatic containment storage unavailable")
 	}
-	return u.db.Transaction(func(tx *gorm.DB) error {
+	return auditTransaction(u.db, func(tx *gorm.DB) error {
 		var guard automaticContainmentGuardRecord
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&guard, 1).Error; err != nil {
 			return err
@@ -368,7 +368,7 @@ func (u *usageStore) recordAutomaticContainmentShadow(row automaticContainmentAc
 		return false, errors.New("automatic containment storage unavailable")
 	}
 	created := false
-	err := u.db.Transaction(func(tx *gorm.DB) error {
+	err := auditTransaction(u.db, func(tx *gorm.DB) error {
 		var guard automaticContainmentGuardRecord
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&guard, 1).Error; err != nil {
 			return err

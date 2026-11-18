@@ -143,7 +143,7 @@ func (s *adminEmergencyActivationStore) Activate(ctx context.Context, c adminEme
 		return zero, errAdminEmergencyPersistence
 	}
 	row := adminEmergencyActivationRow{ActivationID: hex.EncodeToString(id[:]), CredentialID: c.ID, BindingDigest: c.Fingerprint, Subject: c.Subject, Issuer: c.Issuer, Reason: reason, ActivatedAtMS: now.UnixMilli(), UntilMS: until.UnixMilli(), CredentialExpiresMS: c.ExpiresAt.UnixMilli()}
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := auditTransaction(s.db.WithContext(ctx), func(tx *gorm.DB) error {
 		if err := tx.Model(&adminEmergencyActivationRow{}).Where("credential_id = ? AND deactivated_at_ms = 0", c.ID).Update("deactivated_at_ms", now.UnixMilli()).Error; err != nil {
 			return errAdminEmergencyPersistence
 		}
@@ -176,7 +176,7 @@ func (s *adminEmergencyActivationStore) Use(ctx context.Context, c adminEmergenc
 		return zero, errAdminEmergencyInactive
 	}
 	var row adminEmergencyActivationRow
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := auditTransaction(s.db.WithContext(ctx), func(tx *gorm.DB) error {
 		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("credential_id = ? AND binding_digest = ? AND subject = ? AND issuer = ? AND credential_expires_ms = ? AND deactivated_at_ms = 0 AND activated_at_ms <= ? AND until_ms > ?", c.ID, c.Fingerprint, c.Subject, c.Issuer, c.ExpiresAt.UnixMilli(), now.UnixMilli(), now.UnixMilli()).First(&row).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return errAdminEmergencyInactive

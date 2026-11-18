@@ -125,19 +125,19 @@ func insertAdminAuditUsageTx(tx *gorm.DB, record AdminAuditRecord) error {
 		outcome = "committed"
 	}
 	record.Outcome = outcome
-	unlock, err := lockAdminAuditChain(tx, "usage", record.Domain)
-	if err != nil {
+	if err := lockAdminAuditChain(tx, "usage", record.Domain); err != nil {
 		return fmt.Errorf("lock audit chain: %w", err)
 	}
-	defer unlock()
+
 	record.At = normalizeAdminAuditAppendTime(tx, "usage", record.Domain, usageAdminAuditTable, "domain", record.EventID, record.At)
 	at = record.At
 	row := adminAuditRowFromRecord(record, "usage")
 	record.PreviousHash = readAdminAuditChainHead(tx, "usage", record.Domain, usageAdminAuditTable, "domain")
-	record.RowHash, err = adminAuditChainHash(record.PreviousHash, row)
+	rowHash, err := adminAuditChainHash(record.PreviousHash, row)
 	if err != nil {
 		return fmt.Errorf("calculate audit row hash: %w", err)
 	}
+	record.RowHash = rowHash
 	result := tx.Exec(
 		`INSERT INTO router_admin_audit_events (event_id, at, runtime_scope, principal_subject, principal_kind, credential_id, issuer, domain, object, action, operation_id, request_id, outcome, reason_code, ticket, config_set_id, prev_config_set_id, config_revision, before_hash, after_hash, idempotency_key, request_hash, detail, previous_hash, row_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(event_id) DO NOTHING`,
 		record.EventID, adminAuditFormatTime(at), adminAuditFieldValue(record.RuntimeScope),

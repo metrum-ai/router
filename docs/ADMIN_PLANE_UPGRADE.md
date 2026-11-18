@@ -202,6 +202,8 @@ two-scope Job in [DATA_MIGRATIONS.md](DATA_MIGRATIONS.md). The restore API
 requires the separate `admin:restore:write` grant. It updates the configuration
 and usage databases sequentially; it is not an atomic cross-database operation.
 
+SQLite audit writers reserve the writer before reading mutation state and retry transient contention automatically. Existing SQLite installations use this behavior after restarting with the updated binary.
+
 Authentication audit counters add migration `2026111629`, advancing usage and router-config schemas to 25 and 21.
 The bounded per-replica counter table durably accepts authentication outcomes before success is returned; apply both
 scopes with the non-serving migration job before serving this release.
