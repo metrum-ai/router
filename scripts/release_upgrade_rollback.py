@@ -155,15 +155,25 @@ def run_migration_job_example(binary: Path, usage_db: Path, config_db: Path, use
         raise RuntimeError("Kubernetes migration Job output was not a sequence of JSON documents") from exc
 
 
-def smoke(binary_root: Path, version: str, commit: str, output: Path, user: str, database: Path) -> None:
+def smoke(binary_root: Path, version: str, commit: str, output: Path, user: str, database: Path, policy: str | None = None) -> None:
     router = find_binary(binary_root, "metrum-ai-router")
     report = find_binary(binary_root, "metrum-ai-router-usage-report")
     result = run_as(user, ["python3", str(Path(__file__).with_name("local_launch_path_smoke.py")),
                            "--router-binary", str(router), "--usage-report-binary", str(report),
                            "--expected-version", version, "--expected-commit", commit, "--output", str(output),
-                           "--usage-db", str(database)], timeout=180, check=False)
+                           "--usage-db", str(database), *(["--upgrade-policy", policy] if policy else [])], timeout=180, check=False)
     if result.returncode != 0:
         raise RuntimeError(smoke_failure_summary(output))
+
+
+def needs_script_upgrade(previous_version: str) -> bool:
+    return int(previous_version.removeprefix("v").split(".", 1)[0]) < 5
+
+
+def external_policy_served(report: Path) -> bool:
+    checks = json.loads(report.read_text(encoding="utf-8"))["checks"]
+    results = [item.get("passed") for item in checks if item.get("check") == "external-policy-served"]
+    return len(results) == 1 and results[0] is True
 
 
 def smoke_failure_summary(output: Path) -> str:
@@ -236,8 +246,10 @@ def main() -> int:
             os.chown(backup, owner, group)
 
         previous_router = find_binary(previous_root, "metrum-ai-router")
+        script_upgrade = needs_script_upgrade(args.previous_version)
         previous_commit = package_commit(previous_router, args.service_user)
-        smoke(previous_root, args.previous_version, previous_commit, evidence / "previous-serving-smoke.json", args.service_user, database)
+        smoke(previous_root, args.previous_version, previous_commit, evidence / "previous-serving-smoke.json", args.service_user, database,
+              "script" if script_upgrade else None)
         checks.append({"check": "previous-serving-smoke", "passed": True})
         gate_started = time.monotonic()
         for action in ("plan", "apply"):
@@ -257,8 +269,12 @@ def main() -> int:
         status = strict_json(candidate_migrate, "verify-serving", database, args.service_user)
         checks.append({"check": "candidate-verify-serving", "strict_json": True,
                        "compatible": status.get("Compatible", status.get("compatible"))})
-        smoke(candidate_root, args.candidate_version, args.candidate_commit, evidence / "candidate-smoke.json", args.service_user, database)
+        candidate_report = evidence / "candidate-smoke.json"
+        smoke(candidate_root, args.candidate_version, args.candidate_commit, candidate_report, args.service_user, database,
+              "external" if script_upgrade else None)
         checks.append({"check": "candidate-serving-smoke", "passed": True})
+        if script_upgrade:
+            checks.append({"check": "active-script-to-external-policy", "passed": external_policy_served(candidate_report)})
         upgrade_downtime_seconds = round(time.monotonic() - gate_started, 3)
 
         # Rollback restores both the previous package and its matching database snapshot.
@@ -268,7 +284,8 @@ def main() -> int:
             os.chown(database, owner, group)
         previous_status = run_as(args.service_user, [str(previous_migrate), "--action=status", "--driver=sqlite", "--db=" + str(database), "--json"])
         json.loads(previous_status.stdout)
-        smoke(previous_root, args.previous_version, previous_commit, evidence / "rollback-smoke.json", args.service_user, database)
+        smoke(previous_root, args.previous_version, previous_commit, evidence / "rollback-smoke.json", args.service_user, database,
+              "script" if script_upgrade else None)
         checks.append({"check": "rollback-serving-smoke", "passed": True})
         rollback_downtime_seconds = round(time.monotonic() - rollback_started, 3)
 
@@ -284,7 +301,7 @@ def main() -> int:
         "total_upgrade_rollback_seconds": round(time.monotonic() - started, 3),
         "checks": checks,
     }, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    return 0
+    return int(any(check.get("passed") is False for check in checks))
 
 
 if __name__ == "__main__":
