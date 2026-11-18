@@ -4,8 +4,6 @@
 
 ### Fixed
 
-- Harden the packaged production reference configuration and ship the local development profile separately as `config/config.dev.example.yaml`.
-
 - Require each retry to consume a released tool-firewall approval before forwarding a held call; concurrent retries cannot reuse one release.
 - Keep sequence holds active across retries so every forwarded retry consumes a fresh approval.
 - Include boolean values when matching tool-firewall argument deny rules.
@@ -14,6 +12,7 @@
 - Inspect populated Responses added text as rolling chunks, deduplicate repeated part snapshots, and inspect terminal snapshots before flushing held text.
 - Flush held refusal and reasoning summary text when a Responses output item completes.
 - Keep only `id`, `type`, `status`, and `error` on non-message and non-reasoning output items in failed and incomplete Responses snapshots, including unrecognized item kinds.
+- Harden the packaged production reference configuration and ship the local development profile separately as `config/config.dev.example.yaml`.
 - Keep pending provider usage windows inside the configured catch-up age bound.
 - Read audit export rows and chain anchors from repeatable snapshots so concurrent writes and retention do not produce invalid pages.
 - Preserve each provider's trace propagation setting when the admin provider update API replaces its other fields.
