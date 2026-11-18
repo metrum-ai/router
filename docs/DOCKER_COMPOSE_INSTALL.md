@@ -1,6 +1,6 @@
 # Docker Compose Package Quick Install
 
-This is the offline bootstrap path for a Docker Compose package. After startup, use the embedded `/docs/` site as the primary administrator reference.
+Starting with v5.0.0-rc.4, releases publish binary archives and no prebuilt container image. For offline deployment, check out the release tag and run `make package-docker` on your build host. Transfer the resulting Compose package for the target architecture to the deployment host. After startup, use the embedded `/docs/` site as the primary administrator reference.
 
 ## Prerequisites
 
@@ -27,7 +27,7 @@ cp -R ../config/scripts config/scripts
 
 The packaged production example binds to `127.0.0.1:8080`, enables security reports and stops each provider at a configured hourly ceiling of USD 1. Review the ceilings for your workload. Replace each caller credential block with its generated production ID, verifier, format, entropy and actual UTC issuance date. Run `metrum-ai-routerctl doctor --security --config config/config.yaml --fail-on warn` after provisioning. Use `config/config.dev.example.yaml` only for local development. With Caddy in a separate container, configure Router TLS on the private network listener using a certificate valid for the service name `router`. Change the packaged Caddy upstream to `reverse_proxy https://router:8080` and install the issuing CA in the Caddy container’s trust store.
 
-Review `compose/.env`; only `SMART_LLMROUTER_VERSION` is required and must be the package image tag, never `latest`. Configure exact container paths before the migration gate:
+Review `compose/.env`; only `METRUM_AI_ROUTER_VERSION` is required and must be the package image tag, never `latest`. Configure exact container paths before the migration gate:
 ```yaml
 server:
   listen: ":8080"
@@ -48,7 +48,7 @@ state_path: /app/state/router-state.json
 
 Place the issued license at `config/license.json`, matching `server.license.path` in `config/config.yaml`. Put provider credentials in `config/env.json` or the deployment secret manager.
 
-Generate a caller token from the packaged image and add the generated caller entry to `config/config.yaml`:
+Generate a caller token from your locally built image and add the generated caller entry to `config/config.yaml`:
 
 ```bash
 docker run --rm \
@@ -61,7 +61,7 @@ docker run --rm \
   --allow <allowed-model-group>[,<allowed-model-group>...]
 ```
 
-Set permissions for the container runtime user used by the packaged image:
+Set permissions for the container runtime user used by your locally built image:
 
 ```bash
 sudo chown -R 65532:65532 config state logs
@@ -110,6 +110,6 @@ https://router.example.com/admin/reports/
 
 ## Upgrade And Rollback
 
-Before upgrading, back up `compose/.env`, `compose/config/`, `compose/state/`, and logs according to the deployment policy. For SQLite, the usage DB and sidecars require one offline atomic copy; for an explicit PostgreSQL installation, use its approved consistent database backup. Load the new image tar, update `SMART_LLMROUTER_VERSION`, review config changes, run `docker compose config`, then recreate the router.
+Before upgrading, back up `compose/.env`, `compose/config/`, `compose/state/`, and logs according to the deployment policy. For SQLite, the usage DB and sidecars require one offline atomic copy; for an explicit PostgreSQL installation, use its approved consistent database backup. Build the new tag and load its image tar, update `METRUM_AI_ROUTER_VERSION`, review config changes, run `docker compose config`, then recreate the router.
 
 Package rollback never runs a reverse migration. For a `restore-required` release contract, restore the approved pre-migration database snapshot before deploying the earlier package; otherwise preserve the usage database and roll back only approved package/config inputs. Rerun migration verify/status, `/readyz`, `/docs/`, `/v1/models`, and one caller smoke.

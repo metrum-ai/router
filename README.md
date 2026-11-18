@@ -1167,7 +1167,7 @@ Model groups can configure `pii_filter` rules to replace matched text with typed
 
 See `docs/PII_FILTERING.md` and the Docusaurus PII Filtering page for configuration examples and smoke-test guidance.
 
-bash
+```bash
 env | grep -E '^(ANTHROPIC|OPENAI|MOONSHOT|KIMI|QWEN|MINIMAX|OPENROUTER|REPLICATE|XAI)_.*=' | sed 's/=.*/=***REDACTED***/'
 ```
 
