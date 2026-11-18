@@ -36,8 +36,8 @@ class GoPatchFloorTests(unittest.TestCase):
 
     def test_changelog_keeps_an_unreleased_section(self):
         text = (ROOT / "CHANGELOG.md").read_text()
-        self.assertIn("\n## [Unreleased]\n", text)
-        self.assertLess(text.index("\n## [Unreleased]\n"), text.index("\n## [4.8.0] - "))
+        self.assertIn("\n## Unreleased\n", text)
+        self.assertLess(text.index("\n## Unreleased\n"), text.index("\n## [4.8.0] - "))
 
     def test_ci_and_release_builds_assert_actual_runtime(self):
         for name in ("ci.yml", "release.yml", "release-compat.yml"):
