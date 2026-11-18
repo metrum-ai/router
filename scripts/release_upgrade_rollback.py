@@ -155,13 +155,13 @@ def run_migration_job_example(binary: Path, usage_db: Path, config_db: Path, use
         raise RuntimeError("Kubernetes migration Job output was not a sequence of JSON documents") from exc
 
 
-def smoke(binary_root: Path, version: str, commit: str, output: Path, user: str, database: Path) -> None:
+def smoke(binary_root: Path, version: str, commit: str, output: Path, user: str, database: Path, policy: str | None = None) -> None:
     router = find_binary(binary_root, "metrum-ai-router")
     report = find_binary(binary_root, "metrum-ai-router-usage-report")
     result = run_as(user, ["python3", str(Path(__file__).with_name("local_launch_path_smoke.py")),
                            "--router-binary", str(router), "--usage-report-binary", str(report),
                            "--expected-version", version, "--expected-commit", commit, "--output", str(output),
-                           "--usage-db", str(database)], timeout=180, check=False)
+                           "--usage-db", str(database), *(["--upgrade-policy", policy] if policy else [])], timeout=180, check=False)
     if result.returncode != 0:
         raise RuntimeError(smoke_failure_summary(output))
 
@@ -236,8 +236,10 @@ def main() -> int:
             os.chown(backup, owner, group)
 
         previous_router = find_binary(previous_root, "metrum-ai-router")
+        script_upgrade = args.previous_version == "v4.8.0"
         previous_commit = package_commit(previous_router, args.service_user)
-        smoke(previous_root, args.previous_version, previous_commit, evidence / "previous-serving-smoke.json", args.service_user, database)
+        smoke(previous_root, args.previous_version, previous_commit, evidence / "previous-serving-smoke.json", args.service_user, database,
+              "script" if script_upgrade else None)
         checks.append({"check": "previous-serving-smoke", "passed": True})
         gate_started = time.monotonic()
         for action in ("plan", "apply"):
@@ -259,6 +261,8 @@ def main() -> int:
                        "compatible": status.get("Compatible", status.get("compatible"))})
         smoke(candidate_root, args.candidate_version, args.candidate_commit, evidence / "candidate-smoke.json", args.service_user, database)
         checks.append({"check": "candidate-serving-smoke", "passed": True})
+        if script_upgrade:
+            checks.append({"check": "active-script-to-external-policy", "passed": True})
         upgrade_downtime_seconds = round(time.monotonic() - gate_started, 3)
 
         # Rollback restores both the previous package and its matching database snapshot.

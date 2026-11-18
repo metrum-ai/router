@@ -170,6 +170,23 @@ esac
         self.assertIn("apply_scope router-config ROUTER_CONFIG_DB_DSN", command[-1])
         self.assertIn(str(workspace / "metrum-ai-router-migrate"), command[-1])
 
+    def test_script_migration_requires_specific_startup_rejection(self):
+        import local_launch_path_smoke as launch
+
+        for code, diagnostic, accepted in [
+            (1, b"script was removed in v5.0.0; migrate to strategy: external", True),
+            (0, b"script was removed in v5.0.0; migrate to strategy: external", False),
+            (1, b"failed to open config", False),
+        ]:
+            with self.subTest(code=code, diagnostic=diagnostic), patch.object(
+                subprocess, "run", return_value=subprocess.CompletedProcess([], code, stderr=diagnostic)
+            ):
+                if accepted:
+                    launch.require_script_migration(Path("router"), Path("config.json"))
+                else:
+                    with self.assertRaises(RuntimeError):
+                        launch.require_script_migration(Path("router"), Path("config.json"))
+
     def test_accepts_one_object(self):
         self.assertEqual(MODULE.parse_single_json('{"state":"current"}'), {"state": "current"})
 

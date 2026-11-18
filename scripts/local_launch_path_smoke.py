@@ -30,11 +30,16 @@ from pathlib import Path
 
 class UpstreamHandler(BaseHTTPRequestHandler):
     calls = 0
+    policy_calls = 0
 
     def do_POST(self) -> None:  # noqa: N802
-        type(self).calls += 1
         length = int(self.headers.get("Content-Length", "0"))
         self.rfile.read(length)
+        if self.path == "/route":
+            type(self).policy_calls += 1
+            self.send_json(b'{"targetIndex":0}')
+            return
+        type(self).calls += 1
         body = json.dumps(
             {
                 "id": "synthetic-upstream-response",
@@ -42,6 +47,9 @@ class UpstreamHandler(BaseHTTPRequestHandler):
                 "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5},
             }
         ).encode()
+        self.send_json(body)
+
+    def send_json(self, body: bytes) -> None:
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
@@ -91,6 +99,14 @@ def check_json(body: bytes, key: str, expected: object) -> bool:
     return parsed.get(key) == expected
 
 
+def require_script_migration(binary: Path, config_path: Path) -> None:
+    result = subprocess.run([str(binary.resolve()), "-config", str(config_path)],
+                            capture_output=True, timeout=10, check=False)
+    if (result.returncode == 0 or b"removed in v5" not in result.stderr
+            or b"strategy: external" not in result.stderr):
+        raise RuntimeError("candidate did not reject the script config with migration guidance")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--router-binary", required=True, type=Path)
@@ -99,6 +115,7 @@ def main() -> int:
     parser.add_argument("--expected-commit", required=True)
     parser.add_argument("--output", required=True, type=Path)
     parser.add_argument("--usage-db", type=Path, help="use an existing migrated usage database")
+    parser.add_argument("--upgrade-policy", choices=("script", "external"))
     args = parser.parse_args()
 
     allowed_id, allowed_token = token_identity("allowed")
@@ -149,6 +166,21 @@ def main() -> int:
         }
         config_path = temp / "config.json"
         config_path.write_text(json.dumps(config), encoding="utf-8")
+        if args.upgrade_policy:
+            group = config["models"]["local-smoke"]
+            script = temp / "policy.ts"
+            script.write_text("export function route() { return {targetIndex: 0}; }", encoding="utf-8")
+            group.update(strategy="script", script=str(script))
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+            if args.upgrade_policy == "external":
+                require_script_migration(args.router_binary, config_path)
+                checks.append({"check": "script-migration-diagnostic", "passed": True})
+                del group["script"]
+                group.update(strategy="external", external_policy={
+                    "url": f"http://127.0.0.1:{upstream.server_port}/route",
+                    "allow_hosts": ["127.0.0.1"], "timeout_ms": 100,
+                })
+                config_path.write_text(json.dumps(config), encoding="utf-8")
         stderr_path = temp / "router.stderr"
         with stderr_path.open("wb") as stderr:
             process = subprocess.Popen([str(args.router_binary.resolve()), "-config", str(config_path)], stdout=subprocess.DEVNULL, stderr=stderr)
@@ -186,6 +218,8 @@ def main() -> int:
             prompt = "synthetic local launch path sentinel"
             chat = {"model": "local-smoke", "messages": [{"role": "user", "content": prompt}], "max_tokens": 16}
             status, body, rid = request(base, "/v1/chat/completions", token=allowed_token, payload=chat)
+            if args.upgrade_policy == "external":
+                record("external-policy-served", status, status == 200 and UpstreamHandler.policy_calls == 1, rid)
             record("authenticated-text", status, status == 200 and b"LOCAL_SMOKE_OK" in body and bool(rid), rid)
             status, body, rid = request(base, "/v1/chat/completions", payload=chat)
             record("unauthenticated-rejection", status, status == 401 and b"unauthorized" in body and bool(rid), rid)
