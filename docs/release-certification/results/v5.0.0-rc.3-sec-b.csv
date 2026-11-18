@@ -1,0 +1,21 @@
+id,status,version,commit,target_digest,run_id,command,observed,evidence
+RT-SEC-121,PASS,v5.0.0-rc.3,02aeae9ba70bb87d71a239b2d4b1bfd52d5f821a,sha256:3828ab147171acb7b2ee1ebedf0d390a1f719ab629e6dad0975cf0b2de2ea3b8,sec-b-20261118,RT-SEC-121/replay.sh,Permitted tool calls released; tool-result continuation completed.,Retained certification evidence
+RT-SEC-122,PASS,v5.0.0-rc.3,02aeae9ba70bb87d71a239b2d4b1bfd52d5f821a,sha256:3828ab147171acb7b2ee1ebedf0d390a1f719ab629e6dad0975cf0b2de2ea3b8,sec-b-20261118,RT-SEC-122/replay.sh,Second tool call blocked; sequence_rule security log emitted.,Retained certification evidence
+RT-SEC-123,PASS,v5.0.0-rc.3,02aeae9ba70bb87d71a239b2d4b1bfd52d5f821a,sha256:3828ab147171acb7b2ee1ebedf0d390a1f719ab629e6dad0975cf0b2de2ea3b8,sec-b-20261118,RT-SEC-123/replay.sh,Two responses reused first answer; one upstream POST.,Retained certification evidence
+RT-SEC-124,PASS,v5.0.0-rc.3,02aeae9ba70bb87d71a239b2d4b1bfd52d5f821a,sha256:3828ab147171acb7b2ee1ebedf0d390a1f719ab629e6dad0975cf0b2de2ea3b8,sec-b-20261118,RT-SEC-124/replay.sh,Second tenant received fresh answer; first tenant cache reused; anonymous request 401.,Retained certification evidence
+RT-SEC-125,NOT-SELECTED,v5.0.0-rc.3,02aeae9ba70bb87d71a239b2d4b1bfd52d5f821a,sha256:3828ab147171acb7b2ee1ebedf0d390a1f719ab629e6dad0975cf0b2de2ea3b8,sec-b-20261118,,No completed handler run.,
+RT-SEC-126,NOT-SELECTED,v5.0.0-rc.3,02aeae9ba70bb87d71a239b2d4b1bfd52d5f821a,sha256:3828ab147171acb7b2ee1ebedf0d390a1f719ab629e6dad0975cf0b2de2ea3b8,sec-b-20261118,,No completed handler run.,
+RT-SEC-127,NOT-SELECTED,v5.0.0-rc.3,02aeae9ba70bb87d71a239b2d4b1bfd52d5f821a,sha256:3828ab147171acb7b2ee1ebedf0d390a1f719ab629e6dad0975cf0b2de2ea3b8,sec-b-20261118,,No completed handler run.,
+RT-SEC-128,NOT-SELECTED,v5.0.0-rc.3,02aeae9ba70bb87d71a239b2d4b1bfd52d5f821a,sha256:3828ab147171acb7b2ee1ebedf0d390a1f719ab629e6dad0975cf0b2de2ea3b8,sec-b-20261118,,No completed handler run.,
+RT-SEC-129,NOT-SELECTED,v5.0.0-rc.3,02aeae9ba70bb87d71a239b2d4b1bfd52d5f821a,sha256:3828ab147171acb7b2ee1ebedf0d390a1f719ab629e6dad0975cf0b2de2ea3b8,sec-b-20261118,,Pinned classifier weights returned HTTP 401; prerequisite unavailable.,
+RT-SEC-130,NOT-SELECTED,v5.0.0-rc.3,02aeae9ba70bb87d71a239b2d4b1bfd52d5f821a,sha256:3828ab147171acb7b2ee1ebedf0d390a1f719ab629e6dad0975cf0b2de2ea3b8,sec-b-20261118,,Pinned classifier weights returned HTTP 401; prerequisite unavailable.,
+RT-SEC-131,NOT-SELECTED,v5.0.0-rc.3,02aeae9ba70bb87d71a239b2d4b1bfd52d5f821a,sha256:3828ab147171acb7b2ee1ebedf0d390a1f719ab629e6dad0975cf0b2de2ea3b8,sec-b-20261118,,No completed handler run.,
+RT-SEC-132,NOT-SELECTED,v5.0.0-rc.3,02aeae9ba70bb87d71a239b2d4b1bfd52d5f821a,sha256:3828ab147171acb7b2ee1ebedf0d390a1f719ab629e6dad0975cf0b2de2ea3b8,sec-b-20261118,,No completed handler run.,
+RT-SEC-133,NOT-SELECTED,v5.0.0-rc.3,02aeae9ba70bb87d71a239b2d4b1bfd52d5f821a,sha256:3828ab147171acb7b2ee1ebedf0d390a1f719ab629e6dad0975cf0b2de2ea3b8,sec-b-20261118,,No completed handler run.,
+RT-SEC-134,NOT-SELECTED,v5.0.0-rc.3,02aeae9ba70bb87d71a239b2d4b1bfd52d5f821a,sha256:3828ab147171acb7b2ee1ebedf0d390a1f719ab629e6dad0975cf0b2de2ea3b8,sec-b-20261118,,No completed handler run.,
+RT-SEC-135,NOT-SELECTED,v5.0.0-rc.3,02aeae9ba70bb87d71a239b2d4b1bfd52d5f821a,sha256:3828ab147171acb7b2ee1ebedf0d390a1f719ab629e6dad0975cf0b2de2ea3b8,sec-b-20261118,,No completed handler run.,
+RT-SEC-136,NOT-SELECTED,v5.0.0-rc.3,02aeae9ba70bb87d71a239b2d4b1bfd52d5f821a,sha256:3828ab147171acb7b2ee1ebedf0d390a1f719ab629e6dad0975cf0b2de2ea3b8,sec-b-20261118,,No completed handler run.,
+RT-SEC-137,NOT-SELECTED,v5.0.0-rc.3,02aeae9ba70bb87d71a239b2d4b1bfd52d5f821a,sha256:3828ab147171acb7b2ee1ebedf0d390a1f719ab629e6dad0975cf0b2de2ea3b8,sec-b-20261118,,No completed handler run.,
+RT-SEC-138,NOT-SELECTED,v5.0.0-rc.3,02aeae9ba70bb87d71a239b2d4b1bfd52d5f821a,sha256:3828ab147171acb7b2ee1ebedf0d390a1f719ab629e6dad0975cf0b2de2ea3b8,sec-b-20261118,,No completed handler run.,
+RT-SEC-139,NOT-SELECTED,v5.0.0-rc.3,02aeae9ba70bb87d71a239b2d4b1bfd52d5f821a,sha256:3828ab147171acb7b2ee1ebedf0d390a1f719ab629e6dad0975cf0b2de2ea3b8,sec-b-20261118,,No completed handler run.,
+RT-SEC-140,NOT-SELECTED,v5.0.0-rc.3,02aeae9ba70bb87d71a239b2d4b1bfd52d5f821a,sha256:3828ab147171acb7b2ee1ebedf0d390a1f719ab629e6dad0975cf0b2de2ea3b8,sec-b-20261118,,No completed handler run.,
