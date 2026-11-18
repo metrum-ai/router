@@ -247,7 +247,9 @@ func adminAuditTablesForDB(db *gorm.DB) []adminAuditTable {
 // only assigns a budget per domain. Each transaction selects its own prefix
 // after acquiring the same chain lock as appenders and other janitors.
 func PurgeAdminAuditEventsBefore(db *gorm.DB, cutoff time.Time) (int64, error) {
-	if db == nil {
+	// Keep legacy history intact until the chain migration has created the
+	// anchors and backfilled the row hashes in the same transaction.
+	if db == nil || !db.Migrator().HasTable(adminAuditChainAnchorsTable) {
 		return 0, nil
 	}
 	stamp := cutoff.UTC().Format(time.RFC3339Nano)

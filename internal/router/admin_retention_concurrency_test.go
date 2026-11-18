@@ -116,3 +116,47 @@ func TestConcurrentAdminRetention(t *testing.T) {
 		})
 	}
 }
+
+func TestAdminRetentionFirstPruneAcrossChainMigration(t *testing.T) {
+	for _, driver := range []string{"sqlite", "postgres"} {
+		t.Run(driver, func(t *testing.T) {
+			var db *gorm.DB
+			if driver == "postgres" {
+				pg, cleanup, _ := configAdminPostgresTestDB(t)
+				t.Cleanup(cleanup)
+				db = pg
+			} else {
+				db = configAdminTestDB(t)
+			}
+			// Model the control DB immediately before the chain migration. Insert
+			// legacy history directly so no v5 audit writer can initialize it.
+			if err := db.Migrator().DropTable(adminAuditChainAnchorsTable); err != nil {
+				t.Fatal(err)
+			}
+			if err := db.Exec("INSERT INTO "+adminCredentialEventsTable+" (event_id, at, kind, outcome) VALUES (?, ?, ?, ?)", "legacy-first-prune", "2000-01-01T00:00:00Z", "adminkey", "success").Error; err != nil {
+				t.Fatal(err)
+			}
+			cutoff := time.Date(2001, 1, 1, 0, 0, 0, 0, time.UTC)
+			if n, err := PurgeAdminAuditEventsBefore(db, cutoff); err != nil || n != 0 {
+				t.Fatalf("before migration: removed=%d err=%v", n, err)
+			}
+			if db.Migrator().HasTable(adminAuditChainAnchorsTable) {
+				t.Fatal("prune created an unbackfilled anchor table")
+			}
+			if err := db.Transaction(applyAdminAuditChainControl); err != nil {
+				t.Fatal(err)
+			}
+			var hash string
+			if err := db.Table(adminCredentialEventsTable).Select("row_hash").Where("event_id=?", "legacy-first-prune").Row().Scan(&hash); err != nil || hash == "" {
+				t.Fatalf("migration hash=%q err=%v", hash, err)
+			}
+			if n, err := PurgeAdminAuditEventsBefore(db, cutoff); err != nil || n != 1 {
+				t.Fatalf("after migration: removed=%d err=%v", n, err)
+			}
+			var checkpoint string
+			if err := db.Table(adminAuditChainAnchorsTable).Select("start_hash").Where("source=? AND domain=?", "credential", string(AdminDomainCredential)).Row().Scan(&checkpoint); err != nil || checkpoint != hash {
+				t.Fatalf("checkpoint=%q want=%q err=%v", checkpoint, hash, err)
+			}
+		})
+	}
+}
