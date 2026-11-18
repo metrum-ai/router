@@ -225,7 +225,7 @@ def validate_unsigned(dist: Path, version: str) -> list[str]:
                 name for name in check_names
                 if isinstance(name, str) and re.fullmatch(r"kubernetes-migration-job-router-config-schema-\d+", name)
             }
-            if not required_checks.issubset(check_names) or len(schema_checks) != 1:
+            if len(check_names) != len(checks) or not required_checks.issubset(check_names) or len(schema_checks) != 1:
                 failed_check = True
             for item in checks:
                 if not isinstance(item, dict) or not isinstance(item.get("check"), str) or not item["check"]:
@@ -233,11 +233,24 @@ def validate_unsigned(dist: Path, version: str) -> list[str]:
                     break
                 # v4.8.0 is the known previous-release JSON regression that this
                 # report records explicitly; all candidate/rollback gates must pass.
-                if item["check"] == "previous-release-json":
+                name = item["check"]
+                if name == "previous-release-json":
                     expected_baseline_result = rollback.get("previous_version") == "v4.8.0"
-                    if item.get("strict_json") is not (not expected_baseline_result):
+                    if type(item.get("strict_json")) is not bool or item["strict_json"] is not (not expected_baseline_result):
                         failed_check = True
-                elif any(key in item and item[key] is not True for key in ("passed", "compatible", "strict_json")):
+                elif name in {
+                    "previous-serving-smoke", "candidate-serving-smoke", "rollback-serving-smoke"
+                } or name.startswith("kubernetes-migration-job-router-config-schema-"):
+                    if item.get("passed") is not True:
+                        failed_check = True
+                elif name in {"kubernetes-migration-job-plan", "kubernetes-migration-job-apply"}:
+                    if item.get("strict_json") is not True or item.get("compatible") is not True:
+                        failed_check = True
+                elif name in {"candidate-resume", "candidate-verify-serving"}:
+                    if item.get("strict_json") is not True or item.get("compatible") is not True:
+                        failed_check = True
+                if any(key in item and item[key] is not True for key in ("passed", "compatible", "strict_json")
+                       if key not in ("strict_json",) or name != "previous-release-json"):
                     failed_check = True
                 if "scope_count" in item and (type(item["scope_count"]) is not int or item["scope_count"] < 1):
                     failed_check = True

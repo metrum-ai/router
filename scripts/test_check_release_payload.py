@@ -187,6 +187,18 @@ class ReleasePayloadTest(unittest.TestCase):
             errors = validate_unsigned(root, "v5.0.0-dry-run")
             self.assertTrue(any("incomplete or contains a failed check" in error for error in errors), errors)
 
+    def test_unsigned_report_rejects_missing_candidate_outcome(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.make_unsigned_payload(root, "v5.0.0-dry-run")
+            report_path = root / "upgrade-rollback-results.json"
+            report = json.loads(report_path.read_text(encoding="utf-8"))
+            candidate_check = next(item for item in report["checks"] if item["check"] == "candidate-resume")
+            candidate_check.pop("compatible")
+            report_path.write_text(json.dumps(report), encoding="utf-8")
+            errors = validate_unsigned(root, "v5.0.0-dry-run")
+            self.assertTrue(any("incomplete or contains a failed check" in error for error in errors), errors)
+
 
 if __name__ == "__main__":
     unittest.main()
