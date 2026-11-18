@@ -24,7 +24,7 @@ Binary packages include:
 - `MODEL_LICENSES.md`
 - `docs/`
 
-Docker Compose packages include:
+From v5.0.0-rc.4 onward, releases publish binary archives and no prebuilt container image. To produce an offline Docker Compose package, check out the release tag and run `make package-docker` on your build host. These locally built packages include:
 
 - `compose/docker-compose.yml`
 - `compose/docker-compose.postgres-localhost.yml`

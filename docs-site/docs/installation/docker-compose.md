@@ -82,7 +82,7 @@ Place provider credentials in `config/env.json`. Keep this file in deployment se
 }
 ```
 
-Then set ownership and permissions for the container runtime user. The packaged image runs as UID/GID `65532`; the config directory must be readable and traversable, and state/log directories must be writable by that ID.
+Then set ownership and permissions for the container runtime user. The image built from the release Dockerfile runs as UID/GID `65532`; the config directory must be readable and traversable, and state/log directories must be writable by that ID.
 
 ```bash
 sudo chown -R 65532:65532 config state logs
