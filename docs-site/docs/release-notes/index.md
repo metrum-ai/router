@@ -5,56 +5,167 @@ doc_type: reference
 
 # Release Notes
 
-## v5.0.0 - planned for 2026-11-23
+## v5.0.0 - 2026-11-18
 
-v5.0.0 is a security release with a target GA date of 2026-11-23. Review the
-[v4.8 to v5.0.0 upgrade guide](/docs/release-notes/upgrade-guide) before
-upgrading. Release verification results will be published after the release
-checks complete.
+v5.0.0 is a security release. Review the [v4.8 to v5.0.0 upgrade guide](/docs/release-notes/upgrade-guide) before upgrading.
 
 ### Security
 
-- Add caller-token hygiene and leaked-key self-revocation, caller network and
-  mTLS binding, short-lived mission tokens, secret DLP, and cache isolation.
-- Add a tool-call firewall, honeytokens and canary groups, bounded external
-  detectors, key containment, and an OCSF security-event stream.
-- Add security posture checks, dependency and image verification, hash-chained
-  admin audit export, and tenant hierarchy policy with shared parent budgets.
-- Keep prompts, tokens, and tool payloads out of audit events and usage metadata.
+- Use one shared placeholder counter per built-in namespace so different secret detectors cannot collide during restoration.
+- Hold PEM private-key blocks through only a matching END label and fail closed when the stream ends unresolved.
+- Inspect streamed Chat refusal deltas with per-choice secret DLP, redacting split credentials or blocking them under `fail_on_match`.
+- Invalidate pending and released tool-firewall approvals when the effective policy changes, so retries are evaluated and approved under the current rules.
+- Inspect Anthropic text and thinking carried by streamed block-start events before forwarding them when secret DLP is enabled.
+- Keep independent secret-scanning buffers for each Responses text item and content part so interleaved deltas cannot hide credentials.
+- Mark honeytoken and canary OCSF findings Critical and include the caller ID and source IP for SIEM correlation.
+- Include firewall decisions and honeytoken/canary use in the opt-in OCSF 1.4.0 security event stream.
+- Rewrite inspected hosted Responses tool items and argument/code events when secret DLP redacts their payloads.
+- Run Harbor task containers as UID/GID 10001 with a passwd entry, owned workspace, and writable verifier directory. Require digest-pinned image references in Kubernetes examples; add an opt-in Kyverno trusted-registry policy example and exact-file KSV-0125 suppressions for public deployment placeholders.
+- Preserve project long-lived-key restrictions when updating project metadata through the admin API.
+- Keep the version-pinned Grype exception for the TypeScript 7 build-time compiler: stable `typescript` 7.0.2 still embeds `golang.org/x/text` v0.38.0, which a fresh Grype database reports as GO-2026-5970 (High). The exception applies only to the compiler binary under `node_modules`; revisit when a stable release embeds fixed Go and x/text v0.41.0 or later.
+- Evaluate published Casbin advisory ranges against the exact locked version, retain range evidence, and require reviewed exact-scope exceptions. Document fail-closed recovery for advisory service outages.
+- Ship the example external detector's per-rule bounded-LRU auth-failure storm, tiny-request sweep, denied-model enumeration, and spend-spike rules. Signals retain the router's opaque key ID and bounded evidence IDs; source-IP-only signals have no key. Configured detectors default to report mode, and the example rule thresholds are flags with documented defaults.
+- Partition response-cache entries and vLLM prefix-cache salts by caller and project by default, add opt-in sharing inside a project, and forward stable salts only to explicitly configured vLLM providers. SGLang prefix-cache isolation is not supported in v5.0.0.
+- Add opt-in RFC 8693 workload token exchange with short-lived caller-scoped tokens, optional task attribution from an issuer claim or grant-pinned value, task/owner usage attribution, atomic per-process cumulative budget reservations (including embeddings), and per-project long-lived-key rejection. Grant budgets persist across token expiry and are pruned when the grant is removed on reload. Mission tokens are accepted only on the explicit inference route allow-list; all other serving routes, including `/mcp` and parent-key revocation, return 401.
+- Add a required pull request and merge-group CI gate that checks every pinned vLLM and SGLang image in deployment YAML and lock files against GitHub Advisories and OSV, with tier-local documented exceptions and fail-closed behavior when advisory services are unavailable.
+- Update NVIDIA and ROCm Kubernetes deployment and provisioning examples to digest-pinned official vLLM v0.33.0 images after scanning the full deployment tree.
+- Move the AMD reference and edge images to the digest-pinned upstream vLLM ROCm 10.0 image at v0.33.0, which is outside the affected range of GHSA-v97p-wpxp-px84.
+- Add `metrum-ai-routerctl doctor --security` with bounded probes, JSON output, configurable failure thresholds, and findings for admin exposure, caller limits, key format and recorded entropy, sensitive-group DLP, and serving-port metrics authorization. Engine pins use the release advisory snapshot; offline operation never executes config-adjacent scripts or makes advisory network calls.
+- Add opt-in latest posture summary reporting through the authenticated admin security reports surface. Usage migration 2026111602 adds a singleton summary table at usage schema version 17.
+- Record UTC issuance timestamps for generated and rotated caller keys; the security self-test warns when age is unknown and fails keys older than 90 days.
+- Reject Responses tool snapshots that do not match the accumulated arguments inspected from streamed deltas.
+- Route every config, usage, and credential audit writer through append-only chained inserts; serialize SQLite chain appends, backfill legacy chains in bounded batches, protect deletion markers from deletion/pruning, export complete fields, and verify ordered export pages offline. The checkpoint remains in the database and is not externally signed in v5.0.0.
+- Add the versioned external detector contract and bounded asynchronous detector queue. Operator detector code runs in separate services; see the detector security guide.
+- Reject userinfo in external-policy and detector URLs, including redirect targets.
+- Add a Security Console to admin reports with detector and authentication risk ranking, a timeline of detector/auth/containment events, scoped serving-port containment with CSRF and audit, admin-only release instructions, and time-filtered JSON/Markdown incident bundles.
+- Generate checksummed v2 caller tokens, reject malformed checksums before lookup, add database-backed leaked-key self-revocation enforced by every authenticated route and propagated to replicas, and warn or enforce caller-token hygiene. Revoked verifiers live in a sticky denylist independent of config sets, so rollback and YAML import cannot restore a leaked key; rotation installs a new verifier.
+- Add an opt-in `pii_filter.secrets_enabled` detector pack for common provider/router credentials, JWTs, bearer authorization values, private-key blocks, and credential assignments in inbound, buffered response, and built-in-only streamed text. Stream filtering tracks unresolved JWT and PEM candidates from their start, checks every PEM BEGIN marker through its END marker (capped at 64 KiB), and keeps a 512-byte ordinary rolling tail; unary responses fail closed when the shared replacement limit is exceeded. With #929 bounded tool-call inspection enabled, streamed tool arguments are inspected before release and redacted or blocked by the configured policy; custom-rule-enabled streams remain fail-closed.
+- Decode JSON-encoded tool-call arguments before secret scanning, checking string values with their property names as `key=value` and header-shaped values as `key: value`; normalize malformed argument strings in both forms, inspect object-valued arguments and Anthropic `tool_use.input`, and redact function-call arguments and custom tool input in Responses output snapshots. Completed streamed tool arguments use the same JSON-aware scan before release.
+- Pin `golang.org/x/crypto` to the upstream fix commit for GO-2026-5932, removing the unused `openpgp` packages from the dependency graph.
+- Add opt-in `server.tool_firewall` deny rules, sequence checks, and admin approval holds. Enforcement inspects streamed tool calls at a bounded hold before releasing tool frames; groups can separately opt into schema validation.
+- Add optional per-provider hourly and daily spend breakers. Breaker state uses estimated costs in memory, emits structured trip/reset events, and returns `503 provider_spend_breaker` when configured to stop.
+- Raise the Go patch floor to 1.27.4 for GO-2026-6859 (CVE-2026-97054), an HTTP/1 server crash caused by a `MaxBytesReader` header race in `net/http`. Release binaries, locally built container images and the CI runner image use Go 1.27.4, and source builds require at least Go 1.27.4.
+- Resolve proxied client addresses from the right through trusted proxy hops, so client-supplied leftmost `X-Forwarded-For` values cannot control caller binding, admin OIDC rate limits, or security access records.
+- Add optional per-caller CIDR, ASN-prefix, and verified mTLS identity binding with off, report, and enforce modes. Enforced mismatches return the same generic 401 as invalid tokens; security events retain the specific reason.
+- Add domain-scoped, hash-chained admin audit export and separately authorized usage-audit deletion. Apply configured audit retention to control-plane change events.
+- Add candidate policy simulation in the authenticated caller's own domain. Responses include the decision and policy revision, with a generic explanation that does not expose matched rule fields or policy rules.
 
 ### Breaking
 
-- Machine `/admin/*` routes leave the serving listener. Use `/admin/v1` on the
-  admin listener. Browser reports and `/admin/auth/*` session routes remain on
-  the serving listener.
-- Online `routerctl` admin operations use `/admin/v1`. Offline mutations require
-  deliberate `--offline` use and stopped v5 router replicas.
-- The in-process TypeScript routing strategy is removed. Run custom policy code
-  in a standalone external service.
-- Non-empty `callers[].token_sha256` is removed. Run
-  `routerctl callers migrate-legacy` with held tokens or rotate the callers
-  before deploying v5.
+- v5.0.0 removes legacy machine `/admin/*` routes from the serving port. Use `/admin/v1` on the admin listener. Configs that still set `admin.legacy_routes_on_serving_port` or `admin.legacy_sunset` fail at load with migration guidance. `admin.enabled` defaults to `true`; the authenticated admin listener binds `127.0.0.1:8081`. Set it to `false` for a single-listener deployment. Browser reports and `/admin/auth/*` routes remain on the serving port. Database-mode operators must run the router-config maintenance migration before startup; it removes the v4-only keys from stored canonical configurations and refreshes their content hashes.
+- `metrum-ai-routerctl config import|export|activate|rollback` now use the Admin API by default; use `--offline` for deliberate direct database access while the router is stopped. The default Admin API endpoint is `http://127.0.0.1:8081`; non-loopback endpoints require HTTPS. Reports use `/admin/v1/reports`, and the former `/admin/reports` `--reports-prefix` value is rejected. Offline mutations refuse while any v5 router holds the database runtime lock; stop every v5 replica first.
+- Remove the in-process TypeScript routing strategy and its goja/esbuild dependencies. Configurations using `strategy: script`, `script`, `script_max_concurrent`, or `script_http` now fail at load with migration guidance to `strategy: external`. Port request-shape and PII-aware policy examples to standalone services.
+- v5.0.0 removes caller `token_sha256` verifiers. Non-empty legacy fields fail at load; empty legacy fields are ignored; migrate held tokens with `metrum-ai-routerctl callers migrate-legacy --config <config.yaml> --id <caller-id> --token-file <private-file>` (or `--token-file -` for stdin) or rotate them. Migration preserves status and unknown entropy; disabled or revoked callers are cleaned without receiving a token. Rotation preserves status and revocation metadata; use `--reactivate` only to explicitly restore access. Token generation and rotation now emit only salted verifiers.
 
 ### Added
 
-- Add admin APIs for machine clients, credential lifecycle, resources, policy
-  simulation, audit export, operations, containment, and backup/restore.
-- Add MCP tool governance with allow-lists, masking, approval holds, budgets,
-  and audit export.
-- Add virtual model groups, hierarchy governance, KV-cache routing and metering,
-  CPU-first routing for compact reference workloads, and provider-usage
-  reconciliation.
-- Add bounded streaming tool inspection, provider spend breakers, Bedrock
-  reasoning continuity, and tool-routing reliability records.
+- Add an optional admin Unix socket with configurable owner/mode and `metrum-ai-routerctl --socket` transport; existing authentication and authorization stay in force.
+- Governed per-domain fine-tuning operator workflow: opt-in encrypted capture, DLP-filtered export, external training and preregistered gates, bounded shadow, audited promotion, one-call rollback, and independent retention for copied datasets.
+- Add release-only OpenAI Chat, OpenAI Responses, and Anthropic Messages SDK client cells to the bounded tool-call workflow. A manual `cell_set=release` dispatch on `main` attaches the sanitized report to release checks.
+- Add `routerctl honeytoken issue` and `routerctl honeytoken report`, plus caller-scoped canary model groups. Issued decoy keys return a canned local completion and canary use raises a security event without contacting an upstream. Database-backed callers use router-config migration `2026111611` (schema 18).
+- Define trusted W3C `traceparent` correlation across router chains, with a new span and request ID per hop and safe scalar usage fields for joining requests. Trust is opt-in through `server.trace.trusted_parent_cidrs` or an authenticated caller's `trust_traceparent`; malformed, duplicate, or untrusted input starts a new trace. Outbound trace headers are on by default and can be disabled per provider; inbound `tracestate` is deliberately dropped.
+- Forward Anthropic `thinking` settings to supported Bedrock Claude models and preserve `thinking` and `redacted_thinking` history, signatures, ordering, and streamed reasoning blocks through Converse tool continuations. Malformed blocks fail before AWS dispatch.
+- Add per-request tool-routing counts, first failure class, retries, escalations, outcome bucket, and reliability source to usage records and reports. Tool reliability matrix v1 has an empty seed because it contains no provider/model-attributed failure counts; routing starts neutral and learns from live usage. The additive migration is schema 21, following the schema-20 recomputed-input migration.
+- Add nightly evaluation aggregation across the previous 30 runs, with expected-missing cells reported separately from gate failures.
+- Add virtual model groups whose eligible targets are selected from per-family capability vectors imported from reproducible eval reports. The config Admin API and `routerctl groups` show vectors, membership and exclusion reasons.
+- Added a release checklist and a bounded package upgrade-and-rollback check.
+- Retain locally prepared Codex AI review findings by exact commit range and artifact digest, validate the committed artifact without a model call during publication, and attest release manifests and review evidence.
+- Add machine-client registration, credential metadata and revocation, effective-grant access review, and expiring and unused-credential warnings. Client credentials are checked against the shared control-plane store on authentication; credential secrets are not stored or returned.
+- Add an opt-in CPU-first small-work model group to the hierarchy reference. It uses the official pinned vLLM CPU image, limits the CPU candidate to 800 estimated input tokens and 128 requested output tokens, and falls back to the frontier candidate on upstream failure or timeout.
+- Add a caller-authenticated MCP gateway with per-server egress allow-lists, `ROUTER_MCP_` credential forwarding, HTTPS upstreams (cleartext HTTP is limited to loopback), compositional tool allow-lists, bounded JSON-RPC traffic, persistent caller/tool rate and estimated-spend limits, and keyed invocation audit digests instead of raw arguments.
+- Complete MCP governance by applying the selected model group's secret and PII masking to tool arguments and results, enforcing configured tool-firewall approvals before upstream calls, and mirroring safe invocation outcomes into the hash-chained admin audit export.
+- Add a non-serving PostgreSQL Kubernetes migration Job example that plans or applies both scopes through router-config schema 18.
+- Add delayed daily report-mode provider usage reconciliation for OpenAI, Anthropic, and Bedrock CloudWatch metrics, with bounded catch-up/retries, HTTPS-only allow-listed egress for provider APIs and Bedrock/STS, partial-data watermarks, auth-failure fast paths, and security-stream events.
+- Add a standalone prompt-injection detector example with a commit-pinned model revision, downloaded-weight checksum verification, and overlapping chunk scoring for opted-in tool-result and document segments.
+- Add an opt-in OCSF 1.4.0 JSON Lines security-event stream for stdout, append-only files, and allow-listed signed HTTPS webhooks. Security events use bounded sink and webhook queues, timestamp/nonce HMAC signatures, rotation-aware file output, and Prometheus drop/failure counters. Containment maps to Account Change Disable/Enable with target and actor identity; detector findings use configured IDs and evidence request UIDs capped at 256 characters.
+- Add parent/child hierarchy governance with authenticated bounded policy snapshots, shared parent organization counters, inherited model-group/tool/PII restrictions, singleflight refresh and bounded stale-cache fallback. Hierarchy audit attribution adds `organization_id` and `team_id` in schema 22 via migration `2026111626`, after tool-routing schema 21 migration `2026111623`.
+- Add caller key containment through `/admin/v1/containment`, `routerctl contain` and `routerctl release`, plus an optional HMAC-SHA256 SOAR/EDR webhook. Webhook writes use signed nonce replay protection without ETag headers; containment can resume only containment-originated suspensions.
+- Record recomputed prompt tokens when upstream reports cached prompt tokens. Usage and cost reports now show cached and recomputed input tokens with reporting coverage.
+- Prefer targets marked `tiered_kv_cache: true` for estimated prompts of at least 32,000 tokens. Dynamic-score affinity accepts `metadata.session_id` and remains bounded per process.
+- Add opt-in shadow/enforce mapping from detector signals to temporary key throttles or suspensions, with a per-minute action cap, emergency caller exemptions, and persistent TTL state.
+- Route detector suspensions through the canonical containment API so containment and admin roles can resume them; require a finite default throttle limit for unlimited keys.
+- Add versioned provider and model-catalog reads, provider validation and create/update/disable, project and environment lifecycle, project-environment membership CRUD, project USD budgets with alert thresholds, caller quota reads and updates, and retention policy writes. Writes use configuration revisions; retention changes that can delete more data require `admin:retention:force`, and provider credential references and headers never appear in responses.
+- Cap process-wide in-flight SSE line-buffer capacity and expose current usage and rejections in Prometheus metrics.
+- Add durable asynchronous admin operation resources, versioned control-plane backup/restore through the Admin API and routerctl, and atomic model-target batches capped at 100 operations.
+- Add an opt-in bounded stream hold for tool-call frames, with an absolute deadline, an ordered allow/block/redact inspector hook, and per-stream byte limits charged to the process-wide SSE buffer budget. Hold OpenAI Chat (including legacy `function_call`) and Responses argument events through inspection, fail closed when call-count or argument limits truncate inspection, and release Anthropic tool-use frames before terminal `message_delta`; ordinary text frames continue immediately.
+
+### Changed
+
+- Label direct-provider nightly spend as a list-rate estimate, retain measured Router usage as its own basis, and report gate violations from runs older than 30 days as historical.
+- Align Harbor's provider-free Docker preflight with the live OpenAI Responses adapter and retain its sanitized summary on failure.
+- Direct `model` targets inherit catalog capabilities (reasoning, tools, modalities, and request-shape/bridge support) for matching model IDs while retaining their configured dialect, pricing, and routing values. Ambiguous model IDs across dialects do not inherit capabilities unless one catalog entry matches the target dialect. Mixed reasoning rejections identify the caller field (such as `reasoning_effort` for Chat Completions) when the error parameter is otherwise unset.
+- Raise the default upstream SSE line limit to a bounded 8 MiB and expose `server.streaming.max_sse_line_bytes` with validated 64 KiB–32 MiB bounds.
+- Authenticate caller credentials before returning identifier-rewrite unavailability, preserving 401 for invalid credentials and recording honeytoken use before account-policy rejection on caller-authenticated router routes.
+
+Migration entries below retain their scope, maintenance requirements, and rollback class. Follow the upgrade guide for the complete deployment-job sequence.
+
+| Migration id | Scope | Schema version | Change | Maintenance | Data job | Rollback class |
+| --- | --- | --- | --- | --- | --- | --- |
+| `2026111601` | `router-config` | 13 | remove v4 serving-port admin settings from stored configs | maintenance | none | `restore-required` |
+| `2026111602` | `usage` | 17 | store latest security posture summary | online | none | `restore-required` |
+| `2026111603` | `usage` | 18 | add request trace correlation metadata | online | none | `restore-required` |
+| `2026111607` | `usage` | 19 | add mission task and owner attribution | online | none | `restore-required` |
+| `2026111610` | `router-config` | 17 | add admin client and credential registry, lifecycle audit fields, and deduplicated unused-warning state | online | none | `restore-required` |
+| `2026111614` | `usage` | 20 | record recomputed prompt tokens and rollup coverage | online | none | `restore-required` |
+| `2026111627` | `router-config` | 19 | add bounded offline-operation provenance markers | online | none | `restore-required` |
+| `2026111627` | `usage` | 23 | add bounded offline-operation provenance markers | online | none | `restore-required` |
+| `2026111628` | `router-config` | 20 | store chained admin audit hashes and prune checkpoints | online | none | `restore-required` |
+| `2026111628` | `usage` | 24 | store chained admin audit hashes and prune checkpoints | online | none | `restore-required` |
 
 ### Fixed
 
-- Keep migration JSON output valid and separate from database diagnostics.
-- Resolve client IPs from trusted proxy hops so untrusted forwarded headers do
-  not control caller binding or security records.
-- Bound stream buffers, detector queues, cache state, and policy approval holds;
-  refuse unsafe requests when validation or authorization is unavailable.
+- Fix audit retention pruning moving its checkpoint backwards under concurrent replicas.
+- Fix security console resume instructions failing with HTTP 428. Routerctl now discovers the current configuration ETag for guarded mutations, and copied HTTP instructions fetch and send `If-Match`.
+- Use the public, revision- and checksum-pinned ProtectAI DeBERTa-v3-base prompt-injection classifier in the reference detector example so setup requires no model-host access grant.
+- Fix admin operations failing with database busy under concurrent audit writes on SQLite.
+- Keep tool-firewall sequence holds active across retries and require each retry to consume a fresh released approval before forwarding a held call; concurrent retries cannot reuse one release.
+- Fix PostgreSQL usage database upgrades and fresh installs rejecting the hierarchy audit index when its columns are reported out of order.
+- Include boolean values when matching tool-firewall argument deny rules.
+- Keep streamed tool calls from multiple Chat choices held until every choice with a tool call has finished.
+- Inspect and redact output snapshots in failed and incomplete Responses stream events, honoring `fail_on_match` before forwarding them.
+- Inspect populated Responses added text as rolling chunks, deduplicate repeated part snapshots, and inspect terminal snapshots before flushing held text.
+- Flush held refusal and reasoning summary text when a Responses output item completes.
+- Keep only `id`, `type`, `status`, and `error` on non-message and non-reasoning output items in failed and incomplete Responses snapshots, including unrecognized item kinds.
+- Harden the packaged production reference configuration and ship the local development profile separately as `config/config.dev.example.yaml`.
+- Keep pending provider usage windows inside the configured catch-up age bound.
+- Read audit export rows and chain anchors from repeatable snapshots so concurrent writes and retention do not produce invalid pages.
+- Preserve each provider's trace propagation setting when the admin provider update API replaces its other fields.
+- Bound authentication audit writes with durable per-replica five-minute counters, chain one count-delta row at window close, and fall back to direct chained writes when the counter table is full; deny authentication if either audit write fails.
+- Evaluate tool-firewall sequence rules in response order, including first and second steps returned in one response.
+- Persist a denied same-response tool sequence so a retry cannot bypass its `then_tool` rule.
+- Remove the unsupported legacy admin route setting from both hardening guides and direct operators to the separate `/admin/v1` listener.
+- Align the release procedure with the committed AI review artifact gate and document the required artifact preparation path.
+- Correct the upgrade guide to describe successful local sinkhole responses for unknown or disallowed honeytoken model names.
+- Align OpenAI and Anthropic compatibility matrix versions with the pinned Python SDK lockfile and regenerate the published matrix page.
+- Read control-plane backup tables from coordinated, repeatable database snapshots so related rows and their audit anchors cannot come from different writes.
+- Align the standalone cache isolation guide with v5 caller-scoped response-cache and vLLM prefix-salt behavior; document that SGLang prefix isolation is unsupported.
+- Keep disabled callers with intentionally empty verifiers visible in the admin caller list while rejecting active callers without verifiers.
+- Include managed admin-client statuses, credential bindings, and emergency activation state in control-plane backups so restore preserves disablement and revocation state.
+- Disable the unused admin listener on API compatibility test routers to avoid collisions when tests start several routers, and make plain `make` compile binaries without running the full test suite during CodeQL autobuild.
+- Preserve sanitized per-cell tool compatibility results when live SDK cells fail, and ingest failures as live evidence.
+- Require all three SDK cells in release reports and distinguish release details from nightly runs.
+- Roll back failed automatic suspensions so they release their action-cap slot; exempting a caller during config refresh releases an active automatic throttle before its TTL.
+- Migrate the API compatibility suite to Anthropic Python SDK 2.3.0 and test API-key and bearer authentication with separate clients.
+- `metrum-ai-router-migrate --json` keeps stdout valid JSON, including on failures, by directing GORM diagnostics to stderr.
+- Drop target-declared unsupported `temperature` and `top_p` fields before dispatch; classify structured 400/422 sampling-parameter refusals for pre-commit fallback; and forward `top_p` when translating to OpenAI Chat Completions.
+- Keep the admin migration-status API read-only: it now refuses unavailable or pre-ledger databases without bootstrapping or upgrading migration tables.
+- Generate OpenAPI concurrency and idempotency metadata from normalized runtime operations so the published contract omits `If-Match`, `Idempotency-Key`, and conflict responses for routes that do not enforce them.
+- Bind client credential metadata to configured identities; enforce client status, expiry and revocation across replicas; refuse lifecycle writes that remove the last policy administrator; exclude expired and revoked bindings from access-review grants.
+- Treat every credential registration as managing its entire subject when checking administrator lockout, return unavailable when access-review grants cannot be resolved, and delay unused-credential warnings until a binding has been registered for 24 hours.
+- Reevaluate provider spend-breaker trips against current ceilings so raising or removing a limit takes effect on the next admission check.
+- Keep SQL usage reports aligned with in-memory recomputed-token coverage when input counts are negative.
+- Retry the earliest provider usage reconciliation window without a successful checkpoint, including partial and failed windows, before advancing catch-up.
+- Preserve mission-token grant identity and cumulative budget when an unchanged issuer is reloaded.
+- Admit honeytoken and canary sinkhole requests through caller rate limits, validate honeytoken groups on relational config writes, and bound repeated security-event writes with a 10,000-entry LRU and Prometheus suppression counter.
+- Record canary-group use from embeddings and count-token routes, include canary usage in honeytoken reports, and prevent stale honeytoken config from reaching a real upstream.
+- Re-evaluate project budget trips against current ceilings on every admission, preserve provider spend-breaker settings during admin updates, normalize project/environment identifiers before authorization, and require retention force for every change that can purge additional data.
+- Allow oversized upstream lines to fall back before downstream commitment; retain reported usage from discarded attempts with explicit audit provenance.
+- Cover large streaming tool calls, repeated Responses completion payloads, limit errors, fallback boundaries, and tool-result continuation.
 
+### Known issues
+
+- At eight concurrent clients, median plain-path completion overhead increased from 1.475 ms in v4.8.0 to 3.035 ms in rc.3. This remains an accepted v5.0.0 limitation; [#1193](https://github.com/metrum-ai/router/issues/1193) tracks the latency follow-up for v5.1.0.
+- No prebuilt container image is published. Download a release archive, or build an image from the Dockerfile at the v5.0.0 tag and use the digest of your own build.
 
 Release notes help customer operators decide whether to deploy, how to validate the release, and how to roll back if needed. Each packaged router build also displays its router version and build timestamp on every docs page.
 
