@@ -1,0 +1,6 @@
+id,status,version,commit,target_digest,run_id,command,observed,evidence
+RT-CFG-001,PASS,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,sha256:d596cdd1bc144669d4c8d07ad8f762c028329f31859c7c34aa956f068445a611,v5.0.0-rc.4-rt-cfg-001,RT-CFG-001/replay.sh,Rejected strategy: script with migration guidance for strategy: external.,RT-CFG-001/output.log
+RT-CFG-002,PASS,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,7c606d45c61bb93e259b7f2da85bc8f537c85491,v5.0.0-rc.4-rt-cfg-002,RT-CFG-002/replay.sh,Request-shape passed 4 tests and PII policy passed 10.,RT-CFG-002/output.log
+RT-CFG-003,PASS,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,7c606d45c61bb93e259b7f2da85bc8f537c85491,v5.0.0-rc.4-rt-cfg-003,RT-CFG-003/replay.sh,The tagged go.mod contains neither goja nor esbuild.,RT-CFG-003/output.log
+RT-CFG-004,PASS,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,7c606d45c61bb93e259b7f2da85bc8f537c85491,v5.0.0-rc.4-rt-cfg-004,RT-CFG-004/replay.sh,Config apply-mode inventory and schema assertions passed.,RT-CFG-004/output.log
+RT-CFG-005,PASS,v5.0.0-rc.4,7c606d45c61bb93e259b7f2da85bc8f537c85491,sha256:d596cdd1bc144669d4c8d07ad8f762c028329f31859c7c34aa956f068445a611,v5.0.0-rc.4-rt-cfg-005,RT-CFG-005/replay.sh,Import and activate refused the live writer. Next startup audited one row at revision 7 and consumed the marker.,RT-CFG-005/output.log
