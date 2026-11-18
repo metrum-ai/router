@@ -243,9 +243,9 @@ func adminAuditTablesForDB(db *gorm.DB) []adminAuditTable {
 	return tables
 }
 
-// PurgeAdminAuditEventsBefore removes one bounded batch of expired admin audit rows from each
-// admin audit table present in db. The delete is portable: the subquery selects the primary
-// keys to remove by id, which is valid on SQLite and on PostgreSQL.
+// PurgeAdminAuditEventsBefore removes at most one batch per table. Discovery
+// only assigns a budget per domain. Each transaction selects its own prefix
+// after acquiring the same chain lock as appenders and other janitors.
 func PurgeAdminAuditEventsBefore(db *gorm.DB, cutoff time.Time) (int64, error) {
 	if db == nil {
 		return 0, nil
@@ -253,57 +253,87 @@ func PurgeAdminAuditEventsBefore(db *gorm.DB, cutoff time.Time) (int64, error) {
 	stamp := cutoff.UTC().Format(time.RFC3339Nano)
 	var removed int64
 	for _, table := range adminAuditTablesForDB(db) {
-		err := db.Transaction(func(tx *gorm.DB) error {
-			type candidate struct {
-				ID     string `gorm:"column:id"`
-				Domain string `gorm:"column:domain"`
-				Hash   string `gorm:"column:row_hash"`
+		budgets := map[string]int{string(AdminDomainCredential): adminAuditPurgeBatch}
+		if table.DomainCol != "" {
+			var domains []string
+			err := db.Table(table.Name).Where(table.TimeCol+" < ?", stamp).Order(table.TimeCol+", "+table.IDCol).Limit(adminAuditPurgeBatch).Pluck(table.DomainCol, &domains).Error
+			if err != nil {
+				return removed, fmt.Errorf("discover expired %s chains: %w", table.Name, err)
 			}
-			selectCols := table.IDCol + " AS id, row_hash"
-			if table.DomainCol != "" {
-				selectCols += ", " + table.DomainCol + " AS domain"
+			budgets = make(map[string]int)
+			for _, domain := range domains {
+				budgets[domain]++
 			}
-			var candidates []candidate
-			if err := tx.Table(table.Name).Select(selectCols).Where(table.TimeCol+" < ?", stamp).Order(table.TimeCol + " ASC").Order(table.IDCol + " ASC").Limit(adminAuditPurgeBatch).Scan(&candidates).Error; err != nil {
+		}
+		for domain, limit := range budgets {
+			var count int64
+			err := auditTransaction(db, func(tx *gorm.DB) error {
+				if err := lockAdminAuditChain(tx, table.Source, domain); err != nil {
+					return err
+				}
+				var err error
+				count, err = pruneAdminAuditPrefix(tx, table, domain, stamp, limit)
 				return err
+			})
+			if err != nil {
+				return removed, fmt.Errorf("prune %s: %w", table.Name, err)
 			}
-			if len(candidates) == 0 {
-				return nil
-			}
-			ids := make([]string, 0, len(candidates))
-			lastPruned := map[string]string{}
-			for _, candidate := range candidates {
-				ids = append(ids, candidate.ID)
-				domain := candidate.Domain
-				if table.DomainCol == "" {
-					domain = string(AdminDomainCredential)
-				}
-				lastPruned[domain] = candidate.Hash
-			}
-			if table.Name == "router_config_change_events" && tx.Migrator().HasTable("router_config_change_event_targets") {
-				if err := tx.Exec("DELETE FROM router_config_change_event_targets WHERE event_id IN ?", ids).Error; err != nil {
-					return fmt.Errorf("prune event targets: %w", err)
-				}
-			}
-			result := tx.Exec("DELETE FROM "+table.Name+" WHERE "+table.IDCol+" IN ?", ids)
-			if result.Error != nil {
-				return result.Error
-			}
-			removed += result.RowsAffected
-			if table.Source != "" && tx.Migrator().HasTable(adminAuditChainAnchorsTable) {
-				for domain, start := range lastPruned {
-					if err := setAdminAuditChainStart(tx, table.Source, domain, start); err != nil {
-						return err
-					}
-				}
-			}
-			return nil
-		})
-		if err != nil {
-			return removed, fmt.Errorf("prune %s: %w", table.Name, err)
+			removed += count
 		}
 	}
 	return removed, nil
+}
+
+func pruneAdminAuditPrefix(tx *gorm.DB, table adminAuditTable, domain, stamp string, limit int) (int64, error) {
+	var rows []struct {
+		ID           string
+		PreviousHash string
+		RowHash      string
+	}
+	query := tx.Table(table.Name).Select(table.IDCol+" AS id, previous_hash, row_hash").Where(table.TimeCol+" < ?", stamp)
+	if table.DomainCol != "" {
+		query = query.Where(table.DomainCol+" = ?", domain)
+	}
+	if err := query.Order(table.TimeCol + ", " + table.IDCol).Limit(limit).Scan(&rows).Error; err != nil || len(rows) == 0 {
+		return 0, err
+	}
+	ids := make([]string, 0, len(rows))
+	var firstPrevious, lastHash string
+	for _, row := range rows {
+		ids = append(ids, row.ID)
+		// Legacy rows without a chain hash do not advance the checkpoint.
+		if row.RowHash == "" {
+			continue
+		}
+		if lastHash == "" {
+			firstPrevious = row.PreviousHash
+		} else if row.PreviousHash != lastHash {
+			return 0, fmt.Errorf("discontinuous %s retention prefix", table.Source)
+		}
+		lastHash = row.RowHash
+	}
+	if table.Source == "control" && tx.Migrator().HasTable("router_config_change_event_targets") {
+		if err := tx.Exec("DELETE FROM router_config_change_event_targets WHERE event_id IN ?", ids).Error; err != nil {
+			return 0, err
+		}
+	}
+	deleted := tx.Exec("DELETE FROM "+table.Name+" WHERE "+table.IDCol+" IN ?", ids)
+	if deleted.Error != nil {
+		return 0, deleted.Error
+	}
+	if deleted.RowsAffected != int64(len(ids)) {
+		return 0, fmt.Errorf("incomplete %s retention delete", table.Source)
+	}
+	if lastHash != "" {
+		advanced := tx.Exec("UPDATE "+adminAuditChainAnchorsTable+" SET start_hash=?, updated_at=? WHERE source=? AND domain=? AND start_hash=?", lastHash, time.Now().UTC().Format(time.RFC3339Nano), table.Source, domain, firstPrevious)
+		if advanced.Error != nil {
+			return 0, advanced.Error
+		}
+		if advanced.RowsAffected != 1 {
+			return 0, fmt.Errorf("%s retention prefix does not follow checkpoint", table.Source)
+		}
+	}
+	return deleted.RowsAffected, nil
 }
 
 // adminCredentialFailureSourceCap bounds how many distinct failure rows one source address
