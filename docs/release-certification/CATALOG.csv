@@ -177,6 +177,7 @@ RT-SEC-096,SEC,extended,413,"No secrets, tokens or prompt text in logs, events o
 RT-PERF-012,PERF,extended,287,Results published; the d3 docs quote only measured savings.,none,false,false
 RT-SEC-097,SEC,extended,287,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
 RT-UPG-008,UPG,core,281,Legacy configs fail with the migration message; salted hashes work; the upgrade test applies the migration.,internal/router/config_test.go::TestLoadConfigRejectsRemovedCallerTokenSHA256 | scripts/release_upgrade_rollback_test.py::test_v48_legacy_caller_config_migrates_with_real_commands,false,false
+RT-UPG-009,UPG,extended,896,Check whether starting release -json output is clean on v4.7.1 and v4.8.0 before upgrading.,none,false,false
 RT-SEC-098,SEC,extended,281,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
 RT-SEC-099,SEC,extended,276,`grype --fail-on high` passes with a fresh DB and no unexplained exceptions.,none,false,false
 RT-SEC-100,SEC,extended,276,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
