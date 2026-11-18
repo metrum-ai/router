@@ -104,3 +104,41 @@ func TestAuditTransactionWriterDeadline(t *testing.T) {
 		t.Fatalf("writer deadline: elapsed=%v err=%v", time.Since(start), err)
 	}
 }
+
+func TestRestoreFailureAuditAfterDeadline(t *testing.T) {
+	db := adminUsageAuditTestStore(t).db
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	record := AdminAuditRecord{EventID: "expired-restore", Domain: AdminGlobalDomain, Object: "admin:restore", Action: "write"}
+	err := restoreControlPlaneBackupWithAudit(ctx, configAdminTestDB(t), db, controlPlaneBackupBundle{}, &record)
+	if err == nil {
+		t.Fatal("invalid restore succeeded")
+	}
+	var count int64
+	if err := db.Table(usageAdminAuditTable).Where("event_id = ? AND outcome = ? AND reason_code = ?", record.EventID, "failed", "invalid_backup").Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("failure audit rows=%d err=%v", count, err)
+	}
+}
+
+func TestAuditedMutationWaitsForSQLiteWriter(t *testing.T) {
+	store := adminUsageAuditTestStore(t)
+	holder := store.db.Begin()
+	defer holder.Rollback()
+	if err := holder.Exec("UPDATE router_admin_audit_chain_anchors SET head_hash=head_hash WHERE 0").Error; err != nil {
+		t.Fatal(err)
+	}
+	released := make(chan error, 1)
+	go func() { time.Sleep(2500 * time.Millisecond); released <- holder.Rollback().Error }()
+	const id = "after-writer-release"
+	err := store.CreateTrainingOutcomeAudited(contentCaptureRecord{RequestID: id}, AdminAuditRecord{EventID: id, Domain: AdminGlobalDomain, Object: "content:training", Action: "label"})
+	if releaseErr := <-released; releaseErr != nil {
+		t.Fatal(releaseErr)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	var count int64
+	if err := store.db.Table(usageAdminAuditTable).Where("event_id = ?", id).Count(&count).Error; err != nil || count != 1 {
+		t.Fatalf("audit rows=%d err=%v", count, err)
+	}
+}

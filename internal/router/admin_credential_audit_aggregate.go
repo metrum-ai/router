@@ -85,8 +85,8 @@ func (s *Service) addAdminCredentialAuditCounter(ctx context.Context, event Admi
 	start := event.At.UTC().Truncate(adminCredentialAuditWindow)
 	row := adminCredentialAuditCounter{BucketID: adminCredentialAuditBucketID(replicaID, event, start), ReplicaID: replicaID, WindowStart: start, Kind: event.Kind, CredentialID: event.CredentialID, Subject: event.Subject, Issuer: event.Issuer, Outcome: event.Outcome, ReasonCode: event.ReasonCode, ClientIPHash: event.ClientIPHash, Count: 1}
 	db = db.WithContext(ctx)
-	return withSQLiteBusyRetry(func() error {
-		return db.Transaction(func(tx *gorm.DB) error {
+	return retryAuditedTxConflict(db, func() error {
+		return auditTransaction(db, func(tx *gorm.DB) error {
 			var exists int64
 			if err := tx.Table(adminCredentialAuditCounterTable).Where("bucket_id = ?", row.BucketID).Count(&exists).Error; err != nil {
 				return err
@@ -139,7 +139,7 @@ func (s *Service) flushAdminCredentialAuditCounters(ctx context.Context, all boo
 		return q.Error
 	}
 	for _, id := range ids {
-		err := withPostgresSerializationRetry(db, func() error {
+		err := retryAuditedTxConflict(db, func() error {
 			return auditTransaction(db, func(tx *gorm.DB) error {
 				var row adminCredentialAuditCounter
 				res := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("bucket_id = ?", id).First(&row)

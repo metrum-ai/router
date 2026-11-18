@@ -456,7 +456,7 @@ func (s *Service) writeAdminCredentialEvent(ctx context.Context, event AdminCred
 		event.At = time.Now().UTC()
 	}
 	if s.configControlPlane != nil {
-		return withPostgresSerializationRetry(s.configControlPlane, func() error {
+		return retryAuditedTxConflict(s.configControlPlane, func() error {
 			return auditTransaction(s.configControlPlane.WithContext(ctx), func(tx *gorm.DB) error {
 				return insertAdminCredentialEventTx(tx, event)
 			})
@@ -468,7 +468,7 @@ func (s *Service) writeAdminCredentialEvent(ctx context.Context, event AdminCred
 	if event.Count <= 0 {
 		event.Count = 1
 	}
-	return withPostgresSerializationRetry(s.usage.db, func() error {
+	return retryAuditedTxConflict(s.usage.db, func() error {
 		return auditTransaction(s.usage.db.WithContext(ctx), func(tx *gorm.DB) error {
 			return insertAdminAuditUsageTx(tx, AdminAuditRecord{
 				At: event.At, PrincipalSubject: event.Subject, PrincipalKind: event.Kind,

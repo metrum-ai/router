@@ -16,10 +16,10 @@ import (
 	"gorm.io/gorm"
 )
 
-// These callers already retry PostgreSQL serialization failures.
-func withPostgresSerializationRetry(db *gorm.DB, write func() error) error {
+// SQLite retries inside auditTransaction so the outer call never multiplies its budget.
+func retryAuditedTxConflict(db *gorm.DB, write func() error) error {
 	if db.Dialector.Name() == "postgres" {
-		return withSQLiteBusyRetry(write)
+		return retryTransientTx(write)
 	}
 	return write()
 }
@@ -35,7 +35,7 @@ func auditTransaction(db *gorm.DB, mutate func(*gorm.DB) error) error {
 		// Only the owner of the outer transaction can discard its snapshot.
 		return db.Transaction(mutate)
 	}
-	wait, cancel := context.WithTimeout(db.Statement.Context, 2*time.Second)
+	wait, cancel := context.WithTimeout(db.Statement.Context, 6*time.Second)
 	defer cancel()
 	// SQLite's busy handler can continue sleeping after context cancellation.
 	// Use short waits only on this leased connection, restoring the pool's
@@ -46,7 +46,9 @@ func auditTransaction(db *gorm.DB, mutate func(*gorm.DB) error) error {
 		if err := conn.QueryRowContext(wait, "PRAGMA busy_timeout").Scan(&previous); err != nil {
 			return err
 		}
-		if _, err := conn.ExecContext(wait, "PRAGMA busy_timeout=200"); err != nil {
+		deadline, _ := wait.Deadline()
+		attemptMillis := max(int64(1), min(int64(1200), time.Until(deadline).Milliseconds()))
+		if _, err := conn.ExecContext(wait, "PRAGMA busy_timeout="+strconv.FormatInt(attemptMillis, 10)); err != nil {
 			return err
 		}
 		defer func() {

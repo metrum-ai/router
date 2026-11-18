@@ -495,7 +495,8 @@ func recordOperationAudit(ctx context.Context, db *gorm.DB, record *AdminAuditRe
 	}
 	copy := *record
 	if db.Dialector.Name() == "sqlite" {
-		db = db.WithContext(ctx)
+		// Record the final outcome even when the operation exceeded its deadline.
+		db = db.WithContext(context.WithoutCancel(ctx))
 		if copy.EventID == "" {
 			copy.EventID = newConfigChangeEventID()
 		}

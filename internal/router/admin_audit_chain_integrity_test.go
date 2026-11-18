@@ -102,7 +102,7 @@ func TestConcurrentSQLiteAuditWritersProduceOneChain(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			record := AdminAuditRecord{EventID: fmt.Sprintf("concurrent-%02d", i), At: time.Date(2026, 11, 16, 13, 0, i, 0, time.UTC), Domain: "team/concurrent", Outcome: "committed", Object: "admin:config"}
-			err := withSQLiteBusyRetry(func() error {
+			err := retryTransientTx(func() error {
 				return store.db.Transaction(func(tx *gorm.DB) error { return insertAdminAuditUsageTx(tx, record) })
 			})
 			if err != nil {
@@ -185,7 +185,7 @@ func TestConcurrentDuplicateUsageAuditRetriesProduceOneChain(t *testing.T) {
 			defer wg.Done()
 			<-start
 			record := AdminAuditRecord{EventID: "parallel-duplicate", At: time.Date(2026, 11, 17, 4, 30, i, 0, time.UTC), Domain: "team/parallel-retry", Outcome: "committed", Object: fmt.Sprintf("admin:config:%02d", i)}
-			errCh <- withSQLiteBusyRetry(func() error {
+			errCh <- retryTransientTx(func() error {
 				return store.db.Transaction(func(tx *gorm.DB) error { return insertAdminAuditUsageTx(tx, record) })
 			})
 		}(i)

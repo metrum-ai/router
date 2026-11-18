@@ -679,7 +679,7 @@ func WriteGroupTargets(db *gorm.DB, runtimeScope string, req GroupTargetsWriteRe
 	// timeout; retry the whole transaction, which re-reads all state and
 	// keeps If-Match and idempotency semantics. PostgreSQL relies on the
 	// guarded runtime update and sees no busy errors.
-	err := withPostgresSerializationRetry(db, func() error {
+	err := retryAuditedTxConflict(db, func() error {
 		return auditTransaction(db, func(tx *gorm.DB) error {
 			if err := lockConfigRuntimeTx(tx, runtimeScope); err != nil {
 				return err
@@ -784,14 +784,13 @@ func WriteGroupTargets(db *gorm.DB, runtimeScope string, req GroupTargetsWriteRe
 	return result, nil
 }
 
-// withSQLiteBusyRetry retries a write transaction that loses the SQLite WAL
-// write-write race. ConfigAdminError values (typed 4xx outcomes) are never
+// retryTransientTx retries transient SQLite and PostgreSQL transaction conflicts. ConfigAdminError values (typed 4xx outcomes) are never
 // retried.
-func withSQLiteBusyRetry(fn func() error) error {
+func retryTransientTx(fn func() error) error {
 	var err error
 	for attempt := 0; attempt < 6; attempt++ {
 		err = fn()
-		if err == nil || !isSQLiteBusyError(err) {
+		if err == nil || !isRetryableTxError(err) {
 			return err
 		}
 		time.Sleep(time.Duration(10*(attempt+1)) * time.Millisecond)
@@ -799,7 +798,7 @@ func withSQLiteBusyRetry(fn func() error) error {
 	return err
 }
 
-func isSQLiteBusyError(err error) bool {
+func isRetryableTxError(err error) bool {
 	if err == nil {
 		return false
 	}
