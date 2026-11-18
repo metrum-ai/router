@@ -165,6 +165,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [5.0.0] - 2026-11-23
 
+### Known issues
+
+- At eight concurrent clients, median plain-path completion overhead increased from 1.475 ms in v4.8.0 to 3.035 ms in rc.3. The maintainer accepted this for v5.0.0. [#1193](https://github.com/metrum-ai/router/issues/1193) tracks it for v5.1.0.
+
 Security release. This section summarizes the v5.0.0 release scope; see the
 [upgrade guide](docs-site/docs/release-notes/upgrade-guide.md) before upgrading
 from v4.8.0.
