@@ -291,6 +291,25 @@ func adminResourceCommand(args []string) {
 	var headers map[string]string
 	if method != http.MethodGet {
 		headers = api.mutationHeaders()
+		// Reuse the server contract to identify configuration-revision writes.
+		// This registry covers the built-in configuration operations.
+		registry, err := router.AdminV1DefaultRegistry()
+		if err != nil {
+			die("admin operation registry: %v", err)
+		}
+		mux := http.NewServeMux()
+		for _, operation := range registry.Operations() {
+			mux.HandleFunc(operation.Pattern(), func(http.ResponseWriter, *http.Request) {})
+		}
+		request, err := http.NewRequest(method, "http://admin.local"+*path, nil)
+		if err != nil {
+			die("invalid admin resource path")
+		}
+		_, pattern := mux.Handler(request)
+		operation, found := registry.LookupPattern(pattern)
+		if found && operation.RequiredPrecondition() && operation.ETagSource == router.AdminETagConfig {
+			headers = api.revisionMutationHeaders()
+		}
 	}
 	response, _, err := mustAdminAPIClient(api).Do(method, *path, body, headers)
 	if err != nil {
@@ -314,7 +333,7 @@ func containmentCommand(action string, args []string) {
 	client := mustAdminAPIClient(api)
 	body, _, err := client.Do(http.MethodPost, "/admin/v1/containment", map[string]any{
 		"caller_id": strings.TrimSpace(*callerID), "action": action, "reason": strings.TrimSpace(*reason), "ttl": strings.TrimSpace(*ttl),
-	}, api.mutationHeaders())
+	}, api.revisionMutationHeaders())
 	if err != nil {
 		dieAdmin(err)
 	}
@@ -454,7 +473,7 @@ func configCommand(args []string) {
 		if !*offline {
 			client := mustAdminAPIClient(api)
 			body, _, err := client.Do(http.MethodPost, "/admin/v1/config/sets",
-				map[string]any{"name": *name, "yaml": string(raw)}, api.mutationHeaders())
+				map[string]any{"name": *name, "yaml": string(raw)}, api.revisionMutationHeaders())
 			if err != nil {
 				dieAdmin(err)
 			}
@@ -541,7 +560,7 @@ func configCommand(args []string) {
 		if !*offline {
 			client := mustAdminAPIClient(api)
 			body, _, err := client.Do(http.MethodPost, "/admin/v1/config/sets/"+strings.TrimSpace(*setID)+"/activate",
-				map[string]any{}, api.mutationHeaders())
+				map[string]any{}, api.revisionMutationHeaders())
 			if err != nil {
 				dieAdmin(err)
 			}
@@ -576,7 +595,7 @@ func configCommand(args []string) {
 		if !*offline {
 			client := mustAdminAPIClient(api)
 			body, _, err := client.Do(http.MethodPost, "/admin/v1/config/rollback",
-				map[string]any{"set_id": strings.TrimSpace(*setID)}, api.mutationHeaders())
+				map[string]any{"set_id": strings.TrimSpace(*setID)}, api.revisionMutationHeaders())
 			if err != nil {
 				dieAdmin(err)
 			}
@@ -662,7 +681,7 @@ func groupsCommand(args []string) {
 		}
 		body, _, err := client.Do(http.MethodPut, "/admin/v1/config/groups/"+name+"/targets", map[string]any{
 			"targets": specs, "strategy": *strategy, "reason": *reason, "dry_run": *dryRun, "force": *force,
-		}, api.mutationHeaders())
+		}, api.revisionMutationHeaders())
 		if err != nil {
 			dieAdmin(err)
 		}
@@ -684,7 +703,7 @@ func groupsCommand(args []string) {
 		if *position >= 0 {
 			payload["position"] = *position
 		}
-		body, _, err := client.Do(http.MethodPost, "/admin/v1/config/groups/"+name+"/targets", payload, api.mutationHeaders())
+		body, _, err := client.Do(http.MethodPost, "/admin/v1/config/groups/"+name+"/targets", payload, api.revisionMutationHeaders())
 		if err != nil {
 			dieAdmin(err)
 		}
@@ -707,7 +726,7 @@ func groupsCommand(args []string) {
 			provider, ref := mustParseTargetFlag(targetRaw)
 			payload = append(payload, map[string]any{"action": action, "target": map[string]any{"provider": provider, "model_ref": ref}})
 		}
-		body, _, err := mustAdminAPIClient(api).Do(http.MethodPost, "/admin/v1/config/groups/"+name+"/targets:bulk", map[string]any{"changes": payload, "reason": *reason}, api.mutationHeaders())
+		body, _, err := mustAdminAPIClient(api).Do(http.MethodPost, "/admin/v1/config/groups/"+name+"/targets:bulk", map[string]any{"changes": payload, "reason": *reason}, api.revisionMutationHeaders())
 		if err != nil {
 			dieAdmin(err)
 		}
@@ -721,7 +740,7 @@ func groupsCommand(args []string) {
 		client := mustAdminAPIClient(api)
 		provider, ref := mustParseTargetFlag(*target)
 		body, _, err := client.Do(http.MethodDelete, "/admin/v1/config/groups/"+name+"/targets/"+provider+"/"+ref,
-			map[string]any{"reason": *reason}, api.mutationHeaders())
+			map[string]any{"reason": *reason}, api.revisionMutationHeaders())
 		if err != nil {
 			dieAdmin(err)
 		}
@@ -734,7 +753,7 @@ func groupsCommand(args []string) {
 		name := groupNameArg(fs)
 		client := mustAdminAPIClient(api)
 		body, _, err := client.Do(http.MethodPost, "/admin/v1/config/groups/"+name+"/rollback",
-			map[string]any{"set_id": *setID, "reason": *reason}, api.mutationHeaders())
+			map[string]any{"set_id": *setID, "reason": *reason}, api.revisionMutationHeaders())
 		if err != nil {
 			dieAdmin(err)
 		}
@@ -765,7 +784,7 @@ func groupsShadowCommand(args []string) {
 		body, _, err := client.Do(http.MethodPost, "/admin/v1/config/groups/"+name+"/shadow", map[string]any{
 			"provider": provider, "model_ref": ref, "sample_rate": *sampleRate,
 			"max_requests": *maxRequests, "duration_seconds": *duration, "cost_cap_usd": *costCap, "reason": *reason,
-		}, api.mutationHeaders())
+		}, api.revisionMutationHeaders())
 		if err != nil {
 			dieAdmin(err)
 		}
@@ -783,10 +802,10 @@ func groupsShadowCommand(args []string) {
 			body, _, err = client.Do(http.MethodGet, "/admin/v1/config/groups/"+name+"/shadow", nil, nil)
 		case "promote":
 			body, _, err = client.Do(http.MethodPost, "/admin/v1/config/groups/"+name+"/shadow/promote",
-				map[string]any{"reason": *reason}, api.mutationHeaders())
+				map[string]any{"reason": *reason}, api.revisionMutationHeaders())
 		case "stop":
 			body, _, err = client.Do(http.MethodDelete, "/admin/v1/config/groups/"+name+"/shadow",
-				map[string]any{"reason": *reason}, api.mutationHeaders())
+				map[string]any{"reason": *reason}, api.revisionMutationHeaders())
 		}
 		if err != nil {
 			dieAdmin(err)
@@ -829,6 +848,21 @@ func (f *adminAPIFlags) mutationHeaders() map[string]string {
 	} else {
 		headers["Idempotency-Key"] = smartrouterctl.NewIdempotencyKey()
 	}
+	return headers
+}
+
+// revisionMutationHeaders discovers the current revision only when the operator
+// has not supplied one. A concurrent change still fails the subsequent write.
+func (f *adminAPIFlags) revisionMutationHeaders() map[string]string {
+	headers := f.mutationHeaders()
+	if headers["If-Match"] != "" {
+		return headers
+	}
+	etag, err := mustAdminAPIClient(f).CurrentConfigETag()
+	if err != nil {
+		dieAdmin(err)
+	}
+	headers["If-Match"] = etag
 	return headers
 }
 

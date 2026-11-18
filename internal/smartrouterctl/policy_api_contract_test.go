@@ -51,12 +51,20 @@ func TestPolicyClientUsesSharedPaginationAndSafeProblems(t *testing.T) {
 		t.Fatal("private problem detail leaked")
 	}
 }
-func TestPolicyClientRequiresExplicitMutationRevision(t *testing.T) {
+func TestPolicyClientDiscoversMutationRevision(t *testing.T) {
 	t.Setenv("ROUTER_ADMIN_KEY", "test-policy-client-credential")
 	t.Setenv("ROUTER_ADMIN_KEY_FILE", "")
 	hits := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits++
+		if r.Method == "GET" {
+			if r.URL.Path != PolicySetCollectionPath || r.URL.Query().Get("limit") != "1" {
+				t.Errorf("wrong discovery %s", r.URL)
+			}
+			w.Header().Set("ETag", `"9"`)
+			w.Write([]byte(`{"items":[]}`))
+			return
+		}
 		if r.URL.EscapedPath() != "/admin/v1/policy-sets/a%2Fb/activate" || r.Method != "POST" || r.Header.Get("If-Match") != "\"9\"" || r.Header.Get("Idempotency-Key") != "retry-key" {
 			t.Errorf("wrong mutation: %s %s %v", r.Method, r.URL.EscapedPath(), r.Header)
 		}
@@ -67,8 +75,8 @@ func TestPolicyClientRequiresExplicitMutationRevision(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := client.Call("activate", "a/b", nil, PolicyCallOptions{}); err == nil || hits != 0 {
-		t.Fatal("mutation without revision dispatched")
+	if _, err := client.Call("activate", "a/b", nil, PolicyCallOptions{IdempotencyKey: "retry-key"}); err != nil || hits != 2 {
+		t.Fatalf("automatic revision mutation: hits=%d err=%v", hits, err)
 	}
 	if _, err := client.Call("activate", "a/b", nil, PolicyCallOptions{IfMatch: "\"9\"", IdempotencyKey: "retry-key"}); err != nil {
 		t.Fatal(err)

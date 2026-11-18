@@ -16,15 +16,33 @@ import (
 func TestOnlineCommandsUseAdminV1WithoutDatabaseCredentials(t *testing.T) {
 	const token = "rtr_admin_test_only_parity_key"
 	var requests []string
+	var revisionReads int
+	discoveryStatus := http.StatusOK
 	allowed := map[string]bool{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		key := r.Method + " " + r.URL.Path
+		if key == "GET /admin/v1/config/status" {
+			revisionReads++
+			if discoveryStatus != http.StatusOK {
+				w.WriteHeader(discoveryStatus)
+				return
+			}
+			if r.Header.Get("Authorization") != "Bearer "+token {
+				t.Error("revision discovery lacked admin authentication")
+			}
+			w.Header().Set("ETag", "\"rev-7\"")
+			w.Write([]byte(`{"revision":7}`))
+			return
+		}
 		if !allowed[key] {
 			http.Error(w, "unexpected route", http.StatusNotFound)
 			return
 		}
 		if got := r.Header.Get("Authorization"); got != "Bearer "+token {
 			t.Errorf("Authorization = %q, want admin bearer credential", got)
+		}
+		if r.Method != http.MethodGet && !strings.Contains(r.URL.Path, "policy-sets") && r.Header.Get("If-Match") != `"rev-7"` {
+			t.Errorf("%s missing discovered revision", key)
 		}
 		requests = append(requests, r.Method+" "+r.URL.Path)
 		w.Header().Set("Content-Type", "application/json")
@@ -78,6 +96,7 @@ func TestOnlineCommandsUseAdminV1WithoutDatabaseCredentials(t *testing.T) {
 		"GET /admin/v1/reports/cfo/export.csv", "GET /admin/v1/reports/cfo/export.md",
 	}
 	commands = append(commands,
+		[]string{"admin-resource", "POST", "--router-url", server.URL, "--path", "/admin/v1/containment", "--body", `{"caller_id":"caller-1","action":"suspend","reason":"test"}`},
 		[]string{"contain", "--router-url", server.URL, "--caller-id", "caller-1", "--reason", "test"},
 		[]string{"release", "--router-url", server.URL, "--caller-id", "caller-1", "--reason", "test"},
 		[]string{"policies", "list", "--router-url", server.URL},
@@ -91,7 +110,7 @@ func TestOnlineCommandsUseAdminV1WithoutDatabaseCredentials(t *testing.T) {
 		[]string{"policies", "delete", "--router-url", server.URL, "--set-id", "set-1", "--if-match", `"rev-1"`},
 	)
 	want = append(want,
-		"POST /admin/v1/containment", "POST /admin/v1/containment",
+		"POST /admin/v1/containment", "POST /admin/v1/containment", "POST /admin/v1/containment",
 		"GET /admin/v1/policy-sets", "GET /admin/v1/policy-sets/set-1", "POST /admin/v1/policy-sets",
 		"POST /admin/v1/policy-sets/set-1/validate", "GET /admin/v1/policy-sets/set-1/diff",
 		"POST /admin/v1/policy-sets/set-1/activate", "POST /admin/v1/policy-sets/set-1/rollback",
@@ -119,6 +138,22 @@ func TestOnlineCommandsUseAdminV1WithoutDatabaseCredentials(t *testing.T) {
 		if strings.Contains(string(output), token) {
 			t.Fatalf("routerctl %v leaked admin credential", args)
 		}
+	}
+	for _, status := range []int{http.StatusForbidden, http.StatusServiceUnavailable} {
+		discoveryStatus = status
+		before := len(requests)
+		cmd := exec.Command(binary, "release", "--router-url", server.URL, "--caller-id", "caller-1", "--reason", "test")
+		cmd.Env = envWithoutDatabaseCredentials(token)
+		if output, err := cmd.CombinedOutput(); err == nil || strings.Contains(string(output), token) {
+			t.Fatalf("discovery failure status=%d err=%v", status, err)
+		}
+		if len(requests) != before {
+			t.Fatal("mutation sent after failed revision discovery")
+		}
+	}
+
+	if revisionReads == 0 {
+		t.Fatal("revision-guarded commands did not discover the current ETag")
 	}
 	if len(requests) != len(want) {
 		t.Fatalf("got %d online requests, want %d: %v", len(requests), len(want), requests)

@@ -14,6 +14,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -142,6 +143,25 @@ func (e *AdminAPIError) Error() string {
 func (c *AdminAPIClient) Do(method, path string, body any, headers map[string]string) ([]byte, int, error) {
 	raw, status, _, err := c.DoWithHeaders(method, path, body, headers)
 	return raw, status, err
+}
+
+// CurrentConfigETag reads the strong configuration revision validator used by
+// revision-guarded admin mutations. Discovery errors prevent the write.
+func (c *AdminAPIClient) CurrentConfigETag() (string, error) {
+	return c.CurrentETag("/admin/v1/config/status")
+}
+
+// CurrentETag reads a strong validator from an authenticated admin resource.
+func (c *AdminAPIClient) CurrentETag(path string) (string, error) {
+	_, _, headers, err := c.DoWithHeaders(http.MethodGet, path, nil, nil)
+	if err != nil {
+		return "", err
+	}
+	etag := strings.TrimSpace(headers.Get("ETag"))
+	if len(etag) < 3 || etag[0] != '"' || etag[len(etag)-1] != '"' || strings.ContainsAny(etag[1:len(etag)-1], "\"\r\n") {
+		return "", errors.New("admin resource did not return a strong ETag")
+	}
+	return etag, nil
 }
 
 // DoWithHeaders preserves shared transport/error behavior while exposing ETag

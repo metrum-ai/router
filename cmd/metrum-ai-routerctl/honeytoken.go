@@ -49,7 +49,7 @@ func honeytokenCommand(args []string) {
 			body, _, err := client.Do(http.MethodPost, "/admin/v1/callers/issue", map[string]any{
 				"owner_user": *owner, "project": *project, "environment": *environment, "key_slug": *key,
 				"allow": groups, "honeytoken_label": *label,
-			}, api.mutationHeaders())
+			}, api.revisionMutationHeaders())
 			if err != nil {
 				dieAdmin(err)
 			}

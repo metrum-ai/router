@@ -215,7 +215,15 @@ func (c *PolicyAPIClient) CallWithMetadata(operation, id string, body json.RawMe
 	headers := map[string]string{}
 	if precondition {
 		if strings.TrimSpace(opts.IfMatch) == "" {
-			return nil, fmt.Errorf("explicit If-Match revision required")
+			etag, err := c.admin.CurrentETag(PolicySetCollectionPath + "?limit=1")
+			if err != nil {
+				status := 0
+				if apiErr, ok := err.(*AdminAPIError); ok {
+					status = apiErr.Status
+				}
+				return nil, &PolicyAPIError{Status: status, Code: "revision-discovery-failed"}
+			}
+			opts.IfMatch = etag
 		}
 		headers["If-Match"] = opts.IfMatch
 	}

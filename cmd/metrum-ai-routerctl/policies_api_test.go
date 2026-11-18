@@ -16,6 +16,13 @@ func TestPoliciesCommandCanonicalReadAndWritePreconditions(t *testing.T) {
 	hits := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits++
+		if hits == 2 {
+			if r.Method != "GET" || r.URL.Query().Get("limit") != "1" {
+				t.Error("missing revision discovery")
+			}
+			w.WriteHeader(http.StatusForbidden)
+			return
+		}
 		if r.Method != "GET" || r.URL.Path != "/admin/v1/policy-sets" || r.URL.Query().Get("limit") != "2" {
 			t.Errorf("wrong request %s %s", r.Method, r.URL)
 		}
@@ -32,7 +39,7 @@ func TestPoliciesCommandCanonicalReadAndWritePreconditions(t *testing.T) {
 		t.Fatal("pagination/precondition metadata lost")
 	}
 	out.Reset()
-	if err := runPoliciesCommand([]string{"activate", "--set-id", "one", "--router-url", server.URL}, &out); err == nil || hits != 1 {
-		t.Fatal("missing revision mutation reached server")
+	if err := runPoliciesCommand([]string{"activate", "--set-id", "one", "--router-url", server.URL}, &out); err == nil || hits != 2 {
+		t.Fatal("failed discovery dispatched a mutation")
 	}
 }
