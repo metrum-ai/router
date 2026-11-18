@@ -121,6 +121,17 @@ func TestV47AuthorizationFixtureMatrix(t *testing.T) {
 			t.Errorf("load authorization projection %s: %v", path, err)
 			return nil
 		}
+		if filepath.Clean(path) == filepath.Join("..", "..", "config.example.yaml") {
+			// The v4.7 oracle covers the example's historical dev identities.
+			// The v5 package now provisions different principals in prod domains.
+			legacy, err := os.ReadFile("testdata/authz-v47-example-callers.fixture")
+			if err != nil {
+				return err
+			}
+			if err := yaml.Unmarshal(legacy, &cfg.Callers); err != nil {
+				return err
+			}
+		}
 		count++
 		auth := cfg.Server.AdminAuth
 		runtimes := map[string]*callerRuntime{}

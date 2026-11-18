@@ -62,11 +62,18 @@ docker run --rm \
 
 Save the printed raw token for the caller through an approved secret channel. In `config/config.yaml`, add or verify the referenced `users`, `projects`, and `project_memberships` entries, then replace the placeholder `callers:` entries with the generated caller YAML. A fresh template with `REPLACE_WITH_TOKEN_HASH_OF_*` values is intentionally not startable.
 
+The packaged production example binds to `127.0.0.1:8080`, enables security reports and stops each provider at a configured hourly ceiling of USD 1. Review the ceilings for your workload. Replace each caller credential block with its generated production ID, verifier, format, entropy and actual UTC issuance date. Run `metrum-ai-routerctl doctor --security --config config/config.yaml --fail-on warn` after provisioning. Use `config/config.dev.example.yaml` only for local development. With Caddy in a separate container, configure Router TLS on the private network listener using a certificate valid for the service name `router`. Change the packaged Caddy upstream to `reverse_proxy https://router:8080` and install the issuing CA in the Caddy container’s trust store.
+
 Edit `config/config.yaml` for durable container paths before startup:
 
 ```yaml
 server:
   listen: ":8080"
+  tls:
+    mode: router
+    certificate_source: files
+    cert_file: /app/config/tls/router.crt
+    key_file: /app/config/tls/router.key
   logging:
     path: /app/logs/requests.jsonl
   usage_db:

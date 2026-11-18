@@ -1,4 +1,4 @@
-# Local/dev starter only. Not a production catalog.
+# Development only. Not for production. Packaged as config.dev.example.yaml.
 # Copy via scripts/local_dev_bootstrap.py; do not commit filled config.yaml
 # or env.json.
 #

@@ -2192,10 +2192,10 @@ func TestExampleConfigDefaultUsesRequestedMix(t *testing.T) {
 		assertActiveGroupPolicy(t, name, group)
 	}
 	wantAllows := map[string][]string{
-		"standard-dev":      {"default", "fast", "small", "vision", "external-policy-demo"},
-		"coding-dev":        {"default", "fast", "big-coder", "small", "medium", "high", "vision", "agent-tools-smoke", "claude-tools-smoke", "agent-tools-smoke-openrouter", "claude-tools-smoke-openrouter", "claude-tools-smoke-openrouter-gemma", "baseten-nemotron-smoke", "warp-agent-smoke", "baseten-glm52-smoke", "baseten-gpt-oss-120b-smoke", "fireworks-gpt-oss-20b-smoke", "large-openai-chat-tools-smoke", "fireworks-responses-smoke", "fireworks-responses-tool-smoke", "minimax-responses-smoke", "minimax-responses-tool-smoke", "baseten-gpt-oss-120b-claude-smoke", "crusoe-smoke", "crusoe-gemma-smoke", "crusoe-nemotron-omni-smoke", "openai-gpt54-vision-smoke", "reasoning-smoke", "reasoning-bridge-smoke", "responses-to-chat-bridge-smoke", "temp-coder"},
-		"metrics-admin-dev": {},
-		"content-admin-dev": {},
+		"standard-prod":      {"default", "fast", "small", "vision", "external-policy-demo"},
+		"coding-prod":        {"default", "fast", "big-coder", "small", "medium", "high", "vision", "agent-tools-smoke", "claude-tools-smoke", "agent-tools-smoke-openrouter", "claude-tools-smoke-openrouter", "claude-tools-smoke-openrouter-gemma", "baseten-nemotron-smoke", "warp-agent-smoke", "baseten-glm52-smoke", "baseten-gpt-oss-120b-smoke", "fireworks-gpt-oss-20b-smoke", "large-openai-chat-tools-smoke", "fireworks-responses-smoke", "fireworks-responses-tool-smoke", "minimax-responses-smoke", "minimax-responses-tool-smoke", "baseten-gpt-oss-120b-claude-smoke", "crusoe-smoke", "crusoe-gemma-smoke", "crusoe-nemotron-omni-smoke", "openai-gpt54-vision-smoke", "reasoning-smoke", "reasoning-bridge-smoke", "responses-to-chat-bridge-smoke", "temp-coder"},
+		"metrics-admin-prod": {},
+		"content-admin-prod": {},
 	}
 	for _, caller := range cfg.Callers {
 		want, ok := wantAllows[caller.ID]
@@ -2205,16 +2205,16 @@ func TestExampleConfigDefaultUsesRequestedMix(t *testing.T) {
 		if strings.Join(caller.Allow, ",") != strings.Join(want, ",") {
 			t.Fatalf("caller %s allow=%v want %v", caller.ID, caller.Allow, want)
 		}
-		if caller.ID == "metrics-admin-dev" && !caller.MetricsAdmin {
+		if caller.ID == "metrics-admin-prod" && !caller.MetricsAdmin {
 			t.Fatalf("caller %s metrics_admin=false, want true", caller.ID)
 		}
-		if caller.ID != "metrics-admin-dev" && caller.MetricsAdmin {
+		if caller.ID != "metrics-admin-prod" && caller.MetricsAdmin {
 			t.Fatalf("caller %s metrics_admin=true, want false", caller.ID)
 		}
-		if caller.ID == "content-admin-dev" && !caller.ContentAdmin {
+		if caller.ID == "content-admin-prod" && !caller.ContentAdmin {
 			t.Fatalf("caller %s content_admin=false, want true", caller.ID)
 		}
-		if caller.ID != "content-admin-dev" && caller.ContentAdmin {
+		if caller.ID != "content-admin-prod" && caller.ContentAdmin {
 			t.Fatalf("caller %s content_admin=true, want false", caller.ID)
 		}
 		delete(wantAllows, caller.ID)
@@ -3376,6 +3376,7 @@ func replaceExampleCallerTokenHashes(t *testing.T, text string) string {
 			t.Fatal(err)
 		}
 		text = strings.ReplaceAll(text, "REPLACE_WITH_TOKEN_HASH_OF_"+name+"_ROUTER_TOKEN", tokenHash)
+		text = strings.ReplaceAll(text, "REPLACE_WITH_"+name+"_ISSUED_AT", time.Now().UTC().Format(time.RFC3339))
 	}
 	return text
 }

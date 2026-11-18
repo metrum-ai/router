@@ -95,7 +95,7 @@ server:
       #   key_id: idk-2026-06
       #   key: ${ROUTER_ID_TRANSFORM_KEY_PREVIOUS}
       #   valid_until: "2026-09-20T00:00:00Z" # Future, at most 30 days.
-  listen: :8080
+  listen: 127.0.0.1:8080
   default_model_group: default
   # Automated TLS for the serving listener. Off by default: without a mode the
   # router serves plaintext exactly as in v4.7. In router mode the certificate
@@ -311,7 +311,7 @@ server:
         pricing_updated_at: "2026-06-25"
         notes: Anthropic Claude API standard token pricing checked on 2026-06-25; fast mode and batch pricing are separate.
     security:
-      enabled: false
+      enabled: true
       retention_days: 90
   # OCSF JSON Lines security-event streaming is opt-in. Webhook signing keys are
   # loaded from the named environment variable and never copied into events.
@@ -385,8 +385,10 @@ server:
         batch_size: 500
         require_finalized_rollup: true
 state_path: router-state.json
+# Example ceiling per provider in USD. Set deployment budgets before rollout.
 providers:
   kimi:
+    spend_breaker: {hourly_usd: 1, on_trip: stop}
     base_url: https://api.moonshot.ai/v1
     dialect: openai-chat
     api_key: ${MOONSHOT_API_KEY}
@@ -442,6 +444,7 @@ providers:
           - tool_choice
           - structured_outputs
   xai:
+    spend_breaker: {hourly_usd: 1, on_trip: stop}
     base_url: https://api.x.ai/v1
     dialect: openai-chat
     api_key: ${XAI_API_KEY}
@@ -512,6 +515,7 @@ providers:
           mode: opt_in
           control: effort_enum
   baseten:
+    spend_breaker: {hourly_usd: 1, on_trip: stop}
     base_url: https://inference.baseten.co/v1
     dialect: openai-chat
     api_key: ${BASETEN_API_KEY}
@@ -618,6 +622,7 @@ providers:
           - tools
           - tool_choice
   crusoe:
+    spend_breaker: {hourly_usd: 1, on_trip: stop}
     base_url: https://api.inference.crusoecloud.com/v1
     dialect: openai-chat
     auth_scheme: bearer
@@ -780,6 +785,7 @@ providers:
           budgets. Keep this target in the dedicated smoke group and out of broad
           active vision routing until router-level OCR and workload validation pass.
   fireworks:
+    spend_breaker: {hourly_usd: 1, on_trip: stop}
     base_url: https://api.fireworks.ai/inference/v1
     dialect: openai-chat
     auth_scheme: bearer
@@ -952,6 +958,7 @@ providers:
           openai_chat:
           - tools
   fireworks_responses:
+    spend_breaker: {hourly_usd: 1, on_trip: stop}
     base_url: https://api.fireworks.ai/inference/v1
     dialect: openai-responses
     auth_scheme: bearer
@@ -984,6 +991,7 @@ providers:
           - function
         force_store_false: true
   minimax:
+    spend_breaker: {hourly_usd: 1, on_trip: stop}
     base_url: https://api.minimax.io/v1
     dialect: openai-chat
     auth_scheme: bearer
@@ -1015,6 +1023,7 @@ providers:
           - tools
           - tool_choice
   minimax_responses:
+    spend_breaker: {hourly_usd: 1, on_trip: stop}
     base_url: https://api.minimax.io/v1
     dialect: openai-responses
     auth_scheme: bearer
@@ -1059,6 +1068,7 @@ providers:
           control: effort_enum
           default_on: false
   openrouter:
+    spend_breaker: {hourly_usd: 1, on_trip: stop}
     base_url: https://openrouter.ai/api/v1
     dialect: openai-chat
     api_key: ${OPENROUTER_API_KEY}
@@ -1224,6 +1234,7 @@ providers:
       HTTP-Referer: ${ROUTER_HTTP_REFERER}
       X-Title: smart-llmrouter
   openai:
+    spend_breaker: {hourly_usd: 1, on_trip: stop}
     base_url: https://api.openai.com/v1
     dialect: openai-responses
     api_key: ${OPENAI_API_KEY}
@@ -1349,6 +1360,7 @@ providers:
           validation_status: passed
           validation_notes: Direct OpenAI Responses receipt-image OCR and image-plus-forced-function smokes passed on 2026-07-20.
   anthropic:
+    spend_breaker: {hourly_usd: 1, on_trip: stop}
     base_url: https://api.anthropic.com
     dialect: anthropic
     api_key: ${ANTHROPIC_API_KEY}
@@ -1366,6 +1378,7 @@ providers:
           anthropic_messages:
           - client_tools
   minimax_anthropic:
+    spend_breaker: {hourly_usd: 1, on_trip: stop}
     base_url: https://api.minimax.io/anthropic
     dialect: anthropic
     auth_scheme: bearer
@@ -1398,6 +1411,7 @@ providers:
           anthropic_messages:
           - client_tools
   kimi_anthropic:
+    spend_breaker: {hourly_usd: 1, on_trip: stop}
     base_url: https://api.moonshot.ai/anthropic
     dialect: anthropic
     auth_scheme: bearer
@@ -1437,6 +1451,7 @@ providers:
           anthropic_messages:
           - client_tools
   openrouter_responses:
+    spend_breaker: {hourly_usd: 1, on_trip: stop}
     base_url: https://openrouter.ai/api/v1
     dialect: openai-responses
     api_key: ${OPENROUTER_API_KEY}
@@ -1559,6 +1574,7 @@ providers:
       HTTP-Referer: ${ROUTER_HTTP_REFERER}
       X-Title: smart-llmrouter
   openrouter_anthropic:
+    spend_breaker: {hourly_usd: 1, on_trip: stop}
     base_url: https://openrouter.ai/api
     dialect: anthropic
     auth_scheme: bearer
@@ -1689,6 +1705,7 @@ providers:
       HTTP-Referer: ${ROUTER_HTTP_REFERER}
       X-Title: smart-llmrouter
   baseten_anthropic:
+    spend_breaker: {hourly_usd: 1, on_trip: stop}
     base_url: https://inference.baseten.co
     dialect: anthropic
     auth_scheme: bearer
@@ -2705,16 +2722,20 @@ callers:
 # caller's token_id must not be an underscore-delimited prefix of another's.
 # The deprecated token_sha256 is removed in v5; migrate it before upgrading.
 # Validation errors name caller ids, never hashes.
-# token_issued_at is an optional UTC RFC3339 timestamp. Token generation and
+# Replace each example credential block with the generated production key ID,
+# verifier, format version, entropy and actual RFC3339 issuance timestamp. Token generation and
 # rotation record it automatically; set the original issue time for manually
 # managed keys so `doctor --security` can enforce the 90-day maximum age.
-- id: standard-dev
+- id: standard-prod
   owner_user: standard
   project: example-project
-  environment: dev
+  environment: prod
   status: active
   token_hash: REPLACE_WITH_TOKEN_HASH_OF_STANDARD_ROUTER_TOKEN
-  token_id: rtr_metrum_standard_example-project_dev_kreplace
+  token_format_version: 2
+  token_entropy_bits: 256
+  token_issued_at: REPLACE_WITH_STANDARD_ISSUED_AT
+  token_id: rtr_metrum_standard_example-project_prod_kreplace
   # Caller source binding is optional; omitted mode defaults to off.
   # binding:
   #   mode: enforce
@@ -2768,13 +2789,16 @@ callers:
   spend_ceiling:
     max_estimated_cost_usd: 0.08
     max_tier: standard
-- id: coding-dev
+- id: coding-prod
   owner_user: coding
   project: example-project
-  environment: dev
+  environment: prod
   status: active
   token_hash: REPLACE_WITH_TOKEN_HASH_OF_CODING_ROUTER_TOKEN
-  token_id: rtr_metrum_coding_example-project_dev_kreplace
+  token_format_version: 2
+  token_entropy_bits: 256
+  token_issued_at: REPLACE_WITH_CODING_ISSUED_AT
+  token_id: rtr_metrum_coding_example-project_prod_kreplace
   metrics_admin: false
   content_admin: false
   allow:
@@ -2842,13 +2866,16 @@ callers:
     lifetime_tokens: 2000000000
     soft_pct: 90
     on_exhaust: disable
-- id: metrics-admin-dev
+- id: metrics-admin-prod
   owner_user: metrics-admin
   project: observability
-  environment: dev
+  environment: prod
   status: active
   token_hash: REPLACE_WITH_TOKEN_HASH_OF_METRICS_ADMIN_ROUTER_TOKEN
-  token_id: rtr_metrum_metrics-admin_observability_dev_kreplace
+  token_format_version: 2
+  token_entropy_bits: 256
+  token_issued_at: REPLACE_WITH_METRICS_ADMIN_ISSUED_AT
+  token_id: rtr_metrum_metrics-admin_observability_prod_kreplace
   metrics_admin: true
   content_admin: false
   allow: []
@@ -2856,13 +2883,16 @@ callers:
     rpm: 60
     tpm: 0
     concurrent: 2
-- id: content-admin-dev
+- id: content-admin-prod
   owner_user: content-admin
   project: compliance
-  environment: dev
+  environment: prod
   status: active
   token_hash: REPLACE_WITH_TOKEN_HASH_OF_CONTENT_ADMIN_ROUTER_TOKEN
-  token_id: rtr_metrum_content-admin_compliance_dev_kreplace
+  token_format_version: 2
+  token_entropy_bits: 256
+  token_issued_at: REPLACE_WITH_CONTENT_ADMIN_ISSUED_AT
+  token_id: rtr_metrum_content-admin_compliance_prod_kreplace
   metrics_admin: false
   content_admin: true
   allow: []

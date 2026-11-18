@@ -23,6 +23,7 @@ TEXT_SCAN_LIMIT = 10 * 1024 * 1024
 _PACKAGE_BINARY_PATHS = {f"bin/{name}" for name in product.PACKAGE_BINARIES}
 BINARY_PACKAGE_FILES = _PACKAGE_BINARY_PATHS | {
     "config/config.example.yaml",
+    "config/config.dev.example.yaml",
     "config/env.example.json",
     "caddy/Caddyfile",
     "LICENSE",
@@ -37,6 +38,7 @@ DOCKER_PACKAGE_FILES = {
     "compose/.env.example",
     "compose/.env",
     "config/config.example.yaml",
+    "config/config.dev.example.yaml",
     "config/env.example.json",
     "LICENSE",
     "NOTICE",

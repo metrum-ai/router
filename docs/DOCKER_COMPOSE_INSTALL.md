@@ -25,9 +25,17 @@ cp ../config/env.example.json config/env.json
 cp -R ../config/scripts config/scripts
 ```
 
+The packaged production example binds to `127.0.0.1:8080`, enables security reports and stops each provider at a configured hourly ceiling of USD 1. Review the ceilings for your workload. Replace each caller credential block with its generated production ID, verifier, format, entropy and actual UTC issuance date. Run `metrum-ai-routerctl doctor --security --config config/config.yaml --fail-on warn` after provisioning. Use `config/config.dev.example.yaml` only for local development. With Caddy in a separate container, configure Router TLS on the private network listener using a certificate valid for the service name `router`. Change the packaged Caddy upstream to `reverse_proxy https://router:8080` and install the issuing CA in the Caddy container’s trust store.
+
 Review `compose/.env`; only `SMART_LLMROUTER_VERSION` is required and must be the package image tag, never `latest`. Configure exact container paths before the migration gate:
 ```yaml
 server:
+  listen: ":8080"
+  tls:
+    mode: router
+    certificate_source: files
+    cert_file: /app/config/tls/router.crt
+    key_file: /app/config/tls/router.key
   logging:
     path: /app/logs/requests.jsonl
   usage_db:

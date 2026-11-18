@@ -1495,3 +1495,7 @@ the router falls back to a direct chained audit write for that event. Closed win
 become chained count-delta rows; pending counters survive restart and are included
 in database backups. Apply both scopes with the non-serving migration job before
 serving.
+
+## Packaged production and development configurations
+
+The packaged production example binds to `127.0.0.1:8080`, enables security reports and stops each provider at a configured hourly ceiling of USD 1. Review the ceilings for your workload. Replace each caller credential block with its generated production ID, verifier, format, entropy and actual UTC issuance date. Run `metrum-ai-routerctl doctor --security --config config/config.yaml --fail-on warn` after provisioning. Use `config/config.dev.example.yaml` only for local development. Existing deployments retain their configured listeners and budgets.

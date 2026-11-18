@@ -15,6 +15,7 @@ Binary packages include:
 - `bin/metrum-ai-routerctl`
 - `bin/engine-advisories.json` in release-built packages; `routerctl doctor --security` reads this bounded advisory snapshot by default when present.
 - `config/config.example.yaml`
+- `config/config.dev.example.yaml`
 - `config/env.example.json`
 - `caddy/Caddyfile`
 - `LICENSE`
@@ -31,6 +32,7 @@ Docker Compose packages include:
 - `compose/.env.example`
 - `compose/.env`
 - `config/config.example.yaml`
+- `config/config.dev.example.yaml`
 - `config/env.example.json`
 - `images/metrum-ai-router-<version>-linux-<arch>.tar`
 - `docs/`
