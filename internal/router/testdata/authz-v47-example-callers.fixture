@@ -1,0 +1,23 @@
+# Copyright 2026 Metrum AI
+# SPDX-License-Identifier: Apache-2.0
+- id: standard-dev
+  project: example-project
+  environment: dev
+  metrics_admin: false
+  content_admin: false
+- id: coding-dev
+  project: example-project
+  environment: dev
+  metrics_admin: false
+  content_admin: false
+- id: metrics-admin-dev
+  project: observability
+  environment: dev
+  metrics_admin: true
+  content_admin: false
+- id: content-admin-dev
+  project: compliance
+  environment: dev
+  metrics_admin: false
+  content_admin: true
+
