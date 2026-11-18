@@ -13,11 +13,10 @@ import re
 import sys
 import subprocess
 
-from release_image_oci_layout import image_descriptor
 from release_ai_review import evaluate, load_committed_artifact, verify_generated_file_checks
 
 
-def validate(dist: Path, layout: Path, version: str, commit: str, previous: str, previous_commit: str) -> list[str]:
+def validate(dist: Path, version: str, commit: str, previous: str, previous_commit: str) -> list[str]:
     errors: list[str] = []
     try:
         inventory = json.loads((dist / "release-artifacts.json").read_text(encoding="utf-8"))
@@ -99,33 +98,22 @@ def validate(dist: Path, layout: Path, version: str, commit: str, previous: str,
     except (OSError, json.JSONDecodeError, AttributeError):
         errors.append("upgrade/rollback report is missing or invalid")
 
-    ref = f"ghcr.io/metrum-ai/router:{version}"
-    for architecture in ("amd64", "arm64"):
-        try:
-            _, config = image_descriptor(layout, ref, f"linux/{architecture}")
-            runtime = config.get("config", {})
-            labels = runtime.get("Labels", {})
-            if labels.get("org.opencontainers.image.version") != version or labels.get("org.opencontainers.image.revision") != commit:
-                errors.append(f"{architecture} OCI image metadata does not match the dry-run")
-        except (OSError, ValueError, KeyError, TypeError):
-            errors.append(f"local OCI layout is missing linux/{architecture}")
     return errors
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dist-dir", type=Path, default=Path("dist"))
-    parser.add_argument("--oci-layout", type=Path, required=True)
     parser.add_argument("--version", required=True)
     parser.add_argument("--commit", required=True)
     parser.add_argument("--previous", required=True)
     parser.add_argument("--previous-commit", required=True)
     args = parser.parse_args()
-    errors = validate(args.dist_dir, args.oci_layout, args.version, args.commit, args.previous, args.previous_commit)
+    errors = validate(args.dist_dir, args.version, args.commit, args.previous, args.previous_commit)
     if errors:
         print("release dry-run verification failed: " + "; ".join(errors), file=sys.stderr)
         return 1
-    print("release dry-run artifacts, review range, upgrade report and local OCI index verified")
+    print("release dry-run artifacts, review range and upgrade report verified")
     return 0
 
 

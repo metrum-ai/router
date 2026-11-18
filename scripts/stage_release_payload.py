@@ -1,7 +1,7 @@
 # Copyright 2026 Metrum AI
 # SPDX-License-Identifier: Apache-2.0
 
-"""Stage the exact unsigned release files shared by build, dry-run and publish."""
+"""Stage four unsigned binary archives and their archive-only release evidence."""
 
 from __future__ import annotations
 
@@ -21,6 +21,13 @@ UNSIGNED_PAYLOAD_PATTERNS = ARCHIVE_PATTERNS + (
     "release-artifacts.json",
     "upgrade-rollback-results.json",
 )
+
+
+def archive_sbom_names(version: str) -> set[str]:
+    return {
+        pattern.format(version=version).removesuffix(".tar.gz").removesuffix(".zip") + ".spdx.json"
+        for pattern in ARCHIVE_PATTERNS
+    }
 
 
 def payload_names(version: str, include_upgrade_results: bool = True) -> tuple[str, ...]:

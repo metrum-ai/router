@@ -16,8 +16,7 @@ git push origin vX.Y.Z
 The `release-dry-run.yml` `workflow_dispatch` dry run is limited to `main`. It builds release
 packages, compares a clean rebuild, exercises the upgrade/rollback path from
 the latest published non-prerelease release, reviews that production range,
-and assembles and smoke-tests the multi-architecture image in a local OCI
-layout. It does not publish artifacts, push images, or enter the protected
+and verifies the archive evidence. The dry run does not publish a release or enter the protected
 `release` environment. Tag pushes run the same validation and publish only
 after approval in that environment.
 
@@ -101,18 +100,12 @@ not retroactively cover earlier releases.
 
 The tag workflow builds four binary packages from the tagged commit and fixed
 source timestamp. A clean runner rebuilds them and publication is blocked
-unless their checksums match. On the protected release job, Crane assembles
-linux/amd64 and linux/arm64 OCI images from those exact package binaries on a
-digest-pinned Chainguard base, then creates a multi-architecture index in
-`ghcr.io/metrum-ai/router`. The Dockerfile remains available for local builds.
-The job verifies the image binaries against the release packages, runs the
-amd64 image binary's version and `/healthz` smoke checks without a container
-daemon, signs the images keylessly, and attaches GitHub provenance and SPDX
-SBOMs. All six archive and image SPDX JSON SBOMs receive keyless Cosign
-signature bundles. The four binary packages each carry an SPDX JSON SBOM,
-signature bundle and GitHub build provenance. The AI review report, its
-digest-bound findings artifact and `release-images.json` digest manifest are
-attached to the release and attested.
+unless their checksums match. The protected job publishes 21 assets starting with rc.4:
+four archives, four archive SPDX SBOMs, eight Cosign signature bundles (one per
+archive and SBOM), SHA256SUMS, release-artifacts.json, the upgrade/rollback
+results, the AI review report and its digest-bound findings artifact. It
+attests the archives, checksums, inventory, upgrade evidence and both review
+files. Operators build container images from the Dockerfile at the release tag.
 The upgrade check and AI review select the preceding stable tag by numeric
 semantic version order; release publication time does not affect the baseline.
 Each binary archive also includes `bin/engine-advisories.json`, the bounded
@@ -121,12 +114,9 @@ is supplied. The package-content validator requires and validates this file
 for release packages; the release dry run generates the same snapshot and
 applies the same required-file validation before it can pass.
 
-Publishing, registry writes, signing, attestations, SBOM attachment and GitHub
-release creation run only through the protected `release` environment. That
-environment must require a reviewer and allow only `v*` tags; the workflow
-checks both conditions before publishing. A retry resumes already-pushed
-version tags only when their digests match the rebuilt packages; a mismatch
-fails closed and requires maintainer investigation before another publish.
+Archive signing, SBOM signing, attestations and GitHub release creation run in
+the protected `release` environment. It must require a reviewer and allow only
+`v*` tags. Publication refuses an existing release for the same tag.
 The tag job validates a committed AI review artifact for the exact previous stable tag, base commit, release commit, and tag. It does not call a model. Prepare the artifact locally from the exact release commit, record any accepted blocking findings against its digest, and commit the artifact as a direct child of the reviewed commit. The release validator rejects a mismatched range, missing artifact, unanswered blocking finding, or invalid required CI evidence. See [Preparing the release AI review](RELEASE_AI_REVIEW.md) for artifact generation and acceptance steps. A source change after review requires a new artifact for the new commit range.
 
 Verify one downloaded package asset and its signature and provenance:

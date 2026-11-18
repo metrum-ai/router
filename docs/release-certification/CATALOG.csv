@@ -53,7 +53,7 @@ RT-SEC-026,SEC,extended,895,"No secrets, tokens or prompt text in logs, events o
 RT-CLI-001,CLI,core,894,Each check passes and fails on a fixture config.,none,false,false
 RT-CLI-002,CLI,core,894,JSON output and `--fail-on` work in CI; the reference configs pass.,cmd/metrum-ai-routerctl/security_doctor_test.go::TestSecurityDoctorReferenceConfigs | cmd/metrum-ai-routerctl/security_doctor_test.go::TestSecurityDoctorCommandJSONAndThreshold,false,false
 RT-SEC-027,SEC,extended,894,"No secrets, tokens or prompt text in logs, events or the usage DB (tested where the change touches them).",none,false,false
-RT-PKG-005,PKG,core,893,SBOM and attestations are attached to the release and verify.,none,false,false
+RT-PKG-005,PKG,core,893,Verify signature bundles for all released archives and their SPDX SBOMs and verify archive provenance against the release tag.,none,false,false
 RT-PKG-006,PKG,core,893,The clean rebuild reproduces the release binaries.,none,false,false
 RT-PKG-007,PKG,core,893,`routerctl verify` accepts the released binary and rejects a modified one.,internal/releaseverify/verify_test.go::TestVerifyAcceptsSignedLinuxReleaseBinary | internal/releaseverify/verify_test.go::TestVerifyRejectsModifiedLocalBinary,false,false
 RT-PKG-008,PKG,core,893,The release cannot publish without the maintainer approval and the attached AI review.,none,false,false

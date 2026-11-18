@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Release packages no longer include a prebuilt container image; build it from the Dockerfile.
+
 ### Fixed
 
 - Fix admin operations failing with database busy under concurrent audit writes on SQLite.

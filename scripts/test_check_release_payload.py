@@ -10,7 +10,6 @@ import unittest
 from pathlib import Path
 
 from check_release_payload import ARCHIVES, validate, validate_unsigned
-from release_image_layer import BASE_IMAGE, BINARIES
 from stage_release_payload import payload_names, stage
 
 
@@ -38,25 +37,8 @@ class ReleasePayloadTest(unittest.TestCase):
             "schema": "router.release-upgrade-rollback/v1",
             "checks": [{"check": "candidate-serving-smoke", "passed": True}],
         }), encoding="utf-8")
-        for arch in ("amd64", "arm64"):
-            name = f"metrum-ai-router-{version}-linux-{arch}-image.spdx.json"
-            (root / name).write_text(json.dumps({"spdxVersion": "SPDX-2.3", "packages": [{"name": name}]}), encoding="utf-8")
         for name in {path.name for path in root.glob("*.spdx.json")}:
             (root / (name + ".sigstore.json")).write_text(json.dumps({"bundle": True}), encoding="utf-8")
-        platforms = {
-            arch: {
-                "ref": f"ghcr.io/metrum-ai/router:{version}-linux-{arch}",
-                "digest": "sha256:" + "a" * 64,
-                "package_sha256": "b" * 64,
-                "binaries": {name: "c" * 64 for name in BINARIES},
-            }
-            for arch in ("amd64", "arm64")
-        }
-        (root / "release-images.json").write_text(json.dumps({
-            "schema": "metrum-ai-router.release-image/v1", "version": version,
-            "base": BASE_IMAGE, "index": {"ref": f"ghcr.io/metrum-ai/router:{version}", "digest": "sha256:" + "d" * 64},
-            "platforms": platforms,
-        }), encoding="utf-8")
         review_artifact = {
             "schema": "metrum-ai-router-release-review-artifact/v3",
             "base": "v4.8.0",
@@ -98,7 +80,7 @@ class ReleasePayloadTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             self.make_payload(root)
-            (root / "metrum-ai-router-v5.0.0-linux-amd64-image.spdx.json.sigstore.json").unlink()
+            (root / "metrum-ai-router-v5.0.0-linux-amd64.spdx.json.sigstore.json").unlink()
             artifact_path = root / "release-review-artifact.json"
             artifact = json.loads(artifact_path.read_text(encoding="utf-8"))
             artifact["summary"] = "Changed after review."
@@ -107,24 +89,16 @@ class ReleasePayloadTest(unittest.TestCase):
             self.assertTrue(any("missing release assets" in error for error in errors))
             self.assertTrue(any("artifact digest is invalid" in error for error in errors))
 
-    def test_rejects_missing_image_manifest_or_digest(self) -> None:
+    def test_rejects_obsolete_image_assets(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             self.make_payload(root)
-            (root / "release-images.json").unlink()
-            errors = validate(root, "v5.0.0")
-            self.assertTrue(any("missing release assets" in error for error in errors))
-
-    def test_rejects_malformed_image_binary_checksum(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            self.make_payload(root)
-            manifest_path = root / "release-images.json"
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            manifest["platforms"]["amd64"]["binaries"]["metrum-ai-router"] = "not-a-digest"
-            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-            errors = validate(root, "v5.0.0")
-            self.assertTrue(any("invalid binary checksum" in error for error in errors))
+            self.assertEqual(len(list(root.iterdir())), 21)
+            for name in ("release-images.json", "metrum-ai-router-v5.0.0-linux-amd64-image.spdx.json"):
+                with self.subTest(name=name):
+                    (root / name).touch()
+                    self.assertIn("unexpected release assets: " + name, validate(root, "v5.0.0"))
+                    (root / name).unlink()
 
     def make_unsigned_payload(self, root: Path, version: str = "v5.0.0-rc.3") -> None:
         archives = {item.format(version=version) for item in ARCHIVES}

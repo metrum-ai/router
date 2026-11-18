@@ -104,10 +104,7 @@ jobs:
       contents: read
     env:
       VERSION: v5.0.0-dry-run
-      IMAGE: ghcr.io/${{ github.repository }}
     steps:
-      - name: Set Crane path outside checkout
-        run: printf 'CRANE=%s\n' "${RUNNER_TEMP}/crane-bin/crane" >> "${GITHUB_ENV}"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
@@ -124,8 +121,6 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
-      - name: Install pinned Crane
-        run: bash scripts/install_crane.sh "${CRANE}"
       - name: Provide envsubst for Cosign installer
         run: |
           set -euo pipefail
@@ -165,7 +160,7 @@ jobs:
         env:
           JSIGN_JAR: ${{ runner.temp }}/signing/jsign.jar
           SYFT_COMMAND: ${{ steps.syft.outputs.cmd }}
-        run: python3 scripts/release_publish_tool_contract.py --gh "${RUNNER_TEMP}/gh-cli/bin/gh" --crane "${CRANE}" --syft "${SYFT_COMMAND}" --jsign-jar "${JSIGN_JAR}"
+        run: python3 scripts/release_publish_tool_contract.py --gh "${RUNNER_TEMP}/gh-cli/bin/gh" --syft "${SYFT_COMMAND}" --jsign-jar "${JSIGN_JAR}"
       - name: Resolve the main commit and latest production release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -269,43 +264,10 @@ jobs:
             --artifact-output dist/release-review-artifact.json \
             --output dist/AI-release-review.md
           rg -q '^- Decision: \*\*PASS\*\*$' dist/AI-release-review.md
-      - name: Assemble images in a local multi-architecture OCI layout
-        run: |
-          set -euo pipefail
-          base="$(python3 scripts/release_image_layer.py --print-base-image)"
-          test "$(sed -n 's/^FROM \(.*\)$/\1/p' Dockerfile | tail -1)" = "${base}"
-          layout="${RUNNER_TEMP}/release-oci"
-          for arch in amd64 arm64; do
-            package="dist/metrum-ai-router-${VERSION}-linux-${arch}.tar.gz"
-            layer="${RUNNER_TEMP}/router-${arch}-layer.tar.gz"
-            image_tar="${RUNNER_TEMP}/router-${arch}-image.tar"
-            python3 scripts/release_image_layer.py --package "${package}" --output "${layer}" --epoch "${SOURCE_DATE_EPOCH}" > "${RUNNER_TEMP}/router-${arch}-binary-sha256.txt"
-            "${CRANE}" mutate "${base}" --append "${layer}" --platform "linux/${arch}" \
-              --entrypoint=/app/bin/metrum-ai-router --cmd=--config,/app/config/config.yaml \
-              --user=65532:65532 --workdir=/app --exposed-ports=8080/tcp --set-platform="linux/${arch}" \
-              --label="org.opencontainers.image.title=Metrum AI Router" \
-              --label="org.opencontainers.image.version=${VERSION}" \
-              --label="org.opencontainers.image.revision=${COMMIT}" \
-              --label="org.opencontainers.image.created=${BUILD_DATE}" \
-              --label="org.opencontainers.image.licenses=Apache-2.0" --output "${image_tar}"
-            python3 scripts/release_image_oci_layout.py --archive "${image_tar}" --layout "${layout}" \
-              --ref "${IMAGE}:${VERSION}" --platform "linux/${arch}"
-          done
-          echo "RELEASE_OCI_LAYOUT=${layout}" >> "${GITHUB_ENV}"
-      - name: Verify image binaries match release packages
-        run: |
-          set -euo pipefail
-          for arch in amd64 arm64; do
-            python3 scripts/verify_release_image_binaries.py --crane "${CRANE}" \
-              --oci-layout "${RELEASE_OCI_LAYOUT}" --image-tag "${IMAGE}:${VERSION}" \
-              --platform "linux/${arch}" --package "dist/metrum-ai-router-${VERSION}-linux-${arch}.tar.gz"
-          done
-      - name: Run local OCI version and health smoke
-        run: python3 scripts/release_image_smoke.py --crane "${CRANE}" --oci-layout "${RELEASE_OCI_LAYOUT}" --image "${IMAGE}:${VERSION}" --version "${VERSION}"
       - name: Verify complete dry-run evidence
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python3 scripts/check_release_dry_run.py --dist-dir dist --oci-layout "${RELEASE_OCI_LAYOUT}" --version "${VERSION}" --commit "${COMMIT}" --previous "${PREVIOUS_TAG}" --previous-commit "${PREVIOUS_COMMIT}"
+        run: python3 scripts/check_release_dry_run.py --dist-dir dist --version "${VERSION}" --commit "${COMMIT}" --previous "${PREVIOUS_TAG}" --previous-commit "${PREVIOUS_COMMIT}"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-dry-run-evidence
