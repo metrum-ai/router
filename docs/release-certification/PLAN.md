@@ -13,6 +13,8 @@ Certify the bytes that operators install. Record the tag, full source commit, re
 
 The CSV header is the first record in each CSV file. The catalog uses stable IDs within each area. A value of `none` calls for direct execution or evidence inspection. Each result refers to a single candidate and run.
 
+A core FAIL remains outstanding until an explicit maintainer decision accepts it and records its tracking issue. Keep the measured FAIL in the results.
+
 Core cases are mandatory GA gates. The catalog selects upgrade, CLI, configuration and packaging checks, paired real-handler security scenarios, the admin permission matrix and concurrent audit export, endpoint-family smoke tests and the performance gate. Every other case is extended. Shared documentation checks list their source issues separated by a vertical bar. Review each issue's acceptance evidence alongside the four shared documentation checks.
 
 For GA, create an annotated tag whose message carries the v5.0.0 section of CHANGELOG.md. Verify the published release body against that section. Preserve the release-note failure on rc.3 in its original results.
