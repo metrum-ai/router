@@ -186,7 +186,12 @@ esac
                     self.assertEqual(MODULE.external_policy_served(report), expected)
 
     def test_script_migration_requires_specific_startup_rejection(self):
-        import local_launch_path_smoke as launch
+        spec = importlib.util.spec_from_file_location(
+            "local_launch_path_smoke", Path(__file__).with_name("local_launch_path_smoke.py")
+        )
+        assert spec and spec.loader
+        launch = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(launch)
 
         for code, diagnostic, accepted in [
             (1, b"script was removed in v5.0.0; migrate to strategy: external", True),
