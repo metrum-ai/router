@@ -3,5 +3,5 @@
 # datasets 5.1.0 includes the GHSA-379c-qx7v-6h59 fix. fsspec 2026.6.0
 # fixes GHSA-27vj-qcqg-25rc, and is compatible with the datasets 5.1.0
 # upper bound (<=2026.7.0). contract.json datasets_version tracks this pin.
-datasets==5.1.0
+datasets==5.2.0
 fsspec>=2026.6.0
