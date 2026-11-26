@@ -47,7 +47,7 @@ jobs:
         env:
           CI_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: python3 scripts/ci_changes.py
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         if: github.event_name != 'merge_group' || env.CI_RUN_GO == '1' || env.CI_RUN_EXAMPLES == '1'
         with:
           go-version-file: go.mod
@@ -85,7 +85,7 @@ jobs:
         env:
           CI_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: python3 scripts/ci_changes.py
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         if: github.event_name != 'merge_group' || env.CI_RUN_GO == '1' || env.CI_RUN_EXAMPLES == '1'
         with:
           go-version-file: go.mod
